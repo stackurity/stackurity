@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { safeReturn } from "../returnTo";
-import { MFA_METHODS, mustSetUpOwnFirst } from "../mfa";
+import { MFA_METHODS, PASSKEY_COPIED_FIX, mustSetUpOwnFirst } from "../mfa";
 import { api, type MfaMethod, type MfaSignInMethod } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
@@ -44,6 +44,9 @@ export interface MfaStatus {
   passkeys_available: boolean;
   passkeys_unavailable?: string;
   rp_id?: string;
+  /** You may turn email codes on (the fallback); email_unavailable says why not. */
+  email_offered: boolean;
+  email_unavailable?: string;
   /** Why this session must confirm with a factor you have before it adds or removes one. */
   confirm_first?: string;
   /** API tokens and connected assistants keep working without a second factor. */
@@ -71,7 +74,12 @@ export function methodList(ms: MfaMethod[] | null | undefined): string {
 export function MfaLoginStep({ methods, onDone, onRestart }: { methods: MfaSignInMethod[]; onDone: () => Promise<void>; onRestart: () => void }) {
   const hasPasskey = methods.includes("passkey") && passkeysSupported();
   const hasApp = methods.includes("totp");
-  const [mode, setMode] = useState<"passkey" | "totp" | "recovery_code">(hasPasskey ? "passkey" : hasApp ? "totp" : "recovery_code");
+  const hasEmail = methods.includes("email");
+  const [mode, setMode] = useState<"passkey" | "totp" | "recovery_code" | "email">(
+    hasPasskey ? "passkey" : hasApp ? "totp" : hasEmail ? "email" : "recovery_code",
+  );
+  const [sent, setSent] = useState(false);
+  const send = useAction();
   const [code, setCode] = useState("");
   const act = useAction();
   const expired = act.error?.code === "mfa_expired";
@@ -114,10 +122,26 @@ export function MfaLoginStep({ methods, onDone, onRestart }: { methods: MfaSignI
               {act.pending ? "Waiting for your passkey…" : "Use a passkey"}
             </button>
           </>
+        ) : mode === "email" && !sent ? (
+          <>
+            <ErrorBox error={send.error} title="Could not send the code" />
+            <p>We email a six-digit code to your address. It works once, for 10 minutes.</p>
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              disabled={send.pending}
+              autoFocus
+              onClick={() => void send.run(() => api.post("/auth/mfa/email/send").then(() => setSent(true)))}
+            >
+              {send.pending ? "Sending…" : "Email me a code"}
+            </button>
+          </>
         ) : (
           <form onSubmit={submit} aria-labelledby="mfa-title" className="form">
             <div className="field">
-              <label htmlFor="mfa-code">{mode === "recovery_code" ? "Recovery code" : "Code from your authenticator app"}</label>
+              <label htmlFor="mfa-code">
+                {mode === "recovery_code" ? "Recovery code" : mode === "email" ? "Code from the email" : "Code from your authenticator app"}
+              </label>
               <input
                 id="mfa-code"
                 autoComplete="one-time-code"
@@ -132,12 +156,22 @@ export function MfaLoginStep({ methods, onDone, onRestart }: { methods: MfaSignI
               <p className="hint">
                 {mode === "recovery_code"
                   ? "One of the codes you saved when you set up two-factor sign-in. Each works once."
-                  : "Six digits; a new one every 30 seconds."}
+                  : mode === "email"
+                    ? "Sent to your email address. It works once, for 10 minutes."
+                    : "Six digits; a new one every 30 seconds."}
               </p>
             </div>
             <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
               {act.pending ? "Checking…" : "Verify"}
             </button>
+            {mode === "email" && (
+              <p className="small" style={{ textAlign: "center" }}>
+                <ErrorBox error={send.error} title="Could not send the code" />
+                <button type="button" className="btn btn-link" disabled={send.pending} onClick={() => void send.run(() => api.post("/auth/mfa/email/send"))}>
+                  Send another code
+                </button>
+              </p>
+            )}
           </form>
         )}
         {!expired && (
@@ -247,6 +281,7 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
       )}
       <PasskeysSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
       <AppSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
+      {(st.email || st.email_offered) && <EmailSection st={st} reload={reload} onAdded={added} />}
       {(st.totp || st.passkeys.length > 0) && <RecoveryCodesSection st={st} onCodes={setCodes} />}
       <BypassNote st={st} />
     </>
@@ -301,7 +336,7 @@ function PasskeysSection({
                     {pk.clone_warning_at && (
                       <Notice kind="warn">
                         A sign-in with this passkey was refused <RelativeTime iso={pk.clone_warning_at} />: its counter went backwards, which can mean the key
-                        was copied. It signs in no more: remove it, and add the key again if it is yours.
+                        was copied. It signs in no more. {PASSKEY_COPIED_FIX.join(" ")}
                       </Notice>
                     )}
                   </div>
@@ -467,6 +502,100 @@ function AppSection({ st, reload, onAdded, onCodes }: { st: MfaStatus; reload: (
         </>
       )}
     </section>
+  );
+}
+
+/** Email codes: the fallback, only for people with no passkey or app. */
+function EmailSection({ st, reload, onAdded }: { st: MfaStatus; reload: () => void; onAdded: () => void }) {
+  const [mode, setMode] = useState<"idle" | "on" | "off">("idle");
+  const { refresh } = useAuth();
+  return (
+    <section className="mfa-method" aria-labelledby="mfa-email">
+      <h3 id="mfa-email">Email codes (fallback)</h3>
+      {mode === "on" ? (
+        <EmailEnrol onCancel={() => setMode("idle")} onDone={() => (setMode("idle"), void refresh(), onAdded())} />
+      ) : mode === "off" ? (
+        <PasswordConfirm
+          label="Turn off email codes"
+          danger
+          hint="Your other sessions are signed out."
+          run={(password) => api.del("/auth/mfa/email", { password }).then(() => true)}
+          onDone={() => (setMode("idle"), reload(), void refresh())}
+          onCancel={() => setMode("idle")}
+        />
+      ) : st.email ? (
+        <>
+          <p>
+            <strong>On</strong>. A six-digit code is emailed to you after your password. A passkey or an authenticator app is stronger; setting one up turns
+            email codes off.
+          </p>
+          <button type="button" className="btn btn-sm btn-link-danger" onClick={() => setMode("off")}>
+            Turn off
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="hint">
+            If you cannot use a passkey or an authenticator app, a six-digit code can be emailed to you after your password instead. Anyone who can read your
+            email can then sign in with your password, so use it only as a fallback.
+          </p>
+          <button type="button" className="btn" onClick={() => setMode("on")}>
+            Use email codes
+          </button>
+        </>
+      )}
+    </section>
+  );
+}
+
+/** Password, then a code by email to confirm the address works. */
+function EmailEnrol({ onCancel, onDone }: { onCancel: () => void; onDone: () => void }) {
+  const [sent, setSent] = useState(false);
+  const [code, setCode] = useState("");
+  const act = useAction();
+  if (!sent) {
+    return (
+      <PasswordConfirm
+        label="Email me a code"
+        hint="We send a code to your email address to check it reaches you."
+        run={(password) => api.post("/auth/mfa/email", { password }).then(() => true)}
+        onDone={() => setSent(true)}
+        onCancel={onCancel}
+      />
+    );
+  }
+  const confirm = async (e: FormEvent) => {
+    e.preventDefault();
+    const ok = await act.run(() => api.post("/auth/mfa/email/confirm", { code: code.trim() }).then(() => true));
+    if (ok) onDone();
+  };
+  return (
+    <form className="form inline-form" onSubmit={confirm}>
+      <ErrorBox error={act.error} title="Could not turn on email codes" />
+      <div className="field">
+        <label htmlFor="email-code">Code from the email</label>
+        <input
+          id="email-code"
+          autoComplete="one-time-code"
+          inputMode="numeric"
+          maxLength={7}
+          required
+          autoFocus
+          className="mono"
+          value={code}
+          onChange={(e) => setCode(e.target.value)}
+        />
+        <p className="hint">It works once, for 10 minutes. Your other sessions are signed out.</p>
+      </div>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary" disabled={act.pending}>
+          Turn on
+        </button>
+        <button type="button" className="btn" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </form>
   );
 }
 
@@ -660,6 +789,8 @@ export function MfaEnrolmentPage() {
   const accepted = me?.mfa_accepted ?? ["passkey", "totp"];
   const canPasskey = accepted.includes("passkey") && res.data?.passkeys_available !== false && passkeysSupported();
   const canApp = accepted.includes("totp");
+  const canEmail = accepted.includes("email") && res.data?.email_offered === true;
+  const [email, setEmail] = useState(false);
   const done = (c: string[] | null) => (c ? setCodes(c) : void refresh());
   return (
     <div className="center-screen">
@@ -672,14 +803,21 @@ export function MfaEnrolmentPage() {
             <p>
               {me?.workspace?.name ?? "Your organisation"} requires {methodList(accepted)} to sign in. Set one up to continue; it takes a minute.
             </p>
-            {canPasskey && !app && (
+            {email ? (
+              <>
+                <h2>Email codes</h2>
+                <EmailEnrol onCancel={() => setEmail(false)} onDone={() => void refresh()} />
+              </>
+            ) : null}
+            {!email && canPasskey && !app && (
               <>
                 <h2>A passkey (recommended)</h2>
                 <p className="hint">Your fingerprint, face, device PIN or a security key. It cannot be phished.</p>
                 <AddPasskey onCancel={() => void logout()} onDone={done} />
               </>
             )}
-            {canApp &&
+            {!email &&
+              canApp &&
               (app || !canPasskey ? (
                 <>
                   <h2>An authenticator app</h2>
@@ -692,7 +830,14 @@ export function MfaEnrolmentPage() {
                   </button>
                 </p>
               ))}
-            {!canPasskey && !canApp && (
+            {!email && canEmail && (
+              <p className="small">
+                <button type="button" className="btn btn-link" onClick={() => setEmail(true)}>
+                  No phone or security key? Use email codes
+                </button>
+              </p>
+            )}
+            {!canPasskey && !canApp && !canEmail && (
               <Notice kind="warn">
                 {res.data?.passkeys_unavailable ?? "None of the methods your organisation accepts can be set up here."} Ask an administrator.
               </Notice>
@@ -712,6 +857,8 @@ export function MfaEnrolmentPage() {
 export function MfaStepUpPage() {
   const { me, logout, refresh } = useAuth();
   const accepted = me?.mfa_accepted ?? [];
+  // Email codes only when the account uses them (the code goes there).
+  const usable = accepted.filter((m) => m !== "email" || (me?.user?.mfa_methods ?? []).includes("email"));
   return (
     <div className="center-screen">
       <div className="auth-card form">
@@ -719,7 +866,7 @@ export function MfaStepUpPage() {
         <p>
           {me?.workspace?.name ?? "Your organisation"} requires {methodList(accepted)} to sign in, and this session used something else.
         </p>
-        <ConfirmFactor methods={accepted} recovery={me?.mfa_recovery_accepted ?? true} onDone={refresh} />
+        <ConfirmFactor methods={usable} recovery={me?.mfa_recovery_accepted ?? true} onDone={refresh} />
         <p className="small" style={{ textAlign: "center" }}>
           <button type="button" className="btn btn-link" onClick={() => void logout()}>
             Sign out
@@ -732,13 +879,17 @@ export function MfaStepUpPage() {
 
 /**
  * Confirms the session with a second factor the account has: a passkey, a
- * code from the app, or (where recovery is set) a recovery code.
+ * code from the app or the email, or (where recovery is set) a recovery
+ * code.
  */
 function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; recovery: boolean; onDone: () => Promise<void> | void }) {
   const passkey = methods.includes("passkey") && passkeysSupported();
   const app = methods.includes("totp");
+  const email = methods.includes("email");
   const [code, setCode] = useState("");
   const act = useAction();
+  const send = useAction();
+  const [sent, setSent] = useState(false);
   const withPasskey = async () => {
     const ok = await act.run(async () => {
       const begin = await api.post<{ options: unknown }>("/auth/mfa/step-up/passkey/begin");
@@ -753,7 +904,7 @@ function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; re
     if (ok !== undefined) await onDone();
     else setCode("");
   };
-  const codeForm = app || recovery;
+  const codeForm = email || app || recovery;
   return (
     <>
       <ErrorBox error={act.error} title="That did not work" />
@@ -762,17 +913,32 @@ function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; re
           {act.pending ? "Waiting for your passkey…" : "Use a passkey"}
         </button>
       )}
+      {email && (
+        <>
+          <ErrorBox error={send.error} title="Could not send the code" />
+          <button
+            type="button"
+            className="btn btn-primary btn-block"
+            disabled={send.pending}
+            onClick={() => void send.run(() => api.post("/auth/mfa/step-up/email/send").then(() => setSent(true)))}
+          >
+            {sent ? "Send another code" : "Email me a code"}
+          </button>
+        </>
+      )}
       {codeForm ? (
         <form onSubmit={withCode} className="form">
           <div className="field">
             <label htmlFor="stepup-code">
-              {app && recovery
-                ? passkey
-                  ? "Or a code from your authenticator app, or a recovery code"
-                  : "A code from your authenticator app, or a recovery code"
-                : app
-                  ? "Or a code from your authenticator app"
-                  : "Lost your passkey? A recovery code"}
+              {email
+                ? "Code from the email"
+                : app && recovery
+                  ? passkey
+                    ? "Or a code from your authenticator app, or a recovery code"
+                    : "A code from your authenticator app, or a recovery code"
+                  : app
+                    ? "Or a code from your authenticator app"
+                    : "Lost your passkey? A recovery code"}
             </label>
             <input
               id="stepup-code"
@@ -783,7 +949,7 @@ function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; re
               value={code}
               onChange={(e) => setCode(e.target.value)}
             />
-            {!app && <p className="hint">You can then set up a new passkey.</p>}
+            {!app && !email && <p className="hint">You can then set up a new passkey.</p>}
           </div>
           <button type="submit" className="btn btn-block" disabled={act.pending}>
             Verify
@@ -890,8 +1056,20 @@ export function RequireMfaCard() {
               <input type="checkbox" checked={f.methods.includes("totp")} onChange={(e) => toggle("totp", e.target.checked)} />
               Authenticator app
             </label>
+            <label className="check">
+              <input
+                type="checkbox"
+                checked={f.methods.includes("email")}
+                disabled={!d.email_available && !f.methods.includes("email")}
+                onChange={(e) => toggle("email", e.target.checked)}
+              />
+              Email code (fallback)
+            </label>
           </div>
-          <p className="hint">Recovery codes count wherever a passkey or the app does.</p>
+          <p className="hint">
+            A recovery code counts where the passkey or app it backs up does. Email codes are only for people with no other method, and never count for admins,
+            security or instance administrators.{!d.email_available && " This server cannot send email, so they are not available."}
+          </p>
           {!d.passkeys_available && d.passkeys_unavailable && <p className="hint">{d.passkeys_unavailable}</p>}
         </fieldset>
         <div className="field">

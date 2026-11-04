@@ -160,7 +160,17 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ar := s.firstWorkspace(r, uid)
-	method, ok, why, err := s.checkSecondFactor(r, uid, req.Code)
+	var method, why string
+	var ok bool
+	if on, err2 := s.Store.HasEmailMFA(r.Context(), uid); err2 != nil {
+		err = err2
+	} else if on {
+		// Email codes are only ever an account's sole method.
+		method, why = store.MFAEmail, "invalid"
+		ok, err = s.Store.UseChallengeEmailCode(r.Context(), c.Value, store.EmailCodeHash(c.Value, normaliseCode(req.Code)))
+	} else {
+		method, ok, why, err = s.checkSecondFactor(r, uid, req.Code)
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -171,7 +181,7 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
-		_ = s.Store.Audit(ar.Context(), userActor(r, u), "auth.mfa_failed", "user", itoa(uid), map[string]any{"reason": why})
+		_ = s.Store.Audit(ar.Context(), userActor(r, u), "auth.mfa_failed", "user", itoa(uid), map[string]any{"reason": why, "method": method})
 		if left == 0 {
 			s.clearMFACookie(w)
 			writeError(w, 401, "mfa_expired", "too many wrong codes; enter your email and password again")
@@ -189,6 +199,9 @@ func (s *Server) verifyMFA(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.loginSucceeded(r, u)
+	if method == store.MFAEmail && s.emailCodesAvailable() {
+		s.notifyEmailCodeSignIn(r, u)
+	}
 	s.startSessionWith(w, r, u, store.SessionOpts{Login: login, MFA: method}, signInDetail(login, map[string]any{"mfa": method}))
 }
 
@@ -327,6 +340,10 @@ type mfaStatus struct {
 	PasskeysUnavailable string `json:"passkeys_unavailable,omitempty"`
 	// RPID is the domain passkeys are registered for.
 	RPID string `json:"rp_id,omitempty"`
+	// EmailOffered: the person may turn email codes on (the fallback);
+	// EmailUnavailable says why not.
+	EmailOffered     bool   `json:"email_offered"`
+	EmailUnavailable string `json:"email_unavailable,omitempty"`
 	// ConfirmFirst says why this session must confirm with a factor the
 	// account has (POST /auth/mfa/step-up...) before it may add or remove
 	// one ("" when it may).
@@ -381,6 +398,12 @@ func (s *Server) mfaStatusOf(r *http.Request, u *store.User) (*mfaStatus, error)
 		if (mfaCase{Policy: pol, Role: access.OrgRole, ProjectRole: access.ProjectRole, InstanceAdmin: u.InstanceAdmin}).required() {
 			out.RequiredBy = append(out.RequiredBy, m.Name)
 		}
+	}
+	if out.EmailOffered, out.EmailUnavailable, err = s.emailCodeOffer(r, u, st.Methods); err != nil {
+		return nil, err
+	}
+	if st.Email {
+		out.EmailOffered, out.EmailUnavailable = false, ""
 	}
 	if out.ConfirmFirst, err = s.factorChangeBlocked(r, u); err != nil {
 		return nil, err
@@ -508,10 +531,18 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	hadEmail, err := s.Store.HasEmailMFA(r.Context(), u.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	issued, err := s.Store.EnableTOTP(r.Context(), u.ID, step, hashes)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if hadEmail {
+		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFAEmail}, "reason": "replaced by the authenticator app"})
 	}
 	if !issued {
 		codes = nil
@@ -522,7 +553,11 @@ func (s *Server) confirmTOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.auditAccount(r, u, "auth.mfa_enabled", map[string]any{"method": "totp", "other_sessions_ended": ended, "recovery_codes_issued": issued})
-	s.notifyFactorChange(r, u.Email, "An authenticator app was set up for two-factor sign-in", "")
+	change := "An authenticator app was set up for two-factor sign-in"
+	if hadEmail {
+		change += " (it replaces email codes, which were turned off)"
+	}
+	s.notifyFactorChange(r, u.Email, change, "")
 	s.answerFactorChange(w, r, u, map[string]any{"recovery_codes": codes, "other_sessions_ended": ended})
 }
 
@@ -765,6 +800,7 @@ func (s *Server) mfaPublicRoutes(r chi.Router) {
 	r.Post("/auth/mfa/verify", s.verifyMFA)
 	r.Post("/auth/mfa/passkey/begin", s.beginPasskeySecondFactor)
 	r.Post("/auth/mfa/passkey/finish", s.finishPasskeySecondFactor)
+	r.Post("/auth/mfa/email/send", s.sendSignInEmailCode)
 	r.Post("/auth/passkey/begin", s.beginPasswordless)
 	r.Post("/auth/passkey/finish", s.finishPasswordless)
 }
@@ -780,7 +816,11 @@ func (s *Server) mfaAccountRoutes(r chi.Router) {
 	r.Post("/auth/mfa/passkeys/finish", s.finishPasskeyRegistration)
 	r.Patch("/auth/mfa/passkeys/{id}", s.renamePasskey)
 	r.Delete("/auth/mfa/passkeys/{id}", s.removePasskey)
+	r.Post("/auth/mfa/email", s.beginEmailMFA)
+	r.Post("/auth/mfa/email/confirm", s.confirmEmailMFA)
+	r.Delete("/auth/mfa/email", s.removeEmailMFA)
 	r.Post("/auth/mfa/step-up", s.stepUpCode)
+	r.Post("/auth/mfa/step-up/email/send", s.sendStepUpEmailCode)
 	r.Post("/auth/mfa/step-up/passkey/begin", s.beginPasskeyStepUp)
 	r.Post("/auth/mfa/step-up/passkey/finish", s.finishPasskeyStepUp)
 }
@@ -797,7 +837,8 @@ func init() {
 		"POST /api/v1/auth/mfa/totp/confirm", "DELETE /api/v1/auth/mfa/totp", "POST /api/v1/auth/mfa/recovery-codes",
 		"POST /api/v1/auth/mfa/passkeys/begin", "POST /api/v1/auth/mfa/passkeys/finish", "PATCH /api/v1/auth/mfa/passkeys/{id}",
 		"DELETE /api/v1/auth/mfa/passkeys/{id}", "POST /api/v1/auth/mfa/step-up", "POST /api/v1/auth/mfa/step-up/passkey/begin",
-		"POST /api/v1/auth/mfa/step-up/passkey/finish"} {
+		"POST /api/v1/auth/mfa/step-up/passkey/finish", "POST /api/v1/auth/mfa/email", "POST /api/v1/auth/mfa/email/confirm",
+		"DELETE /api/v1/auth/mfa/email", "POST /api/v1/auth/mfa/step-up/email/send"} {
 		projectRoutes[r] = accountScope
 	}
 }

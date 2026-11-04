@@ -84,6 +84,12 @@ Signs in with `email` and `password` and starts a session (cookie). Limited per 
 
 `{"code": "123456"}`, or a recovery code: starts the session and answers the user, as `POST /auth/login` does. 401 `mfa_invalid` for a wrong or already-used code; after five, or after five minutes, 401 `mfa_expired` (sign in again). Limited per address and to ten codes per account in 15 minutes. See [Two-factor sign-in](install.md#two-factor-sign-in).
 
+### `POST /auth/mfa/email/send`
+
+**Who:** anyone with the challenge cookie from `POST /auth/login`
+
+For an account that uses email codes (`methods` is `["email"]`): emails a six-digit code, valid for 10 minutes and once, with the subject "Someone is signing in to Stackurity"; `POST /auth/mfa/verify` takes it. 204. One code every 30 seconds and five per sign-in (409), six per account in 15 minutes and limited per address (429); 409 `no_email_codes` for other accounts; 503 `email_failed` when the mail cannot be sent. Every sign-in with an email code is followed by an email saying so. Audited as `auth.mfa_email_sent`.
+
 ### `POST /auth/mfa/passkey/begin`
 
 **Who:** anyone with the challenge cookie from `POST /auth/login`
@@ -120,11 +126,29 @@ The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`,
 
 Changes your own password (`current_password`, `new_password`). Your other sessions are signed out and this one gets a new session cookie. `revoke_assistants` (default `true`) disconnects your AI assistants; `revoke_tokens` (default `false`) revokes your API tokens. Answers 200 with `revoked` (`sessions`, `tokens`, `assistants`) and `tokens_kept`.
 
+### `GET /auth/sessions`
+
+**Who:** any signed-in user (browser session; an API token gets 403)
+
+Your browser sessions that are still signed in, newest sign-in first: `items`, each with `id` (names the session here, and stays the same when it gets a new cookie; it is not its cookie and signs nothing in), `current` (the session making this request), `login_method` (`password`, `passkey`, `invite`, `signup`, `social` or `sso`; empty for a session from an older release), `mfa_method` (the second factor it was confirmed with, if any), `user_agent` and `ip` (the browser and client address at sign-in; behind a trusted proxy the address it forwarded, see [install.md](install.md#client-addresses-behind-a-proxy)), `organisation` (for a session pinned by an organisation's single sign-on), `signed_in_at`, `last_seen_at` (updated at most once a minute) and `expires_at`. A session pinned by an organisation's single sign-on lists only the sessions pinned to that organisation (`pinned` is `true`). API tokens are not sessions: see `GET /tokens`.
+
+### `DELETE /auth/sessions/{id}`
+
+**Who:** any signed-in user (browser session)
+
+Signs out one of your other sessions at once: its next request is signed out. 404 for an ID that is not one of your sessions (or not one a pinned session may see), or that has ended; 409 `current_session` for the session making the request (use `POST /auth/logout`). Audited as `auth.session_revoked` with the session's `id`.
+
+### `POST /auth/sessions/revoke-others`
+
+**Who:** any signed-in user (browser session)
+
+Signs out all your sessions except this one (from a pinned session: the others pinned to the same organisation). Answers `sessions_ended`. API tokens and AI assistants keep working. Audited as `auth.other_sessions_revoked` in each of your organisations.
+
 ### `GET /auth/mfa`
 
 **Who:** any signed-in user (browser session)
 
-Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email`, `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), `confirm_first` (present when this session must confirm with a factor you have, `POST /auth/mfa/step-up…`, before it adds or removes one: a session whose sign-in never asked for your factors, such as single sign-on, or one an organisation of yours asks to confirm; such changes answer 403 `mfa_step_up_required`), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
+Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`, `name`, `backed_up` for a synced passkey, `discoverable`, `created_at`, `last_used_at` and `clone_warning_at`), `totp` and `enabled_at` (the app), `email` (email codes are on), `email_offered` (you may turn them on; `email_unavailable` says why not), `recovery_codes_left`; `required` and `accepted` (what the current organisation asks of you), `need` (`enrol` or `step_up` for this session), `required_by` (organisations whose policy your factors must keep meeting); `available` (the server has `STACKURITY_SECRET_KEY`, which the app needs), `passkeys_available` (with `passkeys_unavailable` saying why not, and `rp_id`, the domain passkeys are registered for), `confirm_first` (present when this session must confirm with a factor you have, `POST /auth/mfa/step-up…`, before it adds or removes one: a session whose sign-in never asked for your factors, such as single sign-on, or one an organisation of yours asks to confirm; such changes answer 403 `mfa_step_up_required`), and how many `tokens` and `assistants` you have (they are not asked for a second factor).
 
 ### `POST /auth/mfa/totp`
 
@@ -168,11 +192,35 @@ Your two-factor methods: `enabled` (any), `methods`, `passkeys` (each with `id`,
 
 `{"password": "..."}`: removes one of your passkeys. 409 `mfa_required` when your remaining factors would no longer meet the policy of one of your organisations. The recovery codes go with your last passkey or app. Your other sessions end. Audited as `auth.passkey_removed`.
 
+### `POST /auth/mfa/email`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: emails a code that turns email codes on (204), the fallback second factor. 409 `email_codes_unavailable` (with why) unless the server can send email, you have no passkey or authenticator app, you are not an instance administrator, and one of your organisations allows email codes for your role (never for security or admin).
+
+### `POST /auth/mfa/email/confirm`
+
+**Who:** any signed-in user (browser session)
+
+`{"code": "123456"}` from that email (only in the session that asked for it): turns email codes on and answers `status` and `other_sessions_ended`. Your other sessions end, and this one gets a new session cookie. 400 `mfa_invalid` for a wrong or expired code; five wrong codes spend it. Setting up a passkey or the app later turns email codes off. Audited as `auth.mfa_enabled` with `"method": "email"`.
+
+### `DELETE /auth/mfa/email`
+
+**Who:** any signed-in user (browser session)
+
+`{"password": "..."}`: turns email codes off. 409 `mfa_required` when your organisation's policy needs them. Audited as `auth.mfa_disabled`.
+
+### `POST /auth/mfa/step-up/email/send`
+
+**Who:** any signed-in user (browser session)
+
+For an account that uses email codes: emails a code for `POST /auth/mfa/step-up`, which works only in this session. 204.
+
 ### `POST /auth/mfa/step-up`
 
 **Who:** any signed-in user (browser session)
 
-`{"code": "123456"}` or a recovery code: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`), or before changing factors (`confirm_first`). A recovery code is refused (409 `recovery_code_not_accepted`, not used up) where only a passkey counts for an admin who has one (`mfa_recovery_accepted` false on `GET /auth/me`): another admin resets a lost passkey. Audited as `auth.mfa_step_up`.
+`{"code": "123456"}`, a recovery code, or for an account that uses email codes the code emailed by `POST /auth/mfa/step-up/email/send`: this session counts as signed in with it from now on (a new session cookie), for an organisation whose policy asks for it (`mfa_step_up_required`), or before changing factors (`confirm_first`). A recovery code is refused (409 `recovery_code_not_accepted`, not used up) where only a passkey counts for an admin who has one (`mfa_recovery_accepted` false on `GET /auth/me`): another admin resets a lost passkey. Audited as `auth.mfa_step_up`.
 
 ### `POST /auth/mfa/step-up/passkey/begin`
 
@@ -995,7 +1043,7 @@ The same action on up to 500 findings (`ids`).
 
 **Who:** viewer
 
-[Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`.
+[Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were scanned for keys at all. With none, an empty list means nothing was checked yet, not that no keys were found.
 
 ### `POST /leaks/{id}/dismiss`
 
@@ -1017,6 +1065,15 @@ Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `enviro
 
 - `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
 - `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
+
+A `no_fix` group with application packages (npm, PyPI, Composer and the like; not operating system packages) carries `no_fix_advice`: what can be done about each package without a fixed version, from stored data only. Its `action` says the same in one paragraph.
+
+- `sections`, in this order, each with `kind`, `title`, `issues` (distinct issues) and `items` (one per package and version: `component`, `version`, `issues`, `text`):
+  - `renamed`: for every issue of the package, the advisory lists another package of the same ecosystem with a fixed version: `move_to` and `fixed_version`, the highest fixed release it lists ("Fixed in @babel/traverse 7.23.2; babel-traverse gets no fix: move to @babel/traverse.").
+  - `unmaintained`: the registry marks the package deprecated (`deprecated`, its notice quoted as published, which may name a successor), or it has had no release for the risk policy's `unmaintained_months` (default 24; `last_release`). The section's `title` names the rule ("No release for 24 months or more (your risk policy)", "Deprecated by the maintainers", or both), and `unmaintained_months` is set when the policy's cutoff applied.
+  - `no_fix_yet`: neither; no fixed release yet.
+  - Any item may carry `workaround`, the advisory's own workaround or mitigation section quoted as written, and `workaround_source`, the advisory it is from.
+- `bundled`, when packages were found inside the application's own dependency tree and the project does not list them itself: `app`, `app_version` (from the application's package.json or composer.json, which agents report from this release), `app_dir`, `latest_version` (the application's newest release, when release data for a package of its name has one newer than `app_version`), `text`, and `commands` that show which top-level dependency pulls each package in (`pnpm why`, `npm ls`, `yarn why`, `composer why`, `go mod why -m` or `cargo tree -i`, chosen from where each package was found). Items it applies to have `bundled: true`.
 
 ### `GET /fix-groups/summary`
 
@@ -1130,7 +1187,7 @@ Queues a full re-evaluation of the workspace's inventory.
 
 **Who:** viewer
 
-Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed). `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday`, 0–20, default 1; `prod_days_after_test`, 0–28, default 7; `timezone`, default `UTC`); it is left out for `sla`, the default ([risk.md](risk.md#due-dates-from-a-patch-calendar)).
+Priority weights (including `epss` and `epss_threshold`), thresholds, deadlines and SOS rules, with the policy `version` and `last_change` (who, when, versions, changed fields; null when never changed). `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday`, 0–20, default 1; `prod_days_after_test`, 0–28, default 7; `timezone`, default `UTC`); it is left out for `sla`, the default ([risk.md](risk.md#due-dates-from-a-patch-calendar)). `unmaintained_months` (6 to 120, default 24, left out while it is the default) is how long without a release makes a package unmaintained in the advice for issues with no fixed version ([Unmaintained packages](risk.md#unmaintained-packages)).
 
 ### `PUT /risk-policy`
 
@@ -1166,7 +1223,7 @@ The organisation's two-factor policy: `policy` (`optional`, `everyone`, or `admi
 
 **Who:** admin
 
-Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (email codes never count for admins), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. A policy that requires a factor needs a method that works on this server (409 `mfa_methods_unavailable`). An API token may make the policy stricter, not weaker (403 `session_required`). Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
+Any of `policy`, `methods` and `phishing_resistant_admins`; `{"require_mfa": true}` or `false` alone still works (`everyone` or `optional`). The methods must include `passkey` or `totp` (`email` codes never count for security, admin or instance-admin roles), and `phishing_resistant_admins` needs `passkey` among them (400). Allowing `email` needs a server that can send email (409 `email_unavailable`). Turning on `phishing_resistant_admins` needs the Enterprise plan (402 `plan_required`); once on, it stays enforced if the plan lapses and can always be turned off. A policy that requires a factor needs a method that works on this server (409 `mfa_methods_unavailable`). An API token may make the policy stricter, not weaker (403 `session_required`). Your own account must meet the new policy, with the session you are using: 409 `mfa_required` (set one up first) or `mfa_step_up_required` (sign in again with it). Audited as `settings.mfa_policy` (`before` and `after`), and as `settings.require_mfa` when whether anything is required changes.
 
 ## Projects and people
 

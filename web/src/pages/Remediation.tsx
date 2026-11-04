@@ -31,6 +31,7 @@ import {
   TargetLabel,
 } from "../components/Remediation";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { automaticFixesEmpty } from "../emptyCopy";
 import { NoTeamsHint } from "../components/Teams";
 import { confirmAction } from "../components/ConfirmDialog";
 
@@ -78,6 +79,7 @@ export function AutomaticFixesPage() {
 const LIMIT = 50;
 
 export function PlansTab() {
+  const { can } = useAuth();
   const [params, setParams] = useSearchParams();
   const navigate = useNavigate();
   const status = params.get("status") ?? "proposed";
@@ -162,7 +164,7 @@ export function PlansTab() {
       <ErrorBox error={res.error} title="Could not load plans" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={status === "proposed" ? "No automatic fixes waiting for approval" : "No automatic fixes yet"} help="remediation-overview" helpLabel="How automatic fixes work">
+        <EmptyState {...automaticFixesEmpty(status === "proposed", can("security"))} help="remediation-overview" helpLabel="How automatic fixes work">
           <p>
             Automatic fixes are upgrades Stackurity makes for you: it proposes a plan when a policy covers open issues, waits for approval
             (unless the policy approves on its own), then rolls the change out to a canary host first and checks the result.

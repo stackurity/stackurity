@@ -6,6 +6,7 @@ import { MyEmailPreferences } from "./EmailPreferences";
 import { LinkedSlackAccounts } from "./SlackLink";
 import { TwoFactorCard } from "./TwoFactor";
 import { PasswordCard } from "./Password";
+import { ActiveSessionsCard } from "./Sessions";
 import { SocialConnectionsCard } from "./Social";
 
 /**
@@ -16,7 +17,7 @@ export function AccountPage() {
   const { me, meta } = useAuth();
   const { hash } = useLocation();
 
-  // Links to #slack, #mfa, #sign-in or #email land on that section once it is on screen.
+  // Links to #slack, #mfa, #sessions, #sign-in or #email land on that section once it is on screen.
   useEffect(() => {
     if (!hash) return;
     const t = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ block: "start" }), 50);
@@ -53,6 +54,7 @@ export function AccountPage() {
       </Card>
       <PasswordCard />
       <TwoFactorCard />
+      <ActiveSessionsCard />
       {meta?.social && <SocialConnectionsCard />}
       {meta?.email_preferences && <MyEmailPreferences />}
       <section id="slack" className="card">

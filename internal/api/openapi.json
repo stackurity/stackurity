@@ -2494,6 +2494,96 @@
     }
    }
   },
+  "/auth/sessions": {
+   "get": {
+    "operationId": "get_auth_sessions",
+    "summary": "Your active browser sessions",
+    "description": "Your active browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/sessions/revoke-others": {
+   "post": {
+    "operationId": "post_auth_sessions_revoke_others",
+    "summary": "Sign out all your other browser sessions",
+    "description": "Sign out all your other browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/sessions/{id}": {
+   "delete": {
+    "operationId": "delete_auth_sessions_id",
+    "summary": "Sign out one of your other browser sessions",
+    "description": "Sign out one of your other browser sessions\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/auth/password-reset": {
    "post": {
     "operationId": "post_auth_password_reset",
@@ -5053,7 +5143,7 @@
    "get": {
     "operationId": "get_fix_groups",
     "summary": "Fixes (fix groups), most urgent first",
-    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer",
+    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer A `no_fix` group with application packages carries `no_fix_advice`: `sections` (`renamed`, `unmaintained`, `no_fix_yet`, each with `title`, `issues`, `items` and, for `unmaintained`, the risk policy's `unmaintained_months` when it applied) and `bundled` (the application the packages come with, and `commands` that show what pulls each in).",
     "tags": [
      "Findings and fixes"
     ],
@@ -7869,7 +7959,7 @@
    "get": {
     "operationId": "get_risk_policy",
     "summary": "The risk policy: priority weights, thresholds, deadlines and SOS rules",
-    "description": "Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday` 0-20, default 1; `prod_days_after_test` 0-28, default 7; `timezone`, default `UTC`), and is left out for `sla`, the default (risk.md). `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed)\n\nRole: viewer",
+    "description": "Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday` 0-20, default 1; `prod_days_after_test` 0-28, default 7; `timezone`, default `UTC`), and is left out for `sla`, the default (risk.md). `unmaintained_months` (6-120, default 24, left out while it is the default) is how long without a release makes a package unmaintained in a `no_fix` group's `no_fix_advice`; a change applies at the next action plan rebuild, within about a minute. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed)\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -7896,7 +7986,7 @@
    "put": {
     "operationId": "put_risk_policy",
     "summary": "Replace the risk policy",
-    "description": "Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday` 0-20, default 1; `prod_days_after_test` 0-28, default 7; `timezone`, default `UTC`), and is left out for `sla`, the default (risk.md). `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed)\n\nRole: admin",
+    "description": "Priority weights, thresholds, deadlines and SOS rules, with the policy `version`. `due_dates` is `patch_calendar` when non-urgent findings are due at their asset's next patch window, set by `patch_calendar` (`test_days_after_patch_tuesday` 0-20, default 1; `prod_days_after_test` 0-28, default 7; `timezone`, default `UTC`), and is left out for `sla`, the default (risk.md). `unmaintained_months` (6-120, default 24, left out while it is the default) is how long without a release makes a package unmaintained in a `no_fix` group's `no_fix_advice`; a change applies at the next action plan rebuild, within about a minute. `PUT` replaces the policy (fields left out take their defaults; unknown fields are rejected), returns `version`, `previous_version` and the `changed` fields, and writes a `risk_policy.update` audit event holding the policy before and after. `GET` includes `last_change` (who, when, versions, changed fields; null when never changed)\n\nRole: admin",
     "tags": [
      "Findings and fixes"
     ],
@@ -11373,6 +11463,152 @@
     }
    }
   },
+  "/auth/mfa/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_email_send",
+    "summary": "Second step of a password sign-in: email a six-digit code",
+    "description": "With the challenge cookie from `POST /auth/login`, for an account that uses email codes: emails a code valid for 10 minutes; then `POST /auth/mfa/verify` with it\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email": {
+   "post": {
+    "operationId": "post_auth_mfa_email",
+    "summary": "Turn on email codes (password): emails a code to confirm",
+    "description": "Turn on email codes (password): emails a code to confirm\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_auth_mfa_email",
+    "summary": "Turn off email codes (password)",
+    "description": "Turn off email codes (password)\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/email/confirm": {
+   "post": {
+    "operationId": "post_auth_mfa_email_confirm",
+    "summary": "Turn on email codes with the code emailed",
+    "description": "Turn on email codes with the code emailed\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/auth/mfa/step-up/email/send": {
+   "post": {
+    "operationId": "post_auth_mfa_step_up_email_send",
+    "summary": "Email a code that confirms this session",
+    "description": "Email a code that confirms this session\n\nRole: any signed-in user (session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user (session)",
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/credentials/health": {
    "get": {
     "operationId": "get_credentials_health",
@@ -14631,7 +14867,7 @@
    "get": {
     "operationId": "get_ask_usage_calls",
     "summary": "Ask Stackurity model calls of this organisation",
-    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
+    "description": "This organisation's Ask Stackurity model calls. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -14744,7 +14980,7 @@
    "get": {
     "operationId": "get_admin_ask_calls",
     "summary": "Ask Stackurity model calls on this server",
-    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`. Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
+    "description": "Every organisation's Ask Stackurity model calls on this server. `items`: one per model call, newest first, with `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once deleted), `kind` (`answer`, `summary` or `triage`, the small call that asks whether a short follow-up says the last answer was wrong), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros` (millionths of a US dollar), `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code`, `request_id`, `step_up_reason` (why this answer moved to a stronger model: `complex`, `rephrased`, `dissatisfied`, `not_found`, `tool_error`, `thumbs_down`, `stopped`; empty when it did not) and `stepped_from` (the model it moved from). Metadata only: never a question, an answer or tool results. Kept 90 days (then daily totals, kept two years). `format=csv` returns the same as a CSV file\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],

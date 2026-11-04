@@ -20,12 +20,12 @@ export const ARTICLES: Article[] = [
       },
       {
         steps: [
-          "**Create your first project.** A name, and a description if you like. A project groups what belongs together: a site, a product or a client.",
-          "**Add something to check.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
-          "**Wait for it to report.** The page shows what has arrived, how many packages, and when the check is done.",
-          "**Read the first result.** For example \"We found 1,676 packages on commmerceblog. 3 fixes matter now.\", with links to them.",
-          "**Turn on notifications.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Integrations](/integrations).",
-          "**Invite people.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
+          "**Create a project.** A name, and a description if you like. Use a project for a product, a client, an environment or a team.",
+          "**Add a server or repo.** **A Linux server**: one install command, first results in about 2 minutes. **A code repository**: a token for your CI and a GitHub Actions step (or the `stackurity scan` command), first results on the next CI run. **Upload an SBOM**: a CycloneDX or SPDX file, first results in under a minute. Whatever you add here lands in the project.",
+          "**First check.** The page counts what has arrived as it happens: agent connected, components found, issues found, fixes recommended. Vulnerability data is downloaded for the software found; until it has synced, the page says how many components wait for it.",
+          "**Review fixes.** \"Your first check is done\": assets, components, issues and coverage, with a link to the top recommended fix.",
+          "**Choose alerts.** Slack (**Add to Slack**, or a webhook) or email. Choose what to send right away (urgent issues, all new issues, or nothing) and a daily or weekly summary (or none). They cover this project only; fine-tune them later in [Integrations](/integrations).",
+          "**Invite your team.** By email: they see this project with the permission you choose (or more, if you add it). They get a link that works once, for 7 days.",
         ],
       },
       { h: "A quiet first scan" },
@@ -149,7 +149,8 @@ export const ARTICLES: Article[] = [
       {
         p: "When a fix can't be applied yet, record why: **Snooze** it until a date or until a fix ships, or **Ignore** it with a reason, a scope and an expiry (see [Snooze and ignore](help:exceptions) and [Ignore issues](help:ignore-issues)). Engineers and viewers use **Ask to ignore**, which goes to the [approval inbox](help:approvals).",
       },
-      { p: "Top fixes also says how many issues it does not show and why (no free fix yet, kernels that are not running, assets that are not production, lower priority, snoozed or accepted). Every number is a link to the list it counts." },
+      { p: "Top fixes also says how many issues it does not show and why (no fix in the standard updates yet, kernels that are not running, assets that are not production, lower priority, snoozed or ignored). Every number is a link to the list it counts. \"No fix in the standard updates\" means no fixed version is published yet, or the vendor publishes it only in a paid support subscription such as Ubuntu Pro; the fix page says what to do meanwhile." },
+      { p: "Words with a dotted underline (SOS, incident, issue, fix) show their meaning when you point at them; the [Glossary](help:glossary) has the rest. Under the title, **vulnerability data updated** says when the newest data source last synced. A warning appears there when a source is out of date or failing; open [Data sources](/intelligence) to see which (see [Coverage, Intelligence feeds and gaps](help:coverage-intelligence))." },
       { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Activity**) daily and acknowledge new ones, so escalations don't fire." },
     ],
   },
@@ -273,6 +274,33 @@ export const ARTICLES: Article[] = [
       },
       { h: "What it does on Windows" },
       { p: "See [Add a Windows server](help:windows-hosts)." },
+      { h: "What the agent reads and sends", id: "agent" },
+      {
+        list: [
+          "**Reads and sends:** the server's name and machine ID, its operating system version, packages and installed programs, and on Linux and macOS runtimes such as Node.js or Python installed outside the package manager: their names, versions and where they were found, not file contents. Websites and apps and their libraries (on by default), and the images of running Docker containers (only if ticked).",
+          "**Keys and passwords** written into those apps' files are reported by file, line, setting and kind of key, with a fingerprint and, for a key, a masked preview such as `sk_live_…4f2a`. The value itself never leaves the server. `--no-leaks` (or `STACKURITY_NO_LEAKS=true`) turns this off.",
+          "**Changes nothing:** it never installs, removes or changes software. Automatic fixing is a separate paid feature (Pro) for Linux that needs the agent to run as root with `--remediate`, a token an admin binds to that server, and an allowlist file on the server itself; the install command never turns it on.",
+          "**Runs as** its own unprivileged account: `stackurity` on Linux, `_stackurity` on macOS, `NT SERVICE\\StackurityAgent` on Windows. Only the install needs root or an administrator. Checking Docker containers gives it the Docker socket, which is equivalent to root.",
+          "**Connects to** this Stackurity server only, over HTTPS unless you allow plain HTTP: no telemetry and no update checks. Each pull request checks this by running the agent against a server that records every connection.",
+          "**Reports** when it starts and every 6 hours. In between, about once a minute, it asks the server whether someone pressed **Check again**.",
+          "`stackurity agent --once --output -` prints what it collects without sending it.",
+        ],
+      },
+      { h: "Remove the agent", id: "uninstall" },
+      {
+        code: `sudo systemctl disable --now stackurity-agent
+sudo rm -f /etc/systemd/system/stackurity-agent.service /usr/local/bin/stackurity
+sudo systemctl daemon-reload
+sudo rm -rf /etc/stackurity
+sudo userdel stackurity`,
+        label: "Remove the agent on Linux",
+      },
+      { code: "curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh", label: "Remove the agent on macOS" },
+      {
+        code: "[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072; $env:STACKURITY_UNINSTALL = '1'; irm https://stackurity.example.com/install/agent.ps1 | iex",
+        label: "Remove the agent on Windows (PowerShell as administrator)",
+      },
+      { p: "**Add server** shows these commands with your server's address. The server stays under **Assets** until you delete it there, and its token works until you revoke it under **Integrations → API tokens**." },
       { h: "Requirements" },
       {
         list: [
@@ -1669,7 +1697,7 @@ jobs:
     section: "Settings and administration",
     summary: "Passkeys, security keys, an authenticator app and recovery codes, and how an organisation can require them.",
     where: ["Your account", "Two-factor methods"],
-    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing",
+    keywords: "2fa mfa two factor passkey security key yubikey webauthn fido touch id face id windows hello totp authenticator app recovery codes phishing email code otp",
     body: [
       { p: "A second factor means someone who learns your password still cannot sign in as you. Set yours up under [Your account](/account#mfa)." },
       { h: "Add a passkey (recommended)" },
@@ -1692,6 +1720,10 @@ jobs:
       { h: "Authenticator app" },
       {
         p: "Under **Authenticator app**, click **Set up an authenticator app**, enter your password, scan the QR code with 1Password, Google Authenticator, Microsoft Authenticator or a similar app, and type the six-digit code it shows.",
+      },
+      { h: "Email codes (fallback)" },
+      {
+        p: "If your organisation allows them and you cannot use a passkey or an authenticator app, **Use email codes** sends a six-digit code to your email address after your password. It is weaker: anyone who can read your email could use it. Setting up a passkey or an app turns email codes off, and admins and security members cannot use them. You get an email each time you sign in with one.",
       },
       { h: "Rename or remove a method" },
       {

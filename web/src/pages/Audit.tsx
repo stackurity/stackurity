@@ -5,6 +5,7 @@ import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { auditEmpty } from "../emptyCopy";
 
 const LIMIT = 50;
 
@@ -73,7 +74,7 @@ export function AuditPage() {
       </div>
       <ErrorBox error={res.error} title="Could not load audit log" />
       {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No audit events" />}
+      {res.data && res.data.items.length === 0 && <EmptyState {...auditEmpty(Boolean(objectType))} />}
       {res.data && res.data.items.length > 0 && (
         <>
           <Table caption="Audit events" columns={columns} rows={res.data.items} rowKey={(e) => e.id} />

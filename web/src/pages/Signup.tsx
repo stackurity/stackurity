@@ -164,6 +164,7 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
             : "Create your organisation."}{" "}
           You can invite your team and add servers, repositories and images right after.
         </p>
+        <SignupFacts signup={signup} />
         {social && (
           <>
             {/* The provider confirms the address: no password and no email to wait for. */}
@@ -254,7 +255,6 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
           </p>
         )}
         <Challenge siteKey={signup.turnstile_site_key} onToken={setToken} resetKey={resetKey} />
-        <p className="small muted">Your data is stored in {signup.region_label}.</p>
         <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
           {act.pending ? "Creating…" : "Create account"}
         </button>
@@ -263,6 +263,58 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
         </p>
       </form>
     </div>
+  );
+}
+
+/**
+ * What a new organisation should know before it signs up: what happens when
+ * the trial ends (as the Terms say; cloud state.go decides it), where the
+ * prices are, where its data is kept, and the free self-hosted edition.
+ * Everything comes from the service's configuration.
+ */
+export function SignupFacts({ signup }: { signup: SignupMeta }) {
+  const pricing = safeLink(signup.pricing_url);
+  const selfHosted = safeLink(signup.self_hosted_url);
+  const days = signup.delete_after_days;
+  return (
+    <ul className="banner-list small">
+      {signup.trial_days ? (
+        <li>
+          After the trial, choose a plan to carry on
+          {pricing && (
+            <>
+              {" "}
+              (
+              <a href={pricing} target="_blank" rel="noopener noreferrer">
+                see plans and prices
+              </a>
+              )
+            </>
+          )}
+          . Without one, your organisation becomes read-only: you can still sign in and see your data, but nothing new is collected and no
+          alerts are sent.{days ? ` We keep the data for ${days} days so you can choose a plan, then delete it.` : ""}
+        </li>
+      ) : (
+        pricing && (
+          <li>
+            <a href={pricing} target="_blank" rel="noopener noreferrer">
+              See plans and prices
+            </a>
+            .
+          </li>
+        )
+      )}
+      {signup.region_label && <li>Your data is stored in {signup.region_label}.</li>}
+      {selfHosted && (
+        <li>
+          Want to run it yourself?{" "}
+          <a href={selfHosted} target="_blank" rel="noopener noreferrer">
+            The self-hosted Community edition is free
+          </a>
+          .
+        </li>
+      )}
+    </ul>
   );
 }
 

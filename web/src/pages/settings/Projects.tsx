@@ -19,6 +19,7 @@ import { AssetPicker } from "../../components/AssetPicker";
 import { InvitationList, InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { PROJECTS_EMPTY } from "../../emptyCopy";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 /*
@@ -172,7 +173,7 @@ export function ProjectsPage() {
         <ErrorBox error={list.error} title="Could not load projects" />
         {!list.data && !list.error && <Loading />}
         {list.data && projects.length === 0 && (
-          <EmptyState title="No projects yet">
+          <EmptyState {...PROJECTS_EMPTY} action={creating ? undefined : { ...PROJECTS_EMPTY.action!, onClick: () => setCreating(true) }}>
             <p>Create a project for each site, client or product, add its assets, then give people access to it.</p>
           </EmptyState>
         )}
