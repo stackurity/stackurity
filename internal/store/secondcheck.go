@@ -31,8 +31,9 @@ const secondCheckWanted = `f.status = 'open' AND f.kind IN ('vulnerability', 'en
 // SecondCheckRules is the version of internal/secondcheck's rules, stored
 // with each result (independent.checker). Raise it whenever those rules
 // change: every check made under older rules is then redone on the next
-// runs, so a false disagreement clears itself (2: kernel source packages).
-const SecondCheckRules = 2
+// runs, so a false disagreement clears itself (2: kernel source packages;
+// 3: Oracle Linux records limited to some architectures).
+const SecondCheckRules = 3
 
 // secondCheckMaxAge is how long a check stands when the match has not
 // changed: advisory records can change without changing the match.

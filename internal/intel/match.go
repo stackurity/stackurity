@@ -486,9 +486,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// Advisories with a fix per version line, one affected entry per line.
 	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
 	perLine := oracle || program
-	oracleBuild := ""
+	oracleBuild, arch := "", ""
 	if oracle {
 		oracleBuild = osv.OracleBuild(t.Version)
+		if pu, err := packageurl.FromString(r.Purl); err == nil {
+			arch = pu.Qualifiers.Map()["arch"]
+		}
 	}
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
@@ -497,6 +500,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		recordChannel := ""
 		if oracle {
 			if recordChannel = osv.OracleChannel(a.Ecosystem); recordChannel != "" && recordChannel != oracleBuild {
+				continue
+			}
+			// An entry for other architectures (a fix built for aarch64 only,
+			// the Red Hat compatible kernel, which Oracle ships for x86_64
+			// only) does not describe this package.
+			if !osv.OracleArchApplies(osv.OracleConditionsOf(a.Affected).Arch, arch) {
 				continue
 			}
 		}

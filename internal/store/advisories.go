@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -34,7 +35,12 @@ const storedFormat = "2"
 // with the finding. The package is in the row's own columns; severities,
 // ecosystem_specific and database_specific are read once, when the record
 // is synced, to rate the advisory (osv.Rate), and the rating is stored on
-// the advisory.
+// the advisory. The exception is an Oracle Linux entry's ecosystem_specific:
+// the conditions Oracle's data sets besides the version (osv.OracleConditions:
+// architecture, signing key, module stream), which the matcher and the second
+// check read. It is a few dozen bytes, shared by most entries, and changes
+// only Oracle Linux advisories' stored form (their content hash covers it,
+// so the next sync rewrites them once).
 //
 // Identical values are stored once: most entries repeat across releases and
 // advisories (an Ubuntu record lists the same versions for each channel).
@@ -42,13 +48,18 @@ const storedFormat = "2"
 // advisory_packages.affected until their advisory is next stored; they read
 // the same.
 type StoredAffected struct {
-	Ranges   []osv.Range `json:"ranges,omitempty"`
-	Versions []string    `json:"versions,omitempty"`
+	Ranges            []osv.Range     `json:"ranges,omitempty"`
+	Versions          []string        `json:"versions,omitempty"`
+	EcosystemSpecific json.RawMessage `json:"ecosystem_specific,omitempty"`
 }
 
 // CompactAffected returns the stored form of an affected entry.
 func CompactAffected(a osv.Affected) []byte {
-	b, _ := json.Marshal(StoredAffected{Ranges: a.Ranges, Versions: a.Versions})
+	sa := StoredAffected{Ranges: a.Ranges, Versions: a.Versions}
+	if strings.HasPrefix(a.Package.Ecosystem, "Oracle Linux:") && !osv.OracleConditionsOf(a).Empty() {
+		sa.EcosystemSpecific = a.EcosystemSpecific
+	}
+	b, _ := json.Marshal(sa)
 	return b
 }
 

@@ -62,6 +62,10 @@ type rawAffected struct {
 		Events []map[string]string `json:"events"`
 	} `json:"ranges"`
 	Versions []string `json:"versions"`
+	// Conditions Oracle Linux records carry besides their ranges.
+	Specific struct {
+		Arch []string `json:"arch"`
+	} `json:"ecosystem_specific"`
 }
 
 // verdict is one record's answer.
@@ -121,6 +125,9 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		var a rawAffected
 		if err := json.Unmarshal(r.Affected, &a); err != nil {
 			return couldNot("record %s could not be read", r.ID)
+		}
+		if !archApplies(a.Specific.Arch, t.arch) {
+			continue // a record for other architectures
 		}
 		var unknown rawAffected
 		if t.line != "" {
@@ -672,6 +679,31 @@ func numericLess(a, b string) bool {
 		}
 		if x != y {
 			return x < y
+		}
+	}
+	return false
+}
+
+// archApplies reads an Oracle Linux record's architectures ("arch is
+// x86_64" in Oracle's data, the host's) against an rpm's own: a 64-bit x86
+// host also runs 32-bit x86 packages, and a noarch or unreported package
+// says nothing of its host, so every record applies to it.
+func archApplies(record []string, arch string) bool {
+	if len(record) == 0 {
+		return true
+	}
+	hosts := map[string][]string{"x86_64": {"x86_64"}, "aarch64": {"aarch64"},
+		"i386": {"x86_64", "i686", "i386"}, "i486": {"x86_64", "i686", "i386"},
+		"i586": {"x86_64", "i686", "i386"}, "i686": {"x86_64", "i686", "i386"}}
+	host, known := hosts[strings.ToLower(arch)]
+	if !known {
+		return true
+	}
+	for _, h := range host {
+		for _, r := range record {
+			if r == h {
+				return true
+			}
 		}
 	}
 	return false
