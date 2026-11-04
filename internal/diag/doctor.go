@@ -190,6 +190,9 @@ type licenceState struct {
 	// self-hosted servers for a free Community key); nil when none is
 	// needed.
 	RequiredFrom *time.Time
+	// Key is that need evaluated as the server does (license.Requirement):
+	// an upgraded server's grace period also counts its running time.
+	Key *license.KeyStatus
 }
 
 func readLicence(ctx context.Context, st *store.Store, cfg Config) (licenceState, error) {
@@ -216,19 +219,24 @@ func readLicence(ctx context.Context, st *store.Store, cfg Config) (licenceState
 	if err := st.Pool.QueryRow(ctx, `SELECT to_regclass('license_requirement') IS NOT NULL`).Scan(&exists); err != nil || !exists {
 		return s, err
 	}
-	var from time.Time
-	err := st.Pool.QueryRow(ctx, `SELECT required_from FROM license_requirement WHERE id = 1`).Scan(&from)
-	switch {
-	case err == nil:
-		s.RequiredFrom = &from
-	case errors.Is(err, pgx.ErrNoRows):
-		// The row is written once by the migration; without it a key is
-		// needed now.
-		now := time.Now()
-		s.RequiredFrom = &now
-	default:
+	from, upgraded, observed, err := st.LicenseRequirement(ctx)
+	if err != nil {
 		return s, err
 	}
+	if from.IsZero() {
+		// The row is written once by the migration; without it a key is
+		// needed now.
+		from = time.Now()
+	}
+	s.RequiredFrom = &from
+	var h license.Holder
+	if s.Err == nil {
+		h.Set(l)
+	}
+	q := &license.Requirement{From: from, Upgraded: upgraded, Licence: &h}
+	q.SetObserved(observed)
+	ks := q.Status()
+	s.Key = &ks
 	return s, nil
 }
 
@@ -267,18 +275,25 @@ func checkLicence(ctx context.Context, st *store.Store, cfg Config) Result {
 		res.Detail = "Detection, alerting and the free features keep working; paid features are off."
 		res.Next = "Renew the licence and install the new key, or remove it to run as Community."
 	}
-	if s.RequiredFrom != nil && (l == nil || s.Err != nil) {
+	if s.Key != nil && s.Key.State != license.KeyInstalled {
 		// A key is needed and none verifies: the dashboard and API wait
-		// for one from RequiredFrom (agents and scans keep uploading).
+		// for one once the grace period ends (agents and scans keep
+		// uploading). A key that does not verify keeps its title.
 		res.Next = "Enter a free Community key or a licence under Settings → Licence, or with stackurity admin set-license " +
 			"(an air-gapped server can get its key on any other computer)."
-		if time.Now().Before(*s.RequiredFrom) {
+		var title, detail string
+		if s.Key.State == license.KeyGraceTime {
 			res.Status = Warn
-			res.Title = "No licence key yet: this server needs a free Community key or a licence by " + s.RequiredFrom.Format("2006-01-02")
+			title = "No licence key yet: this server needs a free Community key or a licence by " + s.Key.GraceEnds.Format("2006-01-02")
 		} else {
 			res.Status = Fail
-			res.Title = "No licence key: the dashboard and API wait for a free Community key or a licence"
-			res.Detail = "Agents, CLI scans and uploads keep working, and their data is kept."
+			title = "No licence key: the dashboard and API wait for a free Community key or a licence"
+			detail = "Agents, CLI scans and uploads keep working, and their data is kept."
+		}
+		if s.Err != nil {
+			res.Detail = strings.TrimSpace(res.Detail + " " + title + ". " + detail)
+		} else {
+			res.Title, res.Detail = title, detail
 		}
 	}
 	return res

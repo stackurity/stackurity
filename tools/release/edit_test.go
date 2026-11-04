@@ -189,8 +189,8 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, f := range append(lint, filepath.Join(root, "tools", "releaselint", "doc.go")) {
-		if strings.HasSuffix(f, "packs_test.go") {
-			continue // needs internal/packs; not touched by a release
+		if strings.HasSuffix(f, "packs_test.go") || strings.HasSuffix(f, "communitykey_test.go") {
+			continue // need internal/packs and internal/license; not touched by a release
 		}
 		b, _ := os.ReadFile(f)
 		if err := os.WriteFile(filepath.Join(dir, "tools", "releaselint", filepath.Base(f)), b, 0o644); err != nil {

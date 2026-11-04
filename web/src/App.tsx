@@ -22,6 +22,9 @@ import { EmailPreferencesPage } from "./pages/EmailPreferences";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
+import { CommunityKeyPage, VerifyCommunityKeyPage } from "./pages/CommunityKey";
+import { KeyStepPage } from "./pages/KeyStep";
+import { CommunityKeysPage } from "./pages/admin/CommunityKeys";
 import { PickRepositoriesPage, SocialConfirmPage, SocialSignupPage } from "./pages/Social";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
@@ -142,6 +145,13 @@ export function App() {
   const signup = "meta" in state ? state.meta.signup : undefined;
   if (signup && pathname === "/signup/verify" && (state.phase === "login" || state.phase === "ready")) return <VerifySignupPage />;
   if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} social={"meta" in state ? state.meta.social : undefined} />;
+  // A free key for a self-hosted server, where the server hands them out
+  // (Stackurity Cloud): no account needed, signed in or not.
+  const communityKeys = "meta" in state ? state.meta.community_keys : undefined;
+  if (communityKeys && pathname === "/self-hosted-key" && (state.phase === "login" || state.phase === "ready"))
+    return <CommunityKeyPage meta={communityKeys} />;
+  if (communityKeys && pathname === "/self-hosted-key/verify" && (state.phase === "login" || state.phase === "ready"))
+    return <VerifyCommunityKeyPage />;
   // Signing up and connecting through Google, Microsoft or GitHub (a hosted edition).
   const social = "meta" in state ? state.meta.social : undefined;
   if (signup && social && pathname === "/signup/social" && (state.phase === "login" || state.phase === "ready")) return <SocialSignupPage signup={signup} />;
@@ -199,6 +209,9 @@ export function App() {
   // confirm with the method it requires.
   if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
   if (state.phase === "ready" && state.me.mfa_step_up_required) return <MfaStepUpPage />;
+  // A self-hosted server without its key waits for one (agents and scans
+  // keep sending data meanwhile).
+  if (state.phase === "ready" && state.me.license_key?.state === "required") return <KeyStepPage status={state.me.license_key} />;
 
   switch (state.phase) {
     case "loading":
@@ -511,6 +524,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <LicensePage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="admin/self-hosted-keys"
+          element={
+            <RequireInstanceAdmin>
+              <CommunityKeysPage />
             </RequireInstanceAdmin>
           }
         />
