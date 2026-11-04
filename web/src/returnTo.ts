@@ -10,6 +10,7 @@
  */
 export function safeReturn(value: string | null | undefined): string | null {
   const v = (value ?? "").trim();
+  // oxlint-disable-next-line no-control-regex -- rejects control characters on purpose
   if (!v.startsWith("/") || /[\u0000-\u001f\\]/.test(v)) return null;
   let path: string;
   try {

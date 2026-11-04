@@ -3790,7 +3790,7 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
       credentials: "same-origin",
       body: body === undefined ? undefined : form ? (body as FormData) : JSON.stringify(body),
     });
-  } catch (e) {
+  } catch {
     throw new ApiError(0, "network", "Could not reach the Stackurity server. Check that it is running.");
   }
   if (res.status === 204) return undefined as T;

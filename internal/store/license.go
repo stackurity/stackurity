@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/jackc/pgx/v5"
@@ -13,7 +14,7 @@ import (
 func (s *Store) LicenseKey(ctx context.Context) (string, error) {
 	var k string
 	err := s.Pool.QueryRow(ctx, `SELECT key FROM license_key WHERE id = 1`).Scan(&k)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
 	return k, err
@@ -62,7 +63,7 @@ func (s *Store) LicenseRequirement(ctx context.Context) (from time.Time, upgrade
 	var secs int64
 	err = s.Pool.QueryRow(tenant.System(ctx), `SELECT required_from, upgraded, observed_seconds FROM license_requirement WHERE id = 1`).
 		Scan(&from, &upgraded, &secs)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return time.Time{}, false, 0, nil
 	}
 	return from, upgraded, time.Duration(secs) * time.Second, err
@@ -76,7 +77,7 @@ func (s *Store) TickLicenseRequirement(ctx context.Context, maxStep time.Duratio
 		SET observed_seconds = observed_seconds + LEAST(GREATEST(extract(epoch FROM now() - last_tick), 0), $1)::bigint,
 		    last_tick = now()
 		WHERE id = 1 RETURNING observed_seconds`, int64(maxStep/time.Second)).Scan(&secs)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return 0, nil
 	}
 	return time.Duration(secs) * time.Second, err
