@@ -1,0 +1,23 @@
+// Lint for the dashboard (oxlint: ESLint's rules, without a dependency on
+// the TypeScript compiler, which typescript-eslint needs and does not
+// support at 7.x). CI runs `npm run lint` in the web job.
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "unicorn", "oxc"],
+  "categories": { "correctness": "error" },
+  "rules": {
+    "react-hooks/rules-of-hooks": "error",
+    "react-hooks/exhaustive-deps": "error",
+    // Rows are [label, node] tuples that the table renders with keys.
+    "react/jsx-key": "off",
+    // React Compiler rules; the dashboard does not use the compiler.
+    "react/set-state-in-effect": "off",
+    "react/refs": "off",
+    "react/purity": "off",
+    "react/use-memo": "off",
+    "react/preserve-manual-memoization": "off",
+    // Style preferences, not defects.
+    "unicorn/prefer-string-starts-ends-with": "off",
+    "unicorn/no-useless-fallback-in-spread": "off"
+  }
+}

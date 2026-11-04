@@ -1062,10 +1062,6 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 		sections = append(sections, Section{Title: "New issues", Items: items})
 	}
 	if len(conn) > 0 {
-		var ids []int64
-		for _, a := range conn {
-			ids = append(ids, a.ID)
-		}
 		byA := map[int64][]store.FixInfo{}
 		for _, f := range data.fixes {
 			byA[f.AssetID] = append(byA[f.AssetID], f)

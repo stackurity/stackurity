@@ -24,9 +24,8 @@ export function AssetSelect({
   assets: Asset[] | undefined;
   allLabel?: string;
 }) {
-  const list = assets ?? [];
-  const d = useMemo(() => assetDistinctions(list), [list]);
-  const groups = useMemo(() => groupAssetsByKind(list), [list]);
+  const d = useMemo(() => assetDistinctions(assets ?? []), [assets]);
+  const groups = useMemo(() => groupAssetsByKind(assets ?? []), [assets]);
   return (
     <select id={id} value={value} onChange={(e) => onChange(e.target.value)}>
       <option value="">{allLabel}</option>
