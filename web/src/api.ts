@@ -1068,6 +1068,21 @@ export interface Relation {
   created_at: string;
 }
 
+/** GET /assets/{id}/link-suggestions: an application probably built from a repository. */
+export interface LinkSuggestion {
+  application: { id: number; name: string };
+  repository: { id: number; name: string };
+  /** 0 to 1; the server returns only pairs at 0.45 or more. */
+  score: number;
+  /** The package name both give themselves ("npm:shop"), if any. */
+  same_package_name?: string;
+  /** Share of direct dependencies that match; 0 when too few match to count. */
+  dependency_match_percent: number;
+  dependencies_matched: number;
+  dependencies_compared: number;
+  similar_name: boolean;
+}
+
 export const DRIFT_STATUSES = ["behind", "only_there", "differs", "ahead", "only_here"] as const;
 export type DriftStatus = (typeof DRIFT_STATUSES)[number];
 

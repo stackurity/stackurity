@@ -841,6 +841,34 @@ Removes a relation.
 
 Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
 
+### `GET /assets/{id}/link-suggestions`
+
+**Who:** viewer
+
+Suggested links between a deployed application and the repository it was probably built from. For an application with no `built_from` relation: up to three repositories, best first; for a repository, the applications that have it among their suggestions. Nothing is linked until someone accepts one.
+
+```json
+{"items": [{"application": {"id": 23, "name": "lighthouse-service on analytics-lighthouse"},
+  "repository": {"id": 11, "name": "lighthouse"}, "score": 0.6, "same_package_name": "npm:lighthouse-service",
+  "dependency_match_percent": 100, "dependencies_matched": 12, "dependencies_compared": 12, "similar_name": true}]}
+```
+
+A suggestion is scored from three signals: the same package name in both manifests (`package_names`, weight 0.6; generic names such as `app` or `server` do not count), the share of direct dependencies that match (weight 0.5, counted only when at least 3 match at the same version; a component at different versions counts half), and name similarity (weight 0.1, a tiebreak only). Only pairs scoring 0.45 or more are returned: the same package name alone, or at least 90% of direct dependencies matching (70% when the names are alike). Dismissed pairs are left out.
+
+The package names come from the root manifests (`package.json`, `composer.json`, `go.mod`, `pubspec.yaml`, `pyproject.toml`, `Cargo.toml`) as the asset attribute `package_names` (`npm:shop,pub:shop_app`): `stackurity scan` and repository integrations record a repository's, the agent an application's (with a Flutter web build's package name from its `version.json`).
+
+### `POST /assets/{id}/link-suggestions/{other}/accept`
+
+**Who:** engineer on both assets
+
+Links the application to the repository (`{id}` and `{other}` are the two, in either order): adds the `built_from` relation with source `confirmed:<who>` and records the audit event `asset.link_suggestion_accept`. 204.
+
+### `POST /assets/{id}/link-suggestions/{other}/dismiss`
+
+**Who:** engineer on both assets
+
+Records that the application is not built from the repository, so the pair is not suggested again (audit event `asset.link_suggestion_dismiss`). Accepting the pair later removes the dismissal. 204.
+
 ### `GET /assets/{id}/leaks`
 
 **Who:** viewer
