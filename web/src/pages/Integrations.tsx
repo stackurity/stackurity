@@ -14,7 +14,13 @@ import {
   type RegistryDiscovery,
   type RegistryImage,
   type RegistryProvider,
+  NO_GITHUB_APP,
+  NO_GITLAB,
+  type GitHubAppStatus,
+  type GitLabStatus,
 } from "../api";
+import { InstallOnGitHubButton } from "./settings/GitHubApp";
+import { ConnectGitLabButton } from "./settings/GitLab";
 import { useAuth } from "../auth";
 import { useAction, useJobRunner, useLoad } from "../hooks";
 import { minutesLabel } from "../format";
@@ -434,8 +440,22 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
     const ok = await act.run(() => api.post<Integration>("/integrations", bodyOf("git_repository", c, config)));
     if (ok) onCreated();
   };
+  const gh = useLoad(() => api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP), []).data ?? NO_GITHUB_APP;
+  const gl = useLoad(() => api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB), []).data ?? NO_GITLAB;
   return (
     <FormShell title="Add Git repository" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
+      {(gh.configured || gl.configured) && (
+        <Notice kind="info">
+          <p>
+            On {gh.configured && gl.configured ? "GitHub or GitLab" : gh.configured ? "GitHub" : "GitLab"}? Connect instead: no token to paste, and repositories are rescanned when a lockfile
+            changes. Use the form below for other Git hosts.
+          </p>
+          <div className="form-actions">
+            {gh.configured && <InstallOnGitHubButton />}
+            {gl.configured && <ConnectGitLabButton />}
+          </div>
+        </Notice>
+      )}
       <div className="form-grid">
         <div className="field field-span">
           <label htmlFor="gi-url">Repository URL</label>

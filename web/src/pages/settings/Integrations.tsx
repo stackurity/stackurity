@@ -146,11 +146,18 @@ interface AddCard {
   admin?: boolean;
   /** Short instructions shown on this page instead of a link. */
   panel?: Panel;
-  /** Shown after the card's link (admins). */
-  extra?: ReactNode;
+  /** Shown instead of the card's link (admins). */
+  button?: ReactNode;
 }
 
 type Panel = "ci" | "sbom" | "gcp" | "azure";
+
+/** The card's button word: Add for something new, Connect for an account elsewhere, Show steps for instructions. */
+function actionLabel(c: AddCard, open: boolean): string {
+  if (c.panel) return open ? "Close" : c.panel === "ci" || c.panel === "sbom" ? "Show steps" : "Connect";
+  if (c.to === "/integrations/plugins") return "Open";
+  return c.to.startsWith("/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" ? "Add" : "Connect";
+}
 
 const PANEL_TITLE: Record<Panel, string> = {
   ci: "Scan in a CI pipeline",
@@ -276,6 +283,14 @@ export function IntegrationsHubPage() {
     if (back) navigate(`/integrations/channels/${back}?added=1`, { replace: true });
   }, [back, navigate]);
 
+  // The steps open below every card: bring them into view and put the cursor in the first field.
+  useEffect(() => {
+    if (!panel) return;
+    const el = document.getElementById(`int-panel-${panel}`);
+    el?.scrollIntoView({ behavior: "smooth", block: "start" });
+    el?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
+  }, [panel]);
+
   const rows: Active[] = [
     ...serverRows(hosts.data),
     ...(sources.data?.items ?? []).map(fromSource),
@@ -349,25 +364,19 @@ export function IntegrationsHubPage() {
     cards: [
       { kind: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
       { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
-      gh.configured
-        ? {
-            kind: "git",
-            title: "Git repository",
-            text: "Install on GitHub and pick repositories there: no token, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
-            to: "/integrations/sources",
-            admin: true,
-            extra: <InstallOnGitHubButton />,
-          }
-        : gl.configured
-        ? {
-            kind: "git",
-            title: "Git repository",
-            text: "Connect GitLab and pick a group: every project in it, no token to paste, rescanned when a lockfile changes. Or clone any Git host over HTTPS with a token.",
-            to: "/integrations/sources",
-            admin: true,
-            extra: <ConnectGitLabButton />,
-          }
-        : { kind: "git", title: "Git repository", text: "Clone over HTTPS and read lockfiles on a schedule.", to: "/integrations/sources", admin: true },
+      ...(gh.configured
+        ? [{ kind: "git", title: "GitHub", text: "Install the Stackurity app and pick repositories. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <InstallOnGitHubButton /> }]
+        : []),
+      ...(gl.configured
+        ? [{ kind: "git", title: "GitLab", text: "Pick a group: every project in it, subgroups included. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <ConnectGitLabButton /> }]
+        : []),
+      {
+        kind: "git",
+        title: gh.configured || gl.configured ? "Other Git host" : "Git repository",
+        text: "Clone any Git host over HTTPS with a read-only token, and read lockfiles on a schedule.",
+        to: "/integrations/sources",
+        admin: true,
+      },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
       { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations/sources?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
@@ -410,7 +419,7 @@ export function IntegrationsHubPage() {
           <h3 className="int-group">{g.title}</h3>
           <ul className="int-cards">
             {g.cards.map((c) => (
-              <li key={c.title} className="int-card">
+              <li key={c.title} className={`int-card${c.panel && panel === c.panel ? " is-open" : ""}`}>
                 <div className="int-card-head">
                   <IntegrationIcon kind={c.kind} />
                   <strong>{c.title}</strong>
@@ -424,20 +433,15 @@ export function IntegrationsHubPage() {
                     aria-controls={`int-panel-${c.panel}`}
                     onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
                   >
-                    {panel === c.panel ? "Hide steps" : "Show steps"}
+                    {actionLabel(c, panel === c.panel)}
                   </button>
                 ) : (
                   (!c.admin || admin) &&
-                  (c.extra ? (
-                    <div className="form-actions">
-                      {c.extra}
-                      <Link className="btn btn-sm" to={c.to}>
-                        Other Git hosts
-                      </Link>
-                    </div>
+                  (c.button ? (
+                    <div className="form-actions">{c.button}</div>
                   ) : (
                     <Link className="btn btn-sm" to={c.to}>
-                      {c.to.startsWith("/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" || c.to === "/integrations/aws" ? "Add" : "Open"}
+                      {actionLabel(c, false)}
                     </Link>
                   ))
                 )}
