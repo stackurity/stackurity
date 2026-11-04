@@ -41,7 +41,7 @@ func (m *apiMailbox) token(addr string) string {
 	defer m.mu.Unlock()
 	for i := len(m.msgs) - 1; i >= 0; i-- {
 		if len(m.to[i]) == 1 && m.to[i][0] == addr {
-			if g := confirmLink.FindStringSubmatch(strings.Join(m.msgs[i].Summary, " ")); g != nil {
+			if g := confirmLink.FindStringSubmatch(m.msgs[i].Link); g != nil {
 				return g[1]
 			}
 		}
@@ -193,7 +193,7 @@ func TestEmailConfirmationLimits(t *testing.T) {
 	}
 	// The address says never again: blocked for every organisation.
 	token := box.token("target@example.com")
-	if !strings.Contains(strings.Join(box.msgs[0].Summary, " "), "#"+token) {
+	if !strings.HasSuffix(box.msgs[0].Link, "/email/confirm#"+token) || box.msgs[0].LinkLabel != "Confirm email" {
 		t.Fatal("no confirmation link")
 	}
 	anon := e.anon()
