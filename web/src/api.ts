@@ -647,6 +647,8 @@ export interface OrgSSO {
   service_provider?: { entity_id: string; acs_url: string; metadata_url: string; login_url: string };
   domains: OrgSSODomain[];
   owner_id: number;
+  /** What switching requiring on just revoked (existing_tokens "revoke" only). */
+  revoked?: { api_tokens: number; assistant_connections: number; slack_links: number };
 }
 
 export interface OrgSSOChange {
@@ -3812,7 +3814,8 @@ export const api = {
   meta: () => request<Meta>("GET", "/meta"),
   orgSSO: () => request<OrgSSO>("GET", "/sso"),
   saveOrgSSO: (b: OrgSSOChange) => request<OrgSSO>("PUT", "/sso", b),
-  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean }) => request<OrgSSO>("PUT", "/sso/state", b),
+  /** existing_tokens is required when requiring single sign-on is switched on, and refused otherwise. */
+  setOrgSSOState: (b: { enabled: boolean; require_sso: boolean; existing_tokens?: "keep" | "revoke" }) => request<OrgSSO>("PUT", "/sso/state", b),
   deleteOrgSSO: () => request<void>("DELETE", "/sso"),
   addOrgSSODomain: (domain: string) => request<OrgSSODomain>("POST", "/sso/domains", { domain }),
   verifyOrgSSODomain: (id: number) => request<OrgSSODomain>("POST", `/sso/domains/${id}/verify`),

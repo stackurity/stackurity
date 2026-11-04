@@ -301,6 +301,8 @@ Finds where someone signs in from their `email`: the organisation that verified 
 
 The organisation's own single sign-on: `available` (the plan includes it), `config` (provider, attribute mapping, `version` and `tested_version`, `test_result`, `enabled`, `require_sso`, `link_existing`), `service_provider` (`entity_id`, `acs_url`, `metadata_url`, `login_url`), `domains` and `owner_id`.
 
+While single sign-on is required, only the owner's API token may use the `/sso` requests below that change something (`PUT`, `POST`, `DELETE`); another person's token gets 403 `sso_required`. Sessions are not affected by this rule: a session that did not come from the organisation's single sign-on cannot work in it at all, except the owner's.
+
 ### `PUT /sso`
 
 **Who:** admin · Stackurity Cloud
@@ -312,6 +314,13 @@ Saves the identity provider (`idp_metadata_url` or `idp_metadata`; neither keeps
 **Who:** admin · Stackurity Cloud
 
 Switches single sign-on (`enabled`) and requiring it (`require_sso`) on or off. Switching on needs a passed test of the current version and a verified domain.
+
+When `require_sso` goes from false to true, `existing_tokens` is required (400 without it):
+
+- `keep`: API tokens and AI assistant connections made before keep working.
+- `revoke`: members' API tokens and AI assistant connections in this organisation are revoked and their Slack accounts unlinked, in the same transaction as the change. Agents' and CI jobs' tokens stay, and so do the owner's. Slack link requests not yet confirmed are used up. The response adds `revoked` (`api_tokens`, `assistant_connections`, `slack_links`).
+
+`existing_tokens` sent at any other time is refused (400). The `sso.state` audit event records the choice and the counts.
 
 ### `DELETE /sso`
 
@@ -501,7 +510,7 @@ Your API tokens; admins see every token, including collector tokens.
 
 **Who:** any user
 
-Creates a token; the secret is returned once. A collector token can name a `project_id`: assets it creates are added to that project.
+Creates a token; the secret is returned once. A collector token can name a `project_id`: assets it creates are added to that project. On Stackurity Cloud, while the organisation requires single sign-on, an API token of anyone but the owner cannot create tokens (403 `sso_required`).
 
 ### `DELETE /tokens/{id}`
 
