@@ -31,6 +31,7 @@ import (
 
 	"github.com/package-url/packageurl-go"
 
+	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -84,10 +85,14 @@ func (s *Scanner) nestedApp(dir, p string) bool {
 
 // App is one deployed application and what it has installed.
 type App struct {
-	Dir          string // host path
-	Name         string
-	Version      string // the version its own package.json or composer.json gives, if any
-	GitURL       string // origin remote, when the directory is a Git checkout
+	Dir     string // host path
+	Name    string
+	Version string // the version its own package.json or composer.json gives, if any
+	GitURL  string // origin remote, normalised, when the directory is a Git checkout
+	// PackageNames are the names its manifests give it ("npm:shop"), and
+	// a Flutter web build's package name ("pub:shop"), which the
+	// repository it is built from gives itself too.
+	PackageNames []string
 	Observations []model.Observation
 	Coverage     []model.CoverageItem
 	Truncated    bool
@@ -452,6 +457,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 		app.Name, app.Version = n, clip(v)
 	}
 	app.GitURL = s.gitOrigin(dir)
+	app.PackageNames = s.packageNames(dir)
 
 	// Installed trees, per project directory inside the application.
 	installed := map[string]map[string]bool{} // project dir -> purl types read from installed metadata
@@ -972,37 +978,44 @@ func (s *Scanner) packageName(dir string) (name, version string) {
 	return "", ""
 }
 
-var remoteURL = regexp.MustCompile(`^\s*url\s*=\s*(\S+)\s*$`)
+// packageNames reads the names the application's manifests give it
+// (lockfile.ManifestNames) and, for a Flutter web build, the package name
+// flutter build web writes to version.json, which is the name in the
+// pubspec.yaml of the repository it was built from.
+func (s *Scanner) packageNames(dir string) []string {
+	read := func(name string) ([]byte, error) { return readLimited(s.path(path.Join(dir, name)), 1<<20) }
+	names := lockfile.ManifestNames(read)
+	if fileExists(s.path(path.Join(dir, "flutter_bootstrap.js"))) || fileExists(s.path(path.Join(dir, "main.dart.js"))) {
+		var v struct {
+			PackageName string `json:"package_name"`
+		}
+		if data, err := read("version.json"); err == nil && json.Unmarshal(data, &v) == nil && flutterPackage.MatchString(v.PackageName) {
+			names = append(names, "pub:"+v.PackageName)
+			slices.Sort(names)
+			names = slices.Compact(names)
+		}
+	}
+	return names
+}
 
-// gitOrigin reads the origin remote from .git/config, without running git.
-// Credentials embedded in the URL are dropped.
+// flutterPackage is a valid Dart package name.
+var flutterPackage = regexp.MustCompile(`^[a-z_][a-z0-9_]{0,63}$`)
+
+func fileExists(p string) bool {
+	_, err := os.Stat(p)
+	return err == nil
+}
+
+// gitOrigin reads the origin remote from .git/config, without running git,
+// normalised (gitremote.Normalize): credentials embedded in the URL are
+// dropped and an SSH remote becomes its https form, so it names the same
+// repository a scan or an integration reports.
 func (s *Scanner) gitOrigin(dir string) string {
 	data, err := readLimited(s.path(path.Join(dir, ".git", "config")), 256<<10)
 	if err != nil {
 		return ""
 	}
-	inOrigin := false
-	for _, line := range strings.Split(string(data), "\n") {
-		t := strings.TrimSpace(line)
-		if strings.HasPrefix(t, "[") {
-			inOrigin = t == `[remote "origin"]`
-			continue
-		}
-		if m := remoteURL.FindStringSubmatch(line); inOrigin && m != nil {
-			return stripCredentials(m[1])
-		}
-	}
-	return ""
-}
-
-func stripCredentials(u string) string {
-	if scheme, rest, ok := strings.Cut(u, "://"); ok {
-		if at := strings.LastIndex(strings.SplitN(rest, "/", 2)[0], "@"); at >= 0 {
-			rest = rest[at+1:]
-		}
-		return scheme + "://" + rest
-	}
-	return u
+	return gitremote.Normalize(gitremote.FromConfig(data))
 }
 
 func purlType(p string) string {

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
@@ -260,8 +261,13 @@ func redact(msg, token, user string) string {
 }
 
 // NormalizeURL lowercases the host and strips ".git" and trailing slashes,
-// so the same repository maps to one asset however it is written.
+// so the same repository maps to one asset however it is written. SSH
+// remotes (git@host:owner/repo) map to their https form, credentials are
+// dropped (gitremote.Normalize).
 func NormalizeURL(raw string) string {
+	if n := gitremote.Normalize(raw); n != "" {
+		return n
+	}
 	u, err := url.Parse(raw)
 	if err != nil {
 		return raw

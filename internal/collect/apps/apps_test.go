@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/model"
@@ -95,8 +97,8 @@ func TestScanNodeApp(t *testing.T) {
 	if m["pkg:npm/jest@29.7.0"].Scope != "dev" {
 		t.Errorf("jest scope = %q", m["pkg:npm/jest@29.7.0"].Scope)
 	}
-	if a.Name != "shop" || a.Version != "2.4.0" || a.GitURL != "https://github.com/acme/shop.git" {
-		t.Errorf("name %q version %q git %q", a.Name, a.Version, a.GitURL)
+	if a.Name != "shop" || a.Version != "2.4.0" || a.GitURL != "https://github.com/acme/shop" || !slices.Equal(a.PackageNames, []string{"npm:shop"}) {
+		t.Errorf("name %q version %q git %q names %v", a.Name, a.Version, a.GitURL, a.PackageNames)
 	}
 	validate(t, a)
 }
@@ -291,5 +293,44 @@ func validate(t *testing.T, a App) {
 	b.Observations, b.Coverage = a.Observations, a.Coverage
 	if err := b.Validate(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A deployed checkout's origin is read from .git/config alone (no git is
+// run), normalised as scans normalise it, and a token in it is dropped.
+func TestAppGitOrigin(t *testing.T) {
+	tok := strings.Join([]string{"glpat", "-", "Xr9Tb4Kc8Vn3Pw6Hy1Jd"}, "")
+	for cfg, want := range map[string]string{
+		"[remote \"origin\"]\n\turl = git@github.com:Acme/Chat.git\n":                        "https://github.com/Acme/Chat",
+		"[remote \"origin\"]\n\turl = https://oauth2:" + tok + "@gitlab.com/acme/chat.git\n": "https://gitlab.com/acme/chat",
+		"[remote \"upstream\"]\n\turl = https://github.com/other/chat\n":                     "",
+		"[remote \"origin\"]\n\turl = /srv/git/chat.git\n":                                   "",
+	} {
+		tr := newTree(t)
+		tr.file("var/www/chat/package.json", `{"name":"chat"}`)
+		tr.file("var/www/chat/.git/config", cfg)
+		a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/chat")
+		if a.GitURL != want || strings.Contains(a.GitURL, tok) {
+			t.Errorf("config %q: git %q, want %q", strings.ReplaceAll(cfg, tok, "<token>"), strings.ReplaceAll(a.GitURL, tok, "<token>"), want)
+		}
+	}
+}
+
+// A Flutter web build has no manifest of its own; flutter build web
+// writes the pubspec's name to version.json, which names the repository.
+func TestFlutterBuildPackageName(t *testing.T) {
+	tr := newTree(t)
+	tr.file("var/www/chat/flutter_bootstrap.js", `_flutter.buildConfig = {"engineRevision":"18818009497c581ede5d8a3b8b833b81d00cebb7","builds":[{"compileTarget":"dart2js","renderer":"canvaskit","mainJsPath":"main.dart.js"}]};`)
+	tr.file("var/www/chat/version.json", `{"app_name":"commmerce_chat","version":"1.0.0","build_number":"1","package_name":"commmerce_chat"}`)
+	a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/var/www/chat")
+	if !slices.Equal(a.PackageNames, []string{"pub:commmerce_chat"}) || a.Name != "chat" {
+		t.Errorf("names %v, name %q", a.PackageNames, a.Name)
+	}
+	// A version.json that is not a Flutter build's says nothing.
+	tr = newTree(t)
+	tr.file("srv/site/index.html", "<html></html>")
+	tr.file("srv/site/version.json", `{"package_name":"commmerce_chat"}`)
+	if a := (&Scanner{Root: tr.root}).ScanApp(context.Background(), "/srv/site"); len(a.PackageNames) != 0 {
+		t.Errorf("not a Flutter build: %v", a.PackageNames)
 	}
 }

@@ -376,6 +376,14 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	if err != nil {
 		return nil, err
 	}
+	if names := JoinPackageNames(ManifestNames(regularFile(dir))); names != "" {
+		attrs := make(map[string]string, len(asset.Attributes)+1)
+		for k, v := range asset.Attributes {
+			attrs[k] = v
+		}
+		attrs[PackageNamesAttr] = names
+		asset.Attributes = attrs
+	}
 	b := model.NewBatch(model.Collector{ID: CollectorID, Version: version, Method: "lockfile"}, asset)
 	b.Observations = obs
 	b.Coverage = cov
@@ -392,6 +400,22 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 		}
 	}
 	return b, nil
+}
+
+// regularFile reads a file directly in dir, refusing a symbolic link (a
+// cloned repository's package.json must not read a file outside it).
+func regularFile(dir string) func(string) ([]byte, error) {
+	return func(name string) ([]byte, error) {
+		full := filepath.Join(dir, name)
+		fi, err := os.Lstat(full)
+		if err != nil {
+			return nil, err
+		}
+		if !fi.Mode().IsRegular() || fi.Size() > maxManifest {
+			return nil, errors.New("not a regular file")
+		}
+		return os.ReadFile(full)
+	}
 }
 
 // gitIgnored returns the paths below dir that git ignores, relative to dir

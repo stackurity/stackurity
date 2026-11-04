@@ -14338,6 +14338,125 @@
     }
    }
   },
+  "/assets/{id}/link-suggestions": {
+   "get": {
+    "operationId": "get_assets_id_link_suggestions",
+    "summary": "Suggested links between an application and the repository it was probably built from",
+    "description": "For an application with no `built_from` relation: up to three repositories it was probably built from, best first. For a repository: the applications that have it among their suggestions. Each item has `application` and `repository` (`id`, `name`), `score` (0 to 1; shown from 0.45), `same_package_name`, `dependency_match_percent`, `dependencies_matched`, `dependencies_compared` and `similar_name`. Dismissed pairs are left out\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/link-suggestions/{other}/accept": {
+   "post": {
+    "operationId": "post_assets_id_link_suggestions_other_accept",
+    "summary": "Link the application to the suggested repository",
+    "description": "Adds the `built_from` relation between the application and the repository (`{id}` and `{other}`, in either order), with source `confirmed:<who>`, and records an audit event. Needs the engineer role on both assets, as adding a relation does\n\nRole: engineer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "other",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/link-suggestions/{other}/dismiss": {
+   "post": {
+    "operationId": "post_assets_id_link_suggestions_other_dismiss",
+    "summary": "Dismiss a suggested link",
+    "description": "Records that the application is not built from the repository, so the pair is not suggested again. Needs the engineer role on both assets\n\nRole: engineer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "other",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/leaks/{id}/dismiss": {
    "post": {
     "operationId": "post_leaks_id_dismiss",
