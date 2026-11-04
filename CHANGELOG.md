@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Changed
+
+- **Requiring single sign-on asks about existing tokens (Stackurity Cloud).** Ticking **Require single sign-on for members** now asks whether to keep or revoke the API tokens and AI assistant connections made before. There is no default. Revoking ends members' API tokens and AI assistant connections and unlinks their Slack accounts, in this organisation only; agents' and CI jobs' tokens and the owner's stay. The change and the revocation happen in one transaction, and the `sso.state` audit event records the choice and the counts. `PUT /sso/state` takes `existing_tokens` (`keep` or `revoke`), required when requiring single sign-on is switched on and refused otherwise; before, existing tokens always kept working. A request that changes something from a password session now always reads whether single sign-on is required from the database, so another server's cached answer cannot let it make a token after requiring started.
+
 ## 0.16.0
 
 ### Security

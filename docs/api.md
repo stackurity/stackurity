@@ -312,6 +312,13 @@ Saves the identity provider (`idp_metadata_url` or `idp_metadata`; neither keeps
 
 Switches single sign-on (`enabled`) and requiring it (`require_sso`) on or off. Switching on needs a passed test of the current version and a verified domain.
 
+When `require_sso` goes from false to true, `existing_tokens` is required (400 without it):
+
+- `keep`: API tokens and AI assistant connections made before keep working.
+- `revoke`: members' API tokens and AI assistant connections in this organisation are revoked and their Slack accounts unlinked, in the same transaction as the change. Agents' and CI jobs' tokens stay, and so do the owner's. Slack link requests not yet confirmed are used up. The response adds `revoked` (`api_tokens`, `assistant_connections`, `slack_links`).
+
+`existing_tokens` sent at any other time is refused (400). The `sso.state` audit event records the choice and the counts.
+
 ### `DELETE /sso`
 
 **Who:** admin · Stackurity Cloud
