@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.17.0
+
 ### Security
 
 > **Behaviour change for self-hosted servers: each one now needs a free key.** Get it at https://app.stackurity.dev/self-hosted-key (email, name and company; nothing about your servers is sent), paste it into the dashboard (or, with `STACKURITY_BASE_URL` set, click **Get a free key** and sign in to Stackurity Cloud: the browser brings the key back), and that is all: it is checked offline and does not expire. **Upgraded servers keep working for 30 days** without it, with a banner for administrators; new installs ask for it right after the first administrator is created. Agents, `stackurity scan`, the GitHub scan action and uploads never need it, and data they send is kept. A paid licence counts as the key. Stackurity Cloud is unaffected. See [The free key](docs/install.md#the-free-key).
