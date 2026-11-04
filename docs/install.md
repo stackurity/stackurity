@@ -1,6 +1,6 @@
 # Installing and operating Stackurity
 
-Stackurity runs as one container plus PostgreSQL. It needs no vendor account and sends no telemetry. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation, and feedback that users send on purpose; both can be turned off.
+Stackurity runs as one container plus PostgreSQL. It sends no telemetry. Each server needs a free key, from a short sign-up with your email ([The free key](#the-free-key)); the key is checked offline, so the server itself never contacts us for it. [network.md](network.md) lists every outbound call, including the update check, which sends nothing about your installation, and feedback that users send on purpose; both can be turned off.
 
 ## Requirements
 
@@ -20,7 +20,7 @@ docker compose logs stackurity | grep -A2 "one-time token"
 To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.16.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.16.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
 `cosign verify ghcr.io/stackurity/stackurity:0.16.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
-Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist.
+Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist. The dashboard then asks for the server's [free key](#the-free-key): click **Get a free key** (with `STACKURITY_BASE_URL` set), or get one at https://app.stackurity.dev/self-hosted-key from any computer and paste it in. Agents and scans can send data before the key is entered.
 
 ### TLS
 
@@ -115,7 +115,7 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_PRIVATE_CIDRS` | — | Comma-separated ranges every workspace may reach anyway, for example an internal Git server |
 | `STACKURITY_OIDC_WORKSPACE` | `1` | Workspace that people signing in through OpenID Connect single sign-on join |
 | `STACKURITY_SAML_WORKSPACE` | `1` | Workspace that people signing in through SAML single sign-on join |
-| `STACKURITY_LICENSE` / `_FILE` | — | Licence key; when set, the dashboard cannot change it |
+| `STACKURITY_LICENSE` / `_FILE` | — | The [free key](#the-free-key) or a paid licence key; when set, the dashboard cannot change it |
 | `STACKURITY_PACK_TRUSTED_KEYS` | — | File of `publisher base64-key` lines: publishers whose [stack packs](packs.md) are accepted besides official ones |
 | `STACKURITY_PACK_ALLOW_UNSIGNED` | `false` | Accept unsigned stack packs (pack development only) |
 | `STACKURITY_SESSION_IDLE_TIMEOUT` | `30m` | A browser session unused this long ends (1m to 12h, or `off`), on top of the 12 hours from sign-in ([Sessions](#sessions)) |
@@ -123,6 +123,20 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
 Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
+
+## The free key
+
+Stackurity Community is free and open source (Apache-2.0), and stays free to self-host. Each self-hosted server needs a **free key**, which you get by signing up with your email at https://app.stackurity.dev/self-hosted-key. We ask so that we know who runs Stackurity and can reach you about security fixes; it is the only thing the sign-up is for.
+
+- **What we store:** with each key issued, the email, name and company you enter, the IP address the request came from, the versions of the Terms of Service and Privacy Policy you accepted, when the key was issued and its id. That record is deleted 3 years after the key was issued (the key keeps working). Our audit log, which is permanent, records only the key's id, how it was issued and when: nothing personal. Nothing about your servers, software or findings is ever sent to us, at sign-up or later. With the one-click button below, the key's record holds your Cloud account's email and name, the IP address the confirmation came from, your organisation's accepted Terms of Service and Privacy Policy versions (from its Cloud sign-up) and a hash of a random id of the server; the server's address passes through the browser and is not stored. The key itself names only your organisation. The sign-up page uses a Cloudflare Turnstile check against automated sign-ups, and we email the key to you.
+- **Offline:** the key is a signed statement (Ed25519), checked on your server like a paid licence. The server never contacts us to check, activate or renew it, so air-gapped installs work: get the key on any computer and paste it in. It does not expire, and it is not tied to one machine or counted per install.
+- **Get a free key (one click):** where the dashboard asks for the key (or under **Settings → Licence**), an instance administrator clicks **Get a free key**. The browser goes to Stackurity Cloud (https://app.stackurity.dev/community-key/new, with the server's address, the one-time code and the server id hash after the `#`, never in a query string, so they are not in any proxy's logs); they sign in or sign up there, check the server's address it shows, and click **Send the key**. The browser comes back to `/setup/community-key` on your server with the key and installs it. Your server makes no request for this: the browser carries the key, in the part of the address after `#`, which browsers never send to any server, so it is not in Stackurity Cloud's or your proxy's logs. The server accepts it only together with the one-time code it made when the button was clicked (valid 15 minutes, once, in that administrator's browser session) and checks the key offline as if pasted. Stackurity Cloud learns the server's address (`STACKURITY_BASE_URL`, needed to send the browser back; not stored) and a hash of a random id of the server (stored with the key, so we can count servers); it only sends keys to `https` addresses, or plain `http` to `localhost` and private addresses, and shows the address before sending. The key names your organisation only (no email or name in it); it is recorded with your Cloud account and also emailed to you. The button needs `STACKURITY_BASE_URL`; without it, or with a paid licence installed, the dashboard offers pasting only.
+- **Entering it by hand:** an instance administrator pastes it where the dashboard asks for it (or under **Settings → Licence**; **Paste a key instead** next to the button), or set `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE`, or run `stackurity admin set-license`. This is the way for air-gapped servers and for browsers that cannot reach Stackurity Cloud: get the key by email at https://app.stackurity.dev/self-hosted-key on any computer. A paid Pro or Enterprise licence counts as the key.
+- **Until it is entered,** the dashboard and the API wait for it: they answer `403 key_required`, except signing in, entering the key, `/healthz`, `/readyz`, metrics, and what agents, `stackurity scan`, the GitHub scan action and other uploads use. Data they send meanwhile is kept, and notifications keep going out.
+- **Upgrading** from a version without the key: a server that already has users or data keeps working for 30 days from its first start on the new version, and instance administrators see a banner (dismissible) with the date. The 30 days are counted from the database and by the time the server has been running, so a clock that jumps forward cannot end them early, and the dashboard asks for the key only once the date has passed and the server has run for at least 7 days since the upgrade.
+- **Stackurity Cloud** (app.stackurity.dev) needs no key.
+
+The code is Apache-2.0: the check is in [internal/license](../internal/license), and you may change or remove it in your own build. The key is how we keep in touch with the people who run the official releases.
 
 ## Ask Stackurity (in-app assistant)
 
@@ -153,7 +167,7 @@ Questions and what the assistant reads to answer them go to the provider ([netwo
 
 ## Editions and licences
 
-Without a licence Stackurity runs as **Community**: all detection, intelligence, alerts, one team, the Action plan, CI gates, SBOMs, workspaces and the official stack packs. A licence adds:
+Without a paid licence Stackurity runs as **Community**: all detection, intelligence, alerts, one team, the Action plan, CI gates, SBOMs, workspaces and the official stack packs. A licence adds:
 
 | Edition | Adds |
 | --- | --- |
@@ -162,7 +176,7 @@ Without a licence Stackurity runs as **Community**: all detection, intelligence,
 
 [editions.md](editions.md) lists every capability by edition with its limits and prerequisites, and which features need the licensed build rather than only a licence.
 
-Install a licence under **Settings → Licence**, with `stackurity admin set-license` (which reads the key from `STACKURITY_LICENSE_KEY`, or asks for it, and applies it when the server restarts), or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
+Install a licence (or the free key) under **Settings → Licence**, with `stackurity admin set-license` (which reads the key from `STACKURITY_LICENSE_KEY`, or asks for it, and applies it when the server restarts), or with `STACKURITY_LICENSE` / `STACKURITY_LICENSE_FILE` (which then wins). Licences are checked on the server and never phone home. When one expires, paid features keep working for 30 days, then stop. Detection and alerts are never affected, and an asset count above the licence's limit only shows a warning.
 
 On a server that hosts several organisations, each workspace also has a **plan** (Settings → Workspaces). A workspace gets the lower of its plan and the licence; "As licensed" gives it the licence's edition.
 
@@ -1205,7 +1219,7 @@ Use **Send test** to check each channel. Adjust priorities, deadlines and SOS ru
 Everything is in PostgreSQL. The data volume only holds temporary clones. Keep two things outside the database as well:
 
 - `STACKURITY_SECRET_KEY`, if you set it. Stored workspace secrets are encrypted with it and cannot be read without it. Keep it apart from the database dumps.
-- Your licence key, if you use Pro or Enterprise (it is also stored in the database).
+- Your free key or licence key (it is also stored in the database).
 
 A backup is two files: the database, and the roles it grants privileges to. Roles belong to the PostgreSQL server, not to the database, so `pg_dump` leaves them out.
 
@@ -1291,6 +1305,8 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.1
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
 ```
+
+To give the server its [free key](#the-free-key) from a Secret rather than in the dashboard, `kubectl create secret generic stackurity-license --from-literal=key=<the key>` and add `--set license.existingSecret=stackurity-license`.
 
 The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.16.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 

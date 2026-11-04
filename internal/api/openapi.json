@@ -3,7 +3,7 @@
  "info": {
   "title": "Stackurity API",
   "version": "v1",
-  "description": "The Stackurity REST API. Requests and responses are JSON. Every operation names the role it needs (x-stackurity-role); roles apply organisation-wide or through project grants (see docs/api.md, \"Projects and access\"). Send X-Stackurity-Project: <id> (or project_id) to limit project-scoped reads to one project. Operations marked x-stackurity-edition: ee exist in the licensed build only. Response bodies are described in docs/api.md; this document lists every operation, its parameters and its authentication. AI assistants use /mcp instead (docs/ai-assistants.md).",
+  "description": "The Stackurity REST API. Requests and responses are JSON. Every operation names the role it needs (x-stackurity-role); roles apply organisation-wide or through project grants (see docs/api.md, \"Projects and access\"). Send X-Stackurity-Project: <id> (or project_id) to limit project-scoped reads to one project. Operations marked x-stackurity-edition: ee exist in the licensed build only. Response bodies are described in docs/api.md; this document lists every operation, its parameters and its authentication. AI assistants use /mcp instead (docs/ai-assistants.md). A self-hosted server without its free key or a licence answers 403 key_required on most operations, except signing in, the licence, and what agents and uploads use (docs/api.md, Conventions; docs/install.md, The free key).",
   "license": {
    "name": "Apache-2.0",
    "identifier": "Apache-2.0"
@@ -646,7 +646,7 @@
    "delete": {
     "operationId": "delete_admin_license",
     "summary": "Remove the licence key",
-    "description": "Remove the licence key\n\nRole: instance admin",
+    "description": "Remove the licence key or free key; a self-hosted server then waits for a key again\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
@@ -693,7 +693,85 @@
    "put": {
     "operationId": "put_admin_license",
     "summary": "Install a licence key",
-    "description": "Install a licence key\n\nRole: instance admin",
+    "description": "Install a licence key or the free key, checked offline\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/license/link": {
+   "post": {
+    "operationId": "post_admin_license_link",
+    "summary": "Start getting the free key from Stackurity Cloud",
+    "description": "\"Get a free key\": a one-time state bound to this browser session (15 minutes) and the Stackurity Cloud address the browser goes to. The server makes no request. Needs STACKURITY_BASE_URL\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/license/link/claim": {
+   "post": {
+    "operationId": "post_admin_license_link_claim",
+    "summary": "Install the free key Stackurity Cloud sent back",
+    "description": "{\"key\", \"state\"}: the key from the return page's fragment, with the state from POST /admin/license/link. The state works once, within 15 minutes, in the session that made it; the key must verify offline as a free Community key\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
@@ -13680,6 +13758,210 @@
       }
      }
     ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys": {
+   "post": {
+    "operationId": "post_community_keys",
+    "summary": "Ask for a free self-hosted key (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `email`, `name`, `company` (optional), challenge token and `accept_terms`; emails a one-time link. Limited per address, per email and for the service\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys/verify": {
+   "post": {
+    "operationId": "post_community_keys_verify",
+    "summary": "Issue a free self-hosted key from the emailed link (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Uses the emailed token once: answers the Community key (`key`, `key_id`, `email`) and emails it\n\nRole: none",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/community-keys": {
+   "get": {
+    "operationId": "get_admin_community_keys",
+    "summary": "The free self-hosted keys issued (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `total`, `emails`, `last_30_days` and the newest `items`\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys/link/preview": {
+   "post": {
+    "operationId": "post_community_keys_link_preview",
+    "summary": "Check where a self-hosted server's key would go (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `{\"return\", \"state\", \"server_id\"}` from a self-hosted server's Get a free key; answers the checked `return`, `host` and `insecure`. Nothing is issued\n\nRole: none (a signed-in browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (a signed-in browser session)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/community-keys/link/confirm": {
+   "post": {
+    "operationId": "post_community_keys_link_confirm",
+    "summary": "Issue a free key for a self-hosted server (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. Same body as the preview; issues a Community key to the signed-in person and answers `redirect`, the server's /setup/community-key with the key and state in the fragment\n\nRole: none (a signed-in browser session)",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "none (a signed-in browser session)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
     "responses": {
      "2XX": {
       "description": "Success",

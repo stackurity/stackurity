@@ -103,13 +103,18 @@ func TestDoctor(t *testing.T) {
 		Memory: func() MemoryInfo { return MemoryInfo{Limit: 2 << 30, LimitFrom: "container limit"} }}
 	cfg.Intel.OSVBaseURL = mirror.URL + "/osv"
 	cfg.Intel.NpmRegistry = gone.URL
+	// An upgraded server inside its grace period (migration 0094).
+	if _, err := st.Pool.Exec(tenant.System(context.Background()),
+		`UPDATE license_requirement SET upgraded = true, required_from = now() + interval '30 days', observed_seconds = 0`); err != nil {
+		t.Fatal(err)
+	}
 	rep := Doctor(context.Background(), st, nil, cfg)
 	got := byCheck(rep)
 
 	want(t, got, "database", Pass, "answers")
 	want(t, got, "isolation", Pass, "Row-level security applies")
 	want(t, got, "migrations", Pass, "migrations applied")
-	want(t, got, "licence", Pass, "Community edition")
+	want(t, got, "licence", Warn, "needs a free Community key or a licence by")
 	want(t, got, "feed:osv:npm", Pass, "Last synced 10m ago")
 	want(t, got, "feed:osv:PyPI", Fail, "is stale: last synced 2d ago")
 	want(t, got, "feed:releases:npm", Warn, "Behind schedule")
@@ -160,31 +165,31 @@ func TestDoctorWithoutDatabase(t *testing.T) {
 }
 
 // A database a newer version migrated fails, as every command refuses it;
-// a key that does not verify warns; and a version that needs a key fails
-// once the date has passed with none installed.
+// a new install without a key fails, a key that does not verify says so,
+// and an upgraded server warns during its grace period and fails after it.
 func TestDoctorSchemaAndLicence(t *testing.T) {
 	ctx := tenant.System(context.Background())
 	st := store.New(testdb.New(t))
 	cfg := Config{Memory: func() MemoryInfo { return MemoryInfo{} }, Offline: true}
 
+	want(t, byCheck(Doctor(ctx, st, nil, cfg)), "licence", Fail, "the dashboard and API wait")
 	cfg.LicenceKey, cfg.LicenceFrom = "not-a-key", "STACKURITY_LICENSE"
-	want(t, byCheck(Doctor(ctx, st, nil, cfg)), "licence", Warn, "does not verify")
+	r := byCheck(Doctor(ctx, st, nil, cfg))["licence"]
+	if r.Status != Fail || !strings.Contains(r.Title, "does not verify") || !strings.Contains(r.Detail, "the dashboard and API wait") {
+		t.Errorf("licence = %s %q (%s)", r.Status, r.Title, r.Detail)
+	}
 	cfg.LicenceKey, cfg.LicenceFrom = "", ""
 
-	// The table a version needing a key creates (migration 0072 there).
-	conn, err := st.Pool.Acquire(ctx)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = conn.Exec(ctx, `RESET ROLE; CREATE TABLE license_requirement (id int PRIMARY KEY, required_from timestamptz NOT NULL);
-		GRANT SELECT, INSERT, UPDATE ON license_requirement TO stackurity_app;
-		INSERT INTO license_requirement VALUES (1, now() + interval '30 days')`)
-	conn.Hijack().Close(ctx) // the role was reset: do not hand it back
-	if err != nil {
+	if _, err := st.Pool.Exec(ctx, `UPDATE license_requirement SET upgraded = true, required_from = now() + interval '30 days', observed_seconds = 0`); err != nil {
 		t.Fatal(err)
 	}
 	want(t, byCheck(Doctor(ctx, st, nil, cfg)), "licence", Warn, "needs a free Community key or a licence by")
+	// The date has passed, but the server has not run 7 days of it yet.
 	if _, err := st.Pool.Exec(ctx, `UPDATE license_requirement SET required_from = now() - interval '1 day'`); err != nil {
+		t.Fatal(err)
+	}
+	want(t, byCheck(Doctor(ctx, st, nil, cfg)), "licence", Warn, "needs a free Community key or a licence by")
+	if _, err := st.Pool.Exec(ctx, `UPDATE license_requirement SET observed_seconds = 8 * 86400`); err != nil {
 		t.Fatal(err)
 	}
 	want(t, byCheck(Doctor(ctx, st, nil, cfg)), "licence", Fail, "the dashboard and API wait")

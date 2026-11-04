@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { KEY_LINK_RESUME, resumePath } from "../keyLink";
 import { api, ApiError, type SignupMeta, type SocialMeta } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
@@ -44,7 +45,7 @@ function loadChallenge(): Promise<ChallengeWidget> {
 }
 
 /** The challenge that shows a person, not a script, is signing up. */
-function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onToken: (t: string) => void; resetKey: number }) {
+export function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onToken: (t: string) => void; resetKey: number }) {
   const box = useRef<HTMLDivElement>(null);
   const widget = useRef<{ api: ChallengeWidget; id: string } | null>(null);
   const [failed, setFailed] = useState(false);
@@ -329,8 +330,15 @@ export function VerifySignupPage() {
       .verifySignup(token)
       .then(async () => {
         // Drop the link from the address bar and history, then open the
-        // new organisation: its first-run flow starts by itself.
-        navigate("/", { replace: true });
+        // new organisation: its first-run flow starts by itself. Signed
+        // up from a self-hosted server's "Get a free key": back to that.
+        let next: string | null = null;
+        try {
+          next = resumePath(localStorage.getItem(KEY_LINK_RESUME), Date.now());
+        } catch {
+          // none kept
+        }
+        navigate(next ?? "/", { replace: true });
         await refresh();
       })
       .catch((e) => setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e))));
@@ -368,6 +376,6 @@ export function VerifySignupPage() {
 }
 
 /** A link from the server, kept only when it is https: or mailto:. */
-function safeLink(u: string | undefined): string | undefined {
+export function safeLink(u: string | undefined): string | undefined {
   return u && /^(https:|mailto:)/i.test(u) ? u : undefined;
 }

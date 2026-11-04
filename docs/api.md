@@ -45,6 +45,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -118,7 +119,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), `mfa_recovery_accepted` (whether a recovery code lets this session go on), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`).
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), `mfa_recovery_accepted` (whether a recovery code lets this session go on), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`). On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
 
 ### `PUT /auth/default-project`
 
@@ -571,6 +572,30 @@ Starts a sign-up: email, name, organisation, password, challenge token (action `
 **Who:** anyone · Stackurity Cloud
 
 Uses the emailed token once: creates the account and the organisation on its trial, and starts a session.
+
+### `POST /community-keys`
+
+**Who:** anyone · Stackurity Cloud
+
+Asks for a free key for a self-hosted server ([The free key](install.md#the-free-key)): `email`, `name`, `company` (optional), challenge token (action `signup`) and `accept_terms`. Limited per address (5 an hour), per email (3 an hour) and for the service. Disposable and mail-less domains answer `400 email_not_accepted`; otherwise `202 check_email`, and the link `/self-hosted-key/verify#ckr_...` is emailed (valid 24 hours). 404 where the server issues no free keys.
+
+### `POST /community-keys/verify`
+
+**Who:** anyone · Stackurity Cloud
+
+`{"token"}` from the emailed link, once: issues a Community key and answers `key`, `key_id` and `email`; the key is emailed too. 410 for a used or expired link. Who got a key (email, name, company, when, key id) is recorded; nothing about anyone's servers is received.
+
+### `POST /community-keys/link/preview`
+
+**Who:** a signed-in browser session · Stackurity Cloud
+
+`{"return", "state", "server_id"}` as a self-hosted server's **Get a free key** sent them: answers the checked address (`return`, normalised), `host` (shown to the person) and `insecure` (plain http on a private address). Nothing is issued. 400 `bad_return` for an address that cannot receive a key: anything but `https`, or `http` to `localhost` and private addresses; user info, a query, fragment, percent-encoding, backslash or non-ASCII characters; a host that is not plain letters, digits and hyphens (`xn--` for internationalised names) or a standard-form IP address; a path with `.` or `..`; Stackurity Cloud itself. 401 without a browser session (API tokens are refused).
+
+### `POST /community-keys/link/confirm`
+
+**Who:** a signed-in browser session · Stackurity Cloud
+
+The same body and checks: issues a Community key to the signed-in person (their email and name; the organisation as customer), emails it, and answers `redirect` (`<return>/setup/community-key#key=…&state=…`), `host`, `return`, `insecure` and `key_id`. The address is not stored; the key is recorded with the person and `server_id`. 5 keys an hour per person, 10 per address. Audited as `community_key.issue`.
 
 The assistants a person has connected (`/assistants`) and the OAuth consent page are under [AI assistants, OAuth and MCP](#ai-assistants-oauth-and-mcp).
 
@@ -2234,19 +2259,31 @@ Whether a newer release exists: `enabled`, `current`, `latest`, `update_availabl
 
 **Who:** instance admin
 
-The installation's licence `status`, `active_assets`, and `managed_by_env` (set by `STACKURITY_LICENSE`). See [install.md](install.md#editions-and-licences).
+The installation's licence `status`, `active_assets`, `managed_by_env` (set by `STACKURITY_LICENSE`), and `key_link`: whether **Get a free key** works here (a self-hosted server with `STACKURITY_BASE_URL` set, no `STACKURITY_LICENSE` and no paid licence). See [install.md](install.md#editions-and-licences).
 
 ### `PUT /admin/license`
 
 **Who:** instance admin
 
-`{"key"}`: installs a licence key. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
+`{"key"}`: installs a licence key or the free key, checked offline. 400 for a key that is not valid; 409 when the licence is set by `STACKURITY_LICENSE`. Audited as `license.install`.
+
+### `POST /admin/license/link`
+
+**Who:** instance admin, in a browser session (not an API token)
+
+Starts **Get a free key** ([install.md](install.md#the-free-key)). 201 with `url`, the Stackurity Cloud page the browser goes to (`https://app.stackurity.dev/community-key/new#return=<STACKURITY_BASE_URL>&state=<state>&server_id=<hash>`: the values are in the fragment, never a query string, so no proxy on the way logs them), and `expires_at`. The state is random, bound to this session, works once and for 15 minutes; only its SHA-256 is stored. `server_id` is a hash of this installation's random id, never the id. The server contacts nothing. 409 `no_base_url` without a usable `STACKURITY_BASE_URL`, 409 `conflict` when the licence is set by `STACKURITY_LICENSE` or a paid licence is installed; 404 where no key is needed (Stackurity Cloud). At most 20 an hour per administrator.
+
+### `POST /admin/license/link/claim`
+
+**Who:** instance admin, in the browser session that started the link
+
+`{"key", "state"}`: what Stackurity Cloud sent back in the fragment of `/setup/community-key`. The state is used up by the first try, whatever the outcome; 410 `key_link_invalid` when it is unknown, used, expired, or from another session or administrator (not told apart). The key is then verified offline as for `PUT /admin/license` and must be a free Community key (400 otherwise). Answers as `GET /admin/license`. Audited as `license.install` with `"via": "key_link"`. The same 409s as above.
 
 ### `DELETE /admin/license`
 
 **Who:** instance admin
 
-Removes the licence key (409 when set by `STACKURITY_LICENSE`). Audited as `license.remove`.
+Removes the licence key (409 when set by `STACKURITY_LICENSE`); a self-hosted server then waits for a key again. Audited as `license.remove`.
 
 ### `GET /admin/packs`
 
@@ -2308,6 +2345,12 @@ Cancels the plan at the end of the period; the organisation then becomes read-on
 
 Invoices of the organisation's subscriptions.
 
+### `GET /admin/community-keys`
+
+**Who:** instance admin · Stackurity Cloud
+
+The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and `items` (`id`, `key_id`, `email`, `name`, `company`, `issued_at`), newest first; `?limit=` 1 to 500, default 100.
+
 ### `GET /admin/trials`
 
 **Who:** instance admin · Stackurity Cloud
@@ -2319,6 +2362,12 @@ The trial report: every organisation that signed up on the cloud, by the week it
 **Who:** instance admin · Stackurity Cloud
 
 `trial_ends_at` (RFC 3339, in the future and within a year): extends one organisation's trial at once. Audited as `cloud.trial_extended`.
+
+### `GET /admin/community-keys`
+
+**Who:** instance admin · Stackurity Cloud
+
+The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and the newest `items` (`limit`, 1 to 500, default 100). The key text is not stored.
 
 ### `GET /billing/pay/{id}`
 
