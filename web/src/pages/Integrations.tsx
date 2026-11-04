@@ -21,6 +21,7 @@ import { minutesLabel } from "../format";
 import { Badge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, Code, EmptyState, ErrorBox, JobStatus, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import { sourcesEmpty } from "../emptyCopy";
 import { confirmAction } from "../components/ConfirmDialog";
 
 function healthOf(i: Integration): { status: string; tone?: "good" | "bad" | "muted" | "warn" } {
@@ -193,6 +194,7 @@ export function IntegrationsPage() {
     setCreating(null);
     res.reload();
   };
+  const empty = sourcesEmpty(admin);
 
   return (
     <>
@@ -225,13 +227,12 @@ export function IntegrationsPage() {
       <ErrorBox error={res.error} title="Could not load integrations" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title="No integrations" help="repositories" helpLabel="Add a repository, image or cloud account">
-          <p>
-            {admin
-              ? "Add a Git repository, a container image or a plugin (such as AWS managed services) to collect inventory on a schedule. Servers (with the agent), CI pipelines and SBOM uploads are added from Integrations."
-              : "An administrator can add Git repositories, container images and plugins here."}
-          </p>
-        </EmptyState>
+        <EmptyState
+          {...empty}
+          action={empty.action && !creating ? { ...empty.action, onClick: () => setCreating("choose") } : undefined}
+          help="repositories"
+          helpLabel="Add a repository, image or cloud account"
+        />
       )}
       {res.data && res.data.items.length > 0 && (
         <Table

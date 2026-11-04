@@ -77,6 +77,17 @@ type Config struct {
 	// STACKURITY_ASK_LONG_CHAT_COST_USD; 0 uses the default).
 	LongChatQuestions  int64
 	LongChatCostMicros int64
+	// StartModel is the model a conversation starts on, below the plan's
+	// model, which is the ceiling (tier.go; STACKURITY_ASK_START_MODEL,
+	// default DefaultStartModel; "plan" starts on the plan's model).
+	StartModel string
+}
+
+func (c Config) startModel() string {
+	if c.StartModel == "" {
+		return DefaultStartModel
+	}
+	return c.StartModel
 }
 
 func (c Config) summaryModel() string {
@@ -112,6 +123,7 @@ func (c Config) Enabled() bool { return c.Provider != "" }
 //	STACKURITY_ASK_FALLBACKS                 off to turn server-side fallback off
 //	STACKURITY_ASK_BASE_URL                  the API through a proxy
 //	STACKURITY_ASK_SUMMARY_MODEL             the model that summarises long conversations
+//	STACKURITY_ASK_START_MODEL               the model a conversation starts on (default claude-haiku-5-5; "plan": the plan's model)
 //	STACKURITY_ASK_LONG_CHAT_QUESTIONS, STACKURITY_ASK_LONG_CHAT_COST_USD  when to suggest a new chat
 func FromEnv() (Config, error) {
 	key, err := envOrFile("STACKURITY_ANTHROPIC_API_KEY")
@@ -129,6 +141,7 @@ func FromEnv() (Config, error) {
 		Effort:        strings.ToLower(strings.TrimSpace(os.Getenv("STACKURITY_ASK_EFFORT"))),
 		NoFallbacks:   strings.EqualFold(strings.TrimSpace(os.Getenv("STACKURITY_ASK_FALLBACKS")), "off"),
 		SummaryModel:  strings.TrimSpace(os.Getenv("STACKURITY_ASK_SUMMARY_MODEL")),
+		StartModel:    strings.TrimSpace(os.Getenv("STACKURITY_ASK_START_MODEL")),
 	}
 	if c.Provider == "" && c.APIKey != "" {
 		c.Provider = ProviderAnthropic

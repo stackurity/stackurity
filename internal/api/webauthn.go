@@ -315,11 +315,22 @@ func (s *Server) passkeyCloned(r *http.Request, userID, id int64, name string) e
 	return nil
 }
 
+// passkeyCloneMessage answers an assertion with a passkey marked as
+// possibly copied. Removing it and adding it again needs a session that
+// has confirmed with a factor that counts; where only passkeys count for
+// the person (an admin under passkey sign-in for admins) and this was their
+// only one, nothing they have does, so another admin resets their
+// two-factor sign-in (on a server with one admin, the operator: stackurity
+// admin reset-mfa). The message says both: it is given before sign-in, so
+// it does not depend on the account's organisations.
+const passkeyCloneMessage = "this passkey's signature counter went backwards, which can mean it was copied; it signs in no more. " +
+	"Sign in with another method, then remove this passkey and add it again. " +
+	"If only passkeys count for you and this was your only one, ask another admin to reset your two-factor sign-in"
+
 // passkeyFailed answers a refused assertion.
 func passkeyFailed(w http.ResponseWriter, why string) {
 	if why == "clone" {
-		writeError(w, 401, "passkey_clone_warning", "this passkey's signature counter went backwards, which can mean it was copied; "+
-			"it signs in no more. Use another method, remove this passkey and add it again")
+		writeError(w, 401, "passkey_clone_warning", passkeyCloneMessage)
 		return
 	}
 	writeError(w, 401, "passkey_invalid", "that passkey did not work; try again or use another method")
@@ -421,11 +432,19 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 		s.fail(w, r, err)
 		return
 	}
+	hadEmail, err := s.Store.HasEmailMFA(r.Context(), u.ID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	pk, issued, err := s.Store.AddPasskey(r.Context(), u.ID, store.NewPasskey{CredentialID: cred.ID, Name: name, Record: record,
 		BackedUp: cred.Flags.BackupState, Discoverable: cred.Extensions.RK}, hashes)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if hadEmail {
+		s.auditAccount(r, u, "auth.mfa_disabled", map[string]any{"methods": []string{store.MFAEmail}, "reason": "replaced by a passkey"})
 	}
 	if !issued {
 		codes = nil
@@ -439,7 +458,11 @@ func (s *Server) finishPasskeyRegistration(w http.ResponseWriter, r *http.Reques
 	}
 	s.auditAccount(r, u, "auth.passkey_added", map[string]any{"passkey_id": pk.ID, "name": pk.Name, "backed_up": pk.BackedUp,
 		"discoverable": pk.Discoverable, "user_verified": cred.Flags.UserVerified, "recovery_codes_issued": issued, "other_sessions_ended": ended})
-	s.notifyFactorChange(r, u.Email, "A passkey, “"+pk.Name+"”, was added for two-factor sign-in", "")
+	change := "A passkey, “" + pk.Name + "”, was added for two-factor sign-in"
+	if hadEmail {
+		change += " (it replaces email codes, which were turned off)"
+	}
+	s.notifyFactorChange(r, u.Email, change, "")
 	s.answerFactorChange(w, r, u, map[string]any{"passkey": pk, "recovery_codes": codes, "other_sessions_ended": ended})
 }
 
@@ -749,7 +772,15 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 	if s.limited(w, r, "too many codes tried; wait a few minutes", limitHit{"mfa-user", itoa(u.ID), limitMFAPerUser}) {
 		return
 	}
-	method, ok, why, err := s.checkSecondFactor(r, u.ID, req.Code)
+	var method, why string
+	var ok bool
+	on, err := s.Store.HasEmailMFA(r.Context(), u.ID)
+	if err == nil && on {
+		method, why = store.MFAEmail, "invalid"
+		ok, _, err = s.Store.UseAccountEmailCode(r.Context(), u.ID, store.EmailCodeHash(sessionSecret(r), normaliseCode(req.Code)), false, mfaChallengeFailures)
+	} else if err == nil {
+		method, ok, why, err = s.checkSecondFactor(r, u.ID, req.Code)
+	}
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -762,6 +793,10 @@ func (s *Server) stepUpCode(w http.ResponseWriter, r *http.Request) {
 		}
 		writeError(w, 401, "mfa_invalid", msg)
 		return
+	}
+	if method == store.MFAEmail && s.emailCodesAvailable() {
+		// As after a sign-in with an email code.
+		s.notifyEmailCodeSignIn(r, u)
 	}
 	s.steppedUp(w, r, u, sessionFactor{method: method}, nil)
 }

@@ -18,6 +18,7 @@ import { plural } from "../../format";
 import { Badge, type Tone } from "../../components/Badge";
 import { Table } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../../components/ui";
+import { vexEmpty } from "../../emptyCopy";
 
 const LIMIT = 50;
 
@@ -132,7 +133,7 @@ function Documents({ reloadKey }: { reloadKey: number }) {
       {done && <Notice kind="success">{done}</Notice>}
       <ErrorBox error={act.error} title="Could not decide" />
       {res.data.items.length === 0 ? (
-        <EmptyState title="No VEX imported yet" help="vex" />
+        <EmptyState {...vexEmpty(can("engineer"))} help="vex" />
       ) : (
         <Table
           rows={res.data.items}
