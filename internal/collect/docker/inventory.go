@@ -33,6 +33,10 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 				r.Attributes[k] = v
 			}
 		}
+		// The enabled module streams, also when none is ("").
+		if v, ok := osBatch.Asset.Attributes[linux.DNFModulesAttribute]; ok {
+			r.Attributes[linux.DNFModulesAttribute] = v
+		}
 	}
 	r.Observations = append(r.Observations, osBatch.Observations...)
 	r.Coverage = append(r.Coverage, osBatch.Coverage...)

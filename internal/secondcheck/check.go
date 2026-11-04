@@ -39,6 +39,9 @@ type Observed struct {
 	Purl     string
 	Version  string
 	Evidence map[string]string
+	// Modules is the host's enabled module streams as its agent reported
+	// them ("container-tools:ol8 nodejs:18"); nil when not reported.
+	Modules *string
 }
 
 // Outcome is the second check's result for one finding.
@@ -64,7 +67,8 @@ type rawAffected struct {
 	Versions []string `json:"versions"`
 	// Conditions Oracle Linux records carry besides their ranges.
 	Specific struct {
-		Arch []string `json:"arch"`
+		Arch   []string `json:"arch"`
+		Module string   `json:"module"`
 	} `json:"ecosystem_specific"`
 }
 
@@ -128,6 +132,9 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		}
 		if !archApplies(a.Specific.Arch, t.arch) {
 			continue // a record for other architectures
+		}
+		if otherStream(a.Specific.Module, o.Modules) {
+			continue // a record for another stream of a module the host has enabled
 		}
 		var unknown rawAffected
 		if t.line != "" {
@@ -704,6 +711,26 @@ func archApplies(record []string, arch string) bool {
 			if r == h {
 				return true
 			}
+		}
+	}
+	return false
+}
+
+// otherStream reads an Oracle Linux record's module stream ("nodejs:20")
+// against the streams the host reports: the record is for another stream
+// when the host has the module enabled on a different one. With no report,
+// or the module not enabled, the record applies.
+func otherStream(module string, reported *string) bool {
+	if module == "" || reported == nil {
+		return false
+	}
+	name, stream, ok := strings.Cut(module, ":")
+	if !ok {
+		return false
+	}
+	for _, f := range strings.Fields(*reported) {
+		if n, s, ok := strings.Cut(f, ":"); ok && n == name {
+			return s != stream
 		}
 	}
 	return false

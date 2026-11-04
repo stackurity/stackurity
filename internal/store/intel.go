@@ -288,6 +288,9 @@ type EvalRow struct {
 	AssetStale  bool
 	// RunningKernel comes from the host agent ("" when unknown).
 	RunningKernel string
+	// Modules is the asset's enabled dnf module streams (attribute
+	// dnf_modules, "container-tools:ol8 nodejs:18"); nil when not reported.
+	Modules *string
 }
 
 // EvalRows returns current inventory rows, optionally limited to components
@@ -302,7 +305,7 @@ func (s *Store) EvalRows(ctx context.Context, componentIDs []int64, assetID int6
 		w.add("i.asset_id = ?", assetID)
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT i.id, i.asset_id, i.component_id, c.purl_key, c.type, i.purl, i.version, i.confidence,
-		i.evidence, a.collection_status = 'stale', COALESCE(a.attributes->>'kernel_running', '')
+		i.evidence, a.collection_status = 'stale', COALESCE(a.attributes->>'kernel_running', ''), a.attributes->>'dnf_modules'
 		FROM inventory i JOIN components c ON c.id = i.component_id JOIN assets a ON a.id = i.asset_id`+w.sql()+` ORDER BY i.component_id`, w.args...)
 	if err != nil {
 		return nil, err
@@ -312,7 +315,7 @@ func (s *Store) EvalRows(ctx context.Context, componentIDs []int64, assetID int6
 	for rows.Next() {
 		var r EvalRow
 		var ev []byte
-		if err := rows.Scan(&r.InventoryID, &r.AssetID, &r.ComponentID, &r.PurlKey, &r.Type, &r.Purl, &r.Version, &r.Confidence, &ev, &r.AssetStale, &r.RunningKernel); err != nil {
+		if err := rows.Scan(&r.InventoryID, &r.AssetID, &r.ComponentID, &r.PurlKey, &r.Type, &r.Purl, &r.Version, &r.Confidence, &ev, &r.AssetStale, &r.RunningKernel, &r.Modules); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(ev, &r.Evidence)

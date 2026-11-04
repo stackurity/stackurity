@@ -56,11 +56,16 @@ import (
 //     limits the entry to that line: it becomes the range's introduced
 //     version, so a UEK R7 (5.15) kernel is never compared with a UEK R8
 //     (6.12) fix, nor RHCK's bpftool 4.18 with UEK's 5.15.
-//   - Module streams ("Module nodejs:18 is enabled"): when the stream is the
-//     start of the fixed version (nodejs:18 and 1:18.20.4-1.module+el8...),
-//     it is the introduced version, as above. Other streams (container-tools:ol8,
-//     virt:ol) cannot be told apart by version and are matched like the
-//     packages around them.
+//   - Module streams ("Module nodejs:18 is enabled"): each entry records its
+//     stream (ecosystem_specific "module"), and agents report the host's
+//     enabled streams (asset attribute dnf_modules), so an entry for another
+//     stream of a module the host has enabled is not applied
+//     (osv.OtherModuleStream). That covers streams that are not a version
+//     (container-tools:ol8, virt:ol) and packages whose version is not the
+//     stream's (npm of nodejs:20). When the stream is the start of the fixed
+//     version (nodejs:18 and 1:18.20.4-1.module+el8...), it is also the
+//     introduced version, as above, which separates the streams for hosts
+//     that do not report theirs.
 //   - Architecture ("Oracle Linux arch is aarch64"): where a package's fix
 //     differs by architecture, or the package is listed for some
 //     architectures only, each entry records its architectures
@@ -503,7 +508,7 @@ func compactELSA(d ovalDefinition) (elsaDef, bool) {
 
 // elsaKey is one affected entry of an advisory.
 type elsaKey struct {
-	channel, name, introduced string
+	channel, name, introduced, module string
 }
 
 // elsaContext is what the AND groups above a criterion say.
@@ -646,7 +651,7 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, w *elsaWalk) {
 		if x.pkg == "" || ctx.release != r.release {
 			continue
 		}
-		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx)}
+		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx), module: ctx.module}
 		if w.fixes[k] == nil {
 			w.fixes[k] = elsaFixes{}
 		}
@@ -728,7 +733,10 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		if a.name != b.name {
 			return a.name < b.name
 		}
-		return a.introduced < b.introduced
+		if a.introduced != b.introduced {
+			return a.introduced < b.introduced
+		}
+		return a.module < b.module
 	})
 	for _, k := range keys {
 		eco := "Oracle Linux:" + r.release
@@ -739,7 +747,7 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		sort.Strings(keys)
 		for _, g := range elsaArchGroups(entries[k], w.arches) {
 			var cond json.RawMessage
-			if c := (osv.OracleConditions{Arch: g.arch, SigningKeys: keys}); !c.Empty() {
+			if c := (osv.OracleConditions{Arch: g.arch, SigningKeys: keys, Module: k.module}); !c.Empty() {
 				cond = r.intern(c)
 			}
 			for _, e := range elsaRanges(k.introduced, g.fixes) {

@@ -3,6 +3,8 @@ package linux
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/model"
@@ -137,5 +139,71 @@ func TestUnsupportedDistro(t *testing.T) {
 	}
 	if b.Complete || b.Coverage[0].Status != "unsupported" {
 		t.Errorf("coverage = %+v complete=%v", b.Coverage, b.Complete)
+	}
+}
+
+// dnfRoot is an rpm host root with the given /etc/dnf/modules.d files (nil:
+// no such directory).
+func dnfRoot(t *testing.T, modules map[string]string) string {
+	t.Helper()
+	root := t.TempDir()
+	for p, body := range map[string]string{
+		"etc/os-release":           "ID=\"ol\"\nVERSION_ID=\"8.10\"\n",
+		"var/lib/rpm/rpmdb.sqlite": "",
+	} {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(p)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(root, p), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if modules != nil {
+		dir := filepath.Join(root, "etc/dnf/modules.d")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		for name, body := range modules {
+			if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	return root
+}
+
+func TestDNFModules(t *testing.T) {
+	collect := func(modules map[string]string) (string, bool) {
+		t.Helper()
+		c := fixture(dnfRoot(t, modules))
+		c.LookPath = func(string) (string, error) { return "/usr/bin/rpm", nil }
+		c.RunRPM = func(context.Context, string) ([]byte, error) { return nil, nil }
+		b, err := c.Collect(context.Background(), "h", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		v, ok := b.Asset.Attributes[DNFModulesAttribute]
+		return v, ok
+	}
+	// As dnf writes them on Oracle Linux 8: a default stream enabled by
+	// installing nodejs, an explicitly enabled one, and a reset module.
+	got, ok := collect(map[string]string{
+		"container-tools.module": "[container-tools]\nname=container-tools\nstream=ol8\nprofiles=\nstate=enabled\n",
+		"nodejs.module":          "[nodejs]\nname=nodejs\nstream=\nprofiles=\nstate=\n",
+		"php.module":             "[php]\nname=php\nstream=8.2\nprofiles=common\nstate=enabled\n",
+		"perl.module":            "[perl]\nname=perl\nstream=5.32\nprofiles=\nstate=disabled\n",
+		"README":                 "not a module file",
+	})
+	if !ok || got != "container-tools:ol8 php:8.2" {
+		t.Errorf("modules = %q, %v", got, ok)
+	}
+	// The directory with nothing enabled: reported as none, so a stream
+	// enabled before is cleared on the server.
+	if got, ok := collect(map[string]string{}); !ok || got != "" {
+		t.Errorf("no module enabled = %q, %v", got, ok)
+	}
+	// No dnf module state (EL7, Amazon Linux): not reported.
+	if got, ok := collect(nil); ok {
+		t.Errorf("without modules.d = %q", got)
 	}
 }

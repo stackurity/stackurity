@@ -284,7 +284,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 				notEvaluated(perr)
 			} else {
 				rc.Feed = feed.Name
-				rc.Reason = oracleKeyNote(r, t, advs)
+				rc.Reason = oracleNote(r, t, advs)
 			}
 			if k, ok := kernels[r.InventoryID]; ok {
 				// Kernel packages: no findings on files that do not run,
@@ -494,8 +494,10 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
 	perLine := oracle || program
 	oracleBuild, arch, signingKey := "", "", ""
+	var streams map[string]string
 	if oracle {
 		signingKey = r.Evidence[osv.SigningKey]
+		streams = osv.ModuleStreams(r.Modules)
 		oracleBuild = osv.OracleBuild(t.Version)
 		if pu, err := packageurl.FromString(r.Purl); err == nil {
 			arch = pu.Qualifiers.Map()["arch"]
@@ -516,6 +518,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			// only) does not describe this package.
 			cond = osv.OracleConditionsOf(a.Affected)
 			if !osv.OracleArchApplies(cond.Arch, arch) {
+				continue
+			}
+			// An entry for another stream of a module the host has enabled
+			// (container-tools:ol8 on a container-tools:4.0 host) describes
+			// that stream's packages; oracleNote says so on the row.
+			if osv.OtherModuleStream(cond.Module, streams) {
 				continue
 			}
 		}
@@ -901,19 +909,55 @@ func otherMajor(a osv.Affected, installed string) bool {
 	return true
 }
 
+// oracleNote explains, on an evaluated Oracle Linux row, what Oracle's
+// conditions changed: that the package is not Oracle's build
+// (oracleKeyNote), and which module streams' advisories were not applied
+// because the host has another stream of the module enabled.
+func oracleNote(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch) string {
+	if !strings.HasPrefix(t.Ecosystem, "Oracle Linux:") {
+		return ""
+	}
+	var notes []string
+	if n := oracleKeyNote(r, advs); n != "" {
+		notes = append(notes, n)
+	}
+	if streams := osv.ModuleStreams(r.Modules); streams != nil {
+		var other []string
+		for _, a := range advs {
+			if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
+				continue
+			}
+			if m := osv.OracleConditionsOf(a.Affected).Module; osv.OtherModuleStream(m, streams) {
+				other = appendUnique(other, m)
+			}
+		}
+		if len(other) > 0 {
+			sort.Strings(other)
+			var on []string
+			for _, m := range other {
+				name, _, _ := strings.Cut(m, ":")
+				on = appendUnique(on, name+":"+streams[name])
+			}
+			notes = append(notes, fmt.Sprintf("advisories for module stream %s were not applied: this host has %s enabled",
+				strings.Join(other, ", "), strings.Join(on, ", ")))
+		}
+	}
+	return strings.Join(notes, "; ")
+}
+
 // oracleKeyNote explains an evaluated Oracle Linux row whose package is not
 // Oracle's build: its advisories name the keys Oracle signs that package
 // with, and the agent reported another key, or none. Its matches need
 // validation (matchAdvisories); this says why on the row, also when nothing
 // matched. "" when the key is not reported or is one the records name.
-func oracleKeyNote(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch) string {
+func oracleKeyNote(r store.EvalRow, advs []store.AdvisoryMatch) string {
 	installed := r.Evidence[osv.SigningKey]
-	if installed == "" || !strings.HasPrefix(t.Ecosystem, "Oracle Linux:") {
+	if installed == "" {
 		return ""
 	}
 	var keys []string
 	for _, a := range advs {
-		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
+		if a.Withdrawn != nil {
 			continue
 		}
 		c := osv.OracleConditionsOf(a.Affected)

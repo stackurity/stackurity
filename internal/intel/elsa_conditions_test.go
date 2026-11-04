@@ -96,8 +96,8 @@ func TestParseELSAConditions(t *testing.T) {
 		}
 	}
 	slices.Sort(libvirt)
-	keys := `"signing_keys":["` + ol8Key + `"]}`
-	if !slices.Equal(libvirt, []string{libvirtARM + ` {"arch":["aarch64"],` + keys, libvirtX86 + ` {"arch":["x86_64"],` + keys}) {
+	rest := `"signing_keys":["` + ol8Key + `"],"module":"virt:ol"}`
+	if !slices.Equal(libvirt, []string{libvirtARM + ` {"arch":["aarch64"],` + rest, libvirtX86 + ` {"arch":["x86_64"],` + rest}) {
 		t.Errorf("libvirt entries: %v", libvirt)
 	}
 	for _, a := range virt.Affected {
@@ -118,6 +118,19 @@ func TestParseELSAConditions(t *testing.T) {
 			}
 		}
 	}
+	// Each entry records its module stream, also where the stream is not a
+	// version (container-tools:ol8, virt:ol).
+	for id, want := range map[string]string{"OL8-ELSA-2024-2084": "container-tools:4.0", "OL8-ELSA-2024-3968": "container-tools:ol8", virtAdvisory: "virt:ol"} {
+		for _, a := range ol8[id].Affected {
+			m := osv.OracleConditionsOf(a).Module
+			if id == virtAdvisory && m == "virt-devel:ol" {
+				continue // the advisory's other module (ocaml-hivex, qemu-kvm-tests)
+			}
+			if m != want {
+				t.Errorf("%s %s: module %q, want %q", id, a.Package.Name, m, want)
+			}
+		}
+	}
 	// A package with the same fix on every architecture records none.
 	for _, v := range ol8 {
 		for _, a := range v.Affected {
@@ -129,7 +142,7 @@ func TestParseELSAConditions(t *testing.T) {
 	// Entries share one stored value per distinct condition.
 	var first json.RawMessage
 	for _, a := range virt.Affected {
-		if string(a.EcosystemSpecific) == `{"arch":["x86_64"],"signing_keys":["`+ol8Key+`"]}` {
+		if string(a.EcosystemSpecific) == `{"arch":["x86_64"],"signing_keys":["`+ol8Key+`"],"module":"virt:ol"}` {
 			if first == nil {
 				first = a.EcosystemSpecific
 			} else if &first[0] != &a.EcosystemSpecific[0] {
@@ -290,4 +303,79 @@ func strs(v any) []string {
 		out = append(out, s)
 	}
 	return out
+}
+
+func TestOracleLinuxModuleStreams(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	const (
+		stream40 = "OL8-ELSA-2024-2084" // container-tools:4.0, podman fixed in 2:4.0.2-26
+		streamOL = "OL8-ELSA-2024-3968" // container-tools:ol8, podman fixed in 4:4.9.4-3.0.1
+		podman40 = "2:4.0.2-20.module+el8.8.0+20984+ab6ce66c"
+		podmanOL = "4:4.9.4-1.module+el8.10.0+90337+0d7b6e74"
+	)
+	host := func(name, evr string, modules *string) int64 {
+		var attrs map[string]string
+		if modules != nil {
+			attrs = map[string]string{"dnf_modules": *modules}
+		}
+		return olAsset(t, st, name, "ol-8.10", attrs, olRow{name: "podman", evr: evr, arch: "x86_64"})
+	}
+	str := func(s string) *string { return &s }
+	on40 := host("ol8-ct40", podman40, str("container-tools:4.0 nodejs:18"))
+	onOL := host("ol8-ctol8", podmanOL, str("container-tools:ol8"))
+	oldAgent := host("ol8-old-agent", podman40, nil)
+	reset := host("ol8-reset", podman40, str("")) // module state, nothing enabled
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	serveELSA(t, up, map[string]string{"ol8": "ol8-conditions"})
+	if _, err := sy.Sync(ctx, FeedOracleLinux); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	sources := func(host int64) []string {
+		var out []string
+		for _, f := range openKeys(t, st, ctx, host) {
+			for _, s := range f.Sources {
+				if !slices.Contains(out, s) {
+					out = append(out, s)
+				}
+			}
+		}
+		slices.Sort(out)
+		return out
+	}
+	// A container-tools:4.0 host takes 4.0's advisories only: before, its
+	// epoch 2 podman was below container-tools:ol8's epoch 4 fix.
+	if got := sources(on40); !slices.Equal(got, []string{stream40}) {
+		t.Errorf("container-tools:4.0 host: %v", got)
+	}
+	if got := sources(onOL); !slices.Equal(got, []string{streamOL}) {
+		t.Errorf("container-tools:ol8 host: %v", got)
+	}
+	// No stream data, or the module not enabled: compared as before.
+	for _, h := range []int64{oldAgent, reset} {
+		if got := sources(h); !slices.Equal(got, []string{stream40, streamOL}) {
+			t.Errorf("host %d: %v", h, got)
+		}
+	}
+	// The row says which streams' advisories were left out, and why.
+	rows, _, err := st.ListInventory(ctx, store.InventoryFilter{AssetID: on40, Page: store.Page{Limit: 10}})
+	if err != nil || len(rows) != 1 {
+		t.Fatalf("inventory: %v %v", rows, err)
+	}
+	if want := "advisories for module stream container-tools:ol8 were not applied: this host has container-tools:4.0 enabled"; rows[0].Coverage != store.CoverageEvaluated ||
+		rows[0].CoverageReason != want {
+		t.Errorf("row: %s %q", rows[0].Coverage, rows[0].CoverageReason)
+	}
+	stats, err := (&secondcheck.Runner{Store: st, All: true}).Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Checked == 0 || stats.Agreed != stats.Checked {
+		t.Errorf("second check: %+v", stats)
+	}
 }

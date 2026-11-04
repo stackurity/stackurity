@@ -19,11 +19,14 @@ type OracleConditions struct {
 	// tests next to the entry ("82562ea9ad986da3"): Oracle's advisory
 	// describes the builds Oracle signed with them.
 	SigningKeys []string `json:"signing_keys,omitempty"`
+	// Module is the "Module name:stream is enabled" test the entry sits
+	// under ("container-tools:ol8").
+	Module string `json:"module,omitempty"`
 }
 
 // Empty reports conditions that limit nothing.
 func (c OracleConditions) Empty() bool {
-	return len(c.Arch) == 0 && len(c.SigningKeys) == 0
+	return len(c.Arch) == 0 && len(c.SigningKeys) == 0 && c.Module == ""
 }
 
 // OracleConditionsOf reads an Oracle Linux entry's conditions; an entry
@@ -88,4 +91,38 @@ func OracleKeyMismatch(keys []string, installed string) bool {
 		return false
 	}
 	return !slices.Contains(keys, strings.ToLower(installed))
+}
+
+// ModuleStreams reads the enabled module streams a host reports (asset
+// attribute dnf_modules, "container-tools:ol8 nodejs:18") as module name to
+// stream. nil means not reported (an older agent, a host without dnf
+// module state, an SBOM); an empty map means none is enabled.
+func ModuleStreams(attr *string) map[string]string {
+	if attr == nil {
+		return nil
+	}
+	out := map[string]string{}
+	for _, f := range strings.Fields(*attr) {
+		if name, stream, ok := strings.Cut(f, ":"); ok && name != "" && stream != "" {
+			out[name] = stream
+		}
+	}
+	return out
+}
+
+// OtherModuleStream reports an entry for a module stream ("nodejs:20")
+// when the host has that module enabled on another stream ("nodejs:18"):
+// the entry describes the other stream's packages. With no stream data, or
+// the module not enabled at all (a reset module keeps its packages
+// installed), the entry applies as before.
+func OtherModuleStream(module string, enabled map[string]string) bool {
+	if module == "" || enabled == nil {
+		return false
+	}
+	name, stream, ok := strings.Cut(module, ":")
+	if !ok {
+		return false
+	}
+	have, on := enabled[name]
+	return on && have != stream
 }

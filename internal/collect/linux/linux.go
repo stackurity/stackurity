@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,6 +127,9 @@ func (c *Collector) Collect(ctx context.Context, hostname, machineID string) (*m
 				b.Observations = append(b.Observations, obs...)
 				b.Cover("rpm", "checked", "")
 			}
+		}
+		if mods, ok := c.dnfModules(); ok {
+			b.Asset.Attributes[DNFModulesAttribute] = mods
 		}
 	}
 	if !found {
@@ -454,4 +458,103 @@ func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error)
 		})
 	}
 	return obs, sc.Err()
+}
+
+// DNFModulesAttribute is the asset attribute listing a host's enabled dnf
+// module streams, "container-tools:ol8 nodejs:18" (sorted; "" when none
+// is enabled). It is absent when the host has no dnf module state (EL7,
+// Amazon Linux, EL10, which has no modules). Advisories for one stream of a
+// module ("Module container-tools:ol8 is enabled" in Oracle's data) are
+// then applied only to hosts on that stream.
+const DNFModulesAttribute = "dnf_modules"
+
+// dnfModules reads /etc/dnf/modules.d/*.module, the state dnf (EL8, EL9)
+// keeps of each module it has touched: a small INI file per module,
+//
+//	[nodejs]
+//	name=nodejs
+//	stream=18
+//	profiles=
+//	state=enabled
+//
+// dnf writes it when a stream is enabled, explicitly or by installing a
+// package of the module's default stream, and clears stream and state on
+// a reset. Reading the files needs no dnf, no root and no network. ok is
+// false when the directory does not exist.
+func (c *Collector) dnfModules() (string, bool) {
+	dir := c.path("etc/dnf/modules.d")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	var enabled []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".module") {
+			continue
+		}
+		data, err := readSmall(filepath.Join(dir, e.Name()), 64<<10)
+		if err != nil {
+			continue
+		}
+		enabled = append(enabled, parseModuleFile(data)...)
+	}
+	sort.Strings(enabled)
+	out := strings.Join(enabled, " ")
+	// Asset attributes are limited to model.MaxFieldLen; a cut list only
+	// leaves streams out, which then apply as with no list.
+	for len(out) > model.MaxFieldLen {
+		i := strings.LastIndexByte(out, ' ')
+		if i < 0 {
+			return "", false
+		}
+		out = out[:i]
+	}
+	return out, true
+}
+
+// parseModuleFile returns the "name:stream" of each enabled module in one
+// modules.d file (usually one section).
+func parseModuleFile(data []byte) []string {
+	var out []string
+	name, stream, state := "", "", ""
+	flush := func() {
+		if name != "" && stream != "" && state == "enabled" && !strings.ContainsAny(name+stream, " :\t") {
+			out = append(out, name+":"+stream)
+		}
+		name, stream, state = "", "", ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			flush()
+			name = strings.TrimSpace(line[1 : len(line)-1])
+		case strings.HasPrefix(line, "#"), strings.HasPrefix(line, ";"):
+		default:
+			k, v, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			switch strings.TrimSpace(k) {
+			case "name":
+				name = strings.TrimSpace(v)
+			case "stream":
+				stream = strings.TrimSpace(v)
+			case "state":
+				state = strings.ToLower(strings.TrimSpace(v))
+			}
+		}
+	}
+	flush()
+	return out
+}
+
+// readSmall reads at most max bytes of a file.
+func readSmall(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, max))
 }
