@@ -353,6 +353,15 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 403, "forbidden", "sign in to create tokens")
 		return
 	}
+	// Where single sign-on is required, a token kept from before cannot
+	// make more tokens without it.
+	if refuse, err := s.tokenUnderRequiredSSO(r, p); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if refuse {
+		ssoRequiredForToken(w, "create API tokens")
+		return
+	}
 	var req tokenRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)

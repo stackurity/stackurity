@@ -375,6 +375,8 @@ On Stackurity Cloud the settings above are not used. Instead each organisation c
 
 A session started by an organisation's single sign-on works only in that organisation, even for someone who belongs to several, and never has instance-administrator rights; instance administrators sign in with their password. The audit log records `sso.configured`, `sso.domain_added`, `sso.domain_verified`, `sso.domain_removed`, `sso.tested`, `sso.state`, `sso.deleted`, sign-ins (`auth.login` with `"method": "workspace_sso"`) and refusals of validly signed responses (`auth.sso_refused`). Sign-in from the provider's own dashboard is not supported for organisations.
 
+While single sign-on is required, an API token of anyone but the owner keeps reading, but cannot create API tokens or change single sign-on (switch requiring off, change or remove the provider, add or remove domains): those answer 403 `sso_required`. Make tokens from a single sign-on session. Agents' and CI jobs' tokens are not affected.
+
 #### Okta
 
 1. In the Okta Admin Console, **Applications → Applications → Create App Integration → SAML 2.0**, and name it Stackurity.

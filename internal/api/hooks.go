@@ -44,6 +44,13 @@ var (
 	// refuses: the request continues with no workspace, and /auth/me
 	// reports why (a workspace that requires its own single sign-on).
 	editionSessionAccess func(s *Server, r *http.Request, user *store.User, ws, ssoWorkspace int64) *SSORequired
+	// editionSSORequiredFor reports whether workspace ws requires userID
+	// to sign in with its own single sign-on (an organisation's owner is
+	// exempt); nil: never. Sessions are checked by editionSessionAccess; an
+	// API token is not a session, so the requests a token could use to
+	// get around the requirement (making tokens, changing single sign-on)
+	// ask this (tokenUnderRequiredSSO).
+	editionSSORequiredFor func(s *Server, r *http.Request, ws, userID int64) (bool, error)
 	// editionHasFeature decides whether a paid feature is on for workspace
 	// ws where the edition sets each organisation's plan itself (a hosted
 	// edition's billing); nil uses the licence and the workspace's plan
@@ -55,6 +62,23 @@ var (
 	// sets trial mode may name itself here.
 	reportWatermark = "Trial — not for distribution"
 )
+
+// tokenUnderRequiredSSO reports whether p is a person's API token in a
+// workspace that requires that person to sign in with its own single
+// sign-on. Such a token keeps reading (the admin chose to keep it), but
+// cannot make new tokens or change single sign-on. Machine tokens
+// (collector, CI) have no user and are never refused here.
+func (s *Server) tokenUnderRequiredSSO(r *http.Request, p *Principal) (bool, error) {
+	if editionSSORequiredFor == nil || p == nil || p.Token == nil || p.User == nil || p.Workspace <= 0 {
+		return false, nil
+	}
+	return editionSSORequiredFor(s, r, p.Workspace, p.User.ID)
+}
+
+// ssoRequiredForToken is the refusal of tokenUnderRequiredSSO.
+func ssoRequiredForToken(w http.ResponseWriter, what string) {
+	writeError(w, 403, "sso_required", "this organisation requires single sign-on: "+what+" from a single sign-on session, not with an API token")
+}
 
 // hasFeatureIn reports whether paid feature f is on for workspace ws.
 func (s *Server) hasFeatureIn(r *http.Request, ws int64, f license.Feature) (bool, error) {

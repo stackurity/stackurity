@@ -300,6 +300,8 @@ Finds where someone signs in from their `email`: the organisation that verified 
 
 The organisation's own single sign-on: `available` (the plan includes it), `config` (provider, attribute mapping, `version` and `tested_version`, `test_result`, `enabled`, `require_sso`, `link_existing`), `service_provider` (`entity_id`, `acs_url`, `metadata_url`, `login_url`), `domains` and `owner_id`.
 
+While single sign-on is required, only the owner's API token may use the `/sso` requests below that change something (`PUT`, `POST`, `DELETE`); another person's token gets 403 `sso_required`. Sessions are not affected by this rule: a session that did not come from the organisation's single sign-on cannot work in it at all, except the owner's.
+
 ### `PUT /sso`
 
 **Who:** admin · Stackurity Cloud
@@ -507,7 +509,7 @@ Your API tokens; admins see every token, including collector tokens.
 
 **Who:** any user
 
-Creates a token; the secret is returned once. A collector token can name a `project_id`: assets it creates are added to that project.
+Creates a token; the secret is returned once. A collector token can name a `project_id`: assets it creates are added to that project. On Stackurity Cloud, while the organisation requires single sign-on, an API token of anyone but the owner cannot create tokens (403 `sso_required`).
 
 ### `DELETE /tokens/{id}`
 

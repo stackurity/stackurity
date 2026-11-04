@@ -8889,7 +8889,7 @@
    "post": {
     "operationId": "post_tokens",
     "summary": "Create an API token (shown once)",
-    "description": "Personal tokens (admins: all tokens and collector tokens). A collector token can name a `project_id`: assets it creates are added to that project (the first-run flow's repository step)\n\nRole: any user",
+    "description": "Personal tokens (admins: all tokens and collector tokens). A collector token can name a `project_id`: assets it creates are added to that project (the first-run flow's repository step). On Stackurity Cloud, while the organisation requires single sign-on, an API token of anyone but the owner cannot create tokens (403 `sso_required`)\n\nRole: any user",
     "tags": [
      "Account"
     ],
