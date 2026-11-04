@@ -7,6 +7,7 @@ import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { minutesLabel, plural } from "../../format";
+import { ClientErrorsCard } from "./ClientErrors";
 
 type Task = PlatformHealth["tasks"][number];
 type Failure = PlatformHealth["recent_failures"][number];
@@ -188,6 +189,7 @@ export function HealthPage() {
               <Table columns={failureColumns} rows={d.recent_failures} rowKey={(j) => j.id} caption="Failed jobs" />
             </Card>
           )}
+          <ClientErrorsCard />
         </>
       )}
     </>

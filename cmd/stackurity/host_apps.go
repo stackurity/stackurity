@@ -13,6 +13,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
+	"github.com/stackurity/stackurity/internal/collect/lockfile"
 	"github.com/stackurity/stackurity/internal/model"
 )
 
@@ -115,6 +116,11 @@ func appBatch(app apps.App, host model.AssetRef, collectorID string) *model.Obse
 	if app.Version != "" {
 		b.Asset.Attributes["app_version"] = clipAttr(app.Version)
 	}
+	if names := lockfile.JoinPackageNames(app.PackageNames); names != "" {
+		b.Asset.Attributes[lockfile.PackageNamesAttr] = names
+	}
+	// A deployed Git checkout names its repository: the server links the
+	// two (built_from) once a scan or an integration has reported it.
 	if app.GitURL != "" {
 		b.Asset.Attributes["git_url"] = app.GitURL
 		b.Relations = append(b.Relations, model.RelationRef{Kind: "built_from",

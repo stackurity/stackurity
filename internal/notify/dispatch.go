@@ -783,6 +783,12 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 	case "leak":
 		d.leakMessage(&m, det, list)
 	case "platform":
+		if det["problem"] == "client_errors" {
+			// A new error people hit (health.Checker.newClientErrors).
+			m.Summary = append(m.Summary, "Someone using Stackurity hit an error not seen in the last 7 days")
+			m.Action = "An instance administrator should open Platform health → Errors people hit for how often, where and a sample"
+			break
+		}
 		m.Summary = append(m.Summary, "A problem with the Stackurity installation itself: findings and notifications may be out of date")
 		m.Action = "An instance administrator should check Platform health in the dashboard and the server logs"
 	}

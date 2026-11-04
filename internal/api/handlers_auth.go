@@ -33,6 +33,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	if s.EmailPreferences {
 		meta["email_preferences"] = true
 	}
+	// The dashboard reports the errors people hit (client_errors.go).
+	if s.ClientErrors {
+		meta["client_errors"] = true
+	}
 	// "Sign in with a passkey" on the sign-in page.
 	if wa, _ := s.relyingPartyFor(); wa != nil {
 		meta["passkeys"] = true

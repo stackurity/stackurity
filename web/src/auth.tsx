@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { api, ApiError, atLeast, setUnauthorizedHandler, type Feature, type Me, type Meta, type UserRole } from "./api";
+import { configureErrorReports } from "./clientErrors";
 
 type State =
   | { phase: "loading" }
@@ -36,6 +37,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let meta: Meta;
     try {
       meta = await api.meta();
+      configureErrorReports(meta);
     } catch (e) {
       setState({ phase: "error", error: e as ApiError });
       return;

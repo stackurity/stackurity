@@ -307,7 +307,7 @@ export function AssetDetailPage() {
         ) : (
           <>
             {tab === "action-plan" && <AssetActionPlan assetId={a.id} />}
-            {tab === "stack" && <StackTab asset={a} />}
+            {tab === "stack" && <StackTab asset={a} editable={canAct("engineer")} onLinked={relations.reload} />}
         {tab === "findings" && <FindingsTab assetId={a.id} />}
         {tab === "leaks" && <LeaksView assetId={a.id} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}

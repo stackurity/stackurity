@@ -1,8 +1,20 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
-import { api, SEVERITIES, type Asset, type Stack, type StackFinding, type StackLayer, type StackMember } from "../api";
-import { useLoad } from "../hooks";
+import {
+  api,
+  SEVERITIES,
+  type Asset,
+  type LinkSuggestion,
+  type List,
+  type Stack,
+  type StackFinding,
+  type StackLayer,
+  type StackMember,
+} from "../api";
+import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
+import { stackEmpty } from "../emptyCopy";
+import { suggestionText } from "../linkSuggestions";
 import { AssetKindBadge, Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { Table, type Column } from "./Table";
 import { EmptyState, ErrorBox, Loading, Notice, Pager } from "./ui";
@@ -47,9 +59,34 @@ const STACK_INTRO: Record<string, string> = {
 
 const FINDINGS_LIMIT = 100;
 
-/** An asset's stack: related assets, open findings grouped by layer, and the findings themselves. */
-export function StackTab({ asset }: { asset: Asset }) {
+/** Asset kinds that can be linked by a suggestion (application built_from repository). */
+const LINKABLE = new Set(["application", "repository"]);
+
+/**
+ * An asset's stack: related assets, suggested links, open findings grouped
+ * by layer, and the findings themselves. editable: the person may change
+ * relations (engineer and above); onLinked: a suggestion was accepted.
+ */
+export function StackTab({ asset, editable = false, onLinked }: { asset: Asset; editable?: boolean; onLinked?: () => void }) {
   const res = useLoad(() => api.get<Stack>(`/assets/${asset.id}/stack`), [asset.id]);
+  const linkable = LINKABLE.has(asset.kind);
+  const sugg = useLoad(
+    () => (linkable ? api.get<List<LinkSuggestion>>(`/assets/${asset.id}/link-suggestions`) : Promise.resolve({ items: [], total: 0 })),
+    [asset.id, linkable],
+  );
+  const act = useAction();
+  const decide = async (s: LinkSuggestion, how: "accept" | "dismiss") => {
+    const other = s.application.id === asset.id ? s.repository.id : s.application.id;
+    const ok = await act.run(() => api.post(`/assets/${asset.id}/link-suggestions/${other}/${how}`, {}).then(() => true));
+    if (ok) {
+      sugg.reload();
+      if (how === "accept") {
+        res.reload();
+        onLinked?.();
+      }
+    }
+  };
+  const suggestions = sugg.data?.items ?? [];
   const [layer, setLayer] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   useEffect(() => {
@@ -90,14 +127,18 @@ export function StackTab({ asset }: { asset: Asset }) {
       {multi ? (
         <MembersTable members={members} root={res.data.root} />
       ) : (
-        <EmptyState title="No related assets">
-          <p>
-            Applications found by the agent are linked automatically to the host they run on (
-            <span className="mono">runs_on</span>) and, when the git remote is known, to their repository (
-            <span className="mono">built_from</span>). Other relations can be added on the{" "}
-            <Link to={`/assets/${asset.id}?tab=relations`}>Relations tab</Link>.
-          </p>
-        </EmptyState>
+        <StackEmpty kind={asset.kind} assetId={asset.id} suggestions={suggestions.length} editable={editable} />
+      )}
+
+      {suggestions.length > 0 && (
+        <SuggestedLinks
+          items={suggestions}
+          editable={editable}
+          pending={act.pending}
+          error={act.error ? <ErrorBox error={act.error} title="Could not save" /> : null}
+          onLink={(s) => decide(s, "accept")}
+          onDismiss={(s) => decide(s, "dismiss")}
+        />
       )}
 
       {findings.length === 0 ? (
@@ -137,6 +178,76 @@ export function StackTab({ asset }: { asset: Asset }) {
           )}
         </>
       )}
+    </>
+  );
+}
+
+/** "Assets in this stack" when nothing is linked: why, and what to do, in plain words. */
+export function StackEmpty({ kind, assetId, suggestions, editable }: { kind: string; assetId: number; suggestions: number; editable: boolean }) {
+  const copy = stackEmpty(kind, assetId, suggestions, editable);
+  return (
+    <EmptyState title={copy.title} why={copy.why} action={copy.action}>
+      {copy.after && <p>{copy.after}</p>}
+      {copy.steps.length > 0 && (
+        <ul className="empty-steps">
+          {copy.steps.map((step) => (
+            <li key={step}>{withCode(step)}</li>
+          ))}
+        </ul>
+      )}
+    </EmptyState>
+  );
+}
+
+/** Text with `code` in backticks. */
+function withCode(text: string): ReactNode[] {
+  return text.split("`").map((part, i) => (i % 2 === 1 ? <code key={i}>{part}</code> : part));
+}
+
+/**
+ * Suggested links: an application probably built from a repository, with
+ * Link and Not this one for someone who may change relations.
+ */
+export function SuggestedLinks({
+  items,
+  editable,
+  pending,
+  error,
+  onLink,
+  onDismiss,
+}: {
+  items: LinkSuggestion[];
+  editable: boolean;
+  pending: boolean;
+  error?: ReactNode;
+  onLink: (s: LinkSuggestion) => void;
+  onDismiss: (s: LinkSuggestion) => void;
+}) {
+  return (
+    <>
+      <h3 className="section-title">Suggested links</h3>
+      <p className="hint">
+        Matched by package name and dependencies. Nothing is linked until someone confirms.
+        {!editable && " Someone with edit permission can link them."}
+      </p>
+      {error}
+      <ul className="link-suggestions">
+        {items.map((s) => (
+          <li key={`${s.application.id}-${s.repository.id}`} className="link-suggestion">
+            <span>{suggestionText(s)}</span>
+            {editable && (
+              <span className="link-suggestion-actions">
+                <button type="button" className="btn btn-sm btn-primary" disabled={pending} onClick={() => onLink(s)}>
+                  Link
+                </button>{" "}
+                <button type="button" className="btn btn-sm" disabled={pending} onClick={() => onDismiss(s)}>
+                  Not this one
+                </button>
+              </span>
+            )}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

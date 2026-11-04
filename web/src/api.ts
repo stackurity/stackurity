@@ -67,6 +67,8 @@ export interface Meta {
   email_preferences?: boolean;
   /** True when passkeys work on this server (STACKURITY_BASE_URL with a domain name over https). */
   passkeys?: boolean;
+  /** True when the dashboard reports the errors people hit to this server (off with STACKURITY_CLIENT_ERRORS=off). */
+  client_errors?: boolean;
   /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
   social?: SocialMeta;
   /** Present where people can get a free key for a self-hosted server (Stackurity Cloud). */
@@ -1099,6 +1101,21 @@ export interface Relation {
   kind: string;
   source: string;
   created_at: string;
+}
+
+/** GET /assets/{id}/link-suggestions: an application probably built from a repository. */
+export interface LinkSuggestion {
+  application: { id: number; name: string };
+  repository: { id: number; name: string };
+  /** 0 to 1; the server returns only pairs at 0.45 or more. */
+  score: number;
+  /** The package name both give themselves ("npm:shop"), if any. */
+  same_package_name?: string;
+  /** Share of direct dependencies that match; 0 when too few match to count. */
+  dependency_match_percent: number;
+  dependencies_matched: number;
+  dependencies_compared: number;
+  similar_name: boolean;
 }
 
 export const DRIFT_STATUSES = ["behind", "only_there", "differs", "ahead", "only_here"] as const;
@@ -3694,6 +3711,8 @@ export class ApiError extends Error {
   details: string[];
   /** The whole error object, for answers that carry more than a message. */
   data?: Record<string, unknown>;
+  /** The call that failed, as "GET /billing", for error reports (clientErrors.ts). */
+  request?: string;
   constructor(status: number, code: string, message: string, details: string[] = [], data?: Record<string, unknown>) {
     super(message);
     this.status = status;
@@ -3766,13 +3785,15 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
   if (!res.ok) {
     const err = (data as { error?: { code?: string; message?: string; details?: string[] } } | null)?.error;
     if (res.status === 401 && !opts?.quiet401 && onUnauthorized) onUnauthorized();
-    throw new ApiError(
+    const failed = new ApiError(
       res.status,
       err?.code ?? "http_" + res.status,
       err?.message ?? `Request failed (${res.status} ${res.statusText})`,
       err?.details ?? [],
       err as Record<string, unknown> | undefined,
     );
+    failed.request = `${method} ${path}`;
+    throw failed;
   }
   return data as T;
 }

@@ -94,6 +94,11 @@ func TestKeyGate(t *testing.T) {
 			t.Errorf("%s without a key: %d", path, code)
 		}
 	}
+	// Errors the dashboard hits on the key step are still reported to this
+	// server (the handler answers 204 when reports are off).
+	if resp := anon.req("POST", "/api/v1/client-errors", bytes.NewReader([]byte(`{}`)), map[string]string{"X-Stackurity-CSRF": "1", "Content-Type": "application/json"}); resp.StatusCode == 403 {
+		t.Errorf("POST /client-errors without a key: 403 %s", errorCode(t, resp))
+	}
 	// The dashboard learns why, and the instance admin can see and enter the key.
 	var me struct {
 		LicenseKey license.KeyStatus `json:"license_key"`

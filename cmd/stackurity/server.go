@@ -217,7 +217,8 @@ func serverCmd() *cobra.Command {
 			}
 			schema := &db.SchemaGuard{}
 			checker := &health.Checker{Store: st, FeedsEnabled: os.Getenv("STACKURITY_FEEDS") != "off",
-				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE"), Schema: schema, InsecureCookies: insecureCookies}
+				PlatformWorkspace: os.Getenv("STACKURITY_PLATFORM_WORKSPACE"), Schema: schema, InsecureCookies: insecureCookies,
+				ClientErrors: clientErrorsOn()}
 			if _, why, err := checker.PlatformTarget(ctx); err != nil {
 				return err
 			} else if why != "" {
@@ -360,6 +361,8 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
+				// Error reports stay in this database (docs/install.md#error-reports).
+				ClientErrors:  clientErrorsOn(),
 				CoverageGaps:  func(ctx context.Context) (any, error) { return coverageGaps(ctx) },
 				FeedbackURL:   feedbackURL,
 				FeedbackQueue: feedbackQueue,
@@ -1042,6 +1045,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if _, err := st.PurgeCITokens(ctx); err != nil {
 			return err
 		}
+		// Error reports after 90 days (docs/install.md#error-reports).
+		if _, err := st.PurgeClientErrors(ctx); err != nil {
+			return err
+		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)
 	})
 }
@@ -1655,4 +1662,10 @@ func registerGitLab(w *worker.Worker, st *store.Store, glRunner *gitlab.Runner) 
 		}
 		return nil
 	})
+}
+
+// clientErrorsOn: error reports are kept unless STACKURITY_CLIENT_ERRORS=off
+// (docs/install.md#error-reports). They never leave the installation.
+func clientErrorsOn() bool {
+	return !strings.EqualFold(strings.TrimSpace(os.Getenv("STACKURITY_CLIENT_ERRORS")), "off")
 }
