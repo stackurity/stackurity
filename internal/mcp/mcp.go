@@ -455,8 +455,8 @@ var tools = map[string]tool{
 		description: "Keys, tokens and passwords found written in an asset's files (leaked keys), most severe first: the kind " +
 			"of key, the file and line, the setting it was assigned to, a masked preview, exposure (served: in a file the " +
 			"web server may send to anyone; world_readable: every account on the host can read it) and why: one line saying why " +
-			"it has its severity and what to do; quote it to the user. Low and medium are mostly keys kept in configuration " +
-			"files, where they belong: ask for severity critical,high for what needs action. The value itself is never " +
+			"it has its severity and what to do. Low and medium are mostly keys kept in configuration " +
+			"files, where they belong; severity critical,high returns what needs action. The value itself is never " +
 			"stored or shown. The fix is to rotate the key (revoke it and issue a new one), then remove it from the file. " +
 			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
 		schema: obj(map[string]any{
@@ -738,7 +738,7 @@ func init() {
 	}
 	tools["updates_available"] = tool{
 		description: "Installed packages older than their latest stable release, whether or not a vulnerability is involved " +
-			"(these are not findings: use list_findings or action_plan for security fixes). counts gives installs behind by " +
+			"(these are not vulnerability findings and are not security fixes). counts gives installs behind by " +
 			"update_type (patch, minor, major) and their total; top lists the packages with the most installs behind: " +
 			"component_id, installed_versions, latest_stable, update_type (the largest change among its installs), installs and " +
 			"assets. Only registry packages (npm, PyPI, Maven, WordPress plugins and themes from wordpress.org and the like) are covered; pre-releases are never latest.",
