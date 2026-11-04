@@ -607,6 +607,17 @@ type redactedError struct {
 func (e *redactedError) Error() string { return e.msg }
 func (e *redactedError) Unwrap() error { return e.cause }
 
+// envelopeAddress is the bare address SMTP's MAIL FROM takes. A From with a
+// display name ("Stackurity <no-reply@stackurity.dev>") stays in the From
+// header; sent as the envelope sender, servers refuse it ("501 Syntax error
+// in MAIL command").
+func envelopeAddress(from string) string {
+	if a, err := mail.ParseAddress(from); err == nil {
+		return a.Address
+	}
+	return from
+}
+
 func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string, m Message) error {
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	dial := s.Dial
@@ -645,7 +656,7 @@ func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string
 			return err
 		}
 	}
-	if err := cl.Mail(c.From); err != nil {
+	if err := cl.Mail(envelopeAddress(c.From)); err != nil {
 		return err
 	}
 	for _, to := range c.To {
