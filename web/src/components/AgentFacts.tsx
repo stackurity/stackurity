@@ -25,8 +25,8 @@ export function AgentFacts({ origin = window.location }: { origin?: Origin }) {
           <ul className="banner-list small">
             <li>
               The server&apos;s name and machine ID, its operating system version, packages and installed programs, and on Linux and macOS
-              runtimes such as Node.js or Python installed outside the package manager. It sends names, versions and where they were found,
-              not file contents.
+              runtimes such as Node.js or Python installed outside the package manager. It sends names, versions and where they were found
+              (for rpm packages also the ID of the key that signed each, and the enabled module streams), not file contents.
             </li>
             <li>
               Websites and apps on the server and the libraries they use (on by default), and, if you tick it, the images of

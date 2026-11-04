@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/url"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -55,15 +56,30 @@ import (
 //     limits the entry to that line: it becomes the range's introduced
 //     version, so a UEK R7 (5.15) kernel is never compared with a UEK R8
 //     (6.12) fix, nor RHCK's bpftool 4.18 with UEK's 5.15.
-//   - Module streams ("Module nodejs:18 is enabled"): when the stream is the
-//     start of the fixed version (nodejs:18 and 1:18.20.4-1.module+el8...),
-//     it is the introduced version, as above. Other streams (container-tools:ol8,
-//     virt:ol) cannot be told apart by version and are matched like the
-//     packages around them.
-//   - Architecture and signing key are not used: the agent does not report
-//     them. Where the fixed version differs by architecture or a branch lists
-//     two fixes for one package, the higher one is kept (OVAL's OR: a version
-//     below either fix is affected).
+//   - Module streams ("Module nodejs:18 is enabled"): each entry records its
+//     stream (ecosystem_specific "module"), and agents report the host's
+//     enabled streams (asset attribute dnf_modules), so an entry for another
+//     stream of a module the host has enabled is not applied
+//     (osv.OtherModuleStream). That covers streams that are not a version
+//     (container-tools:ol8, virt:ol) and packages whose version is not the
+//     stream's (npm of nodejs:20). When the stream is the start of the fixed
+//     version (nodejs:18 and 1:18.20.4-1.module+el8...), it is also the
+//     introduced version, as above, which separates the streams for hosts
+//     that do not report theirs.
+//   - Architecture ("Oracle Linux arch is aarch64"): where a package's fix
+//     differs by architecture, or the package is listed for some
+//     architectures only, each entry records its architectures
+//     (ecosystem_specific "arch"), and the matcher applies it only to
+//     packages of those (osv.OracleArchApplies). Where the fix is the same
+//     on every architecture, the entry records none, as before.
+//   - Signing key ("glibc is signed with the Oracle Linux 9 key"): each
+//     entry records the key ids (ecosystem_specific "signing_keys"). Agents
+//     report each rpm's signing key; a package signed with another key, or
+//     unsigned, is not Oracle's build, so a match through such an entry
+//     needs validation rather than being confirmed (see matchAdvisories).
+//   - Where a branch lists two fixes for one package on one architecture,
+//     the higher one is kept (OVAL's OR: a version below either fix is
+//     affected).
 
 // FeedOracleLinux reads Oracle Linux security advisories (ELSA).
 const FeedOracleLinux = "elsa:Oracle Linux"
@@ -492,12 +508,12 @@ func compactELSA(d ovalDefinition) (elsaDef, bool) {
 
 // elsaKey is one affected entry of an advisory.
 type elsaKey struct {
-	channel, name, introduced string
+	channel, name, introduced, module string
 }
 
 // elsaContext is what the AND groups above a criterion say.
 type elsaContext struct {
-	release, module, channel string
+	release, module, channel, arch, key string
 }
 
 type elsaResolver struct {
@@ -506,6 +522,34 @@ type elsaResolver struct {
 	objects map[string]string
 	states  map[string]ovalState
 	doc     *elsaDoc
+	// conditions interns the entries' ecosystem_specific: tens of thousands
+	// of entries share a handful of distinct values.
+	conditions map[string]json.RawMessage
+}
+
+// elsaArchFixes are the fixes a definition lists for one entry under one
+// architecture test ("" for none).
+type elsaArchFixes struct {
+	arch  string
+	fixes []string
+}
+
+// elsaEntry is what a definition lists for one entry: its fixes by
+// architecture (rarely more than two, so a slice, not a map) and the
+// signing keys next to them.
+type elsaEntry struct {
+	byArch []elsaArchFixes
+	keys   []string
+}
+
+func (e *elsaEntry) add(arch, fixed string) {
+	for i := range e.byArch {
+		if e.byArch[i].arch == arch {
+			e.byArch[i].fixes = appendUnique(e.byArch[i].fixes, fixed)
+			return
+		}
+	}
+	e.byArch = append(e.byArch, elsaArchFixes{arch: arch, fixes: []string{fixed}})
 }
 
 // elsaCriterion is a criterion read through its test, object and state.
@@ -513,6 +557,8 @@ type elsaCriterion struct {
 	release string // "9": Oracle Linux 9 is installed
 	module  string // "nodejs:18"
 	channel string // "ksplice", "fips": the package is such a build
+	arch    string // "aarch64": the host is of that architecture
+	key     string // "bc4d06a08d8b756f": the package is signed with that key
 	pkg     string // with fixed: the package is earlier than fixed
 	fixed   string
 	line    string // version pattern next to the fix, as a version ("5.15.0", "1.20")
@@ -553,8 +599,21 @@ func (r *elsaResolver) read(c ovalCriterion) elsaCriterion {
 		case "ksplice", "fips":
 			return elsaCriterion{channel: ch, known: true}
 		}
-	case st.Arch != nil, st.Signature != nil:
-		return elsaCriterion{known: true} // not used: the agent does not report them
+	case st.Arch != nil:
+		// "Oracle Linux arch is aarch64": a test of oraclelinux-release's
+		// architecture, the host's.
+		arch := strings.Trim(strings.TrimSpace(st.Arch.Value), "^$")
+		if arch == "" || st.Arch.Operation != "pattern match" && st.Arch.Operation != "equals" {
+			return elsaCriterion{}
+		}
+		return elsaCriterion{arch: arch, known: true}
+	case st.Signature != nil:
+		// "glibc is signed with the Oracle Linux 9 key".
+		key := strings.ToLower(strings.TrimSpace(st.Signature.Value))
+		if len(key) != 16 || st.Signature.Operation != "equals" {
+			return elsaCriterion{}
+		}
+		return elsaCriterion{key: key, known: true}
 	}
 	return elsaCriterion{}
 }
@@ -568,8 +627,15 @@ func elsaVersionLine(p string) (string, bool) {
 	return p, elsaLine.MatchString(p)
 }
 
+// elsaWalk is what walk collects of a definition for the release: its
+// entries, and the architectures they sit under.
+type elsaWalk struct {
+	entries map[elsaKey]*elsaEntry
+	arches  []string
+}
+
 // walk collects the affected entries of a criteria tree for the release.
-func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey][]string) {
+func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, w *elsaWalk) {
 	if c.Negate {
 		r.doc.anomalies++
 		return
@@ -593,6 +659,10 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey][]s
 				ctx.module = x.module
 			case x.channel != "":
 				ctx.channel = x.channel
+			case x.arch != "":
+				ctx.arch = x.arch
+			case x.key != "":
+				ctx.key = x.key
 			}
 		}
 	}
@@ -600,11 +670,22 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey][]s
 		if x.pkg == "" || ctx.release != r.release {
 			continue
 		}
-		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx)}
-		out[k] = appendUnique(out[k], x.fixed)
+		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx), module: ctx.module}
+		e := w.entries[k]
+		if e == nil {
+			e = &elsaEntry{}
+			w.entries[k] = e
+		}
+		e.add(ctx.arch, x.fixed)
+		if ctx.arch != "" {
+			w.arches = appendUnique(w.arches, ctx.arch)
+		}
+		if ctx.key != "" {
+			e.keys = appendUnique(e.keys, ctx.key)
+		}
 	}
 	for _, sub := range c.Criteria {
-		r.walk(sub, ctx, out)
+		r.walk(sub, ctx, w)
 	}
 }
 
@@ -638,8 +719,9 @@ func compareRPM(a, b string) int {
 // record turns a definition into the release's advisory; nil when it has no
 // entry for the release.
 func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
-	entries := map[elsaKey][]string{}
-	r.walk(d.criteria, elsaContext{}, entries)
+	w := &elsaWalk{entries: map[elsaKey]*elsaEntry{}}
+	r.walk(d.criteria, elsaContext{}, w)
+	entries := w.entries
 	if len(entries) == 0 {
 		return nil
 	}
@@ -674,19 +756,117 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		if a.name != b.name {
 			return a.name < b.name
 		}
-		return a.introduced < b.introduced
+		if a.introduced != b.introduced {
+			return a.introduced < b.introduced
+		}
+		return a.module < b.module
 	})
 	for _, k := range keys {
 		eco := "Oracle Linux:" + r.release
 		if k.channel != "" {
 			eco += ":" + k.channel
 		}
-		for _, e := range elsaRanges(k.introduced, entries[k]) {
-			v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: eco, Name: k.name},
-				Ranges: []osv.Range{{Type: "ECOSYSTEM", Events: e.events}}})
+		e := entries[k]
+		sort.Strings(e.keys)
+		for _, g := range elsaArchGroups(e.byArch, w.arches) {
+			cond := r.intern(g.arch, e.keys, k.module)
+			for _, e := range elsaRanges(k.introduced, g.fixes) {
+				v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: eco, Name: k.name},
+					Ranges: []osv.Range{{Type: "ECOSYSTEM", Events: e.events}}, EcosystemSpecific: cond})
+			}
 		}
 	}
 	return v
+}
+
+// intern returns the stored form of an entry's conditions (nil for none),
+// shared by every entry with the same; it is encoded once per distinct value.
+func (r *elsaResolver) intern(arch, keys []string, module string) json.RawMessage {
+	if len(arch) == 0 && len(keys) == 0 && module == "" {
+		return nil
+	}
+	id := strings.Join(arch, ",") + "\x00" + strings.Join(keys, ",") + "\x00" + module
+	if have, ok := r.conditions[id]; ok {
+		return have
+	}
+	if r.conditions == nil {
+		r.conditions = map[string]json.RawMessage{}
+	}
+	b, _ := json.Marshal(osv.OracleConditions{Arch: arch, SigningKeys: keys, Module: module})
+	r.conditions[id] = b
+	return b
+}
+
+// elsaArchGroup is the fixes of an entry on some architectures; no
+// architecture means every one.
+type elsaArchGroup struct {
+	arch  []string
+	fixes []string
+}
+
+// elsaArchGroups splits an entry's fixes by architecture where they differ.
+// When every architecture of the definition lists the same fixes (most
+// entries), or a fix sits under no architecture test, it is one group for
+// every architecture, as before. Otherwise each set of fixes is its own
+// group with its architectures: the higher of an x86_64 and an aarch64 fix
+// no longer decides the other architecture's packages, and a package listed
+// for one architecture only is not applied to the others.
+func elsaArchGroups(byArch []elsaArchFixes, all []string) []elsaArchGroup {
+	for _, a := range byArch {
+		if a.arch != "" {
+			continue
+		}
+		// A fix under no architecture test applies to every architecture.
+		if len(byArch) == 1 {
+			return []elsaArchGroup{{fixes: a.fixes}}
+		}
+		var fixes []string
+		for _, b := range byArch {
+			for _, f := range b.fixes {
+				fixes = appendUnique(fixes, f)
+			}
+		}
+		return []elsaArchGroup{{fixes: fixes}}
+	}
+	// Nearly every entry: each architecture of the definition lists it, with
+	// the same fixes.
+	same := len(byArch) == len(all)
+	for _, a := range byArch[1:] {
+		same = same && sameFixes(a.fixes, byArch[0].fixes)
+	}
+	if same {
+		return []elsaArchGroup{{fixes: byArch[0].fixes}}
+	}
+	sorted := slices.Clone(byArch)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].arch < sorted[j].arch })
+	var out []elsaArchGroup
+	for _, a := range sorted {
+		i := slices.IndexFunc(out, func(g elsaArchGroup) bool { return sameFixes(g.fixes, a.fixes) })
+		if i < 0 {
+			out = append(out, elsaArchGroup{fixes: a.fixes})
+			i = len(out) - 1
+		}
+		for _, x := range strings.Split(a.arch, "|") {
+			out[i].arch = appendUnique(out[i].arch, x)
+		}
+	}
+	for i := range out {
+		sort.Strings(out[i].arch)
+	}
+	return out
+}
+
+// sameFixes reports whether two lists hold the same fixes, in any order.
+func sameFixes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	return true
 }
 
 // elsaRange is one affected range of a package. A range for versions on

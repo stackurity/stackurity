@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -126,6 +127,9 @@ func (c *Collector) Collect(ctx context.Context, hostname, machineID string) (*m
 				b.Observations = append(b.Observations, obs...)
 				b.Cover("rpm", "checked", "")
 			}
+		}
+		if mods, ok := c.dnfModules(); ok {
+			b.Asset.Attributes[DNFModulesAttribute] = mods
 		}
 	}
 	if !found {
@@ -351,19 +355,72 @@ func parseApkInstalled(r io.Reader, distro string) ([]model.Observation, error) 
 	return obs, nil
 }
 
-// rpmQueryFormat emits one tab-separated line per package.
-const rpmQueryFormat = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n`
+// rpmQueryFormat emits one tab-separated line per package. The last field
+// is the header signature ("RSA/SHA256, <date>, Key ID 82562ea9ad986da3",
+// or "(none)" for an unsigned package): RSAHEADER on every rpm since 4.x
+// (EL7 to EL10; EL9 and later have no payload signature), DSAHEADER for the
+// DSA keys of older releases.
+const rpmQueryFormat = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\t` +
+	`%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|DSAHEADER?{%{DSAHEADER:pgpsig}}:{(none)}|}|\n`
+
+// rpmQueryFormatPlain is the format without the signature, for an rpm that
+// refuses the full one.
+const rpmQueryFormatPlain = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n`
 
 func runRPM(ctx context.Context, root string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	args := []string{"-qa", "--queryformat", rpmQueryFormat}
-	if root != "/" && root != "" {
-		args = append([]string{"--root", root}, args...)
+	query := func(format string) ([]byte, error) {
+		args := []string{"-qa", "--queryformat", format}
+		if root != "/" && root != "" {
+			args = append([]string{"--root", root}, args...)
+		}
+		cmd := exec.CommandContext(ctx, "rpm", args...)
+		cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+		return cmd.Output()
 	}
-	cmd := exec.CommandContext(ctx, "rpm", args...)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
-	return cmd.Output()
+	out, err := query(rpmQueryFormat)
+	if err != nil && ctx.Err() == nil {
+		// The signature is extra: never lose the inventory over it.
+		return query(rpmQueryFormatPlain)
+	}
+	return out, err
+}
+
+// rpmSigningKey reads the key id out of rpm's signature field: the 16 hex
+// digits after "Key ID" (rpm before 4.20 and v4 signatures), or the key id
+// a fingerprint ends with (v4) or starts with (v6). "(none)" is an unsigned
+// package (model evidence "signing_key": "none"); anything else, or no
+// field (an older format), is not known ("").
+func rpmSigningKey(sig string) string {
+	sig = strings.TrimSpace(sig)
+	if sig == "(none)" {
+		return "none"
+	}
+	hex := func(s string) bool {
+		for _, r := range s {
+			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+				return false
+			}
+		}
+		return s != ""
+	}
+	if i := strings.LastIndex(sig, "Key ID "); i >= 0 {
+		if id := strings.ToLower(strings.TrimSpace(sig[i+len("Key ID "):])); len(id) == 16 && hex(id) {
+			return id
+		}
+		return ""
+	}
+	if i := strings.LastIndex(sig, "Key fingerprint: "); i >= 0 {
+		fp := strings.ToLower(strings.TrimSpace(sig[i+len("Key fingerprint: "):]))
+		switch {
+		case len(fp) == 40 && hex(fp):
+			return fp[24:]
+		case len(fp) == 64 && hex(fp):
+			return fp[:16]
+		}
+	}
+	return ""
 }
 
 func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error) {
@@ -386,6 +443,11 @@ func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error)
 		if srpm != "" && srpm != "(none)" {
 			ev["source_rpm"] = srpm
 		}
+		if len(f) > 6 {
+			if key := rpmSigningKey(f[6]); key != "" {
+				ev["signing_key"] = key
+			}
+		}
 		obs = append(obs, model.Observation{
 			Purl:       purl("rpm", osID, name, version, q),
 			Version:    full,
@@ -396,4 +458,103 @@ func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error)
 		})
 	}
 	return obs, sc.Err()
+}
+
+// DNFModulesAttribute is the asset attribute listing a host's enabled dnf
+// module streams, "container-tools:ol8 nodejs:18" (sorted; "" when none
+// is enabled). It is absent when the host has no dnf module state (EL7,
+// Amazon Linux, EL10, which has no modules). Advisories for one stream of a
+// module ("Module container-tools:ol8 is enabled" in Oracle's data) are
+// then applied only to hosts on that stream.
+const DNFModulesAttribute = "dnf_modules"
+
+// dnfModules reads /etc/dnf/modules.d/*.module, the state dnf (EL8, EL9)
+// keeps of each module it has touched: a small INI file per module,
+//
+//	[nodejs]
+//	name=nodejs
+//	stream=18
+//	profiles=
+//	state=enabled
+//
+// dnf writes it when a stream is enabled, explicitly or by installing a
+// package of the module's default stream, and clears stream and state on
+// a reset. Reading the files needs no dnf, no root and no network. ok is
+// false when the directory does not exist.
+func (c *Collector) dnfModules() (string, bool) {
+	dir := c.path("etc/dnf/modules.d")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", false
+	}
+	var enabled []string
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".module") {
+			continue
+		}
+		data, err := readSmall(filepath.Join(dir, e.Name()), 64<<10)
+		if err != nil {
+			continue
+		}
+		enabled = append(enabled, parseModuleFile(data)...)
+	}
+	sort.Strings(enabled)
+	out := strings.Join(enabled, " ")
+	// Asset attributes are limited to model.MaxFieldLen; a cut list only
+	// leaves streams out, which then apply as with no list.
+	for len(out) > model.MaxFieldLen {
+		i := strings.LastIndexByte(out, ' ')
+		if i < 0 {
+			return "", false
+		}
+		out = out[:i]
+	}
+	return out, true
+}
+
+// parseModuleFile returns the "name:stream" of each enabled module in one
+// modules.d file (usually one section).
+func parseModuleFile(data []byte) []string {
+	var out []string
+	name, stream, state := "", "", ""
+	flush := func() {
+		if name != "" && stream != "" && state == "enabled" && !strings.ContainsAny(name+stream, " :\t") {
+			out = append(out, name+":"+stream)
+		}
+		name, stream, state = "", "", ""
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]"):
+			flush()
+			name = strings.TrimSpace(line[1 : len(line)-1])
+		case strings.HasPrefix(line, "#"), strings.HasPrefix(line, ";"):
+		default:
+			k, v, ok := strings.Cut(line, "=")
+			if !ok {
+				continue
+			}
+			switch strings.TrimSpace(k) {
+			case "name":
+				name = strings.TrimSpace(v)
+			case "stream":
+				stream = strings.TrimSpace(v)
+			case "state":
+				state = strings.ToLower(strings.TrimSpace(v))
+			}
+		}
+	}
+	flush()
+	return out
+}
+
+// readSmall reads at most max bytes of a file.
+func readSmall(path string, max int64) ([]byte, error) {
+	f, err := os.Open(path)
+	if err != nil {
+		return nil, err
+	}
+	defer f.Close()
+	return io.ReadAll(io.LimitReader(f, max))
 }
