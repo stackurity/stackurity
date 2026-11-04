@@ -84,7 +84,7 @@ export function MfaLoginStep({ methods, onDone, onRestart }: { methods: MfaSignI
   const act = useAction();
   const expired = act.error?.code === "mfa_expired";
 
-  const usePasskey = async () => {
+  const signInWithPasskey = async () => {
     const ok = await act.run(async () => {
       const begin = await api.post<{ options: unknown }>("/auth/mfa/passkey/begin");
       const credential = await getPasskey(begin.options);
@@ -118,7 +118,7 @@ export function MfaLoginStep({ methods, onDone, onRestart }: { methods: MfaSignI
         ) : mode === "passkey" ? (
           <>
             <p>Use your passkey or security key: your device asks for your fingerprint, face, PIN or a touch.</p>
-            <button type="button" className="btn btn-primary btn-block" disabled={act.pending} onClick={() => void usePasskey()} autoFocus>
+            <button type="button" className="btn btn-primary btn-block" disabled={act.pending} onClick={() => void signInWithPasskey()} autoFocus>
               {act.pending ? "Waiting for your passkey…" : "Use a passkey"}
             </button>
           </>

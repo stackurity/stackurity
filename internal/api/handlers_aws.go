@@ -711,7 +711,7 @@ func (s *Server) refreshAWSInstalls(ctx context.Context, c *store.AWSConnection,
 			break
 		}
 		checked++
-		status, detail := in.Status, in.Detail
+		var status, detail string
 		if time.Since(in.CreatedAt) > awsInstallGiveUp {
 			status, detail = "timed_out", "SSM did not report the end of the command within "+awsInstallGiveUp.String()
 		} else {

@@ -31,6 +31,8 @@ teams-app-package:
 lint:
 	test -z "$$(gofmt -l .)"
 	go vet ./...
+	golangci-lint run --new-from-merge-base origin/main ./...
+	cd web && npm run lint
 
 image:
 	docker build --build-arg VERSION=$(VERSION) -t stackurity:$(VERSION) .

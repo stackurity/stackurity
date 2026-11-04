@@ -68,6 +68,25 @@ jobs:
     steps:
       - run: test "${{ needs.go-test.result }}" = success
 
+  # Code quality (.golangci.yml): staticcheck, errcheck, errorlint,
+  # complexity, duplication and SQL rows handling. Fails only on issues in
+  # the lines a pull request or push changes, so older code is cleaned up
+  # as it is edited rather than all at once.
+  lint:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read # only-new-issues reads the pull request's diff
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          only-new-issues: true
+
   # Documentation and release metadata in step with the code, as its own
   # check so a failure says what drifted: every environment variable, CLI
   # command and flag, and API route is documented (tools/docslint,
@@ -152,6 +171,7 @@ jobs:
           cache-dependency-path: web/package-lock.json
       - run: npm ci --ignore-scripts
       - run: npm run typecheck
+      - run: npm run lint
       - run: npm test
       - run: npm run build
 

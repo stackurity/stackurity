@@ -419,7 +419,6 @@ func (s *Server) slackActAs(ctx context.Context, wk slackWork, link *store.Slack
 		req = map[string]any{"action": "suppress", "until": until, "note": "Snoozed for 1 week from Slack"}
 	}
 	applied := 0
-	var failed []string
 	for start := 0; start < len(ids); start += slackBatch {
 		req["ids"] = ids[start:min(start+slackBatch, len(ids))]
 		status, out, err := s.runAs(actx, wk.remote, "/api/v1/findings/actions", req, requireRole(auth.RoleEngineer)(http.HandlerFunc(s.bulkFindingAction)))
@@ -436,7 +435,6 @@ func (s *Server) slackActAs(ctx context.Context, wk slackWork, link *store.Slack
 			return "", refuse("Stackurity refused: %s", out.message())
 		}
 		applied += out.Applied
-		failed = append(failed, out.Failed...)
 	}
 	who := user.Name
 	if who == "" {
