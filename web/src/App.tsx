@@ -24,6 +24,9 @@ import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { CommunityKeyPage, VerifyCommunityKeyPage } from "./pages/CommunityKey";
 import { KeyStepPage } from "./pages/KeyStep";
+import { KeyReturnPage, KeyReturnSignIn } from "./pages/KeyReturn";
+import { CommunityKeyLinkPage, CommunityKeyLinkSignIn } from "./pages/CommunityKeyLink";
+import { KEY_LINK_PATH, KEY_RETURN_PATH } from "./keyLink";
 import { CommunityKeysPage } from "./pages/admin/CommunityKeys";
 import { PickRepositoriesPage, SocialConfirmPage, SocialSignupPage } from "./pages/Social";
 import { UsagePage } from "./pages/settings/Usage";
@@ -152,6 +155,10 @@ export function App() {
     return <CommunityKeyPage meta={communityKeys} />;
   if (communityKeys && pathname === "/self-hosted-key/verify" && (state.phase === "login" || state.phase === "ready"))
     return <VerifyCommunityKeyPage />;
+  // "Get a free key" on a self-hosted server sends its administrator here
+  // (Stackurity Cloud): sign in or up, confirm the server's address, and
+  // the key goes back in the browser.
+  if (communityKeys && pathname === KEY_LINK_PATH && state.phase === "login") return <CommunityKeyLinkSignIn />;
   // Signing up and connecting through Google, Microsoft or GitHub (a hosted edition).
   const social = "meta" in state ? state.meta.social : undefined;
   if (signup && social && pathname === "/signup/social" && (state.phase === "login" || state.phase === "ready")) return <SocialSignupPage signup={signup} />;
@@ -209,6 +216,12 @@ export function App() {
   // confirm with the method it requires.
   if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
   if (state.phase === "ready" && state.me.mfa_step_up_required) return <MfaStepUpPage />;
+  if (communityKeys && pathname === KEY_LINK_PATH && state.phase === "ready") return <CommunityKeyLinkPage />;
+  // Back from Stackurity Cloud with this self-hosted server's free key
+  // (KeyReturn.tsx), before the key step. Signed out, the key is dropped
+  // from the address at once: it was bound to the session that asked.
+  if (pathname === KEY_RETURN_PATH && state.phase === "ready" && state.me.license_key) return <KeyReturnPage />;
+  if (pathname === KEY_RETURN_PATH && state.phase === "login") return <KeyReturnSignIn />;
   // A self-hosted server without its key waits for one (agents and scans
   // keep sending data meanwhile).
   if (state.phase === "ready" && state.me.license_key?.state === "required") return <KeyStepPage status={state.me.license_key} />;

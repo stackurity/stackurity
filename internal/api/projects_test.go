@@ -374,6 +374,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/enrollments":                                "org",
 	"POST /api/v1/remediation/policies":                       "org",
 	"POST /api/v1/remediation/policies/preview":               "org",
+	"POST /api/v1/admin/license/link":                         "org",
+	"POST /api/v1/admin/license/link/claim":                   "org",
 	"GET /api/v1/ci-trusts":                                   "org",
 	"GET /api/v1/integrations/{id}/images":                    "org",
 	"POST /api/v1/integrations/registry/discover":             "org",

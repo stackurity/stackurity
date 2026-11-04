@@ -143,6 +143,23 @@ export interface SocialConnection {
   unavailable?: boolean;
 }
 
+/** What a self-hosted server sent to Stackurity Cloud's key page. */
+export interface KeyLinkRequest {
+  return: string;
+  state: string;
+  server_id?: string;
+}
+
+/** Where Stackurity Cloud would send a free key: the server's address as checked. */
+export interface KeyLinkPreview {
+  /** The server's base URL, normalised. */
+  return: string;
+  /** Its host (and port), shown to the person before anything is sent. */
+  host: string;
+  /** Plain http (allowed only to localhost and private addresses). */
+  insecure: boolean;
+}
+
 export interface SignupMeta {
   /** Site key of the challenge that keeps bots out of sign-up. */
   turnstile_site_key: string;
@@ -676,6 +693,8 @@ export interface LicenseInfo {
   };
   active_assets: number;
   managed_by_env: boolean;
+  /** "Get a free key" works on this server (it has a base URL to come back to, and no paid licence). */
+  key_link?: boolean;
 }
 
 /** One kind of gap in GET /admin/coverage-gaps: counts and type names only. */
@@ -3849,6 +3868,14 @@ export const api = {
     request<{ status: string }>("POST", "/community-keys", b, { quiet401: true }),
   verifyCommunityKey: (token: string) =>
     request<{ key: string; key_id: string; email: string }>("POST", "/community-keys/verify", { token }, { quiet401: true }),
+  /** Self-hosted: start "Get a free key"; the browser then goes to url (Stackurity Cloud). */
+  startKeyLink: () => request<{ url: string; expires_at: string }>("POST", "/admin/license/link"),
+  /** Self-hosted: install the key Stackurity Cloud sent back with its state. */
+  claimKeyLink: (key: string, state: string) => request<LicenseInfo>("POST", "/admin/license/link/claim", { key, state }),
+  /** Stackurity Cloud: check where a self-hosted server's key would go. */
+  previewKeyLink: (b: KeyLinkRequest) => request<KeyLinkPreview>("POST", "/community-keys/link/preview", b),
+  /** Stackurity Cloud: issue the key for the signed-in person and get the address that takes it back. */
+  confirmKeyLink: (b: KeyLinkRequest) => request<KeyLinkPreview & { redirect: string; key_id: string }>("POST", "/community-keys/link/confirm", b),
   socialSignupPreview: (token: string) => request<SocialSignupPreview>("POST", "/signup/social/preview", { token }, { quiet401: true }),
   socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
     request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),

@@ -10,6 +10,16 @@ import (
 // like any licence.
 const SignupURL = "https://app.stackurity.dev/self-hosted-key"
 
+// KeyLinkURL is where "Get a free key" sends an administrator's browser:
+// they sign in to Stackurity Cloud, which issues the key and sends the
+// browser back to KeyLinkReturnPath on their server with the key in the
+// address's fragment. The server itself makes no request.
+const KeyLinkURL = "https://app.stackurity.dev/community-key/new"
+
+// KeyLinkReturnPath is the dashboard page, under the server's base URL,
+// that takes the key back from Stackurity Cloud.
+const KeyLinkReturnPath = "/setup/community-key"
+
 // KeyGrace is how long a server that already had users or data when it
 // first ran a version needing a key keeps working without one.
 const KeyGrace = 30 * 24 * time.Hour

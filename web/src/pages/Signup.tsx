@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
+import { KEY_LINK_RESUME, resumePath } from "../keyLink";
 import { api, ApiError, type SignupMeta, type SocialMeta } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
@@ -327,8 +328,15 @@ export function VerifySignupPage() {
       .verifySignup(token)
       .then(async () => {
         // Drop the link from the address bar and history, then open the
-        // new organisation: its first-run flow starts by itself.
-        navigate("/", { replace: true });
+        // new organisation: its first-run flow starts by itself. Signed
+        // up from a self-hosted server's "Get a free key": back to that.
+        let next: string | null = null;
+        try {
+          next = resumePath(localStorage.getItem(KEY_LINK_RESUME), Date.now());
+        } catch {
+          // none kept
+        }
+        navigate(next ?? "/", { replace: true });
         await refresh();
       })
       .catch((e) => setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e))));

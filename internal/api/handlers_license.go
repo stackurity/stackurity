@@ -54,7 +54,9 @@ func (s *Server) adminLicense(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"status": st, "active_assets": n, "managed_by_env": s.LicenceFromEnv})
+	// key_link: "Get a free key" works here (keylink.go).
+	writeJSON(w, 200, map[string]any{"status": st, "active_assets": n, "managed_by_env": s.LicenceFromEnv,
+		"key_link": !s.LicenceFromEnv && !paidLicence(s.Licence) && s.keyLinkBase() != ""})
 }
 
 func (s *Server) putLicense(w http.ResponseWriter, r *http.Request) {
@@ -69,22 +71,36 @@ func (s *Server) putLicense(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	parse := s.ParseLicence
-	if parse == nil {
-		parse = license.Parse
-	}
-	l, err := parse(strings.TrimSpace(req.Key))
+	key := strings.TrimSpace(req.Key)
+	l, err := s.parseLicence(key)
 	if err != nil {
 		s.fail(w, r, badRequest(err.Error()))
 		return
 	}
-	if err := s.Store.SaveLicenseKey(r.Context(), strings.TrimSpace(req.Key), principal(r).User.ID); err != nil {
+	s.installLicence(w, r, key, l, "")
+}
+
+// parseLicence verifies a key offline (ParseLicence in tests).
+func (s *Server) parseLicence(key string) (*license.License, error) {
+	if s.ParseLicence != nil {
+		return s.ParseLicence(key)
+	}
+	return license.Parse(key)
+}
+
+// installLicence stores a verified key and applies it; via says how it
+// came when not pasted ("key_link": the free-key button).
+func (s *Server) installLicence(w http.ResponseWriter, r *http.Request, key string, l *license.License, via string) {
+	if err := s.Store.SaveLicenseKey(r.Context(), key, principal(r).User.ID); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	s.Licence.Set(l)
-	_ = s.Store.Audit(tenant.System(r.Context()), principal(r).Actor(r), "license.install", "license", l.ID,
-		map[string]any{"customer": l.Customer, "edition": l.Edition, "expires_at": l.ExpiresAt})
+	details := map[string]any{"customer": l.Customer, "edition": l.Edition, "expires_at": l.ExpiresAt}
+	if via != "" {
+		details["via"] = via
+	}
+	_ = s.Store.Audit(tenant.System(r.Context()), principal(r).Actor(r), "license.install", "license", l.ID, details)
 	s.adminLicense(w, r)
 }
 

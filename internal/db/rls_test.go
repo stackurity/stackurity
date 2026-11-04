@@ -25,6 +25,7 @@ var globalTables = map[string]string{
 	"lifecycle_cycles":    "public intelligence",
 	"lifecycle_products":  "public intelligence",
 	"license_key":         "installation licence",
+	"license_key_links":   "one-time states of the free-key button, bound to an instance administrator's session (migration 0095)",
 	"license_requirement": "from when the installation needs a key (migration 0094)",
 	"oidc_logins":         "sign-in flow state, before a workspace is known",
 	"packs":               "stack packs, installed by instance admins",
