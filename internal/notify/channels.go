@@ -127,7 +127,7 @@ var accountEvents = map[string]bool{
 	"test": true, "invitation": true, "confirm_email": true, "password_reset": true,
 	"mfa_email_code": true, "mfa_email_sign_in": true, "mfa_changed": true, "ask_spend": true,
 	// Stackurity Cloud (the pro repository).
-	"signup": true, "deletion_warning": true, "trial_summary": true,
+	"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true,
 }
 
 // Subject is the message's subject line: the title, with a tag in front

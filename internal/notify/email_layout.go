@@ -104,6 +104,8 @@ func emailWhy(m Message, host string) string {
 		return "You received this email because this address was used to sign up or sign in" + on + "."
 	case "ask_spend", "deletion_warning":
 		return "You received this email because you are an administrator of an organisation" + on + "."
+	case "community_key":
+		return "You received this email because this address asked for a free Stackurity key" + on + "."
 	case "trial_summary":
 		return "You received this email because you are an administrator of this installation" + on + "."
 	}
@@ -401,8 +403,14 @@ func emailHTML(m Message, br EmailBrand) string {
 		}
 	default:
 		code := func() {
+			// A short code (sign-in) large and spaced; a long one (a
+			// licence key) small, wrapping anywhere.
+			size := "font-size:28px;line-height:1.2;font-weight:700;letter-spacing:0.18em"
+			if len(m.Code) > 16 {
+				size = "font-size:13px;line-height:1.5;font-weight:400;word-break:break-all"
+			}
 			w(`<p style="margin:4px 0 18px"><span class="stk-code" style="display:inline-block;padding:12px 20px;font-family:`, emailMono,
-				`;font-size:28px;line-height:1.2;font-weight:700;letter-spacing:0.18em;color:`, emailNavy, `;background:`, emailBand,
+				`;`, size, `;color:`, emailNavy, `;background:`, emailBand,
 				`;border:1px solid `, emailBorder, `;border-radius:8px">`, esc(m.Code), "</span></p>\n")
 		}
 		for i, l := range m.Summary {
