@@ -82,16 +82,16 @@ const base: SignupMeta = {
   delete_after_days: 30,
 };
 
-test("sign-up: after the trial, prices, region and the self-hosted edition, from the service's configuration", () => {
+test("sign-up: after the trial, prices and region, from the service's configuration; no self-hosted pitch (owner, 4 Nov)", () => {
   const html = render(SignupFacts, { signup: base });
   const t = text(html);
   assert.ok(t.includes("After the trial, choose a plan to carry on"), t);
   assert.ok(t.includes("becomes read-only: you can still sign in and see your data, but nothing new is collected and no alerts are sent."), t);
   assert.ok(t.includes("We keep the data for 30 days so you can choose a plan, then delete it."), t);
   assert.ok(t.includes("Your data is stored in India."), t);
-  assert.ok(t.includes("Want to run it yourself? The self-hosted Community edition is free"), t);
+  assert.ok(!t.includes("self-hosted"), t);
   assert.ok(html.includes('href="https://stackurity.ai/pricing.html"'));
-  assert.ok(html.includes('href="https://stackurity.ai/download.html"'));
+  assert.ok(!html.includes('href="https://stackurity.ai/download.html"'));
   // No price is written into the page: the plans page has them.
   assert.doesNotMatch(t, /[$₹]\s?\d/);
 });
