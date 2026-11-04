@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -90,6 +91,29 @@ func TestRevokePeopleCredentials(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	// Slack accounts linked to people, and a link request not yet confirmed.
+	slackLink := func(ws, user int64, slackUser string) {
+		t.Helper()
+		if _, err := s.Pool.Exec(sys, `INSERT INTO slack_links (workspace_id, team_id, slack_user_id, user_id) VALUES ($1, 'T1', $2, $3)`,
+			ws, slackUser, user); err != nil {
+			t.Fatal(err)
+		}
+	}
+	slackLink(tenant.DefaultWorkspace, member.ID, "UMEMBER")
+	slackLink(tenant.DefaultWorkspace, owner.ID, "UOWNER")
+	slackLink(wsB.ID, adminB.ID, "UOTHER")
+	if _, err := s.Pool.Exec(sys, `INSERT INTO slack_link_requests (workspace_id, team_id, slack_user_id, token_hash, expires_at)
+		VALUES ($1, 'T1', 'UNEW', '\x01', now() + interval '15 minutes')`, tenant.DefaultWorkspace); err != nil {
+		t.Fatal(err)
+	}
+	linked := func(ws int64, slackUser string) bool {
+		var n int
+		if err := s.Pool.QueryRow(sys, `SELECT count(*) FROM slack_links WHERE workspace_id = $1 AND slack_user_id = $2`, ws, slackUser).Scan(&n); err != nil {
+			t.Fatal(err)
+		}
+		return n == 1
+	}
+
 	tokenWorks := func(secret string) bool {
 		_, _, err := s.TokenPrincipal(bg, secret)
 		if err != nil && !errors.Is(err, store.ErrNotFound) {
@@ -107,7 +131,9 @@ func TestRevokePeopleCredentials(t *testing.T) {
 	everything := func() map[string]bool {
 		return map[string]bool{"owner token": tokenWorks(ownerTok), "member token": tokenWorks(memberTok), "member token 2": tokenWorks(memberTok2),
 			"collector token": tokenWorks(collectorTok), "CI token": tokenWorks(ciTok), "other workspace's token": tokenWorks(otherWSTok),
-			"member connection": connWorks(memberConn), "owner connection": connWorks(ownerConn), "other workspace's connection": connWorks(otherWSConn)}
+			"member connection": connWorks(memberConn), "owner connection": connWorks(ownerConn), "other workspace's connection": connWorks(otherWSConn),
+			"member Slack link": linked(tenant.DefaultWorkspace, "UMEMBER"), "owner Slack link": linked(tenant.DefaultWorkspace, "UOWNER"),
+			"other workspace's Slack link": linked(wsB.ID, "UOTHER")}
 	}
 	for what, ok := range everything() {
 		if !ok {
@@ -131,7 +157,7 @@ func TestRevokePeopleCredentials(t *testing.T) {
 	boom := errors.New("boom")
 	err = pgx.BeginFunc(a, s.Pool, func(tx pgx.Tx) error {
 		n, err := store.RevokePeopleCredentials(a, tx, tenant.DefaultWorkspace, owner.ID)
-		if err != nil || n.APITokens != 2 || n.AssistantConnections != 1 {
+		if err != nil || n != (store.PeopleCredentialsRevoked{APITokens: 2, AssistantConnections: 1, SlackLinks: 1}) {
 			t.Errorf("in the rolled-back transaction: %+v %v", n, err)
 		}
 		return boom
@@ -153,11 +179,12 @@ func TestRevokePeopleCredentials(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if n.APITokens != 2 || n.AssistantConnections != 1 {
+	if n != (store.PeopleCredentialsRevoked{APITokens: 2, AssistantConnections: 1, SlackLinks: 1}) {
 		t.Errorf("counts: %+v", n)
 	}
 	want := map[string]bool{"owner token": true, "member token": false, "member token 2": false, "collector token": true, "CI token": true,
-		"other workspace's token": true, "member connection": false, "owner connection": true, "other workspace's connection": true}
+		"other workspace's token": true, "member connection": false, "owner connection": true, "other workspace's connection": true,
+		"member Slack link": false, "owner Slack link": true, "other workspace's Slack link": true}
 	for what, ok := range everything() {
 		if ok != want[what] {
 			t.Errorf("after revoking: %s works = %v, want %v", what, ok, want[what])
@@ -174,6 +201,10 @@ func TestRevokePeopleCredentials(t *testing.T) {
 	if _, err := s.RedeemOAuthCode(bg, code, func(store.OAuthCode) error { return nil }); !errors.Is(err, store.ErrOAuthInvalidGrant) {
 		t.Errorf("pending consent: %v", err)
 	}
+	var pending int
+	if err := s.Pool.QueryRow(sys, `SELECT count(*) FROM slack_link_requests WHERE used_at IS NULL`).Scan(&pending); err != nil || pending != 0 {
+		t.Errorf("Slack link requests left usable: %d %v", pending, err)
+	}
 	var reason string
 	if err := s.Pool.QueryRow(sys, `SELECT revoked_reason FROM oauth_grants WHERE user_id = $1`, member.ID).Scan(&reason); err != nil ||
 		reason != "single sign-on required" {
@@ -186,5 +217,113 @@ func TestRevokePeopleCredentials(t *testing.T) {
 		return err
 	}); err != nil || n != (store.PeopleCredentialsRevoked{}) {
 		t.Errorf("second time: %+v %v", n, err)
+	}
+}
+
+// TestRevokePeopleCredentialsDuringRedeem: a consent being exchanged for a
+// connection while the revocation runs ends revoked too. RedeemOAuthCode
+// holds the code's row lock while it makes the connection; the revocation
+// waits for it on that row and then sees the new connection.
+func TestRevokePeopleCredentialsDuringRedeem(t *testing.T) {
+	s := store.New(testdb.New(t))
+	bg := context.Background()
+	sys := tenant.System(bg)
+	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
+	member, err := s.CreateUser(a, "member@a.io", "Member", auth.RoleEngineer, "correct horse battery")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(sys, `INSERT INTO oauth_clients (id, name, redirect_uris) VALUES ('stkc_test', 'Test', '{https://c.example/cb}')`); err != nil {
+		t.Fatal(err)
+	}
+	code, _, _ := auth.NewToken("stko")
+	if _, err := s.Pool.Exec(sys, `INSERT INTO oauth_codes (workspace_id, code_hash, client_id, user_id, role, redirect_uri, code_challenge, expires_at)
+		VALUES ($1, $2, 'stkc_test', $3, 'viewer', 'https://c.example/cb', $4, now() + interval '2 minutes')`,
+		tenant.DefaultWorkspace, auth.HashToken(code), member.ID, "E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM"); err != nil {
+		t.Fatal(err)
+	}
+
+	// The exchange stops inside its transaction, holding the code's lock.
+	// Released at the end whatever happens, so a failure cannot leave the
+	// pool waiting for its connection.
+	locked, resume := make(chan struct{}), make(chan struct{})
+	var once sync.Once
+	release := func() { once.Do(func() { close(resume) }) }
+	t.Cleanup(release)
+	type redeemed struct {
+		tok *store.OAuthTokens
+		err error
+	}
+	redeem := make(chan redeemed, 1)
+	go func() {
+		tok, err := s.RedeemOAuthCode(bg, code, func(store.OAuthCode) error {
+			close(locked)
+			<-resume
+			return nil
+		})
+		redeem <- redeemed{tok, err}
+	}()
+	<-locked
+
+	type revoked struct {
+		n   store.PeopleCredentialsRevoked
+		err error
+	}
+	revoke := make(chan revoked, 1)
+	pid := make(chan int32, 1)
+	go func() {
+		var n store.PeopleCredentialsRevoked
+		err := pgx.BeginFunc(a, s.Pool, func(tx pgx.Tx) error {
+			var p int32
+			if err := tx.QueryRow(a, `SELECT pg_backend_pid()`).Scan(&p); err != nil {
+				return err
+			}
+			pid <- p
+			var err error
+			n, err = store.RevokePeopleCredentials(a, tx, tenant.DefaultWorkspace, 0)
+			return err
+		})
+		revoke <- revoked{n, err}
+	}()
+	// The revocation is waiting for a lock (the code's row).
+	var revokePID int32
+	select {
+	case revokePID = <-pid:
+	case r := <-revoke:
+		t.Fatalf("revocation: %+v %v", r.n, r.err)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		var waiting int
+		if err := s.Pool.QueryRow(sys, `SELECT count(*) FROM pg_locks WHERE pid = $1 AND NOT granted`, revokePID).Scan(&waiting); err != nil {
+			t.Fatal(err)
+		}
+		if waiting > 0 {
+			break
+		}
+		select {
+		case r := <-revoke:
+			t.Fatalf("the revocation did not wait for the exchange: %+v %v", r.n, r.err)
+		default:
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the revocation never waited for the exchange")
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	release()
+	rd := <-redeem
+	if rd.err != nil {
+		t.Fatalf("exchange: %v", rd.err)
+	}
+	rv := <-revoke
+	if rv.err != nil || rv.n.AssistantConnections != 1 {
+		t.Fatalf("revocation: %+v %v", rv.n, rv.err)
+	}
+	if _, _, err := s.AssistantPrincipal(bg, rd.tok.Access); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("the connection made during the revocation works: %v", err)
+	}
+	if _, err := s.RefreshOAuthGrant(bg, rd.tok.Refresh, "stkc_test"); !errors.Is(err, store.ErrOAuthInvalidGrant) {
+		t.Errorf("its refresh token: %v", err)
 	}
 }

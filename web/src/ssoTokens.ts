@@ -10,6 +10,7 @@ export type ExistingTokens = "keep" | "revoke";
 export interface Revoked {
   api_tokens: number;
   assistant_connections: number;
+  slack_links?: number;
 }
 
 /** The dialog shown when "Require single sign-on for members" is ticked. */
@@ -24,8 +25,8 @@ export function requireSSOChoice(isOwner: boolean): ChoiceRequest {
         value: "revoke",
         label: "Revoke them",
         detail: isOwner
-          ? "Members' API tokens and AI assistant connections stop working. Agents and CI keep theirs. Yours as owner stay."
-          : "Members' API tokens and AI assistant connections stop working, yours included. Agents and CI keep theirs. The organisation owner's stay.",
+          ? "Members' API tokens and AI assistant connections stop working, and their Slack accounts are unlinked. Agents and CI keep theirs. Yours as owner stay."
+          : "Members' API tokens and AI assistant connections stop working, and their Slack accounts are unlinked, yours included. Agents and CI keep theirs. The organisation owner's stay.",
       },
     ],
     action: "Require single sign-on",
@@ -43,8 +44,10 @@ export function requiredNotice(choice: ExistingTokens, revoked?: Revoked | null)
   return (
     "Single sign-on is now required. Revoked " +
     count(r.api_tokens, "API token", "API tokens") +
-    " and " +
+    ", " +
     count(r.assistant_connections, "AI assistant connection", "AI assistant connections") +
+    " and " +
+    count(r.slack_links ?? 0, "Slack account link", "Slack account links") +
     "."
   );
 }

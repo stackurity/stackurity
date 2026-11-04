@@ -613,7 +613,7 @@ export interface OrgSSO {
   domains: OrgSSODomain[];
   owner_id: number;
   /** What switching requiring on just revoked (existing_tokens "revoke" only). */
-  revoked?: { api_tokens: number; assistant_connections: number };
+  revoked?: { api_tokens: number; assistant_connections: number; slack_links: number };
 }
 
 export interface OrgSSOChange {
