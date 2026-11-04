@@ -171,6 +171,9 @@ type Checker struct {
 	// AskGlobalCap is Ask Stackurity's monthly spend cap for the whole
 	// installation, in millionths of a US dollar (nil: none, or Ask is off).
 	AskGlobalCap *int64
+	// ClientErrors is false when STACKURITY_CLIENT_ERRORS=off: no error
+	// reports are kept, so none are announced.
+	ClientErrors bool
 }
 
 // PlatformTarget returns the workspace platform incidents are raised in. When
@@ -548,7 +551,73 @@ func (c *Checker) PlatformIncidents(ctx context.Context) ([]store.SystemIncident
 		out = append(out, store.SystemIncident{Kind: "platform", Key: p.Kind + ":" + p.Key, Title: title, Priority: "P2",
 			Detail: map[string]any{"problem": p.Kind}})
 	}
+	fresh, err := c.newClientErrors(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, fresh...), nil
+}
+
+// newClientErrors raises one platform incident for each error people hit
+// that is new: never seen before, or not seen for 7 days. It stays open for
+// 24 hours from then and resolves by itself, so each fingerprint is
+// announced once (and listed in daily summaries while open); it cannot be
+// new again for 7 days. The title names the route patterns, status and
+// code, never a workspace; the details are on Platform health.
+func (c *Checker) newClientErrors(ctx context.Context) ([]store.SystemIncident, error) {
+	if !c.ClientErrors {
+		return nil, nil
+	}
+	sys := tenant.System(ctx)
+	now, err := c.Store.DBNow(sys)
+	if err != nil {
+		return nil, err
+	}
+	groups, err := c.Store.NewClientErrors(sys, now.Add(-24*time.Hour))
+	if err != nil {
+		return nil, err
+	}
+	out := make([]store.SystemIncident, 0, len(groups))
+	for _, g := range groups {
+		out = append(out, store.SystemIncident{Kind: "platform", Key: "client_error:" + g.Fingerprint[:16], Title: ClientErrorTitle(g),
+			Priority: "P2", Detail: map[string]any{"problem": "client_errors", "fingerprint": g.Fingerprint}})
+	}
 	return out, nil
+}
+
+// ClientErrorTitle says what an error report group is, in a line:
+// "New error people hit: 404 not_found on /settings/billing (GET /api/v1/billing)".
+func ClientErrorTitle(g store.ClientErrorGroup) string {
+	what := strings.TrimSpace(strings.Join(nonEmpty(statusText(g.Status), g.Code, g.Name), " "))
+	if what == "" {
+		what = "an error"
+	}
+	api := strings.TrimSpace(g.Method + " " + g.APIRoute)
+	if g.Kind == "server" {
+		return "New server error: " + what + " on " + api
+	}
+	title := "New error people hit: " + what + " on " + g.Route
+	if api != "" {
+		title += " (" + api + ")"
+	}
+	return title
+}
+
+func statusText(n int) string {
+	if n == 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
+}
+
+func nonEmpty(parts ...string) []string {
+	var out []string
+	for _, p := range parts {
+		if p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // askSpendProblem reports Ask Stackurity's spend this month at 80 per cent

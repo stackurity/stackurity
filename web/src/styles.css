@@ -1337,6 +1337,37 @@ select:disabled {
 .empty-action {
   margin: var(--s4) 0 0;
 }
+.empty-steps {
+  text-align: left;
+  margin: var(--s3) auto 0;
+  padding-left: 1.25em;
+  max-width: 60ch;
+}
+.empty-steps li + li {
+  margin-top: 4px;
+}
+.link-suggestions {
+  list-style: none;
+  margin: 0 0 var(--s4);
+  padding: 0;
+}
+.link-suggestion {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.link-suggestion + .link-suggestion {
+  margin-top: var(--s2);
+}
+.link-suggestion-actions {
+  white-space: nowrap;
+}
 .loading {
   display: flex;
   align-items: center;

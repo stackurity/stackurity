@@ -7,6 +7,8 @@ import type { Tone } from "./Badge";
 import { absTime, relTime } from "../format";
 import { errorView } from "../errors";
 import type { EmptyActionCopy } from "../emptyCopy";
+import { reportShownError } from "../clientErrors";
+import { useRoutePattern } from "./ErrorReports";
 
 export function RelativeTime({ iso, empty = "never" }: { iso: string | null | undefined; empty?: string }) {
   // Re-render every minute so "x min ago" stays honest on an open page.
@@ -25,10 +27,14 @@ export function RelativeTime({ iso, empty = "never" }: { iso: string | null | un
 
 /**
  * An error in plain words (errors.ts): the status and code are kept for
- * support behind a toggle, never in the sentence.
+ * support behind a toggle, never in the sentence. What it shows is
+ * reported to the server once (clientErrors.ts): the route pattern, the
+ * API call, status and code, never the page's data.
  */
 export function ErrorBox({ error, title }: { error: ApiError | null | undefined; title?: string }) {
+  const where = useRoutePattern();
   if (!error) return null;
+  reportShownError(error, where.route, where.inApp);
   const v = errorView(error);
   return (
     <div className="alert alert-error" role="alert">

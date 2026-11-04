@@ -251,6 +251,35 @@
     }
    }
   },
+  "/admin/client-errors": {
+   "get": {
+    "operationId": "get_admin_client_errors",
+    "summary": "Errors people hit, across workspaces",
+    "description": "Error reports across every workspace, for Platform health: `new` (errors seen for the first time, or again after 7 days, in the last 24 hours) and `top` (the 20 most frequent in the last 7 days). Each has `fingerprint`, `kind` (`client`: the dashboard; `server`: a 5xx answer or panic of the API), `route`, `method`, `api_route`, `status`, `code`, `name`, `top_frame`, `first_seen`, `last_seen`, `new_since`, `count`, `workspaces` (counted, never named), `versions`, `browsers` and the latest scrubbed `sample`. Also `enabled` (false with STACKURITY_CLIENT_ERRORS=off) and `retention_days` (install.md#error-reports)\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/coverage-gaps": {
    "get": {
     "operationId": "get_admin_coverage_gaps",
@@ -12787,6 +12816,39 @@
     }
    }
   },
+  "/client-errors": {
+   "post": {
+    "operationId": "post_client_errors",
+    "summary": "Report errors people hit in the dashboard",
+    "description": "The dashboard's error reports (`{\"reports\": [...]}`, at most 16 KB and 20 reports): each with `source` (`api`, `error`, `rejection`, `render`), `route` (the route pattern), and optionally `method`, `api_route`, `status`, `code`, `name`, `message` (at most 300 characters), `stack` (file:line of the dashboard's own bundle), `version`, `browser` (family and major version) and `page_id`. Identifiers, query strings, email addresses and tokens are removed again on the server, and each report is counted per fingerprint, day and organisation (none before sign-in). Answers 204, also when reports are off (STACKURITY_CLIENT_ERRORS=off), which keeps nothing. Browser sessions and pages before sign-in only (403 for API tokens); 30 a minute per address before sign-in, 60 a minute per person (429). A beacon without the X-Stackurity-CSRF header is accepted with Sec-Fetch-Site: same-origin (install.md#error-reports)\n\nRole: none (rate limited)",
+    "tags": [
+     "Setup"
+    ],
+    "x-stackurity-role": "none (rate limited)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Recorded, or reports are off"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/ci-trusts": {
    "get": {
     "operationId": "get_ci_trusts",
@@ -14548,6 +14610,125 @@
         }
        }
       }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/link-suggestions": {
+   "get": {
+    "operationId": "get_assets_id_link_suggestions",
+    "summary": "Suggested links between an application and the repository it was probably built from",
+    "description": "For an application with no `built_from` relation: up to three repositories it was probably built from, best first. For a repository: the applications that have it among their suggestions. Each item has `application` and `repository` (`id`, `name`), `score` (0 to 1; shown from 0.45), `same_package_name`, `dependency_match_percent`, `dependencies_matched`, `dependencies_compared` and `similar_name`. Dismissed pairs are left out\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/link-suggestions/{other}/accept": {
+   "post": {
+    "operationId": "post_assets_id_link_suggestions_other_accept",
+    "summary": "Link the application to the suggested repository",
+    "description": "Adds the `built_from` relation between the application and the repository (`{id}` and `{other}`, in either order), with source `confirmed:<who>`, and records an audit event. Needs the engineer role on both assets, as adding a relation does\n\nRole: engineer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "other",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/link-suggestions/{other}/dismiss": {
+   "post": {
+    "operationId": "post_assets_id_link_suggestions_other_dismiss",
+    "summary": "Dismiss a suggested link",
+    "description": "Records that the application is not built from the repository, so the pair is not suggested again. Needs the engineer role on both assets\n\nRole: engineer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "other",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
      },
      "4XX": {
       "$ref": "#/components/responses/Error"

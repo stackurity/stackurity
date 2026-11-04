@@ -12,6 +12,7 @@ What happens to background work when a server dies is in [reliability.md](reliab
 | `GET /readyz` | API port | Readiness: the database answers a ping within 2 seconds, else 503 `database_unavailable`. Container health check and Kubernetes readiness probe |
 | Platform health | **Settings → Platform health** (instance admins), `GET /api/v1/admin/health` | Problems with their errors: stale or failing feeds, background tasks that do not succeed, failed jobs, job and notification backlogs, failed notifications, failing channels |
 | Platform incidents | The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) | Critical platform problems as incidents, sent through that workspace's notification routes |
+| Errors people hit | **Platform health → Errors people hit**, `GET /api/v1/admin/client-errors` | Errors in the dashboard and 5xx answers of the API, counted per fingerprint and kept on this server for 90 days; a new one is a platform incident ([Error reports](install.md#error-reports)) |
 | Metrics | `STACKURITY_METRICS_ADDR` (`/metrics`, no authentication, separate listener) | Everything above as Prometheus series, plus HTTP, database pool and process metrics |
 | Memory profiles | `STACKURITY_METRICS_ADDR` (`/debug/pprof/heap`, `/debug/pprof/goroutine`) | What holds memory now; see [Memory](#memory) |
 | Server log | stdout, JSON by default | Errors with context; each problem below names the lines to look for |

@@ -287,3 +287,66 @@ export function jobsEmpty(filtered: boolean): EmptyCopy {
     after: "Each background job appears here with its state, attempts and any error.",
   };
 }
+
+// --- an asset's Stack tab, "Assets in this stack" (components/Stack.tsx)
+
+export interface StackEmptyCopy extends EmptyCopy {
+  /** What to do, in order; `code` in backticks. */
+  steps: string[];
+}
+
+/**
+ * kind: the asset's kind. suggestions: suggested links shown below
+ * (GET /assets/{id}/link-suggestions). canEdit: the person may change
+ * relations (engineer and above), which linking needs.
+ */
+export function stackEmpty(kind: string, assetId: number, suggestions: number, canEdit: boolean): StackEmptyCopy {
+  const relations: EmptyActionCopy = {
+    label: "Open the Relations tab",
+    to: `/assets/${assetId}?tab=relations`,
+    permitted: canEdit,
+    otherwise: "Someone with edit permission can link it.",
+  };
+  const scan = "Or run `stackurity scan` inside a Git checkout of the repository, so its remote is recorded: an app the agent finds deployed from the same remote is then linked by itself.";
+  switch (kind) {
+    case "repository":
+      return {
+        title: "Not linked to a deployment yet",
+        why: "We don't know where this code is deployed yet.",
+        after: "When the agent finds the deployed app, or you link it below, its server and live issues appear here.",
+        steps: [
+          ...(suggestions > 0 ? [`Link ${suggestions === 1 ? "the suggested app" : "one of the suggested apps"} below, if it is right.`] : []),
+          "Link it by hand on the Relations tab: the app is built from this repository.",
+          scan,
+        ],
+        action: relations,
+      };
+    case "application":
+      return {
+        title: "Not linked to its server or repository yet",
+        why: "We don't know which server runs this app or which repository it is built from yet.",
+        after: "When the agent reports it, or you link it below, its server, its code and their issues appear here.",
+        steps: [
+          ...(suggestions > 0 ? [`Link ${suggestions === 1 ? "the suggested repository" : "one of the suggested repositories"} below, if it is right.`] : []),
+          "Link it by hand on the Relations tab.",
+          scan,
+        ],
+        action: relations,
+      };
+    case "host":
+      return {
+        title: "No applications found on this server yet",
+        why: "The agent has not reported an application running here.",
+        after: "Applications the agent finds on this server appear here with their libraries and issues.",
+        steps: [],
+      };
+    default:
+      return {
+        title: "Nothing linked to this asset yet",
+        why: "No other asset is linked to this one.",
+        after: "Assets you link on the Relations tab appear here with their issues.",
+        steps: [],
+        action: relations,
+      };
+  }
+}

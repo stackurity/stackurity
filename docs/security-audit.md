@@ -365,7 +365,7 @@ Work from a copy where you can: take a `pg_dump` of the database and keep the se
 
 ### Notify and disclose
 
-- **Operators** tell the organisations whose data was exposed, through their workspace admins, with what was exposed, to whom, when, and what was done; and meet their own legal obligations (for example, personal data breach notification deadlines). Stackurity holds people's names and email addresses, so assume personal data is involved until shown otherwise.
+- **Operators** tell the organisations whose data was exposed, through their workspace admins, with what was exposed, to whom, when, and what was done; and meet their own legal obligations (for example, personal data breach notification deadlines). Stackurity holds people's names and email addresses, so assume personal data is involved until shown otherwise. [Error reports](install.md#error-reports) (errors people hit, kept 90 days) are built to hold none: route patterns, status and error codes, scrubbed messages and the browser family, with no names, email addresses, ids or request bodies.
 - **The project** fixes the bug in private (advisory fork), adds the reproducing test, releases a patch version with a GitHub security advisory and a CVE, and credits the reporter if they agree. The advisory states the affected versions and editions, whether exploitation leaves traces in the request logs or audit events, and how to check an installation (the queries above).
 
 ### Any isolation-test failure blocks a release

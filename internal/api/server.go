@@ -184,6 +184,13 @@ type Server struct {
 	// Ask is the in-app assistant (ask.go); nil when no model provider is
 	// configured.
 	Ask *ask.Engine
+	// ClientErrors keeps error reports: what the dashboard reports and the
+	// API's own 5xx answers (client_errors.go). False (STACKURITY_CLIENT_ERRORS=off)
+	// keeps nothing.
+	ClientErrors bool
+	serverErrs   serverErrors
+	// mux is the router, for the pattern of an API path a report names.
+	mux *chi.Mux
 }
 
 func (s *Server) Handler() http.Handler {
@@ -199,8 +206,8 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(s.realIP)
 	}
-	r.Use(sessionClient, s.instrument, middleware.RequestID, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
-	s.router = r
+	r.Use(sessionClient, s.instrument, middleware.RequestID, s.captureServerErrors, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
+	s.router, s.mux = r, r
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
 	r.Get("/readyz", s.ready)
@@ -263,7 +270,7 @@ func (s *Server) Handler() http.Handler {
 	s.feedbackQueueRoutes(r)
 
 	r.Route("/api/v1", func(r chi.Router) {
-		r.Use(s.authenticate, csrfGuard, s.keyGate)
+		r.Use(s.authenticate, noteWorkspace, csrfGuard, s.keyGate)
 		r.Get("/meta", s.meta)
 		r.Get("/openapi.json", s.openAPI)
 		r.Route("/public/cves", func(r chi.Router) {
@@ -271,6 +278,8 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/", s.publicCVEs)
 			r.Get("/recent", s.recentCVEs)
 		})
+		// Error reports from the dashboard, signed in or not (client_errors.go).
+		r.Post("/client-errors", s.clientErrors)
 		r.Post("/setup", s.setup)
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
@@ -352,6 +361,7 @@ func (s *Server) Handler() http.Handler {
 			})
 			r.With(requireInstanceAdmin).Get("/admin/health", s.adminHealth)
 			r.With(requireInstanceAdmin).Get("/admin/coverage-gaps", s.adminCoverageGaps)
+			r.With(requireInstanceAdmin).Get("/admin/client-errors", s.adminClientErrors)
 			r.With(requireInstanceAdmin).Get("/updates", s.updatesStatus)
 			r.Get("/workspaces", s.listMyWorkspaces)
 			r.Post("/workspaces/{id}/activate", s.activateWorkspace)
@@ -388,6 +398,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/relations", s.assetRelations)
 				r.Get("/assets/{id}/drift", s.assetDrift)
 				r.Get("/assets/{id}/stack", s.assetStack)
+				r.Get("/assets/{id}/link-suggestions", s.assetLinkSuggestions)
 				r.Get("/assets/{id}/leaks", s.assetLeaks)
 				r.Get("/leaks", s.listLeaks)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
@@ -451,6 +462,8 @@ func (s *Server) Handler() http.Handler {
 				r.Patch("/assets/{id}", s.updateAsset)
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
+				r.Post("/assets/{id}/link-suggestions/{other}/accept", s.acceptLinkSuggestion)
+				r.Post("/assets/{id}/link-suggestions/{other}/dismiss", s.dismissLinkSuggestion)
 				r.Get("/integrations", s.listIntegrations)
 				r.Get("/integrations/gitlab", s.listGitLab)
 				r.Get("/integrations/{id}/images", s.registryImages)
@@ -675,6 +688,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 400, "bad_request", err.Error())
 	default:
 		s.Log.Error("request failed", "path", r.URL.Path, "err", err, "request_id", middleware.GetReqID(r.Context()))
+		noteError(r, "error", err.Error(), "")
 		writeError(w, 500, "internal", "internal error")
 	}
 }

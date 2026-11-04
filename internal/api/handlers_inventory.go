@@ -718,6 +718,91 @@ func (s *Server) deleteRelation(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(204)
 }
 
+// assetLinkSuggestions lists the repositories an application was probably
+// built from, or the applications probably built from a repository
+// (store.LinkSuggestions).
+func (s *Server) assetLinkSuggestions(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	items, err := s.Store.LinkSuggestions(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, all(items))
+}
+
+// linkSuggestionPair reads the asset and the other side of a suggestion
+// and checks that the caller may change relations on both, as adding a
+// relation by hand needs.
+func (s *Server) linkSuggestionPair(w http.ResponseWriter, r *http.Request) (app, repo int64, ok bool) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return 0, 0, false
+	}
+	other, err := idParam(r, "other")
+	if err != nil {
+		s.fail(w, r, err)
+		return 0, 0, false
+	}
+	for _, a := range []int64{id, other} {
+		if _, err := s.Store.GetAsset(r.Context(), a); err != nil {
+			s.fail(w, r, err)
+			return 0, 0, false
+		}
+	}
+	if !s.requireOn(w, r, auth.RoleEngineer, id, other) {
+		return 0, 0, false
+	}
+	app, repo, err = s.Store.LinkPair(r.Context(), id, other)
+	if err != nil {
+		s.fail(w, r, err)
+		return 0, 0, false
+	}
+	return app, repo, true
+}
+
+// acceptLinkSuggestion links the application to the repository
+// (built_from), recorded as confirmed by the caller.
+func (s *Server) acceptLinkSuggestion(w http.ResponseWriter, r *http.Request) {
+	app, repo, ok := s.linkSuggestionPair(w, r)
+	if !ok {
+		return
+	}
+	actor := principal(r).Actor(r)
+	if err := s.Store.AcceptLinkSuggestion(r.Context(), app, repo, actor.Name); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), actor, "asset.link_suggestion_accept", "asset", itoa(app),
+		map[string]any{"to_asset": repo, "kind": "built_from"})
+	w.WriteHeader(204)
+}
+
+// dismissLinkSuggestion records that the application is not built from
+// the repository, so the pair is not suggested again.
+func (s *Server) dismissLinkSuggestion(w http.ResponseWriter, r *http.Request) {
+	app, repo, ok := s.linkSuggestionPair(w, r)
+	if !ok {
+		return
+	}
+	var uid *int64
+	if p := principal(r); p.User != nil {
+		uid = &p.User.ID
+	}
+	if err := s.Store.DismissLinkSuggestion(r.Context(), app, repo, uid); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "asset.link_suggestion_dismiss", "asset", itoa(app),
+		map[string]any{"to_asset": repo, "kind": "built_from"})
+	w.WriteHeader(204)
+}
+
 func (s *Server) listComponents(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.ComponentFilter{Type: q.Get("type"), Search: q.Get("q"), Segment: q.Get("segment"), Page: page(r)}

@@ -3,8 +3,10 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/clienterrors"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -286,12 +289,17 @@ func (s *Server) credentialsUnavailable(w http.ResponseWriter, r *http.Request, 
 
 // csrfGuard requires a custom header on state-changing requests made with
 // cookies. Browsers cannot send custom headers cross-site without a CORS
-// preflight, which this server never grants.
+// preflight, which this server never grants. Error reports sent with
+// navigator.sendBeacon as a page closes cannot carry the header; for them
+// the browser's own Sec-Fetch-Site: same-origin is accepted instead.
 func csrfGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet, http.MethodHead, http.MethodOptions:
 		default:
+			if r.URL.Path == clientErrorsPath && r.Header.Get("Sec-Fetch-Site") == "same-origin" {
+				break
+			}
 			if r.Header.Get("Authorization") == "" && r.Header.Get("X-Stackurity-CSRF") != "1" {
 				writeError(w, 403, "csrf", "missing X-Stackurity-CSRF header")
 				return
@@ -409,6 +417,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 		defer func() {
 			if v := recover(); v != nil && v != http.ErrAbortHandler {
 				s.Log.Error("panic", "path", r.URL.Path, "panic", v, "request_id", middleware.GetReqID(r.Context()))
+				noteError(r, "panic", fmt.Sprint(v), clienterrors.ServerFrame(debug.Stack(), "github.com/stackurity/stackurity"))
 				writeError(w, 500, "internal", "internal error")
 			}
 		}()

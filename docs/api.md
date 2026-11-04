@@ -38,7 +38,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
-- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -589,13 +589,21 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
 **Who:** anyone
 
 This API as an OpenAPI 3.1 document.
+
+### `POST /client-errors`
+
+**Who:** browser sessions, and pages before sign-in (API tokens get 403)
+
+How the dashboard reports the errors people hit, to this server only. Takes `{"reports": [...]}`, at most 16 KB (413 beyond) and 20 reports; each report has `source` (`api`: an API error shown to the person; `error`: an uncaught error; `rejection`: an unhandled promise rejection; `render`: an error a React error boundary caught), `route` (the route pattern, such as `/assets/:id`) and optionally `method` and `api_route` (the API call), `status`, `code`, `name`, `message` (at most 300 characters), `stack` (up to 8 frames of the dashboard's own bundle as `static/file.js:line:col`), `version`, `browser` (family and major version, `Chrome 131`) and `page_id` (random, per page load). Anything else is ignored, and a report that cannot be read is dropped without failing the others.
+
+The server checks every field and scrubs again: identifiers in paths become `:id` or `{id}` (the API route becomes the router's pattern when one matches), query strings and fragments are removed, and messages lose URLs, email addresses, UUIDs, tokens, IP addresses, quoted text and runs of five or more digits. Each report is counted under its fingerprint (kind, route, API route and method, status, code, error name and top frame), per day and organisation, with the latest report as the sample. Answers 204, also when reports are off (`STACKURITY_CLIENT_ERRORS=off`), which keeps and counts nothing. At most 30 requests a minute per address before sign-in and 60 a minute per person (429). The dashboard sends the last reports with `navigator.sendBeacon` as the page closes, which cannot set `X-Stackurity-CSRF`; such a request is accepted when the browser sends `Sec-Fetch-Site: same-origin`. See [install.md](install.md#error-reports).
 
 ### `POST /setup`
 
@@ -857,6 +865,34 @@ Removes a relation.
 **Who:** viewer
 
 Everything the asset relies on, followed through relations (up to three hops), with open findings grouped by layer (`web_server`, `cms`, `os`, `runtime`, `data_store`, `libraries`, `declared`, `managed_service`, `platform`, `other`). For an application: its hosts, repository, images and dependencies; for a host, its applications; for a cluster, its workloads and images.
+
+### `GET /assets/{id}/link-suggestions`
+
+**Who:** viewer
+
+Suggested links between a deployed application and the repository it was probably built from. For an application with no `built_from` relation: up to three repositories, best first; for a repository, the applications that have it among their suggestions. Nothing is linked until someone accepts one.
+
+```json
+{"items": [{"application": {"id": 23, "name": "lighthouse-service on analytics-lighthouse"},
+  "repository": {"id": 11, "name": "lighthouse"}, "score": 0.6, "same_package_name": "npm:lighthouse-service",
+  "dependency_match_percent": 100, "dependencies_matched": 12, "dependencies_compared": 12, "similar_name": true}]}
+```
+
+A suggestion is scored from three signals: the same package name in both manifests (`package_names`, weight 0.6; generic names such as `app` or `server` do not count), the share of direct dependencies that match (weight 0.5, counted only when at least 3 match at the same version; a component at different versions counts half), and name similarity (weight 0.1, a tiebreak only). Only pairs scoring 0.45 or more are returned: the same package name alone, or at least 90% of direct dependencies matching (70% when the names are alike). Dismissed pairs are left out.
+
+The package names come from the root manifests (`package.json`, `composer.json`, `go.mod`, `pubspec.yaml`, `pyproject.toml`, `Cargo.toml`) as the asset attribute `package_names` (`npm:shop,pub:shop_app`): `stackurity scan` and repository integrations record a repository's, the agent an application's (with a Flutter web build's package name from its `version.json`).
+
+### `POST /assets/{id}/link-suggestions/{other}/accept`
+
+**Who:** engineer on both assets
+
+Links the application to the repository (`{id}` and `{other}` are the two, in either order): adds the `built_from` relation with source `confirmed:<who>` and records the audit event `asset.link_suggestion_accept`. 204.
+
+### `POST /assets/{id}/link-suggestions/{other}/dismiss`
+
+**Who:** engineer on both assets
+
+Records that the application is not built from the repository, so the pair is not suggested again (audit event `asset.link_suggestion_dismiss`). Accepting the pair later removes the dismissal. 204.
 
 ### `GET /assets/{id}/leaks`
 
@@ -2184,6 +2220,12 @@ Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` remove
 **Who:** instance admin
 
 Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`), background `tasks`, jobs, notification `deliveries`, `failing_channels` and `email_quota`. See [install.md](install.md#health).
+
+### `GET /admin/client-errors`
+
+**Who:** instance admin
+
+The errors people hit, across every workspace, for **Platform health → Errors people hit**: `new`, errors that became new in the last 24 hours (seen for the first time, or again after 7 days without them), and `top`, the 20 most frequent in the last 7 days. Each has `fingerprint`, `kind` (`client`: the dashboard; `server`: a 5xx answer or a panic in an API handler), `route`, `method`, `api_route`, `status`, `code`, `name`, `top_frame`, `first_seen`, `last_seen`, `new_since`, `count`, `workspaces` (how many organisations hit it, counted and never named; pages before sign-in count as one), up to 10 `versions` and `browsers`, and `sample`, the latest report as stored. Also `enabled` (false with `STACKURITY_CLIENT_ERRORS=off`) and `retention_days` (90). See [install.md](install.md#error-reports).
 
 ### `GET /admin/coverage-gaps`
 

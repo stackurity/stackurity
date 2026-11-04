@@ -25,6 +25,7 @@ import (
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
 	"github.com/stackurity/stackurity/internal/collect/docker"
+	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/lockfile"
@@ -652,10 +653,31 @@ containing "stackurity:allow" is not reported.`,
 				gitURL = c.ciRepo
 			}
 			asset := model.AssetRef{Kind: model.AssetRepository, Name: name, Environment: envName}
-			if gitURL != "" {
+			// The checkout's origin remote (credentials dropped) is recorded
+			// so that the application deployed from it can be linked to it.
+			co := gitremote.Local(cmd.Context(), dir)
+			switch {
+			case gitURL != "":
 				asset.Identifiers = []model.Identifier{{Scheme: "git-url", Value: gitrepo.NormalizeURL(gitURL)}}
-			} else {
+			case co.Remote != "" && co.Root:
+				// Found here rather than given: the name stays an identity
+				// too, so a repository scanned before by name keeps its
+				// asset and gains the remote. A directory inside the
+				// checkout (one project of a monorepo) records the remote
+				// as an attribute only, so its projects stay apart.
+				asset.Identifiers = []model.Identifier{{Scheme: "name:repository", Value: name}, {Scheme: "git-url", Value: co.Remote}}
+			default:
 				asset.Identifiers = []model.Identifier{{Scheme: "name:repository", Value: name}}
+			}
+			asset.Attributes = map[string]string{}
+			if gitURL != "" {
+				co.Remote = gitrepo.NormalizeURL(gitURL)
+			}
+			if co.Remote != "" {
+				asset.Attributes["git_url"] = co.Remote
+			}
+			if co.Commit != "" {
+				asset.Attributes["git_commit"] = co.Commit
 			}
 			// Packs installed on the server read more file types; they run
 			// here, so repository contents never leave this machine.

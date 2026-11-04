@@ -18,7 +18,8 @@ import (
 //   - the data path of agents, CLI scans and CI uploads (enrolment,
 //     ingest, SBOM and VEX uploads, scan results, agent checks), so nothing
 //     is lost while the key is missing;
-//   - links from email (confirming, unsubscribing, preferences).
+//   - links from email (confirming, unsubscribing, preferences);
+//   - the dashboard's error reports to this server (/client-errors).
 //
 // The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab
 // apps and of AWS Launch Stack are routed outside /api/v1's group (each
@@ -62,6 +63,8 @@ func keyGateAllows(r *http.Request, p *Principal) bool {
 		return get
 	case "/setup", "/enroll", "/ingest", "/sbom/import", "/ci/token":
 		return post // /ci/token: keyless CI exchanges its ID token, then ingests
+	case "/client-errors":
+		return post // the dashboard's own error reports, from the key step and sign-in too
 	case "/remediation/renovate.json":
 		return get
 	}
