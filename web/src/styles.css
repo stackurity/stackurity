@@ -3019,6 +3019,21 @@ h6.md-h {
 .confirm-body input {
   width: 100%;
 }
+.confirm-choices {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: var(--s3) 0 0;
+  padding: 0;
+  border: 0;
+}
+.confirm-choices .choice input {
+  flex: none;
+  width: auto;
+}
+.confirm-choices .choice .hint {
+  display: block;
+}
 .confirm-word {
   user-select: all;
   padding: 1px 6px;

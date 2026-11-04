@@ -10264,7 +10264,7 @@
    "put": {
     "operationId": "put_sso_state",
     "summary": "Switch the organisation's single sign-on on or off (hosted edition)",
-    "description": "Stackurity Cloud (hosted) only. `enabled`, `require_sso`. Switching on needs a passed test of the current version and a verified domain; requiring it needs it on. The owner can always sign in with a password\n\nRole: admin",
+    "description": "Stackurity Cloud (hosted) only. `enabled`, `require_sso`, `existing_tokens`. Switching on needs a passed test of the current version and a verified domain; requiring it needs it on. The owner can always sign in with a password. When `require_sso` goes from false to true, `existing_tokens` is required: `keep` leaves API tokens and AI assistant connections working; `revoke` revokes, in this organisation, members' API tokens and AI assistant connections in the same transaction, and the response's `revoked` gives the counts. Agents' and CI jobs' tokens and the owner's are kept. Sent at any other time, `existing_tokens` is refused (400)\n\nRole: admin",
     "tags": [
      "Instance administration"
     ],
