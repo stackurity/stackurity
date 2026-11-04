@@ -88,7 +88,7 @@ func (s *Store) TickLicenseRequirement(ctx context.Context, maxStep time.Duratio
 func (s *Store) ServerID(ctx context.Context) (string, error) {
 	var id string
 	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT server_id::text FROM license_requirement WHERE id = 1`).Scan(&id)
-	if err == pgx.ErrNoRows {
+	if errors.Is(err, pgx.ErrNoRows) {
 		return "", nil
 	}
 	return id, err
