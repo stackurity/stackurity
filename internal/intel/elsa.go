@@ -527,9 +527,30 @@ type elsaResolver struct {
 	conditions map[string]json.RawMessage
 }
 
-// elsaFixes are the fixes a definition lists for one entry, by the
-// architecture test they sit under ("" for none).
-type elsaFixes map[string][]string
+// elsaArchFixes are the fixes a definition lists for one entry under one
+// architecture test ("" for none).
+type elsaArchFixes struct {
+	arch  string
+	fixes []string
+}
+
+// elsaEntry is what a definition lists for one entry: its fixes by
+// architecture (rarely more than two, so a slice, not a map) and the
+// signing keys next to them.
+type elsaEntry struct {
+	byArch []elsaArchFixes
+	keys   []string
+}
+
+func (e *elsaEntry) add(arch, fixed string) {
+	for i := range e.byArch {
+		if e.byArch[i].arch == arch {
+			e.byArch[i].fixes = appendUnique(e.byArch[i].fixes, fixed)
+			return
+		}
+	}
+	e.byArch = append(e.byArch, elsaArchFixes{arch: arch, fixes: []string{fixed}})
+}
 
 // elsaCriterion is a criterion read through its test, object and state.
 type elsaCriterion struct {
@@ -606,13 +627,11 @@ func elsaVersionLine(p string) (string, bool) {
 	return p, elsaLine.MatchString(p)
 }
 
-// elsaWalk is what walk collects of a definition for the release: each
-// entry's fixes by architecture and the signing keys next to them, and the
-// architectures its entries sit under.
+// elsaWalk is what walk collects of a definition for the release: its
+// entries, and the architectures they sit under.
 type elsaWalk struct {
-	fixes  map[elsaKey]elsaFixes
-	keys   map[elsaKey][]string
-	arches map[string]bool
+	entries map[elsaKey]*elsaEntry
+	arches  []string
 }
 
 // walk collects the affected entries of a criteria tree for the release.
@@ -652,13 +671,17 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, w *elsaWalk) {
 			continue
 		}
 		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx), module: ctx.module}
-		if w.fixes[k] == nil {
-			w.fixes[k] = elsaFixes{}
+		e := w.entries[k]
+		if e == nil {
+			e = &elsaEntry{}
+			w.entries[k] = e
 		}
-		w.fixes[k][ctx.arch] = appendUnique(w.fixes[k][ctx.arch], x.fixed)
-		w.arches[ctx.arch] = true
+		e.add(ctx.arch, x.fixed)
+		if ctx.arch != "" {
+			w.arches = appendUnique(w.arches, ctx.arch)
+		}
 		if ctx.key != "" {
-			w.keys[k] = appendUnique(w.keys[k], ctx.key)
+			e.keys = appendUnique(e.keys, ctx.key)
 		}
 	}
 	for _, sub := range c.Criteria {
@@ -696,9 +719,9 @@ func compareRPM(a, b string) int {
 // record turns a definition into the release's advisory; nil when it has no
 // entry for the release.
 func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
-	w := &elsaWalk{fixes: map[elsaKey]elsaFixes{}, keys: map[elsaKey][]string{}, arches: map[string]bool{}}
+	w := &elsaWalk{entries: map[elsaKey]*elsaEntry{}}
 	r.walk(d.criteria, elsaContext{}, w)
-	entries := w.fixes
+	entries := w.entries
 	if len(entries) == 0 {
 		return nil
 	}
@@ -743,13 +766,10 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		if k.channel != "" {
 			eco += ":" + k.channel
 		}
-		keys := w.keys[k]
-		sort.Strings(keys)
-		for _, g := range elsaArchGroups(entries[k], w.arches) {
-			var cond json.RawMessage
-			if c := (osv.OracleConditions{Arch: g.arch, SigningKeys: keys, Module: k.module}); !c.Empty() {
-				cond = r.intern(c)
-			}
+		e := entries[k]
+		sort.Strings(e.keys)
+		for _, g := range elsaArchGroups(e.byArch, w.arches) {
+			cond := r.intern(g.arch, e.keys, k.module)
 			for _, e := range elsaRanges(k.introduced, g.fixes) {
 				v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: eco, Name: k.name},
 					Ranges: []osv.Range{{Type: "ECOSYSTEM", Events: e.events}}, EcosystemSpecific: cond})
@@ -759,17 +779,21 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 	return v
 }
 
-// intern returns the stored form of an entry's conditions, shared by every
-// entry with the same.
-func (r *elsaResolver) intern(c osv.OracleConditions) json.RawMessage {
-	b, _ := json.Marshal(c)
-	if have, ok := r.conditions[string(b)]; ok {
+// intern returns the stored form of an entry's conditions (nil for none),
+// shared by every entry with the same; it is encoded once per distinct value.
+func (r *elsaResolver) intern(arch, keys []string, module string) json.RawMessage {
+	if len(arch) == 0 && len(keys) == 0 && module == "" {
+		return nil
+	}
+	id := strings.Join(arch, ",") + "\x00" + strings.Join(keys, ",") + "\x00" + module
+	if have, ok := r.conditions[id]; ok {
 		return have
 	}
 	if r.conditions == nil {
 		r.conditions = map[string]json.RawMessage{}
 	}
-	r.conditions[string(b)] = b
+	b, _ := json.Marshal(osv.OracleConditions{Arch: arch, SigningKeys: keys, Module: module})
+	r.conditions[id] = b
 	return b
 }
 
@@ -787,52 +811,62 @@ type elsaArchGroup struct {
 // group with its architectures: the higher of an x86_64 and an aarch64 fix
 // no longer decides the other architecture's packages, and a package listed
 // for one architecture only is not applied to the others.
-func elsaArchGroups(byArch elsaFixes, all map[string]bool) []elsaArchGroup {
-	if _, none := byArch[""]; none || len(byArch) == 0 {
+func elsaArchGroups(byArch []elsaArchFixes, all []string) []elsaArchGroup {
+	for _, a := range byArch {
+		if a.arch != "" {
+			continue
+		}
+		// A fix under no architecture test applies to every architecture.
+		if len(byArch) == 1 {
+			return []elsaArchGroup{{fixes: a.fixes}}
+		}
 		var fixes []string
-		for _, a := range sortedKeys(byArch) {
-			for _, f := range byArch[a] {
+		for _, b := range byArch {
+			for _, f := range b.fixes {
 				fixes = appendUnique(fixes, f)
 			}
 		}
 		return []elsaArchGroup{{fixes: fixes}}
 	}
-	type group struct {
-		arch  []string
-		fixes []string
+	// Nearly every entry: each architecture of the definition lists it, with
+	// the same fixes.
+	same := len(byArch) == len(all)
+	for _, a := range byArch[1:] {
+		same = same && sameFixes(a.fixes, byArch[0].fixes)
 	}
-	bySet := map[string]*group{}
-	var order []string
-	for _, a := range sortedKeys(byArch) {
-		fixes := slices.Clone(byArch[a])
-		sort.Strings(fixes)
-		set := strings.Join(fixes, " ")
-		if bySet[set] == nil {
-			bySet[set] = &group{fixes: fixes}
-			order = append(order, set)
-		}
-		for _, x := range strings.Split(a, "|") {
-			bySet[set].arch = appendUnique(bySet[set].arch, x)
-		}
+	if same {
+		return []elsaArchGroup{{fixes: byArch[0].fixes}}
 	}
-	if len(order) == 1 {
-		every := true // the definition lists the package on each of its architectures
-		for a := range all {
-			if a != "" && len(byArch[a]) == 0 {
-				every = false
-			}
+	sorted := slices.Clone(byArch)
+	sort.Slice(sorted, func(i, j int) bool { return sorted[i].arch < sorted[j].arch })
+	var out []elsaArchGroup
+	for _, a := range sorted {
+		i := slices.IndexFunc(out, func(g elsaArchGroup) bool { return sameFixes(g.fixes, a.fixes) })
+		if i < 0 {
+			out = append(out, elsaArchGroup{fixes: a.fixes})
+			i = len(out) - 1
 		}
-		if every {
-			return []elsaArchGroup{{fixes: bySet[order[0]].fixes}}
+		for _, x := range strings.Split(a.arch, "|") {
+			out[i].arch = appendUnique(out[i].arch, x)
 		}
 	}
-	out := make([]elsaArchGroup, 0, len(order))
-	for _, set := range order {
-		g := bySet[set]
-		sort.Strings(g.arch)
-		out = append(out, elsaArchGroup{arch: g.arch, fixes: g.fixes})
+	for i := range out {
+		sort.Strings(out[i].arch)
 	}
 	return out
+}
+
+// sameFixes reports whether two lists hold the same fixes, in any order.
+func sameFixes(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for _, x := range a {
+		if !slices.Contains(b, x) {
+			return false
+		}
+	}
+	return true
 }
 
 // elsaRange is one affected range of a package. A range for versions on
