@@ -564,13 +564,21 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
 **Who:** anyone
 
 This API as an OpenAPI 3.1 document.
+
+### `POST /client-errors`
+
+**Who:** browser sessions, and pages before sign-in (API tokens get 403)
+
+How the dashboard reports the errors people hit, to this server only. Takes `{"reports": [...]}`, at most 16 KB (413 beyond) and 20 reports; each report has `source` (`api`: an API error shown to the person; `error`: an uncaught error; `rejection`: an unhandled promise rejection; `render`: an error a React error boundary caught), `route` (the route pattern, such as `/assets/:id`) and optionally `method` and `api_route` (the API call), `status`, `code`, `name`, `message` (at most 300 characters), `stack` (up to 8 frames of the dashboard's own bundle as `static/file.js:line:col`), `version`, `browser` (family and major version, `Chrome 131`) and `page_id` (random, per page load). Anything else is ignored, and a report that cannot be read is dropped without failing the others.
+
+The server checks every field and scrubs again: identifiers in paths become `:id` or `{id}` (the API route becomes the router's pattern when one matches), query strings and fragments are removed, and messages lose URLs, email addresses, UUIDs, tokens, IP addresses, quoted text and runs of five or more digits. Each report is counted under its fingerprint (kind, route, API route and method, status, code, error name and top frame), per day and organisation, with the latest report as the sample. Answers 204, also when reports are off (`STACKURITY_CLIENT_ERRORS=off`), which keeps and counts nothing. At most 30 requests a minute per address before sign-in and 60 a minute per person (429). The dashboard sends the last reports with `navigator.sendBeacon` as the page closes, which cannot set `X-Stackurity-CSRF`; such a request is accepted when the browser sends `Sec-Fetch-Site: same-origin`. See [install.md](install.md#error-reports).
 
 ### `POST /setup`
 
@@ -2159,6 +2167,12 @@ Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` remove
 **Who:** instance admin
 
 Platform health across workspaces: `status` (`ok`, `warning`, `critical`), `problems` (each with `last_success`, `last_error`, `scope`, `next_step` and `docs`), background `tasks`, jobs, notification `deliveries`, `failing_channels` and `email_quota`. See [install.md](install.md#health).
+
+### `GET /admin/client-errors`
+
+**Who:** instance admin
+
+The errors people hit, across every workspace, for **Platform health → Errors people hit**: `new`, errors that became new in the last 24 hours (seen for the first time, or again after 7 days without them), and `top`, the 20 most frequent in the last 7 days. Each has `fingerprint`, `kind` (`client`: the dashboard; `server`: a 5xx answer or a panic in an API handler), `route`, `method`, `api_route`, `status`, `code`, `name`, `top_frame`, `first_seen`, `last_seen`, `new_since`, `count`, `workspaces` (how many organisations hit it, counted and never named; pages before sign-in count as one), up to 10 `versions` and `browsers`, and `sample`, the latest report as stored. Also `enabled` (false with `STACKURITY_CLIENT_ERRORS=off`) and `retention_days` (90). See [install.md](install.md#error-reports).
 
 ### `GET /admin/coverage-gaps`
 
