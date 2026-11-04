@@ -1,5 +1,15 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { canConfirm, confirmWord, DialogQueue, keyAction, nextFocus, type ConfirmRequest, type PromptRequest } from "../confirm";
+import {
+  canChoose,
+  canConfirm,
+  confirmWord,
+  DialogQueue,
+  keyAction,
+  nextFocus,
+  type ChoiceRequest,
+  type ConfirmRequest,
+  type PromptRequest,
+} from "../confirm";
 
 /**
  * One in-app dialog for every confirmation and text prompt, instead of the
@@ -10,13 +20,15 @@ import { canConfirm, confirmWord, DialogQueue, keyAction, nextFocus, type Confir
  *   if (!(await confirmAction({ title: `Delete asset ${a.name}?`, consequence: "...",
  *     action: "Delete asset", destructive: true, typeToConfirm: a.name }))) return;
  *   const name = await promptText({ title: "New project", label: "Name", action: "Create project" });
+ *   const pick = await chooseAction({ title: "...", choices: [{ value: "a", label: "..." }, ...], action: "..." });
  *
  * ConfirmHost is mounted once, at the root.
  */
 
 type Pending =
   | { kind: "confirm"; req: ConfirmRequest; resolve: (ok: boolean) => void }
-  | { kind: "prompt"; req: PromptRequest; resolve: (text: string | null) => void };
+  | { kind: "prompt"; req: PromptRequest; resolve: (text: string | null) => void }
+  | { kind: "choose"; req: ChoiceRequest; resolve: (value: string | null) => void };
 
 // Requests are answered one at a time, in order (DialogQueue); the host
 // shows whichever is current.
@@ -31,6 +43,11 @@ export function confirmAction(req: ConfirmRequest): Promise<boolean> {
 /** Asks for a line of text; null when cancelled. */
 export function promptText(req: PromptRequest): Promise<string | null> {
   return new Promise((resolve) => enqueue({ kind: "prompt", req, resolve }));
+}
+
+/** Asks to pick one of explicit options; null when cancelled. */
+export function chooseAction(req: ChoiceRequest): Promise<string | null> {
+  return new Promise((resolve) => enqueue({ kind: "choose", req, resolve }));
 }
 
 function enqueue(p: Pending) {
@@ -89,10 +106,11 @@ export function ConfirmHost() {
   const asConfirm: ConfirmRequest =
     cur.kind === "confirm" ? cur.req : { title: cur.req.title, action: cur.req.action, destructive: false };
   const word = confirmWord(asConfirm);
-  const ready = cur.kind === "prompt" ? cur.req.allowEmpty || typed.trim() !== "" : canConfirm(asConfirm, typed);
+  const ready =
+    cur.kind === "prompt" ? cur.req.allowEmpty || typed.trim() !== "" : cur.kind === "choose" ? canChoose(cur.req, typed) : canConfirm(asConfirm, typed);
   const done = () => {
     if (!ready) return;
-    close(cur.kind === "prompt" ? typed.trim() : true);
+    close(cur.kind === "prompt" ? typed.trim() : cur.kind === "choose" ? typed : true);
   };
 
   const onKey = (e: KeyboardEvent) => {
@@ -151,6 +169,20 @@ export function ConfirmHost() {
                 aria-invalid={typed !== "" && !ready}
               />
             </div>
+          )}
+          {cur.kind === "choose" && (
+            <fieldset className="confirm-choices">
+              <legend className="sr-only">{cur.req.title}</legend>
+              {cur.req.choices.map((c) => (
+                <label key={c.value} className="choice">
+                  <input type="radio" name="confirm-choice" value={c.value} checked={typed === c.value} onChange={() => setTyped(c.value)} />
+                  <span>
+                    <strong>{c.label}</strong>
+                    {c.detail && <span className="hint">{c.detail}</span>}
+                  </span>
+                </label>
+              ))}
+            </fieldset>
           )}
           {cur.kind === "prompt" && (
             <div className="field">

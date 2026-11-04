@@ -4,7 +4,8 @@ import { api, type OrgSSO, type OrgSSOChange, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Card, CopyBox, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
-import { confirmAction } from "../../components/ConfirmDialog";
+import { chooseAction, confirmAction } from "../../components/ConfirmDialog";
+import { requiredNotice, requireSSOChoice, type ExistingTokens } from "../../ssoTokens";
 
 const ROLES: UserRole[] = ["viewer", "engineer", "security", "admin"];
 
@@ -108,6 +109,17 @@ export function SingleSignOnPage() {
   const setState = async (enabled: boolean, require: boolean) => {
     setNotice(null);
     if (await act.run(() => api.setOrgSSOState({ enabled, require_sso: require }))) res.reload();
+  };
+  // Switching requiring on asks what happens to existing tokens; no default.
+  const requireSSO = async () => {
+    setNotice(null);
+    const choice = (await chooseAction(requireSSOChoice(isOwner))) as ExistingTokens | null;
+    if (!choice) return;
+    const r = await act.run(() => api.setOrgSSOState({ enabled: true, require_sso: true, existing_tokens: choice }));
+    if (r) {
+      setNotice(requiredNotice(choice, r.revoked));
+      res.reload();
+    }
   };
   const addDomain = async (e: FormEvent) => {
     e.preventDefault();
@@ -358,14 +370,19 @@ export function SingleSignOnPage() {
                   </span>
                 </label>
                 <label className="choice">
-                  <input type="checkbox" checked={cfg.require_sso} disabled={!cfg.enabled} onChange={(e) => void setState(true, e.target.checked)} />
+                  <input
+                    type="checkbox"
+                    checked={cfg.require_sso}
+                    disabled={!cfg.enabled}
+                    onChange={(e) => void (e.target.checked ? requireSSO() : setState(true, false))}
+                  />
                   <span>
                     Require single sign-on for members
                     <span className="hint">
                       {" "}
                       Members can then work here only after signing in with single sign-on. The organisation's owner can always sign in with their password, as a
-                      way back in if the identity provider is down{isOwner ? " (that is you)" : ""}. API tokens and connected AI assistants made before
-                      keep working; revoke existing tokens if you need to.
+                      way back in if the identity provider is down{isOwner ? " (that is you)" : ""}. Switching it on asks whether to keep or revoke the API
+                      tokens and AI assistant connections made before.
                     </span>
                   </span>
                 </label>
