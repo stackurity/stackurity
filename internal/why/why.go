@@ -357,10 +357,20 @@ func Build(in Input, now time.Time) Explanation {
 				orUnknown(inv.CollectorID), orUnknown(f.Version), inv.Confidence, how))
 		}
 		for _, a := range e.Rule.Ambiguous {
-			if a == "version_line_unlisted" {
+			switch a {
+			case "version_line_unlisted":
 				e.Missing = append(e.Missing, fmt.Sprintf("Whether the advisory covers this version line. It lists fixes for other lines of %s only, "+
 					"and %s is on none of them: check the vendor's advisory for this line, or move to a listed line's fixed version.",
 					orUnknown(f.ComponentName), orUnknown(f.Version)))
+			case "signing_key_mismatch":
+				what := "is signed with key " + orUnknown(str(ev, "signing_key"))
+				if str(ev, "signing_key") == "none" {
+					what = "is not signed"
+				}
+				e.Missing = append(e.Missing, fmt.Sprintf("Whether this is the distribution's build. The installed %s %s, "+
+					"while the advisory describes the packages signed with %s: it may be another vendor's or a local build, with other code and fixes. "+
+					"Check where it came from (rpm -qi shows the signature and vendor); if it should be the distribution's, reinstall it from the distribution's repository.",
+					orUnknown(f.ComponentName), what, orUnknown(strings.Join(strs(ev["advisory_signing_keys"]), ", "))))
 			}
 		}
 	case "stale":

@@ -30,9 +30,15 @@ KEEP = {
 # Variants of ol9: "shrunk" keeps one definition (a file that lost most of
 # its advisories, which the feed must refuse); "revised" drops the curl
 # advisory (a revision the feed reads, withdrawing that one advisory).
+# "ol8-conditions" holds the branches that need the architecture and module
+# stream (cut from the file of 4 November 2026; the other fixtures are older,
+# so regenerate only the files you change).
 VARIANTS = {
     'ol9-shrunk': ['ELSA-2023-2650'],
     'ol9-revised': [i for i in KEEP['ol9'] if i != 'ELSA-2023-2650'],
+    'ol8-conditions': ['ELSA-2021-4191',     # virt:ol (libvirt): a different module build per architecture
+                       'ELSA-2024-2084',     # container-tools:4.0, podman 2:4.0.2
+                       'ELSA-2024-3968'],    # container-tools:ol8, podman 4:4.9.4 (a higher epoch than 4.0's)
 }
 
 src, out = sys.argv[1], sys.argv[2]

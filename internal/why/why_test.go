@@ -292,3 +292,18 @@ func TestAsOfForScannedOnce(t *testing.T) {
 		t.Errorf("reporting asset: %+v", e)
 	}
 }
+
+func TestMissingSigningKey(t *testing.T) {
+	for key, want := range map[string]string{
+		"21ea45ab2f86d6a1": "The installed ol/libvirt is signed with key 21ea45ab2f86d6a1, while the advisory describes the packages signed with 82562ea9ad986da3",
+		"none":             "The installed ol/libvirt is not signed, while the advisory describes the packages signed with 82562ea9ad986da3",
+	} {
+		in := vuln(map[string]any{"matched_ranges": []any{"OL8-ELSA-2021-4191: < 0:6.0.0-37"}, "comparator": "rpm",
+			"target_ecosystem": "Oracle Linux:8", "feed": "elsa:Oracle Linux", "signing_key": key, "advisory_signing_keys": []any{"82562ea9ad986da3"},
+			"match": map[string]any{"rule": "range", "record": "OL8-ELSA-2021-4191", "ambiguous": []any{"signing_key_mismatch"}}})
+		in.Finding.Verification, in.Finding.ComponentName, in.Finding.ComponentType = "needs_validation", "ol/libvirt", "rpm"
+		if e := Build(in, now); len(e.Missing) != 1 || !strings.Contains(e.Missing[0], want) || !strings.Contains(e.Missing[0], "rpm -qi") {
+			t.Errorf("key %s: %q", key, e.Missing)
+		}
+	}
+}
