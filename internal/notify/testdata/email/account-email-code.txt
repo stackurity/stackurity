@@ -1,0 +1,16 @@
+Subject: Someone is signing in to Stackurity
+
+Your code for signing in to Stackurity (app.stackurity.dev) as dana@northwind-traders.com:
+
+    482915
+
+It works once, for 10 minutes. Nobody from Stackurity will ask you for it.
+
+If this was not you, someone knows your password: change it now, and tell your administrator. The request came from 203.0.113.42.
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because it is the address of a Stackurity account on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

@@ -1,0 +1,14 @@
+Subject: You signed in to Stackurity with an email code
+
+Your account dana@northwind-traders.com signed in to app.stackurity.dev with an email code at 4 Nov 2026 09:30 UTC, from 203.0.113.42.
+
+If this was not you, change your password now and tell your administrator.
+
+A passkey or an authenticator app is stronger than email codes: set one up under Your account → Two-factor methods.
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because it is the address of a Stackurity account on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

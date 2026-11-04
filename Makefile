@@ -9,7 +9,7 @@ EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 # First-party plugins, built next to the server and shipped in the image.
 PLUGINS = aws-managed gcp-managed azure-managed kubernetes
 
-.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image teams-app-package
+.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image teams-app-package email-preview
 
 build: web plugins
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/stackurity ./cmd/stackurity
@@ -22,6 +22,14 @@ web:
 
 test:
 	go test ./...
+
+# Every kind of email the server sends, rendered from its sample and
+# checked (internal/notify/email_check.go), as .html files to look at:
+#   make email-preview [EMAIL_DIR=/tmp/emails] [BASE_URL=https://stackurity.example.org]
+EMAIL_DIR ?= bin/email-preview
+email-preview:
+	go run ./tools/emailpreview -samples -out $(EMAIL_DIR) $(if $(BASE_URL),-base-url $(BASE_URL))
+	@echo "open $(EMAIL_DIR)/index.html"
 
 # The Teams app package (docs/teams-app.md):
 #   make teams-app-package TEAMS_APP_ID=<Microsoft App ID> BASE_URL=https://stackurity.example.com

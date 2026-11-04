@@ -249,14 +249,7 @@ func (s *Server) emailInvitation(r *http.Request, inv *store.Invitation, link st
 			inviter = p.User.Name + " (" + p.User.Email + ")"
 		}
 	}
-	m := notify.Message{Event: "invitation", Title: "You are invited to " + ws.Name + " on Stackurity", At: time.Now().UTC(),
-		Summary: []string{
-			fmt.Sprintf("%s invited you to %s %s.", inviter, ws.Name, invitationScopeText(inv)),
-			"Stackurity lists the software on your servers and code, and tells you which fixes matter.",
-			fmt.Sprintf("Open the link to accept. It works once, and until %s.", inv.ExpiresAt.UTC().Format("2 January 2006 15:04 MST")),
-			"If you did not expect this, ignore this email.",
-		},
-		Link: link}
+	m := notify.InvitationEmail(ws.Name, inviter, invitationScopeText(inv), link, inv.ExpiresAt, time.Now().UTC())
 	ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
 	defer cancel()
 	if err := s.Dispatcher.SendEmail(ctx, ch, inv.Email, m); err != nil {

@@ -1,0 +1,19 @@
+Subject: Your Stackurity two-factor sign-in changed
+
+A passkey, “MacBook Touch ID”, was added on your account dana@northwind-traders.com at Stackurity (app.stackurity.dev).
+
+When: 4 Nov 2026 09:30 UTC. From 203.0.113.42, Chrome on macOS.
+
+If this was not you, someone may have your password: reset it now (that signs you out everywhere), then remove anything you do not recognise under Your account → Two-factor methods and tell your administrator.
+
+You get this email whenever your two-factor sign-in changes; it cannot be turned off.
+
+Reset password:
+https://app.stackurity.dev/forgot-password
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because it is the address of a Stackurity account on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

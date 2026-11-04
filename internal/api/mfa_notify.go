@@ -37,31 +37,7 @@ func (s *Server) notifyFactorChange(r *http.Request, to, change, admin string) {
 }
 
 func factorChangeMessage(base, to, change, admin, ip, userAgent string, at time.Time) notify.Message {
-	host := hostOf(base)
-	where := "Stackurity"
-	if host != "" {
-		where = "Stackurity (" + host + ")"
-	}
-	who := ""
-	if admin != "" {
-		who = " by an administrator, " + admin + ","
-	}
-	from := "From " + ip + ", " + deviceSummary(userAgent) + "."
-	if admin != "" {
-		from = "From the administrator's " + ip + ", " + deviceSummary(userAgent) + "."
-	}
-	notMe := "If this was not you, someone may have your password: change it now, which signs you out everywhere, then remove anything you do not recognise under Your account → Two-factor methods and tell your administrator."
-	if base != "" {
-		notMe = "If this was not you, someone may have your password: reset it now at " + strings.TrimRight(base, "/") +
-			"/forgot-password (that signs you out everywhere), then remove anything you do not recognise under Your account → Two-factor methods and tell your administrator."
-	}
-	return notify.Message{Event: "mfa_changed", Title: "Your Stackurity two-factor sign-in changed", At: at,
-		Summary: []string{
-			change + who + " on your account " + to + " at " + where + ".",
-			"When: " + at.Format("2 Jan 2006 15:04 UTC") + ". " + from,
-			notMe,
-			"You get this email whenever your two-factor sign-in changes; it cannot be turned off.",
-		}}
+	return notify.FactorChangeEmail(base, to, change, admin, ip, deviceSummary(userAgent), at)
 }
 
 // deviceSummary names the browser and system from a User-Agent header

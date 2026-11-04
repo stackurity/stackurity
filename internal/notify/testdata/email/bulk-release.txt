@@ -1,0 +1,17 @@
+Subject: Stackurity 0.17.0: what changed
+
+Email now looks like the rest of Stackurity, and every kind of email is checked before a release.
+
+Added
+- A button for the main action of every email
+- Dark mode in mail clients that support it
+
+Read the release notes:
+https://github.com/stackurity/stackurity/releases/tag/v0.17.0
+
+--
+You are receiving this because you are subscribed to Marketing emails from Stackurity.
+Unsubscribe from Marketing: https://app.stackurity.dev/email/preferences#PREVIEW-unsubscribe-marketing
+Manage email preferences: https://app.stackurity.dev/email/preferences#PREVIEW-preferences
+Sent by Stackurity (news@stackurity.dev)
+Example Ltd, 1 Main Road, Pune 411001, India

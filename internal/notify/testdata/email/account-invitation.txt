@@ -1,0 +1,19 @@
+Subject: You are invited to Northwind Traders on Stackurity
+
+Priya Shah (priya@northwind-traders.com) invited you to Northwind Traders with Editor on all projects and assets.
+
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+
+Open the link to accept. It works once, and until 11 November 2026 09:30 UTC.
+
+If you did not expect this, ignore this email.
+
+Accept invitation:
+https://app.stackurity.dev/invite#inv_Hq2Lm8Rt4Vx6Zb1Nc3Pd5Sf7Gh9Jk0Mw
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because someone invited this address to an organisation on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

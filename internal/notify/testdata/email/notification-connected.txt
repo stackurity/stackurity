@@ -1,0 +1,24 @@
+Subject: billing-api connected: 1,284 packages checked, 41 issues found, 2 fixes need you
+
+- Details
+  https://app.stackurity.dev/assets/19
+  - Upgrade spring-web to 6.1.14 (clears 3 issues)
+    https://app.stackurity.dev/fixes/spring-6.1.14
+    Assign to me: https://app.stackurity.dev/fixes/spring-6.1.14?action=assign
+    Snooze: https://app.stackurity.dev/fixes/spring-6.1.14?action=snooze
+  - Upgrade jackson-databind to 2.17.2 (clears 2 issues)
+    https://app.stackurity.dev/fixes/jackson-2.17.2
+    Assign to me: https://app.stackurity.dev/fixes/jackson-2.17.2?action=assign
+    Snooze: https://app.stackurity.dev/fixes/jackson-2.17.2?action=snooze
+
+Open in Stackurity:
+https://app.stackurity.dev/
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Change these notifications: https://app.stackurity.dev/integrations
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

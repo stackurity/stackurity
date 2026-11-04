@@ -770,14 +770,7 @@ func (s *Server) askAlert(ctx context.Context, scope string, level int, spent, c
 	if len(to) == 0 {
 		return
 	}
-	title := "Ask Stackurity has used 80% of this month's budget"
-	line := "Your organisation has used 80% of its Ask Stackurity budget for this month. When it is used up, questions stop until the 1st."
-	if level >= 100 {
-		title = "Ask Stackurity's budget for this month is used up"
-		line = "Your organisation has used its Ask Stackurity budget for this month. Questions are paused until the 1st."
-	}
-	m := notify.Message{Event: "ask_spend", Title: title, At: time.Now().UTC(), Summary: []string{line,
-		"An administrator can turn Ask Stackurity off under Integrations → AI assistants."}}
+	m := notify.AskSpendEmail(level, time.Now().UTC())
 	if err := s.AccountMail.SendMail(ctx, to, m); err != nil {
 		s.Log.Error("ask: spend alert email not sent", "err", err)
 	}

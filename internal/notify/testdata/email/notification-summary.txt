@@ -1,0 +1,33 @@
+Subject: Daily summary: 12 new issues (3 urgent), 5 fixed
+
+New issues
+- web-1: 7 new issues (2 urgent)
+  https://app.stackurity.dev/fixes/issues?asset_id=12
+- billing-api: 5 new issues (1 urgent)
+  https://app.stackurity.dev/fixes/issues?asset_id=19
+
+Fixed
+- web-2: 5 issues fixed by Upgrade glibc to 2.39-0ubuntu8.3
+  https://app.stackurity.dev/fixes/issues?asset_id=13
+
+Top fixes still open
+- Upgrade openssl to 3.0.15 on web-1 (clears 2 issues)
+  https://app.stackurity.dev/fixes/openssl-3.0.15
+  Assign to me: https://app.stackurity.dev/fixes/openssl-3.0.15?action=assign
+  Snooze: https://app.stackurity.dev/fixes/openssl-3.0.15?action=snooze
+- Upgrade lodash to 4.17.21 on storefront (clears 3 issues)
+  https://app.stackurity.dev/fixes/lodash-4.17.21
+  Assign to me: https://app.stackurity.dev/fixes/lodash-4.17.21?action=assign
+  Snooze: https://app.stackurity.dev/fixes/lodash-4.17.21?action=snooze
+
+Open in Stackurity:
+https://app.stackurity.dev/
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Change these notifications: https://app.stackurity.dev/integrations
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

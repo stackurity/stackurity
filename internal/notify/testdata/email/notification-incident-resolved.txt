@@ -1,0 +1,16 @@
+Subject: [resolved] CVE-2026-31337 in openssl 3.0.13 (remote code execution)
+
+- No open findings remain for this incident
+
+Owner: Platform
+
+Open in Stackurity:
+https://app.stackurity.dev/incidents/4182
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

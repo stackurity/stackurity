@@ -79,7 +79,7 @@ func (b *bulkBox) SendMail(_ context.Context, to []string, m Message) error {
 		return errors.New("550 mailbox unavailable")
 	}
 	b.to = append(b.to, to[0])
-	b.raw = append(b.raw, string(buildEmail(b.From(), to, m)))
+	b.raw = append(b.raw, readableEmail(buildEmail(b.From(), to, m)))
 	return nil
 }
 
@@ -163,7 +163,7 @@ func TestBulkSend(t *testing.T) {
 		"Unsubscribe from Marketing: https://app.stk.example/email/preferences#",
 		"Manage email preferences: https://app.stk.example/email/preferences#",
 		"Example Ltd, 1 Main Road, Pune 411001, India",
-		"Release notes: https://example.com/notes",
+		"Release notes:\r\nhttps://example.com/notes",
 		"text/html",
 	} {
 		if !strings.Contains(raw, want) {

@@ -2,9 +2,12 @@ package notify
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
-	"html"
+	"mime"
+	"mime/quotedprintable"
+	"net/mail"
 	"strconv"
 	"strings"
 	"time"
@@ -24,19 +27,35 @@ const (
 	slackActionItems = 8
 )
 
+// emailSubjectMax is the longest subject an email gets; inboxes cut
+// longer ones anyway.
+const emailSubjectMax = 98
+
+// buildEmail renders m as an email: headers, then a multipart/alternative
+// body with a text/plain and a text/html part, both quoted-printable (no
+// line is ever too long for SMTP).
 func buildEmail(from string, to []string, m Message) []byte {
+	return renderEmail(from, to, m, brandFor(m), time.Now())
+}
+
+// RenderEmail is the email m would be sent as, for previews and for the
+// checks of email built elsewhere (CheckEmail).
+func RenderEmail(from string, to []string, m Message) []byte { return buildEmail(from, to, m) }
+
+func renderEmail(from string, to []string, m Message, br EmailBrand, now time.Time) []byte {
 	var b bytes.Buffer
 	hdr := func(k, v string) {
 		b.WriteString(k + ": " + strings.NewReplacer("\r", " ", "\n", " ").Replace(v) + "\r\n")
 	}
 	crlf := func(s string) string {
-		// Normalise every line ending to CRLF; bare CR or LF is not allowed in SMTP.
-		return strings.ReplaceAll(strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s), "\n", "\r\n")
+		// Normalise every line ending to LF; the encoder writes CRLF.
+		return strings.NewReplacer("\r\n", "\n", "\r", "\n").Replace(s)
 	}
-	hdr("From", from)
+	hdr("From", headerAddress(from))
 	hdr("To", strings.Join(to, ", "))
-	hdr("Subject", m.Subject())
-	hdr("Date", time.Now().Format(time.RFC1123Z))
+	hdr("Subject", mime.QEncoding.Encode("utf-8", shorten(m.Subject(), emailSubjectMax)))
+	hdr("Date", now.Format(time.RFC1123Z))
+	hdr("Message-ID", messageID(from))
 	hdr("MIME-Version", "1.0")
 	if m.IncidentID > 0 {
 		hdr("X-Stackurity-Incident", strconv.FormatInt(m.IncidentID, 10))
@@ -54,79 +73,58 @@ func buildEmail(from string, to []string, m Message) []byte {
 		hdr("Precedence", "bulk")
 		hdr("Auto-Submitted", "auto-generated")
 	}
-	if len(m.Sections) == 0 && m.bulk == nil {
-		hdr("Content-Type", "text/plain; charset=utf-8")
-		hdr("Content-Transfer-Encoding", "8bit")
-		b.WriteString("\r\n")
-		b.WriteString(crlf(m.Text()))
-		return b.Bytes()
-	}
-	// Grouped messages: plain text and HTML, so every item is a link.
-	text, page := crlf(m.Text()), crlf(emailHTML(m))
+	text, page := emailText(m, br), emailHTML(m, br)
 	if m.bulk != nil {
-		text, page = crlf(bulkText(m)), crlf(bulkHTML(m))
+		text, page = bulkText(m), bulkHTML(m)
 	}
+	text, page = qp(crlf(text)), qp(crlf(page))
 	sum := sha256.Sum256([]byte(text + page))
 	boundary := "stackurity-" + hex.EncodeToString(sum[:12])
 	hdr("Content-Type", `multipart/alternative; boundary="`+boundary+`"`)
 	b.WriteString("\r\n")
 	for _, part := range []struct{ typ, body string }{{"text/plain", text}, {"text/html", page}} {
 		b.WriteString("--" + boundary + "\r\n")
-		b.WriteString("Content-Type: " + part.typ + "; charset=utf-8\r\nContent-Transfer-Encoding: 8bit\r\n\r\n")
+		b.WriteString("Content-Type: " + part.typ + "; charset=utf-8\r\nContent-Transfer-Encoding: quoted-printable\r\n\r\n")
 		b.WriteString(part.body + "\r\n")
 	}
 	b.WriteString("--" + boundary + "--\r\n")
 	return b.Bytes()
 }
 
-func emailHTML(m Message) string {
-	var b strings.Builder
-	esc := html.EscapeString
-	link := func(text, href string) string {
-		if href == "" {
-			return esc(text)
-		}
-		return `<a href="` + esc(href) + `">` + esc(text) + `</a>`
-	}
-	b.WriteString(`<!doctype html><html><body style="font-family:-apple-system,Segoe UI,Helvetica,Arial,sans-serif;font-size:14px;line-height:1.5;color:#1f2933">` + "\n")
-	b.WriteString("<h2 style=\"font-size:17px;margin:0 0 12px\">" + link(m.Subject(), m.Link) + "</h2>\n")
-	var items func([]Item)
-	items = func(list []Item) {
-		b.WriteString("<ul style=\"margin:4px 0 4px 18px;padding:0\">\n")
-		for _, it := range list {
-			b.WriteString("<li>" + link(it.Text, it.Link))
-			if len(it.Actions) > 0 {
-				var acts []string
-				for _, a := range it.Actions {
-					acts = append(acts, link(a.Label, a.Link))
-				}
-				b.WriteString(` <span style="white-space:nowrap">(` + strings.Join(acts, " &middot; ") + `)</span>`)
-			}
-			if len(it.Items) > 0 {
-				items(it.Items)
-			}
-			b.WriteString("</li>\n")
-		}
-		b.WriteString("</ul>\n")
-	}
-	for _, s := range m.Sections {
-		if s.Title != "" {
-			b.WriteString("<h3 style=\"font-size:15px;margin:16px 0 4px\">" + esc(s.Title) + "</h3>\n")
-		}
-		items(s.Items)
-	}
-	b.WriteString("<p style=\"margin-top:20px;color:#52606d\">")
-	if m.Link != "" {
-		b.WriteString(link("Open in Stackurity", m.Link))
-	}
-	if m.SettingsLink != "" {
-		b.WriteString(" &middot; " + link("Change these notifications", m.SettingsLink))
-	}
-	if m.unsubscribe != "" {
-		b.WriteString(" &middot; " + link(m.footerLabel(), m.unsubscribe))
-	}
-	b.WriteString("</p>\n</body></html>\n")
+// qp encodes s as quoted-printable with CRLF line endings.
+func qp(s string) string {
+	var b bytes.Buffer
+	w := quotedprintable.NewWriter(&b)
+	_, _ = w.Write([]byte(s))
+	_ = w.Close()
 	return b.String()
+}
+
+// headerAddress is a From value for the header: a display name is kept
+// (and encoded when it is not ASCII); the envelope sender is the bare
+// address (envelopeAddress).
+func headerAddress(from string) string {
+	a, err := mail.ParseAddress(from)
+	if err != nil {
+		return from
+	}
+	if a.Name == "" {
+		return a.Address
+	}
+	return a.String()
+}
+
+// messageID is a new Message-ID on the sender's domain.
+func messageID(from string) string {
+	domain := "stackurity.invalid"
+	if a, err := mail.ParseAddress(from); err == nil {
+		if _, d, ok := strings.Cut(a.Address, "@"); ok && d != "" {
+			domain = d
+		}
+	}
+	var r [16]byte
+	_, _ = rand.Read(r[:])
+	return "<" + hex.EncodeToString(r[:]) + "@" + domain + ">"
 }
 
 func escapeSlack(s string) string {

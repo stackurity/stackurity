@@ -239,20 +239,10 @@ func (d *Dispatcher) SendEmailConfirmations(ctx context.Context, tokens map[stri
 	if d.PlatformMail == nil || len(tokens) == 0 {
 		return nil
 	}
-	org := strings.Join(strings.Fields(organisation), " ")
-	if r := []rune(org); len(r) > 60 {
-		org = string(r[:60]) + "…"
-	}
 	var errs []error
 	for email, token := range tokens {
-		m := Message{Event: "confirm_email", Title: confirmSubject, At: d.now().UTC(),
-			Summary: []string{
-				fmt.Sprintf("An organisation on Stackurity named %q asked to send security alerts to this address.", org),
-				"To receive them, confirm within 7 days: " + d.url("/email/confirm", nil) + "#" + token,
-				"If you did not expect this, ignore this email: nothing will be sent to you.",
-			}}
-		m.unsubscribe, m.unsubscribeLabel = d.url("/email/block", nil)+"#"+token, "Never email me again (from any organisation)"
-		m.oneClick = d.url("/email/block/one-click", url.Values{"t": {token}})
+		m := alertConfirmEmail(organisation, d.url("/email/confirm", nil)+"#"+token, d.url("/email/block", nil)+"#"+token,
+			d.url("/email/block/one-click", url.Values{"t": {token}}), d.now().UTC())
 		id, err := d.Store.ReserveEmails(ctx, 1, d.EmailLimits())
 		if err != nil {
 			errs = append(errs, err)
