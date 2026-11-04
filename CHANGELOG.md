@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.16.0
+
 ### Security
 
 - **Single sign-on never carries instance-administrator powers.** Single sign-on sessions are exempt from the two-factor policy, because the identity provider does the second factor, so an instance administrator is never linked to a provider. But an account linked to OpenID Connect or SAML single sign-on that was made an instance administrator afterwards (by SQL, or at setup) got the role's powers in its single sign-on sessions, with no two-factor policy, and could create API tokens carrying them. Now no single sign-on session has instance-administrator powers, such a session cannot create an API token for an instance administrator (403), no API token of an account linked to single sign-on carries those powers (also one made from a password session, or made before the account was promoted; remove the link first), and the licensed build refuses the sign-in itself ("instance administrators sign in with their password and second factor"), audited as `auth.sso_refused`. The store also refuses to make a linked account an instance administrator (`store.ErrSSOLinkedInstanceAdmin`, 409), as defence in depth; there is no API or command for it. To find accounts affected: `SELECT email FROM users WHERE instance_admin AND oidc_subject IS NOT NULL;` (OpenID Connect and SAML share these columns); remove the link and give the account a password and second factor. Organisation single sign-on on Stackurity Cloud already refused instance administrators at every sign-in; its pinned sessions also can no longer create such tokens.
@@ -40,6 +42,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Fixed
 
 - **Oracle Linux: a fix for one architecture no longer decides another's packages.** Oracle's advisories are per architecture. Where the fix differs (virt:ol's `libvirt` was built separately for aarch64 and x86_64) or a package is listed for some architectures only (the Red Hat compatible kernel, x86_64 only), the entry now applies only to packages of its architectures, read from the rpm's `arch`, which agents and SBOMs already report. An aarch64 host at its own architecture's fix is no longer reported against the x86_64 build's higher number. `noarch` packages and rows without an architecture are matched as before. Stored Oracle Linux advisories are rewritten once on the next sync, and the second check re-derives its findings under the new rules.
+- **The CLI counts one thing in the singular.** `stackurity scan` and the gate said "1 leaked keys or passwords meet --fail-on-leak", "1 findings meet the gate", "1 open findings", "1 components could not be evaluated" and "1 observations stored"; they now say "1 leaked key or password meets", "1 finding meets the gate" and so on.
+- **Restoring a backup into a new PostgreSQL server** ([Backup and restore](docs/install.md#backup-and-restore)): the steps now save the roles file with every backup and load it before `pg_restore` (or create the `stackurity_app` role when there is no roles file), since `pg_restore` fails on the grants to that role without it.
 
 ### Upgrading
 
@@ -76,8 +80,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Fixed
 
 - **Checks on a wide screen listed every check twice**, as a table and again as the phone cards below it.
-- **The CLI counts one thing in the singular.** `stackurity scan` and the gate said "1 leaked keys or passwords meet --fail-on-leak", "1 findings meet the gate", "1 open findings", "1 components could not be evaluated" and "1 observations stored"; they now say "1 leaked key or password meets", "1 finding meets the gate" and so on.
-- **Restoring a backup into a new PostgreSQL server** ([Backup and restore](docs/install.md#backup-and-restore)): the steps now save the roles file with every backup and load it before `pg_restore` (or create the `stackurity_app` role when there is no roles file), since `pg_restore` fails on the grants to that role without it.
 
 ### Upgrading
 
