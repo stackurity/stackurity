@@ -45,7 +45,7 @@ func TestCoverageIsPerRow(t *testing.T) {
 	bad := ingest(t, st, model.AssetRepository, "bad", true, confirmed("pkg:npm/lodash@latest", nil))
 	good := ingest(t, st, model.AssetRepository, "good", true, confirmed("pkg:npm/lodash@4.17.21", nil))
 
-	ws2, _, err := st.CreateWorkspace(tenant.System(context.Background()), "Other", "other", "other@example.com", "Other", "correct horse battery staple")
+	ws2, _, err := st.CreateWorkspace(tenant.System(context.Background()), "Other", "other", "other@example.com", "Other", "Correct horse battery staple 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

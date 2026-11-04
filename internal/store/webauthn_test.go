@@ -21,7 +21,7 @@ import (
 func TestPasskeyUsedIsCompareAndSet(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -95,7 +95,7 @@ func TestPasskeyUsedIsCompareAndSet(t *testing.T) {
 func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -145,7 +145,7 @@ func TestPasskeyCloneWarningEndsItsSessions(t *testing.T) {
 func TestSessionWithAMarkedPasskeyIsNotCreated(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

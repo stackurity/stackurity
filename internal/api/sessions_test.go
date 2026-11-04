@@ -115,7 +115,7 @@ func TestSessionRotation(t *testing.T) {
 	}
 
 	// A password change rotates the current session too.
-	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 200 {
+	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "Another long passphrase 2!"}, nil); code != 200 {
 		t.Fatalf("change: %d", code)
 	}
 	if sessionCookie(t, s) == after {
@@ -147,7 +147,7 @@ func TestPasswordChangeRevocation(t *testing.T) {
 		Revoked    store.Revoked
 		TokensKept int `json:"tokens_kept"`
 	}
-	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, &res); code != 200 {
+	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "Another long passphrase 2!"}, &res); code != 200 {
 		t.Fatalf("change: %d", code)
 	}
 	if res.Revoked.Sessions != 1 || res.Revoked.Assistants != 1 || res.Revoked.Tokens != 0 || res.TokensKept != 1 {
@@ -163,7 +163,7 @@ func TestPasswordChangeRevocation(t *testing.T) {
 		t.Errorf("kept token: %d", code)
 	}
 
-	if code := s.do("POST", "/api/v1/auth/password", map[string]any{"current_password": "another long passphrase", "new_password": "a third long passphrase",
+	if code := s.do("POST", "/api/v1/auth/password", map[string]any{"current_password": "Another long passphrase 2!", "new_password": "A third long passphrase 8!",
 		"revoke_tokens": true}, &res); code != 200 || res.Revoked.Tokens != 1 || res.TokensKept != 0 {
 		t.Fatalf("change revoking tokens: %d %+v", code, res)
 	}

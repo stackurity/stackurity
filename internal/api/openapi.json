@@ -15534,10 +15534,12 @@
       "properties": {
        "code": {
         "type": "string",
+        "description": "Machine-readable. password_too_weak (400): a new password breaks the rules; details lists the rules missed (length, lowercase, uppercase, digit, symbol).",
         "examples": [
          "invalid",
          "not_found",
-         "forbidden"
+         "forbidden",
+         "password_too_weak"
         ]
        },
        "message": {

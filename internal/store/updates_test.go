@@ -28,7 +28,7 @@ func updatesFixture(t *testing.T) (a, b context.Context, s *store.Store, api, we
 	s = store.New(testdb.New(t))
 	bg := context.Background()
 	a = tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	ws, _, err := s.CreateWorkspace(bg, "Beta", "", "beta@x.io", "", "correct horse battery")
+	ws, _, err := s.CreateWorkspace(bg, "Beta", "", "beta@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

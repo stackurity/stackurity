@@ -215,7 +215,7 @@ jobs:
       - run: go build -o /tmp/stackurity ./cmd/stackurity && go build -o /tmp/fakeclaude ./tools/fakeclaude
       - name: Start the server with the demo estate
         run: |
-          STACKURITY_PASSWORD=ui-test-password-1 /tmp/stackurity admin create-user --email ui@example.com --name UI --role admin
+          STACKURITY_PASSWORD=UI-test-password-1. /tmp/stackurity admin create-user --email ui@example.com --name UI --role admin
           /tmp/stackurity admin load-demo
           # Ask Stackurity against a fake model provider (tools/fakeclaude): nothing leaves the runner.
           /tmp/fakeclaude -listen 127.0.0.1:18196 > /tmp/fakeclaude.log 2>&1 &

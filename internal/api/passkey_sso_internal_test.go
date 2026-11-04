@@ -24,7 +24,7 @@ import (
 // session, except for the owner's break-glass access, which a passkey may
 // use as a password can.
 func TestPasswordlessInSSORequiredWorkspace(t *testing.T) {
-	const password = "correct horse battery"
+	const password = "Correct horse battery 1!"
 	st := store.New(testdb.New(t))
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)

@@ -19,6 +19,8 @@ import { AssetPicker } from "../../components/AssetPicker";
 import { InvitationList, InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { PasswordChecklist } from "../../components/PasswordStrength";
+import { passwordOK } from "../../passwordStrength";
 import { PROJECTS_EMPTY } from "../../emptyCopy";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
@@ -302,8 +304,10 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
             {!inviteOnly && (
               <div className="field">
                 <label htmlFor={`${idp}-pw`}>Initial password (new accounts only)</label>
-                <input id={`${idp}-pw`} type="password" minLength={12} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-                <p className="hint">At least 12 characters. Leave empty if they already have an account.</p>
+                <input id={`${idp}-pw`} type="password" minLength={12} maxLength={256} autoComplete="new-password" value={password}
+                  onChange={(e) => setPassword(e.target.value)} aria-describedby={`${idp}-pw-rules`} />
+                <p className="hint">Leave empty if they already have an account.</p>
+                {password && <PasswordChecklist id={`${idp}-pw-rules`} password={password} context={[email]} />}
               </div>
             )}
           </>
@@ -358,7 +362,7 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
           <RoleSelect id={`${idp}-role`} value={role} onChange={setRole} />
         </div>
       </div>
-      <button type="submit" className="btn btn-primary" disabled={act.pending || (kind === "team" && !team)}>
+      <button type="submit" className="btn btn-primary" disabled={act.pending || (kind === "team" && !team) || (kind === "person" && !inviteOnly && password !== "" && !passwordOK(password))}>
         Give access
       </button>
     </form>

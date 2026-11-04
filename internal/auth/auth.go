@@ -7,7 +7,6 @@ import (
 	"crypto/subtle"
 	"encoding/base32"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -70,15 +69,6 @@ const (
 	argonThreads = 1
 	argonKeyLen  = 32
 )
-
-var ErrBadPassword = errors.New("password must be 12-256 characters")
-
-func ValidPassword(pw string) error {
-	if len(pw) < 12 || len(pw) > 256 {
-		return ErrBadPassword
-	}
-	return nil
-}
 
 func HashPassword(pw string) (string, error) {
 	salt := make([]byte, 16)

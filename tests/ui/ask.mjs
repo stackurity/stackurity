@@ -10,7 +10,7 @@
 //   node ask.mjs <base url> [email] [password]
 import { chromium } from "playwright";
 
-const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "ui-test-password-1"] = process.argv.slice(2);
+const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "UI-test-password-1."] = process.argv.slice(2);
 const failures = [];
 const ok = (cond, what) => {
   console.log(`${cond ? "PASS" : "FAIL"} ${what}`);

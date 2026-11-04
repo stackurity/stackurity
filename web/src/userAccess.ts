@@ -6,6 +6,7 @@
  * drives every control through these actions).
  */
 import type { UserRole } from "./api";
+import { passwordOK } from "./passwordStrength.ts";
 
 export type Scope = "" | "all" | "specific";
 /** "project": every asset of the project, including later ones; "assets": the ones ticked. */
@@ -123,7 +124,7 @@ export function problems(s: AddUserState, names: Record<number, string> = {}, te
   else if (!/^[^\s@]+@[^\s@]+$/.test(email)) out.push("Enter a valid email.");
   const ph = phoneProblem(s.phone);
   if (ph) out.push(ph);
-  if (s.password && s.password.length < 12) out.push("The initial password needs at least 12 characters.");
+  if (s.password && !passwordOK(s.password)) out.push("The initial password does not meet the rules under it yet.");
   if (s.name.trim().length > 200) out.push("The name is limited to 200 characters.");
   if (s.scope === "") {
     out.push("Choose what they can see: all projects and assets, or specific ones.");

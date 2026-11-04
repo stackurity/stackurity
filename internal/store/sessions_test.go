@@ -19,11 +19,11 @@ func TestActiveSessions(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
 	ws := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	ann, err := s.CreateUser(ws, "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	ann, err := s.CreateUser(ws, "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	bob, err := s.CreateUser(ws, "bob@x.io", "", auth.RoleViewer, "correct horse battery")
+	bob, err := s.CreateUser(ws, "bob@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestActiveSessions(t *testing.T) {
 func TestRevokedSessionIsNotRotated(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	ann, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	ann, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,11 +202,11 @@ func TestActiveSessionsPinned(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
 	ws := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	ann, err := s.CreateUser(ws, "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	ann, err := s.CreateUser(ws, "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	other, _, err := s.CreateWorkspace(bg, "Other Org", "", "owner@x.io", "", "correct horse battery")
+	other, _, err := s.CreateWorkspace(bg, "Other Org", "", "owner@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

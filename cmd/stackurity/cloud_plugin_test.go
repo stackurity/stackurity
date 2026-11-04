@@ -39,7 +39,7 @@ func TestPlatformCredentialsForPluginRuns(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, _, err := st.CreateWorkspace(context.Background(), "Beta", "", "b@x.io", "", "correct horse battery staple 1")
+	ws, _, err := st.CreateWorkspace(context.Background(), "Beta", "", "b@x.io", "", "Correct horse battery staple 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -21,7 +21,7 @@ func TestInvitationGrantsFollowMerge(t *testing.T) {
 	s := store.New(testdb.New(t))
 	a, _ := s.Ingest(ctx, batch([]model.Identifier{{Scheme: "machine-id", Value: "m1"}}, true, "pkg:deb/debian/a@1"), 0)
 	b, _ := s.Ingest(ctx, batch([]model.Identifier{{Scheme: "hostname", Value: "web-1"}}, true, "pkg:deb/debian/b@1"), 0)
-	wsB, _, err := s.CreateWorkspace(context.Background(), "B", "", "b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(context.Background(), "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

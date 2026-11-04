@@ -33,7 +33,7 @@ type BreachChecker struct {
 }
 
 // ErrBreachedPassword wraps ErrBadPassword, so it answers 400 like a
-// password that is too short.
+// password that breaks the rules.
 type ErrBreachedPassword struct{ Count int }
 
 func (e *ErrBreachedPassword) Error() string {
@@ -85,8 +85,8 @@ func (c *BreachChecker) Count(ctx context.Context, pw string) (int, error) {
 	return 0, sc.Err()
 }
 
-// CheckNewPassword applies the rules for a password someone chooses: 12 to
-// 256 characters, and, with a checker, not in known breaches. When the
+// CheckNewPassword applies the rules for a password someone chooses
+// (ValidPassword), and, with a checker, not in known breaches. When the
 // check cannot be made, onUnavailable is called and the password is
 // accepted (fail open): an unreachable service must not stop people from
 // setting passwords.

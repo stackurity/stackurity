@@ -58,7 +58,7 @@ type rig struct {
 func newRig(t *testing.T, replies ...asktest.Reply) *rig {
 	t.Helper()
 	st := store.New(testdb.New(t))
-	w, u, err := st.CreateWorkspace(context.Background(), "Org", "org", "alice@example.com", "Alice", "pw-alice-123456")
+	w, u, err := st.CreateWorkspace(context.Background(), "Org", "org", "alice@example.com", "Alice", "Pw-alice-123456")
 	if err != nil {
 		t.Fatal(err)
 	}

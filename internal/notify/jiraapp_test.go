@@ -536,7 +536,7 @@ func TestJiraOAuthSetupLists(t *testing.T) {
 	if _, err := f.d.JiraSetup(ctx, conn, "other-site"); err == nil {
 		t.Error("a site the connection does not reach was accepted")
 	}
-	other, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	other, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

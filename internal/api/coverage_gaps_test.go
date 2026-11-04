@@ -25,7 +25,7 @@ func TestAdminCoverageGaps(t *testing.T) {
 	bg := context.Background()
 	sys := tenant.System(bg)
 
-	wsB, _, err := e.st.CreateWorkspace(sys, "Globex Secret Division", "", "b@globex.io", "", "correct horse battery")
+	wsB, _, err := e.st.CreateWorkspace(sys, "Globex Secret Division", "", "b@globex.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -46,7 +46,7 @@ func newAuditEnv(t *testing.T) *auditEnv {
 	}
 	t.Cleanup(func() { owner.Close(context.Background()) })
 	e := &auditEnv{pool: pool, s: store.New(pool), owner: owner, wsA: tenant.DefaultWorkspace}
-	b, _, err := e.s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "correct horse battery")
+	b, _, err := e.s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

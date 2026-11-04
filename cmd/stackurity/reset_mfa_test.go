@@ -23,14 +23,14 @@ import (
 func TestAdminResetMFA(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.UpdateUserInstanceAdmin(bg, "ann@x.io", true); err != nil {
 		t.Fatal(err)
 	}
-	ws, _, err := st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "boss@acme.io", "Boss", "correct horse battery")
+	ws, _, err := st.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "boss@acme.io", "Boss", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -102,7 +102,7 @@ func TestAdminResetMFA(t *testing.T) {
 func TestAdminResetMFAFailsClosed(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

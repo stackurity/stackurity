@@ -49,7 +49,7 @@ Behind a proxy every connection comes from the proxy, so with `STACKURITY_TRUST_
 Alternatively, create the first admin from the command line:
 
 ```sh
-docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
+docker compose exec -e STACKURITY_PASSWORD='Velvet otter lamp 82!' stackurity \
   stackurity admin create-user --email you@example.com --role admin
 ```
 
@@ -277,7 +277,11 @@ It removes every passkey, authenticator app, email code and recovery code of tha
 
 ### Passwords
 
-Passwords are 12 to 256 characters, stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
+A new password must be 12 to 256 characters and contain at least one lowercase letter, one uppercase letter, one digit and one symbol. Letters of any script count by their case (é is lowercase, É uppercase); a letter without case, as in Chinese, counts as a letter but not as either case. A symbol is any other character that is not a digit or a space (punctuation, `€`, an emoji); spaces are allowed, so a passphrase such as `Velvet otter lamp 82!` works. The rules apply wherever a password is set: setup, **Your account → Password**, a reset link, accepting an invitation, a password an administrator sets or gives a new account, `stackurity admin create-user`, and sign-up on Stackurity Cloud. A password that breaks them is refused with `400 password_too_weak` and a message that says what is missing, such as "Add an uppercase letter and a symbol." ([api.md](api.md#conventions)). Passwords set before these rules keep working; the rules apply the next time one is set or changed.
+
+Each of those forms lists the rules under the field and ticks each as it is met, shows a strength meter (Weak, Fair or Strong, written out and announced to screen readers, not only coloured), and keeps its button disabled until every rule is met. The strength is estimated in the browser and never sent: length and variety, less repeated characters, runs such as `abc` or `123`, common words such as `password`, `qwerty` or `stackurity`, and the person's own email, name or organisation. Strong needs every rule and at least 16 characters that are not such a pattern (or an equally high estimate); the server enforces the rules, not the meter.
+
+Passwords are stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
 
 ### Sessions
 

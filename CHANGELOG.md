@@ -12,11 +12,17 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Changed
 
+- **Passwords must mix character types, and every password field shows how strong it is.** A new password now needs at least one lowercase letter, one uppercase letter, one digit and one symbol, as well as 12 to 256 characters, wherever it is set: setup, changing your own, a reset link, accepting an invitation, a password an administrator sets or gives a new account (also through a project or a new workspace), `stackurity admin create-user`, and sign-up on Stackurity Cloud. Spaces are allowed; letters of any script count by their case. A password that breaks the rules answers `400 password_too_weak` with a message saying what is missing ("Add an uppercase letter and a symbol.") and the rules missed in `details` (`length`, `lowercase`, `uppercase`, `digit`, `symbol`); breached passwords are still refused as before. In the dashboard, the "At least 12 characters." hint is replaced by a checklist that ticks each rule as it is met, a strength meter (Weak, Fair or Strong, written out and announced to screen readers, estimated in the browser from length and variety less repeats, runs such as `abc` or `123`, common words and the person's own email, name or organisation), "Passwords match" or "Passwords don't match" under the confirm field, and a button that stays disabled until every rule is met. See [Passwords](docs/install.md#passwords).
+- **The "Check your email" page after Cloud sign-up has room to breathe:** a gap under the heading, between the two paragraphs and around the text.
 - **Requiring single sign-on asks about existing tokens (Stackurity Cloud).** Ticking **Require single sign-on for members** now asks whether to keep or revoke the API tokens and AI assistant connections made before. There is no default. Revoking ends members' API tokens and AI assistant connections and unlinks their Slack accounts, in this organisation only; agents' and CI jobs' tokens and the owner's stay. The change and the revocation happen in one transaction, and the `sso.state` audit event records the choice and the counts. `PUT /sso/state` takes `existing_tokens` (`keep` or `revoke`), required when requiring single sign-on is switched on and refused otherwise; before, existing tokens always kept working. A request that changes something from a password session now always reads whether single sign-on is required from the database, so another server's cached answer cannot let it make a token after requiring started.
 
 ### Fixed
 
 - **Email with a sender name was refused by the mail server.** A From such as `Stackurity <no-reply@example.com>` (email channels, Stackurity Cloud's `STACKURITY_CLOUD_SMTP_FROM`) was sent whole as SMTP's envelope sender, which servers answer with `501 Syntax error in MAIL command`; on Stackurity Cloud every sign-up confirmation failed. The envelope now carries the bare address and the From header keeps the name.
+
+### Upgrading
+
+- Existing passwords keep working: the new password rules apply only when a password is set or changed. Scripts or integrations that create users or set passwords through the API (`POST /users`, `PATCH /users/{id}`, `POST /admin/workspaces`, invitations) or with `stackurity admin create-user` must use passwords that meet them, or get `400 password_too_weak`.
 
 ## 0.16.0
 

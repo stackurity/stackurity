@@ -680,7 +680,7 @@ func TestJiraWorkspaceBoundaries(t *testing.T) {
 	}
 	incs, _, _ := f.st.ListIncidents(ctx, store.IncidentFilter{})
 
-	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

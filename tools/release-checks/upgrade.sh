@@ -32,7 +32,7 @@ PG_IMAGE=${PG_IMAGE:-postgres:17.11-alpine3.24}
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 ID=stk-rc-$$
 NET=$ID-net
-PW='release-check-password-1'
+PW='Release-check-password-1.'
 WORK=$(mktemp -d)
 
 log() { printf '\n== %s %s\n' "$(date +%T)" "$*"; }

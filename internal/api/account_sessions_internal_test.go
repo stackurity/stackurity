@@ -21,7 +21,7 @@ import (
 func TestRotateSignedOutSession(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := st.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

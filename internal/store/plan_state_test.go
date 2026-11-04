@@ -122,7 +122,7 @@ func TestReadOnlyStore(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
 	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -217,11 +217,11 @@ func TestReportModeStore(t *testing.T) {
 func TestDeleteWorkspace(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wsC, _, err := s.CreateWorkspace(bg, "Gamma", "", "admin-c@x.io", "", "correct horse battery")
+	wsC, _, err := s.CreateWorkspace(bg, "Gamma", "", "admin-c@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

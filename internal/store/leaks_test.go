@@ -148,7 +148,7 @@ func TestLeakIsolation(t *testing.T) {
 	bg := context.Background()
 	s := store.New(testdb.New(t))
 	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
