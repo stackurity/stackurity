@@ -284,6 +284,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 				notEvaluated(perr)
 			} else {
 				rc.Feed = feed.Name
+				rc.Reason = oracleNote(r, t, advs)
 			}
 			if k, ok := kernels[r.InventoryID]; ok {
 				// Kernel packages: no findings on files that do not run,
@@ -438,8 +439,14 @@ type groupMatch struct {
 	// unlisted: one matched only because the version is on none of the
 	// lines its advisory lists fixes for (osv.UnlistedLine).
 	lined, unlisted bool
-	freeHit         bool // a free-channel advisory says the version is affected
-	proHit          bool // a Pro advisory says it is affected
+	// otherKey: a record that matched names the keys of the builds it
+	// describes, and the package is signed with none of them (or is
+	// unsigned): another vendor's build, so the match needs validation.
+	// keys are the keys those records name.
+	otherKey bool
+	keys     []string
+	freeHit  bool // a free-channel advisory says the version is affected
+	proHit   bool // a Pro advisory says it is affected
 	// The record that decided the verdict in each channel: the one whose
 	// fixed version is recommended, else the first that matched.
 	freeRec, proRec decisive
@@ -486,17 +493,37 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// Advisories with a fix per version line, one affected entry per line.
 	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
 	perLine := oracle || program
-	oracleBuild := ""
+	oracleBuild, arch, signingKey := "", "", ""
+	var streams map[string]string
 	if oracle {
+		signingKey = r.Evidence[osv.SigningKey]
+		streams = osv.ModuleStreams(r.Modules)
 		oracleBuild = osv.OracleBuild(t.Version)
+		if pu, err := packageurl.FromString(r.Purl); err == nil {
+			arch = pu.Qualifiers.Map()["arch"]
+		}
 	}
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
 		}
 		recordChannel := ""
+		var cond osv.OracleConditions
 		if oracle {
 			if recordChannel = osv.OracleChannel(a.Ecosystem); recordChannel != "" && recordChannel != oracleBuild {
+				continue
+			}
+			// An entry for other architectures (a fix built for aarch64 only,
+			// the Red Hat compatible kernel, which Oracle ships for x86_64
+			// only) does not describe this package.
+			cond = osv.OracleConditionsOf(a.Affected)
+			if !osv.OracleArchApplies(cond.Arch, arch) {
+				continue
+			}
+			// An entry for another stream of a module the host has enabled
+			// (container-tools:ol8 on a container-tools:4.0 host) describes
+			// that stream's packages; oracleNote says so on the row.
+			if osv.OtherModuleStream(cond.Module, streams) {
 				continue
 			}
 		}
@@ -567,6 +594,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			}
 		}
 		g.exploited = g.exploited || a.KnownExploited
+		if osv.OracleKeyMismatch(cond.SigningKeys, signingKey) {
+			g.otherKey = true
+			for _, k := range cond.SigningKeys {
+				g.keys = appendUnique(g.keys, k)
+			}
+		}
 		if osv.UnlistedLine(a.Ecosystem, a.Affected) {
 			g.unlisted = true
 		} else {
@@ -605,6 +638,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		// been, so it needs validation rather than a plain match.
 		lineUnlisted := g.unlisted && !g.lined
 		if lineUnlisted && verification == "confirmed" {
+			verification = "needs_validation"
+		}
+		// Not Oracle's build (signed with another key, or unsigned): Oracle's
+		// advisory describes the packages it signed, so the match is shown
+		// for someone to check rather than hidden or confirmed.
+		if g.otherKey && verification == "confirmed" {
 			verification = "needs_validation"
 		}
 		sev := g.severity
@@ -663,6 +702,11 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		if lineUnlisted {
 			ambiguous = append(ambiguous, "version_line_unlisted")
 		}
+		if g.otherKey {
+			ambiguous = append(ambiguous, "signing_key_mismatch")
+			ev["signing_key"] = signingKey
+			ev["advisory_signing_keys"] = g.keys
+		}
 		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {
 			ev["not_running_kernel"] = true
@@ -692,7 +736,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 //	normalised  the version compared differs from the one reported (a Go
 //	            "go" prefix, a gem platform suffix)
 //	ambiguous   why a second check is wanted: some_records_unreadable,
-//	            sources_disagree, version_normalised, semver_range
+//	            sources_disagree, version_normalised, semver_range,
+//	            version_line_unlisted, signing_key_mismatch
 func matchExplanation(r store.EvalRow, t osv.Target, rec decisive, fixed string, ambiguous []string) map[string]any {
 	m := map[string]any{"record": rec.id}
 	switch {
@@ -862,4 +907,78 @@ func otherMajor(a osv.Affected, installed string) bool {
 		}
 	}
 	return true
+}
+
+// oracleNote explains, on an evaluated Oracle Linux row, what Oracle's
+// conditions changed: that the package is not Oracle's build
+// (oracleKeyNote), and which module streams' advisories were not applied
+// because the host has another stream of the module enabled.
+func oracleNote(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch) string {
+	if !strings.HasPrefix(t.Ecosystem, "Oracle Linux:") {
+		return ""
+	}
+	var notes []string
+	if n := oracleKeyNote(r, advs); n != "" {
+		notes = append(notes, n)
+	}
+	if streams := osv.ModuleStreams(r.Modules); streams != nil {
+		var other []string
+		for _, a := range advs {
+			if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
+				continue
+			}
+			if m := osv.OracleConditionsOf(a.Affected).Module; osv.OtherModuleStream(m, streams) {
+				other = appendUnique(other, m)
+			}
+		}
+		if len(other) > 0 {
+			sort.Strings(other)
+			var on []string
+			for _, m := range other {
+				name, _, _ := strings.Cut(m, ":")
+				on = appendUnique(on, name+":"+streams[name])
+			}
+			notes = append(notes, fmt.Sprintf("advisories for module stream %s were not applied: this host has %s enabled",
+				strings.Join(other, ", "), strings.Join(on, ", ")))
+		}
+	}
+	return strings.Join(notes, "; ")
+}
+
+// oracleKeyNote explains an evaluated Oracle Linux row whose package is not
+// Oracle's build: its advisories name the keys Oracle signs that package
+// with, and the agent reported another key, or none. Its matches need
+// validation (matchAdvisories); this says why on the row, also when nothing
+// matched. "" when the key is not reported or is one the records name.
+func oracleKeyNote(r store.EvalRow, advs []store.AdvisoryMatch) string {
+	installed := r.Evidence[osv.SigningKey]
+	if installed == "" {
+		return ""
+	}
+	var keys []string
+	for _, a := range advs {
+		if a.Withdrawn != nil {
+			continue
+		}
+		c := osv.OracleConditionsOf(a.Affected)
+		if !osv.OracleKeyMismatch(c.SigningKeys, installed) {
+			if len(c.SigningKeys) > 0 {
+				return "" // a record names the package's key
+			}
+			continue
+		}
+		for _, k := range c.SigningKeys {
+			keys = appendUnique(keys, k)
+		}
+	}
+	if len(keys) == 0 {
+		return ""
+	}
+	sort.Strings(keys)
+	what := "is signed with key " + installed
+	if installed == osv.SigningKeyNone {
+		what = "is not signed"
+	}
+	return fmt.Sprintf("this package %s, not Oracle's (%s): Oracle's advisories describe Oracle's builds, "+
+		"so it may be another vendor's or a local build; any match needs validation", what, strings.Join(keys, ", "))
 }

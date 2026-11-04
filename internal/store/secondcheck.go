@@ -31,8 +31,9 @@ const secondCheckWanted = `f.status = 'open' AND f.kind IN ('vulnerability', 'en
 // SecondCheckRules is the version of internal/secondcheck's rules, stored
 // with each result (independent.checker). Raise it whenever those rules
 // change: every check made under older rules is then redone on the next
-// runs, so a false disagreement clears itself (2: kernel source packages).
-const SecondCheckRules = 2
+// runs, so a false disagreement clears itself (2: kernel source packages;
+// 3: Oracle Linux records limited to some architectures or module streams).
+const SecondCheckRules = 3
 
 // secondCheckMaxAge is how long a check stands when the match has not
 // changed: advisory records can change without changing the match.
@@ -67,6 +68,9 @@ type SecondCheckCandidate struct {
 	Confidence    string
 	InvEvidence   map[string]string
 	ComponentType string
+	// Modules is the asset's enabled dnf module streams as reported
+	// (attribute dnf_modules); nil when not reported.
+	Modules *string
 }
 
 // SecondCheckCandidates returns up to limit open high-impact findings in the
@@ -79,7 +83,7 @@ func (s *Store) SecondCheckCandidates(ctx context.Context, limit int, all bool) 
 		wanted = `f.status = 'open' AND f.kind IN ('vulnerability', 'end_of_life')`
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT f.id, f.asset_id, f.kind, f.key, f.verification, f.fixed_version, f.sources, f.evidence,
-		  `+matchBasis("f")+`, i.purl, i.version, i.confidence, i.evidence, c.type
+		  `+matchBasis("f")+`, i.purl, i.version, i.confidence, i.evidence, c.type, a.attributes->>'dnf_modules'
 		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN components c ON c.id = f.component_id
 		JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE `+wanted+`
@@ -97,7 +101,7 @@ func (s *Store) SecondCheckCandidates(ctx context.Context, limit int, all bool) 
 		var c SecondCheckCandidate
 		var inv []byte
 		if err := rows.Scan(&c.FindingID, &c.AssetID, &c.Kind, &c.Key, &c.Verification, &c.FixedVersion, &c.Sources, &c.Evidence,
-			&c.Basis, &c.Purl, &c.Version, &c.Confidence, &inv, &c.ComponentType); err != nil {
+			&c.Basis, &c.Purl, &c.Version, &c.Confidence, &inv, &c.ComponentType, &c.Modules); err != nil {
 			return nil, err
 		}
 		_ = json.Unmarshal(inv, &c.InvEvidence)

@@ -74,6 +74,9 @@ type target struct {
 	// from its release: "ksplice" (2:2.34-60.0.3.ksplice1.el9), "fips"
 	// (10:3.5.8-2.0.1.el9_8_fips) or "" for a regular build.
 	oracleBuild string
+	// arch is an rpm's architecture (the purl's arch qualifier), for
+	// Oracle Linux records limited to some architectures.
+	arch string
 	// kernel: a Debian or Ubuntu package built from a kernel source.
 	// kernelSource: the source package it was derived from is known (from
 	// the upstream qualifier or the source_package evidence), so a record
@@ -309,6 +312,7 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 			// Shared with the matcher on purpose: it reads Oracle's naming
 			// of builds, not matching rules.
 			t.oracleBuild = oraclebuild.Channel(t.version)
+			t.arch = p.qualifiers["arch"]
 		}
 	case "generic":
 		if ev["registry_view"] != "" && ev["kind"] == "" {

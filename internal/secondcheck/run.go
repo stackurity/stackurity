@@ -52,7 +52,7 @@ func (r *Runner) Run(ctx context.Context) (Stats, error) {
 		var ev map[string]any
 		_ = json.Unmarshal(c.Evidence, &ev)
 		claim := Claim{Kind: c.Kind, Key: c.Key, Verification: c.Verification, FixedVersion: c.FixedVersion, Sources: c.Sources, Evidence: ev}
-		obs := Observed{Purl: c.Purl, Version: c.Version, Evidence: c.InvEvidence}
+		obs := Observed{Purl: c.Purl, Version: c.Version, Evidence: c.InvEvidence, Modules: c.Modules}
 		var out Outcome
 		m, _ := ev["match"].(map[string]any)
 		switch {

@@ -39,6 +39,9 @@ type Observed struct {
 	Purl     string
 	Version  string
 	Evidence map[string]string
+	// Modules is the host's enabled module streams as its agent reported
+	// them ("container-tools:ol8 nodejs:18"); nil when not reported.
+	Modules *string
 }
 
 // Outcome is the second check's result for one finding.
@@ -62,6 +65,11 @@ type rawAffected struct {
 		Events []map[string]string `json:"events"`
 	} `json:"ranges"`
 	Versions []string `json:"versions"`
+	// Conditions Oracle Linux records carry besides their ranges.
+	Specific struct {
+		Arch   []string `json:"arch"`
+		Module string   `json:"module"`
+	} `json:"ecosystem_specific"`
 }
 
 // verdict is one record's answer.
@@ -121,6 +129,12 @@ func CheckVulnerability(c Claim, o Observed, recs []store.RawAdvisoryRecord) Out
 		var a rawAffected
 		if err := json.Unmarshal(r.Affected, &a); err != nil {
 			return couldNot("record %s could not be read", r.ID)
+		}
+		if !archApplies(a.Specific.Arch, t.arch) {
+			continue // a record for other architectures
+		}
+		if otherStream(a.Specific.Module, o.Modules) {
+			continue // a record for another stream of a module the host has enabled
 		}
 		var unknown rawAffected
 		if t.line != "" {
@@ -672,6 +686,51 @@ func numericLess(a, b string) bool {
 		}
 		if x != y {
 			return x < y
+		}
+	}
+	return false
+}
+
+// archApplies reads an Oracle Linux record's architectures ("arch is
+// x86_64" in Oracle's data, the host's) against an rpm's own: a 64-bit x86
+// host also runs 32-bit x86 packages, and a noarch or unreported package
+// says nothing of its host, so every record applies to it.
+func archApplies(record []string, arch string) bool {
+	if len(record) == 0 {
+		return true
+	}
+	hosts := map[string][]string{"x86_64": {"x86_64"}, "aarch64": {"aarch64"},
+		"i386": {"x86_64", "i686", "i386"}, "i486": {"x86_64", "i686", "i386"},
+		"i586": {"x86_64", "i686", "i386"}, "i686": {"x86_64", "i686", "i386"}}
+	host, known := hosts[strings.ToLower(arch)]
+	if !known {
+		return true
+	}
+	for _, h := range host {
+		for _, r := range record {
+			if r == h {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// otherStream reads an Oracle Linux record's module stream ("nodejs:20")
+// against the streams the host reports: the record is for another stream
+// when the host has the module enabled on a different one. With no report,
+// or the module not enabled, the record applies.
+func otherStream(module string, reported *string) bool {
+	if module == "" || reported == nil {
+		return false
+	}
+	name, stream, ok := strings.Cut(module, ":")
+	if !ok {
+		return false
+	}
+	for _, f := range strings.Fields(*reported) {
+		if n, s, ok := strings.Cut(f, ":"); ok && n == name {
+			return s != stream
 		}
 	}
 	return false

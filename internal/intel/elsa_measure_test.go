@@ -62,7 +62,7 @@ func TestMeasureELSA(t *testing.T) {
 		}
 		var after runtime.MemStats
 		runtime.ReadMemStats(&after)
-		entries, ksplice, fips, lines, cves, suffixed, unlisted := 0, 0, 0, 0, 0, 0, 0
+		entries, ksplice, fips, lines, cves, suffixed, unlisted, arch := 0, 0, 0, 0, 0, 0, 0, 0
 		for _, v := range doc.vulns {
 			for _, a := range v.Aliases {
 				if strings.HasPrefix(a, "CVE-") {
@@ -86,10 +86,13 @@ func TestMeasureELSA(t *testing.T) {
 				if osv.UnlistedLine(a.Package.Ecosystem, a) {
 					unlisted++
 				}
+				if len(osv.OracleConditionsOf(a).Arch) > 0 {
+					arch++
+				}
 			}
 		}
-		t.Logf("Oracle Linux %s: %d advisories (%d with a revision suffix), %d CVE aliases, %d entries (%d Ksplice, %d FIPS, %d limited to a line, %d on no listed line), %d criteria not understood, %s, %d MiB allocated, peak heap %d MiB",
-			rel, len(doc.vulns), suffixed, cves, entries, ksplice, fips, lines, unlisted, doc.anomalies, time.Since(start).Round(time.Millisecond),
+		t.Logf("Oracle Linux %s: %d advisories (%d with a revision suffix), %d CVE aliases, %d entries (%d Ksplice, %d FIPS, %d limited to a line, %d on no listed line, %d limited to architectures), %d criteria not understood, %s, %d MiB allocated, peak heap %d MiB",
+			rel, len(doc.vulns), suffixed, cves, entries, ksplice, fips, lines, unlisted, arch, doc.anomalies, time.Since(start).Round(time.Millisecond),
 			(after.TotalAlloc-before.TotalAlloc)>>20, (peak-min(peak, before.HeapAlloc))>>20)
 	}
 }
