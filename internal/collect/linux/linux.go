@@ -351,19 +351,72 @@ func parseApkInstalled(r io.Reader, distro string) ([]model.Observation, error) 
 	return obs, nil
 }
 
-// rpmQueryFormat emits one tab-separated line per package.
-const rpmQueryFormat = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n`
+// rpmQueryFormat emits one tab-separated line per package. The last field
+// is the header signature ("RSA/SHA256, <date>, Key ID 82562ea9ad986da3",
+// or "(none)" for an unsigned package): RSAHEADER on every rpm since 4.x
+// (EL7 to EL10; EL9 and later have no payload signature), DSAHEADER for the
+// DSA keys of older releases.
+const rpmQueryFormat = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\t` +
+	`%|RSAHEADER?{%{RSAHEADER:pgpsig}}:{%|DSAHEADER?{%{DSAHEADER:pgpsig}}:{(none)}|}|\n`
+
+// rpmQueryFormatPlain is the format without the signature, for an rpm that
+// refuses the full one.
+const rpmQueryFormatPlain = `%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{SOURCERPM}\n`
 
 func runRPM(ctx context.Context, root string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ctx, 2*time.Minute)
 	defer cancel()
-	args := []string{"-qa", "--queryformat", rpmQueryFormat}
-	if root != "/" && root != "" {
-		args = append([]string{"--root", root}, args...)
+	query := func(format string) ([]byte, error) {
+		args := []string{"-qa", "--queryformat", format}
+		if root != "/" && root != "" {
+			args = append([]string{"--root", root}, args...)
+		}
+		cmd := exec.CommandContext(ctx, "rpm", args...)
+		cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
+		return cmd.Output()
 	}
-	cmd := exec.CommandContext(ctx, "rpm", args...)
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LC_ALL=C"}
-	return cmd.Output()
+	out, err := query(rpmQueryFormat)
+	if err != nil && ctx.Err() == nil {
+		// The signature is extra: never lose the inventory over it.
+		return query(rpmQueryFormatPlain)
+	}
+	return out, err
+}
+
+// rpmSigningKey reads the key id out of rpm's signature field: the 16 hex
+// digits after "Key ID" (rpm before 4.20 and v4 signatures), or the key id
+// a fingerprint ends with (v4) or starts with (v6). "(none)" is an unsigned
+// package (model evidence "signing_key": "none"); anything else, or no
+// field (an older format), is not known ("").
+func rpmSigningKey(sig string) string {
+	sig = strings.TrimSpace(sig)
+	if sig == "(none)" {
+		return "none"
+	}
+	hex := func(s string) bool {
+		for _, r := range s {
+			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+				return false
+			}
+		}
+		return s != ""
+	}
+	if i := strings.LastIndex(sig, "Key ID "); i >= 0 {
+		if id := strings.ToLower(strings.TrimSpace(sig[i+len("Key ID "):])); len(id) == 16 && hex(id) {
+			return id
+		}
+		return ""
+	}
+	if i := strings.LastIndex(sig, "Key fingerprint: "); i >= 0 {
+		fp := strings.ToLower(strings.TrimSpace(sig[i+len("Key fingerprint: "):]))
+		switch {
+		case len(fp) == 40 && hex(fp):
+			return fp[24:]
+		case len(fp) == 64 && hex(fp):
+			return fp[:16]
+		}
+	}
+	return ""
 }
 
 func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error) {
@@ -385,6 +438,11 @@ func parseRPMQuery(out []byte, osID, distro string) ([]model.Observation, error)
 		ev := map[string]string{"db": "rpm", "evr": full}
 		if srpm != "" && srpm != "(none)" {
 			ev["source_rpm"] = srpm
+		}
+		if len(f) > 6 {
+			if key := rpmSigningKey(f[6]); key != "" {
+				ev["signing_key"] = key
+			}
 		}
 		obs = append(obs, model.Observation{
 			Purl:       purl("rpm", osID, name, version, q),

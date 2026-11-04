@@ -76,6 +76,9 @@ const (
 	// fix has a higher module build number.
 	libvirtARM = "0:6.0.0-37.0.1.module+el8.5.0+20363+3abb8f5b"
 	libvirtX86 = "0:6.0.0-37.0.1.module+el8.5.0+20365+3abb8f5b"
+	// ol8Key signs Oracle Linux 8 packages; epelKey signs EPEL 8's.
+	ol8Key  = "82562ea9ad986da3"
+	epelKey = "21ea45ab2f86d6a1"
 )
 
 func TestParseELSAConditions(t *testing.T) {
@@ -93,7 +96,8 @@ func TestParseELSAConditions(t *testing.T) {
 		}
 	}
 	slices.Sort(libvirt)
-	if !slices.Equal(libvirt, []string{libvirtARM + ` {"arch":["aarch64"]}`, libvirtX86 + ` {"arch":["x86_64"]}`}) {
+	keys := `"signing_keys":["` + ol8Key + `"]}`
+	if !slices.Equal(libvirt, []string{libvirtARM + ` {"arch":["aarch64"],` + keys, libvirtX86 + ` {"arch":["x86_64"],` + keys}) {
 		t.Errorf("libvirt entries: %v", libvirt)
 	}
 	for _, a := range virt.Affected {
@@ -103,6 +107,14 @@ func TestParseELSAConditions(t *testing.T) {
 			// Listed under x86_64 only.
 			if !slices.Equal(c.Arch, []string{"x86_64"}) {
 				t.Errorf("%s: arch %v, want x86_64 only", a.Package.Name, c.Arch)
+			}
+		}
+	}
+	// Every entry names the key Oracle signs Oracle Linux 8 packages with.
+	for _, v := range ol8 {
+		for _, a := range v.Affected {
+			if c := osv.OracleConditionsOf(a); !slices.Equal(c.SigningKeys, []string{ol8Key}) {
+				t.Errorf("%s %s: signing keys %v", v.ID, a.Package.Name, c.SigningKeys)
 			}
 		}
 	}
@@ -117,7 +129,7 @@ func TestParseELSAConditions(t *testing.T) {
 	// Entries share one stored value per distinct condition.
 	var first json.RawMessage
 	for _, a := range virt.Affected {
-		if string(a.EcosystemSpecific) == `{"arch":["x86_64"]}` {
+		if string(a.EcosystemSpecific) == `{"arch":["x86_64"],"signing_keys":["`+ol8Key+`"]}` {
 			if first == nil {
 				first = a.EcosystemSpecific
 			} else if &first[0] != &a.EcosystemSpecific[0] {
@@ -190,4 +202,92 @@ func TestOracleLinuxArchitecture(t *testing.T) {
 	if stats.Checked == 0 || stats.Agreed != stats.Checked {
 		t.Errorf("second check: %+v", stats)
 	}
+}
+
+func TestOracleLinuxSigningKey(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	old := "0:6.0.0-35.module+el8.4.0+20100+aaaa" // below both fixes
+	host := func(name string, ev map[string]string, evr string) int64 {
+		return olAsset(t, st, name, "ol-8.10", nil, olRow{name: "libvirt", evr: evr, arch: "x86_64", ev: ev})
+	}
+	oracle := host("ol8-oracle", map[string]string{"signing_key": ol8Key}, old)
+	unknown := host("ol8-old-agent", nil, old) // an agent that does not report the key
+	foreign := host("ol8-foreign", map[string]string{"signing_key": epelKey}, old)
+	unsigned := host("ol8-unsigned", map[string]string{"signing_key": "none"}, old)
+	foreignFixed := host("ol8-foreign-fixed", map[string]string{"signing_key": epelKey}, libvirtX86)
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	serveELSA(t, up, map[string]string{"ol8": "ol8-conditions"})
+	if _, err := sy.Sync(ctx, FeedOracleLinux); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	one := func(host int64, what string) store.Finding {
+		t.Helper()
+		got := fromAdvisory(t, st, ctx, host, virtAdvisory)
+		if len(got) != 1 || got[0].FixedVersion != libvirtX86 {
+			t.Fatalf("%s: %+v, want one finding fixed in %s", what, got, libvirtX86)
+		}
+		return got[0]
+	}
+	// Oracle's build, or a key not reported: as before.
+	for _, h := range []int64{oracle, unknown} {
+		if f := one(h, "Oracle's libvirt"); f.Verification != "confirmed" || f.Severity == "unknown" || strings.Contains(string(f.Evidence), "signing_key") {
+			t.Errorf("host %d: %s %s %s", h, f.Verification, f.Severity, f.Evidence)
+		}
+	}
+	// Another vendor's build, or an unsigned one: still reported, as
+	// needing validation, with the keys, never confirmed or dropped.
+	for h, key := range map[int64]string{foreign: epelKey, unsigned: "none"} {
+		f := one(h, "libvirt not signed by Oracle")
+		var e map[string]any
+		_ = json.Unmarshal(f.Evidence, &e)
+		m, _ := e["match"].(map[string]any)
+		if f.Verification != "needs_validation" || f.Severity != "unknown" || e["signing_key"] != key ||
+			!slices.Equal(strs(e["advisory_signing_keys"]), []string{ol8Key}) || !slices.Contains(strs(m["ambiguous"]), "signing_key_mismatch") {
+			t.Errorf("host %d: %s %s %s", h, f.Verification, f.Severity, f.Evidence)
+		}
+	}
+	// The row says why, also when nothing matched.
+	reason := func(host int64) string {
+		rows, _, err := st.ListInventory(ctx, store.InventoryFilter{AssetID: host, Page: store.Page{Limit: 10}})
+		if err != nil || len(rows) != 1 {
+			t.Fatalf("inventory of %d: %v %v", host, rows, err)
+		}
+		if rows[0].Coverage != store.CoverageEvaluated {
+			t.Errorf("host %d: coverage %s", host, rows[0].Coverage)
+		}
+		return rows[0].CoverageReason
+	}
+	if got := reason(foreignFixed); len(fromAdvisory(t, st, ctx, foreignFixed, virtAdvisory)) != 0 ||
+		!strings.Contains(got, "signed with key "+epelKey+", not Oracle's ("+ol8Key+")") {
+		t.Errorf("foreign build at the fix: reason %q", got)
+	}
+	if got := reason(unsigned); !strings.Contains(got, "is not signed") {
+		t.Errorf("unsigned build: reason %q", got)
+	}
+	if got := reason(oracle); got != "" {
+		t.Errorf("Oracle's build: reason %q", got)
+	}
+	stats, err := (&secondcheck.Runner{Store: st, All: true}).Run(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if stats.Checked != 4 || stats.Agreed != stats.Checked {
+		t.Errorf("second check: %+v", stats)
+	}
+}
+
+func strs(v any) []string {
+	xs, _ := v.([]any)
+	var out []string
+	for _, x := range xs {
+		s, _ := x.(string)
+		out = append(out, s)
+	}
+	return out
 }

@@ -67,7 +67,11 @@ import (
 //     (ecosystem_specific "arch"), and the matcher applies it only to
 //     packages of those (osv.OracleArchApplies). Where the fix is the same
 //     on every architecture, the entry records none, as before.
-//   - Signing key: not used yet.
+//   - Signing key ("glibc is signed with the Oracle Linux 9 key"): each
+//     entry records the key ids (ecosystem_specific "signing_keys"). Agents
+//     report each rpm's signing key; a package signed with another key, or
+//     unsigned, is not Oracle's build, so a match through such an entry
+//     needs validation rather than being confirmed (see matchAdvisories).
 //   - Where a branch lists two fixes for one package on one architecture,
 //     the higher one is kept (OVAL's OR: a version below either fix is
 //     affected).
@@ -504,7 +508,7 @@ type elsaKey struct {
 
 // elsaContext is what the AND groups above a criterion say.
 type elsaContext struct {
-	release, module, channel, arch string
+	release, module, channel, arch, key string
 }
 
 type elsaResolver struct {
@@ -528,6 +532,7 @@ type elsaCriterion struct {
 	module  string // "nodejs:18"
 	channel string // "ksplice", "fips": the package is such a build
 	arch    string // "aarch64": the host is of that architecture
+	key     string // "bc4d06a08d8b756f": the package is signed with that key
 	pkg     string // with fixed: the package is earlier than fixed
 	fixed   string
 	line    string // version pattern next to the fix, as a version ("5.15.0", "1.20")
@@ -577,7 +582,12 @@ func (r *elsaResolver) read(c ovalCriterion) elsaCriterion {
 		}
 		return elsaCriterion{arch: arch, known: true}
 	case st.Signature != nil:
-		return elsaCriterion{known: true} // not used yet
+		// "glibc is signed with the Oracle Linux 9 key".
+		key := strings.ToLower(strings.TrimSpace(st.Signature.Value))
+		if len(key) != 16 || st.Signature.Operation != "equals" {
+			return elsaCriterion{}
+		}
+		return elsaCriterion{key: key, known: true}
 	}
 	return elsaCriterion{}
 }
@@ -591,9 +601,17 @@ func elsaVersionLine(p string) (string, bool) {
 	return p, elsaLine.MatchString(p)
 }
 
-// walk collects the affected entries of a criteria tree for the release,
-// and the architectures its entries for the release sit under.
-func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey]elsaFixes, arches map[string]bool) {
+// elsaWalk is what walk collects of a definition for the release: each
+// entry's fixes by architecture and the signing keys next to them, and the
+// architectures its entries sit under.
+type elsaWalk struct {
+	fixes  map[elsaKey]elsaFixes
+	keys   map[elsaKey][]string
+	arches map[string]bool
+}
+
+// walk collects the affected entries of a criteria tree for the release.
+func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, w *elsaWalk) {
 	if c.Negate {
 		r.doc.anomalies++
 		return
@@ -619,6 +637,8 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey]els
 				ctx.channel = x.channel
 			case x.arch != "":
 				ctx.arch = x.arch
+			case x.key != "":
+				ctx.key = x.key
 			}
 		}
 	}
@@ -627,14 +647,17 @@ func (r *elsaResolver) walk(c ovalCriteria, ctx elsaContext, out map[elsaKey]els
 			continue
 		}
 		k := elsaKey{channel: ctx.channel, name: x.pkg, introduced: elsaIntroduced(x, ctx)}
-		if out[k] == nil {
-			out[k] = elsaFixes{}
+		if w.fixes[k] == nil {
+			w.fixes[k] = elsaFixes{}
 		}
-		out[k][ctx.arch] = appendUnique(out[k][ctx.arch], x.fixed)
-		arches[ctx.arch] = true
+		w.fixes[k][ctx.arch] = appendUnique(w.fixes[k][ctx.arch], x.fixed)
+		w.arches[ctx.arch] = true
+		if ctx.key != "" {
+			w.keys[k] = appendUnique(w.keys[k], ctx.key)
+		}
 	}
 	for _, sub := range c.Criteria {
-		r.walk(sub, ctx, out, arches)
+		r.walk(sub, ctx, w)
 	}
 }
 
@@ -668,9 +691,9 @@ func compareRPM(a, b string) int {
 // record turns a definition into the release's advisory; nil when it has no
 // entry for the release.
 func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
-	entries := map[elsaKey]elsaFixes{}
-	arches := map[string]bool{}
-	r.walk(d.criteria, elsaContext{}, entries, arches)
+	w := &elsaWalk{fixes: map[elsaKey]elsaFixes{}, keys: map[elsaKey][]string{}, arches: map[string]bool{}}
+	r.walk(d.criteria, elsaContext{}, w)
+	entries := w.fixes
 	if len(entries) == 0 {
 		return nil
 	}
@@ -712,10 +735,12 @@ func (r *elsaResolver) record(d elsaDef) *osv.Vulnerability {
 		if k.channel != "" {
 			eco += ":" + k.channel
 		}
-		for _, g := range elsaArchGroups(entries[k], arches) {
+		keys := w.keys[k]
+		sort.Strings(keys)
+		for _, g := range elsaArchGroups(entries[k], w.arches) {
 			var cond json.RawMessage
-			if len(g.arch) > 0 {
-				cond = r.intern(osv.OracleConditions{Arch: g.arch})
+			if c := (osv.OracleConditions{Arch: g.arch, SigningKeys: keys}); !c.Empty() {
+				cond = r.intern(c)
 			}
 			for _, e := range elsaRanges(k.introduced, g.fixes) {
 				v.Affected = append(v.Affected, osv.Affected{Package: osv.Package{Ecosystem: eco, Name: k.name},

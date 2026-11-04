@@ -15,11 +15,15 @@ type OracleConditions struct {
 	// the entry sits under, when the fix differs by architecture or the
 	// package is listed for some architectures only ("aarch64").
 	Arch []string `json:"arch,omitempty"`
+	// SigningKeys are the key ids of the "signed with the Oracle Linux N key"
+	// tests next to the entry ("82562ea9ad986da3"): Oracle's advisory
+	// describes the builds Oracle signed with them.
+	SigningKeys []string `json:"signing_keys,omitempty"`
 }
 
 // Empty reports conditions that limit nothing.
 func (c OracleConditions) Empty() bool {
-	return len(c.Arch) == 0
+	return len(c.Arch) == 0 && len(c.SigningKeys) == 0
 }
 
 // OracleConditionsOf reads an Oracle Linux entry's conditions; an entry
@@ -63,4 +67,25 @@ func OracleArchApplies(arches []string, arch string) bool {
 		}
 	}
 	return false
+}
+
+// SigningKey is the inventory evidence the rpm collector gives for a
+// package's signature: the 16-digit id of the key that signed its header
+// ("82562ea9ad986da3"), or SigningKeyNone for an unsigned package. It is
+// absent when not reported (an older agent, an SBOM).
+const (
+	SigningKey     = "signing_key"
+	SigningKeyNone = "none"
+)
+
+// OracleKeyMismatch reports whether a package's signing key (evidence
+// SigningKey) is known and is not one of the keys an entry names: the
+// package is unsigned or another vendor's build, which Oracle's advisory
+// does not describe. An unknown key (no evidence) and an entry naming no
+// key never mismatch.
+func OracleKeyMismatch(keys []string, installed string) bool {
+	if installed == "" || len(keys) == 0 {
+		return false
+	}
+	return !slices.Contains(keys, strings.ToLower(installed))
 }
