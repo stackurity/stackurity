@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- **A kept API token cannot get around required single sign-on (Stackurity Cloud).** While an organisation requires its single sign-on, an API token of anyone but the owner could still create new API tokens and switch requiring off, replace or remove the provider, or change domains. Now those requests answer 403 `sso_required` for such a token; it can still read. The owner's tokens, agents' and CI jobs' tokens are not affected, and sessions were already held to single sign-on.
+
 ### Changed
 
 - **Requiring single sign-on asks about existing tokens (Stackurity Cloud).** Ticking **Require single sign-on for members** now asks whether to keep or revoke the API tokens and AI assistant connections made before. There is no default. Revoking ends members' API tokens and AI assistant connections and unlinks their Slack accounts, in this organisation only; agents' and CI jobs' tokens and the owner's stay. The change and the revocation happen in one transaction, and the `sso.state` audit event records the choice and the counts. `PUT /sso/state` takes `existing_tokens` (`keep` or `revoke`), required when requiring single sign-on is switched on and refused otherwise; before, existing tokens always kept working. A request that changes something from a password session now always reads whether single sign-on is required from the database, so another server's cached answer cannot let it make a token after requiring started.
@@ -14,7 +18,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Security
 
-- **A kept API token cannot get around required single sign-on (Stackurity Cloud).** While an organisation requires its single sign-on, an API token of anyone but the owner could still create new API tokens and switch requiring off, replace or remove the provider, or change domains. Now those requests answer 403 `sso_required` for such a token; it can still read. The owner's tokens, agents' and CI jobs' tokens are not affected, and sessions were already held to single sign-on.
 - **Single sign-on never carries instance-administrator powers.** Single sign-on sessions are exempt from the two-factor policy, because the identity provider does the second factor, so an instance administrator is never linked to a provider. But an account linked to OpenID Connect or SAML single sign-on that was made an instance administrator afterwards (by SQL, or at setup) got the role's powers in its single sign-on sessions, with no two-factor policy, and could create API tokens carrying them. Now no single sign-on session has instance-administrator powers, such a session cannot create an API token for an instance administrator (403), no API token of an account linked to single sign-on carries those powers (also one made from a password session, or made before the account was promoted; remove the link first), and the licensed build refuses the sign-in itself ("instance administrators sign in with their password and second factor"), audited as `auth.sso_refused`. The store also refuses to make a linked account an instance administrator (`store.ErrSSOLinkedInstanceAdmin`, 409), as defence in depth; there is no API or command for it. To find accounts affected: `SELECT email FROM users WHERE instance_admin AND oidc_subject IS NOT NULL;` (OpenID Connect and SAML share these columns); remove the link and give the account a password and second factor. Organisation single sign-on on Stackurity Cloud already refused instance administrators at every sign-in; its pinned sessions also can no longer create such tokens.
 
 ### Added
