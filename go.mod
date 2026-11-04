@@ -12,7 +12,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/eks v1.104.3
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.64.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.113.3
-	github.com/aws/aws-sdk-go-v2/service/opensearch v1.86.1
+	github.com/aws/aws-sdk-go-v2/service/opensearch v1.87.1
 	github.com/aws/aws-sdk-go-v2/service/rds v1.131.1
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.5
