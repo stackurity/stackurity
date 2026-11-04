@@ -26,6 +26,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **A free key is now needed, after 30 days.** Migration 0094 (`0094_license_requirement`) records from when this server needs a [free key](docs/install.md#the-free-key): a server with users or assets keeps working for 30 days from its first start on this version, with a dismissible banner for instance administrators, then shows the key step. The 30 days are counted in the database and by the time the server has been seen running (at most 20 minutes per 10-minute tick, never negative), so a clock that jumps forward cannot lock it out early: it is held back only once the date has passed and it has run at least 7 days since the upgrade, or after 30 days of running whatever the clock says. A server with a paid licence is not affected. Get the key before upgrading to skip the banner: paste it under **Settings → Licence** on the new version, or set `STACKURITY_LICENSE_FILE`.
 - Migration `0095_license_key_links` adds the table of one-time states for **Get a free key** and a random `server_id` to `license_requirement`; it rewrites nothing.
 
+### Fixed
+
+- **Email with a sender name was refused by the mail server.** A From such as `Stackurity <no-reply@example.com>` (email channels, Stackurity Cloud's `STACKURITY_CLOUD_SMTP_FROM`) was sent whole as SMTP's envelope sender, which servers answer with `501 Syntax error in MAIL command`; on Stackurity Cloud every sign-up confirmation failed. The envelope now carries the bare address and the From header keeps the name.
+
 ## 0.16.0
 
 ### Security

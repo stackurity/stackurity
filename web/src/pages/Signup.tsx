@@ -270,12 +270,11 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
 /**
  * What a new organisation should know before it signs up: what happens when
  * the trial ends (as the Terms say; cloud state.go decides it), where the
- * prices are, where its data is kept, and the free self-hosted edition.
+ * prices are and where its data is kept.
  * Everything comes from the service's configuration.
  */
 export function SignupFacts({ signup }: { signup: SignupMeta }) {
   const pricing = safeLink(signup.pricing_url);
-  const selfHosted = safeLink(signup.self_hosted_url);
   const days = signup.delete_after_days;
   return (
     <ul className="banner-list small">
@@ -306,15 +305,6 @@ export function SignupFacts({ signup }: { signup: SignupMeta }) {
         )
       )}
       {signup.region_label && <li>Your data is stored in {signup.region_label}.</li>}
-      {selfHosted && (
-        <li>
-          Want to run it yourself?{" "}
-          <a href={selfHosted} target="_blank" rel="noopener noreferrer">
-            The self-hosted Community edition is free
-          </a>
-          .
-        </li>
-      )}
     </ul>
   );
 }
