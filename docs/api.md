@@ -2264,7 +2264,7 @@ The installation's licence `status`, `active_assets`, `managed_by_env` (set by `
 
 **Who:** instance admin, in a browser session (not an API token)
 
-Starts **Get a free key** ([install.md](install.md#the-free-key)). 201 with `url`, the Stackurity Cloud page the browser goes to (`https://app.stackurity.dev/community-key/new?return=<STACKURITY_BASE_URL>&state=<state>&server_id=<hash>`), and `expires_at`. The state is random, bound to this session, works once and for 15 minutes; only its SHA-256 is stored. `server_id` is a hash of this installation's random id, never the id. The server contacts nothing. 409 `no_base_url` without a usable `STACKURITY_BASE_URL`, 409 `conflict` when the licence is set by `STACKURITY_LICENSE` or a paid licence is installed; 404 where no key is needed (Stackurity Cloud). At most 20 an hour per administrator.
+Starts **Get a free key** ([install.md](install.md#the-free-key)). 201 with `url`, the Stackurity Cloud page the browser goes to (`https://app.stackurity.dev/community-key/new#return=<STACKURITY_BASE_URL>&state=<state>&server_id=<hash>`: the values are in the fragment, never a query string, so no proxy on the way logs them), and `expires_at`. The state is random, bound to this session, works once and for 15 minutes; only its SHA-256 is stored. `server_id` is a hash of this installation's random id, never the id. The server contacts nothing. 409 `no_base_url` without a usable `STACKURITY_BASE_URL`, 409 `conflict` when the licence is set by `STACKURITY_LICENSE` or a paid licence is installed; 404 where no key is needed (Stackurity Cloud). At most 20 an hour per administrator.
 
 ### `POST /admin/license/link/claim`
 

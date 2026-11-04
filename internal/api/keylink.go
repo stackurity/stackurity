@@ -130,7 +130,10 @@ func (s *Server) startKeyLink(w http.ResponseWriter, r *http.Request) {
 	if h := serverIDHash(id); h != "" {
 		q.Set("server_id", h)
 	}
-	writeJSON(w, 201, map[string]any{"url": license.KeyLinkURL + "?" + q.Encode(), "expires_at": expires.UTC()})
+	// The values go in the fragment, never a query string: browsers do not
+	// send it, so this server's address and the state are in no access log
+	// on the way (the Cloud page reads location.hash and posts them).
+	writeJSON(w, 201, map[string]any{"url": license.KeyLinkURL + "#" + q.Encode(), "expires_at": expires.UTC()})
 }
 
 // errKeyLink is every way a state can fail; the reasons are not told apart.

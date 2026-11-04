@@ -138,10 +138,11 @@ func (k *keyLinkEnv) start(s *session) string {
 		k.t.Fatalf("start a key link: %d", code)
 	}
 	u, err := url.Parse(out.URL)
-	if err != nil || !strings.HasPrefix(out.URL, license.KeyLinkURL+"?") {
-		k.t.Fatalf("key link address: %q", out.URL)
+	if err != nil || !strings.HasPrefix(out.URL, license.KeyLinkURL+"#") || u.RawQuery != "" || strings.Contains(out.URL, "?") {
+		k.t.Fatalf("key link address (values only in the fragment): %q", out.URL)
 	}
-	return u.Query().Get("state")
+	f, _ := url.ParseQuery(u.Fragment)
+	return f.Get("state")
 }
 
 func (k *keyLinkEnv) claim(s *session, key, state string) (int, string) {
@@ -181,7 +182,12 @@ func TestKeyLink(t *testing.T) {
 		t.Fatalf("start: %d", code)
 	}
 	u, _ := url.Parse(link.URL)
-	q := u.Query()
+	// Everything in the fragment, nothing in a query string (the Cloud's
+	// proxy logs failed requests' full URL).
+	if u.RawQuery != "" || strings.Contains(link.URL, "?") {
+		t.Fatalf("key link has a query string: %s", link.URL)
+	}
+	q, _ := url.ParseQuery(u.Fragment)
 	serverID, err := k.st.ServerID(context.Background())
 	if err != nil || serverID == "" {
 		t.Fatalf("server id: %q %v", serverID, err)

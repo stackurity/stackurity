@@ -2161,7 +2161,7 @@ jobs:
         ],
       },
       {
-        note: "Your server makes no request for this: the browser carries the key, after the `#` in the address, which is never sent to any server. The server accepts it only within 15 minutes of the click, once, in the same browser session. Stackurity Cloud sees the server's address so it can send you back; it does not store it.",
+        note: "Your server makes no request for this: the browser carries the key, after the `#` in the address, which is never sent to any server. The server accepts it only within 15 minutes of the click, once, in the same browser session. Stackurity Cloud sees the server's address (also after the `#`) so it can send you back; it does not store it. The key names your organisation only.",
       },
       {
         p: "The button needs `STACKURITY_BASE_URL` set to the dashboard's address. Stackurity Cloud sends keys only to `https` addresses, or plain `http` to `localhost` and private addresses.",

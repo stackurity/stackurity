@@ -73,12 +73,13 @@ func TestNoEgressForKeyLink(t *testing.T) {
 		t.Fatalf("start: %d", code)
 	}
 	u, err := url.Parse(link.URL)
-	if err != nil || u.Host != "app.stackurity.dev" || u.Query().Get("return") != "http://stackurity.internal.example:8080" {
+	frag, _ := url.ParseQuery(u.Fragment)
+	if err != nil || u.Host != "app.stackurity.dev" || u.RawQuery != "" || frag.Get("return") != "http://stackurity.internal.example:8080" {
 		t.Fatalf("link: %q", link.URL)
 	}
 	// Stackurity Cloud sends the browser back with the key; the page posts
 	// it with the state.
-	if code := call("POST", "/api/v1/admin/license/link/claim", map[string]string{"key": ciCommunityKey, "state": u.Query().Get("state")}, nil); code != 200 {
+	if code := call("POST", "/api/v1/admin/license/link/claim", map[string]string{"key": ciCommunityKey, "state": frag.Get("state")}, nil); code != 200 {
 		t.Fatalf("claim: %d", code)
 	}
 	if code := call("GET", "/api/v1/assets", nil, nil); code != 200 {

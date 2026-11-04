@@ -48,16 +48,37 @@ export function parseKeyReturn(hash: string): KeyReturn {
   return { kind: "key", key, state };
 }
 
+/** What a server's "Get a free key" sends: always in the fragment, never a query. */
+export type KeyLinkValues = { return: string; state: string; server_id?: string };
+
+/**
+ * Reads the values of /community-key/new#return=…&state=…&server_id=… from
+ * the fragment (window.location.hash). A query string is never read: it
+ * would be in the access logs of every proxy on the way.
+ */
+export function parseKeyLinkHash(hash: string): KeyLinkValues {
+  let p: URLSearchParams;
+  try {
+    p = new URLSearchParams(hash.replace(/^#/, ""));
+  } catch {
+    p = new URLSearchParams();
+  }
+  const r: KeyLinkValues = { return: p.get("return") ?? "", state: p.get("state") ?? "" };
+  const id = p.get("server_id");
+  if (id) r.server_id = id;
+  return r;
+}
+
 /**
  * Where to go back to after signing up on the Cloud, from what the Cloud
- * page saved: only its own path with a query, never another site.
+ * page saved: only its own path with a fragment, never another site.
  */
 export function resumePath(saved: string | null, now: number): string | null {
   if (!saved) return null;
   try {
     const v = JSON.parse(saved) as { path?: unknown; at?: unknown };
     if (typeof v.path !== "string" || typeof v.at !== "number" || now - v.at > 60 * 60 * 1000 || now < v.at) return null;
-    if (!v.path.startsWith(KEY_LINK_PATH + "?") || /[\\\s]/.test(v.path) || v.path.includes("//")) return null;
+    if (!v.path.startsWith(KEY_LINK_PATH + "#") || /[\\\s?]/.test(v.path) || v.path.includes("//")) return null;
     return v.path;
   } catch {
     return null;
