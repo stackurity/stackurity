@@ -34,6 +34,30 @@ export interface PromptRequest {
   allowEmpty?: boolean;
 }
 
+/**
+ * A choice between explicit options, in the same dialog: none is picked
+ * at first, and the action stays disabled until one is, so nothing is
+ * decided by default. Cancel answers null.
+ */
+export interface ChoiceRequest {
+  title: string;
+  message?: string;
+  choices: Choice[];
+  action: string;
+}
+
+export interface Choice {
+  value: string;
+  label: string;
+  /** What choosing it does, on its own line. */
+  detail?: string;
+}
+
+/** Whether picked is one of the request's options. */
+export function canChoose(r: ChoiceRequest, picked: string): boolean {
+  return r.choices.some((c) => c.value === picked);
+}
+
 /** What must be typed for a destructive request; "" when nothing is. */
 export function confirmWord(r: ConfirmRequest): string {
   if (!r.destructive) return "";
