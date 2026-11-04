@@ -1,0 +1,64 @@
+# Code quality checks (golangci-lint v2). CI runs them on every pull request
+# and push to main and fails only on issues in the lines a change touches
+# (the lint job in .github/workflows/ci.yml); older code is fixed as it is
+# edited. Run locally with `make lint`.
+version: "2"
+
+linters:
+  # errcheck, govet, ineffassign, staticcheck
+  default: standard
+  disable:
+    # The licensed edition (stackurity-pro, //go:build ee) calls core helpers
+    # this repository cannot see, such as requireFeature and limiter.allow.
+    - unused
+  enable:
+    - dupl          # copy-pasted blocks
+    - errorlint     # errors compared with == or type-asserted instead of errors.Is/As
+    - gocognit      # functions too complex to follow
+    - misspell
+    - rowserrcheck  # rows.Err() not checked after iterating
+    - sqlclosecheck # rows or statements not closed
+  settings:
+    errcheck:
+      # Closing and cleanup errors are not actionable where they happen.
+      exclude-functions:
+        - (io.Closer).Close
+        - (io.ReadCloser).Close
+        - (*os.File).Close
+        - (net.Conn).Close
+        - os.Remove
+        - os.RemoveAll
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    errorlint:
+      # %v instead of %w is sometimes deliberate: it keeps a dependency's
+      # error type out of the API.
+      errorf: false
+    gocognit:
+      min-complexity: 80
+    staticcheck:
+      checks:
+        - all
+        # Error messages start with product names (Slack, GitLab, AWS).
+        - -ST1005
+        # Quick-fix suggestions (De Morgan, tagged switch), not defects.
+        - -QF*
+        # The defaults golangci-lint leaves off: package comments and naming.
+        - -ST1000
+        - -ST1003
+        - -ST1016
+        - -ST1020
+        - -ST1021
+        - -ST1022
+  exclusions:
+    presets:
+      - std-error-handling
+    rules:
+      # Tests repeat request and response set-up on purpose.
+      - path: _test\.go
+        linters: [dupl, gocognit, errcheck]
+
+formatters:
+  enable:
+    - gofmt

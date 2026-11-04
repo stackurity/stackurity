@@ -37,5 +37,8 @@ make build
 ## Pull requests
 
 - Keep `gofmt`, `go vet` and the tests green.
+- `make lint` runs golangci-lint (`.golangci.yml`) and the dashboard's
+  oxlint (`web/.oxlintrc.json`). CI fails on golangci-lint issues only in
+  the lines a change touches, and on any dashboard lint issue.
 - Explain the user-visible change and how you tested it.
 - Security-sensitive changes (auth, ingest, cloning, secrets) need a test that shows the protection holds.
