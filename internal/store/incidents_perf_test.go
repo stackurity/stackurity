@@ -40,7 +40,7 @@ func TestIncidentListPerformance(t *testing.T) {
 	st := store.New(pool)
 	bg := context.Background()
 	wsA := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	b, _, err := st.CreateWorkspace(bg, "Outdo", "", "owner@outdo.io", "", "correct horse battery")
+	b, _, err := st.CreateWorkspace(bg, "Outdo", "", "owner@outdo.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

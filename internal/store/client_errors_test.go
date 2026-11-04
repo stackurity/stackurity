@@ -27,11 +27,11 @@ func billing404(t *testing.T, browser string) clienterrors.Clean {
 func TestClientErrorsAggregateAndIsolate(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	w1, _, err := s.CreateWorkspace(bg, "One", "one", "a@example.com", "A", "pw-a-123456789")
+	w1, _, err := s.CreateWorkspace(bg, "One", "one", "a@example.com", "A", "Pw-a-123456789")
 	if err != nil {
 		t.Fatal(err)
 	}
-	w2, _, err := s.CreateWorkspace(bg, "Two", "two", "b@example.com", "B", "pw-b-123456789")
+	w2, _, err := s.CreateWorkspace(bg, "Two", "two", "b@example.com", "B", "Pw-b-123456789")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -24,15 +24,15 @@ func TestRevokePeopleCredentials(t *testing.T) {
 	bg := context.Background()
 	sys := tenant.System(bg)
 	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	owner, err := s.CreateUser(a, "owner@a.io", "Owner", auth.RoleAdmin, "correct horse battery")
+	owner, err := s.CreateUser(a, "owner@a.io", "Owner", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	member, err := s.CreateUser(a, "member@a.io", "Member", auth.RoleEngineer, "correct horse battery")
+	member, err := s.CreateUser(a, "member@a.io", "Member", auth.RoleEngineer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	wsB, adminB, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "correct horse battery")
+	wsB, adminB, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -229,7 +229,7 @@ func TestRevokePeopleCredentialsDuringRedeem(t *testing.T) {
 	bg := context.Background()
 	sys := tenant.System(bg)
 	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	member, err := s.CreateUser(a, "member@a.io", "Member", auth.RoleEngineer, "correct horse battery")
+	member, err := s.CreateUser(a, "member@a.io", "Member", auth.RoleEngineer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

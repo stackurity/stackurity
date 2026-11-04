@@ -655,6 +655,7 @@ func writeError(w http.ResponseWriter, status int, code, msg string, details ...
 func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *model.ValidationError
 	var refusal *instanceAdminRefusal
+	var weak *auth.ErrWeakPassword
 	switch {
 	case errors.As(err, &refusal):
 		refusal.write(w)
@@ -684,6 +685,9 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 400, "invalid", "validation failed", ve.Problems...)
 	case errors.Is(err, errBadRequest):
 		writeError(w, 400, "bad_request", err.Error())
+	case errors.As(err, &weak):
+		// The rules a new password misses (docs/api.md, password_too_weak).
+		writeError(w, 400, "password_too_weak", err.Error(), weak.Missing...)
 	case errors.Is(err, auth.ErrBadPassword):
 		writeError(w, 400, "bad_request", err.Error())
 	default:

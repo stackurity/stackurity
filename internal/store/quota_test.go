@@ -195,7 +195,7 @@ func TestAssetLimitPerWorkspace(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
 	a := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "Beta", "", "admin-b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

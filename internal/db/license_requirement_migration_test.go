@@ -54,7 +54,7 @@ func TestLicenseRequirementMigration(t *testing.T) {
 			t.Fatalf("%s: %v", q, err)
 		}
 	}
-	if _, err := s.CreateUser(tenant.WithWorkspace(ctx, tenant.DefaultWorkspace), "a@x.io", "", auth.RoleAdmin, "correct horse battery"); err != nil {
+	if _, err := s.CreateUser(tenant.WithWorkspace(ctx, tenant.DefaultWorkspace), "a@x.io", "", auth.RoleAdmin, "Correct horse battery 1!"); err != nil {
 		t.Fatal(err)
 	}
 	exec(`DROP TABLE license_requirement`)

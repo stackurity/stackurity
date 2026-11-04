@@ -20,12 +20,12 @@ import (
 func TestReferencesStayInTheirWorkspace(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
 	a, b := tenant.WithWorkspace(bg, tenant.DefaultWorkspace), tenant.WithWorkspace(bg, wsB.ID)
-	only, err := s.CreateUser(a, "only-a@x.io", "", auth.RoleViewer, "correct horse battery")
+	only, err := s.CreateUser(a, "only-a@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

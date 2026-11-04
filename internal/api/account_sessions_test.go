@@ -186,7 +186,7 @@ func TestAccountSessions(t *testing.T) {
 
 	// A new session ID for the same sign-in (a new password) keeps its
 	// public ID, and when and where it was signed in.
-	if code := laptop.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 200 {
+	if code := laptop.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "Another long passphrase 2!"}, nil); code != 200 {
 		t.Fatalf("new password: %d", code)
 	}
 	var after sessionList

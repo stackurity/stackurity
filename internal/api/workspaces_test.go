@@ -332,7 +332,7 @@ func TestWorkspaceMembership(t *testing.T) {
 			ownerID = u.ID
 		}
 	}
-	if code := gamma.do("PATCH", fmt.Sprintf("/api/v1/users/%d", ownerID), map[string]any{"password": "a new long password"}, nil); code != 409 {
+	if code := gamma.do("PATCH", fmt.Sprintf("/api/v1/users/%d", ownerID), map[string]any{"password": "A new long password 1!"}, nil); code != 409 {
 		t.Errorf("gamma admin reset a shared account's password: %d", code)
 	}
 	if code := gamma.do("PATCH", fmt.Sprintf("/api/v1/users/%d", ownerID), map[string]any{"disabled": true}, nil); code != 409 {

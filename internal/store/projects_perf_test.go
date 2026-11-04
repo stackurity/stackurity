@@ -101,7 +101,7 @@ func TestProjectScopePerformance(t *testing.T) {
 	_ = pool.QueryRow(ws, `SELECT id FROM projects WHERE name = 'small'`).Scan(&small)
 	_ = pool.QueryRow(ws, `SELECT id FROM projects WHERE name = 'large'`).Scan(&large)
 	member := func(email string, project int64) context.Context {
-		id, _, err := st.EnsureMember(ws, email, "", "correct horse battery")
+		id, _, err := st.EnsureMember(ws, email, "", "Correct horse battery 1!")
 		if err != nil {
 			t.Fatal(err)
 		}

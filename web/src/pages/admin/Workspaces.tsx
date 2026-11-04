@@ -4,6 +4,8 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { PasswordChecklist } from "../../components/PasswordStrength";
+import { passwordOK } from "../../passwordStrength";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
 
 const PLAN_LABEL: Record<string, string> = {
@@ -246,12 +248,14 @@ function CreateWorkspace({ onCancel, onCreated }: { onCancel: () => void; onCrea
           </div>
           <div className="field">
             <label htmlFor="nw-pw">Initial password</label>
-            <input id="nw-pw" type="password" minLength={12} autoComplete="new-password" value={f.admin_password} onChange={(e) => setF({ ...f, admin_password: e.target.value })} />
-            <p className="hint">Needed only when this email has no account yet. At least 12 characters.</p>
+            <input id="nw-pw" type="password" minLength={12} maxLength={256} autoComplete="new-password" value={f.admin_password} aria-describedby="nw-pw-rules"
+              onChange={(e) => setF({ ...f, admin_password: e.target.value })} />
+            <p className="hint">Needed only when this email has no account yet.</p>
+            {f.admin_password && <PasswordChecklist id="nw-pw-rules" password={f.admin_password} context={[f.admin_email, f.admin_name, f.name]} />}
           </div>
         </div>
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending}>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || (f.admin_password !== "" && !passwordOK(f.admin_password))}>
             Create workspace
           </button>
           <button type="button" className="btn" onClick={onCancel}>

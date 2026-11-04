@@ -427,7 +427,7 @@ func TestFeedStallOperatorAlerts(t *testing.T) {
 	var logged strings.Builder
 	f.d.Log = slog.New(slog.NewTextHandler(&logged, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	f.d.Platform = func(ctx context.Context) ([]store.SystemIncident, error) { return nil, nil }
-	other, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	other, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -531,7 +531,7 @@ func TestPlatformIncidents(t *testing.T) {
 		t.Errorf("platform alert: %+v", f.hook.got)
 	}
 	// Other workspaces do not ask for platform problems.
-	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -555,7 +555,7 @@ func TestPlatformIncidents(t *testing.T) {
 func TestPlatformWorkspaceSetting(t *testing.T) {
 	f := setup(t)
 	bg := context.Background()
-	ops, _, err := f.st.CreateWorkspace(bg, "Operations", "ops", "ops@x.io", "", "correct horse battery")
+	ops, _, err := f.st.CreateWorkspace(bg, "Operations", "ops", "ops@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

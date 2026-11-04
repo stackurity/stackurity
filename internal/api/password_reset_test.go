@@ -144,7 +144,7 @@ func TestPasswordReset(t *testing.T) {
 		t.Fatalf("short password: %d", code)
 	}
 	var done struct{ Revoked store.Revoked }
-	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "a brand new passphrase"}, &done); code != 200 {
+	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "A brand new passphrase 3!"}, &done); code != 200 {
 		t.Fatalf("reset: %d", code)
 	}
 	if done.Revoked.Sessions != 1 || done.Revoked.Tokens != 0 {
@@ -158,18 +158,18 @@ func TestPasswordReset(t *testing.T) {
 		t.Errorf("kept token: %d", code)
 	}
 	// The link works once.
-	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "another new passphrase"}, nil); code != 410 {
+	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "Another new passphrase 7!"}, nil); code != 410 {
 		t.Errorf("used link: %d", code)
 	}
 	s := e.anon()
-	if code := s.do("POST", "/api/v1/auth/login", map[string]string{"email": "ann@x.io", "password": "a brand new passphrase"}, nil); code != 200 {
+	if code := s.do("POST", "/api/v1/auth/login", map[string]string{"email": "ann@x.io", "password": "A brand new passphrase 3!"}, nil); code != 200 {
 		t.Fatalf("sign in with the new password: %d", code)
 	}
 
 	// Revoking tokens on request; an expired link is refused.
 	e.anon().do("POST", "/api/v1/auth/password-reset", map[string]string{"email": "ann@x.io"}, nil)
 	token = resetToken(t, mail.wait(t))
-	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "third new passphrase", "revoke_tokens": true}, &done); code != 200 || done.Revoked.Tokens != 1 {
+	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "Third new passphrase 5!", "revoke_tokens": true}, &done); code != 200 || done.Revoked.Tokens != 1 {
 		t.Fatalf("reset revoking tokens: %d %+v", code, done.Revoked)
 	}
 	if code := bearer(e, tok.Secret, "GET", "/api/v1/assets", nil, nil); code != 401 {
@@ -180,7 +180,7 @@ func TestPasswordReset(t *testing.T) {
 	if _, err := e.st.Pool.Exec(context.Background(), `UPDATE password_resets SET expires_at = now() - interval '1 second'`); err != nil {
 		t.Fatal(err)
 	}
-	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "fourth new passphrase"}, nil); code != 410 {
+	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "Fourth new passphrase 6!"}, nil); code != 410 {
 		t.Errorf("expired link: %d", code)
 	}
 
@@ -227,11 +227,11 @@ func TestPasswordResetKeepsMFA(t *testing.T) {
 	}
 	e.anon().do("POST", "/api/v1/auth/password-reset", map[string]string{"email": "bob@x.io"}, nil)
 	token := resetToken(t, mail.wait(t))
-	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "a brand new passphrase"}, nil); code != 200 {
+	if code := e.anon().do("POST", "/api/v1/auth/password-reset/confirm", map[string]any{"token": token, "new_password": "A brand new passphrase 3!"}, nil); code != 200 {
 		t.Fatalf("reset: %d", code)
 	}
 	var out map[string]any
-	e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "bob@x.io", "password": "a brand new passphrase"}, &out)
+	e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "bob@x.io", "password": "A brand new passphrase 3!"}, &out)
 	if out["mfa_required"] != true {
 		t.Errorf("sign-in after reset did not ask for a code: %v", out)
 	}
@@ -262,7 +262,7 @@ func TestTemporaryPassword(t *testing.T) {
 			dev = u.ID
 		}
 	}
-	temp := "temporary passphrase 1"
+	temp := "Temporary passphrase 1!"
 	if code := admin.do("PATCH", fmt.Sprintf("/api/v1/users/%d", dev), map[string]string{"password": temp}, nil); code != 200 {
 		t.Fatalf("set temporary password: %d", code)
 	}
@@ -280,7 +280,7 @@ func TestTemporaryPassword(t *testing.T) {
 	if code := s.do("GET", "/api/v1/assets", nil, nil); code != 403 {
 		t.Fatalf("assets with a temporary password: %d", code)
 	}
-	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": temp, "new_password": "my own passphrase"}, nil); code != 204 && code != 200 {
+	if code := s.do("POST", "/api/v1/auth/password", map[string]string{"current_password": temp, "new_password": "My own passphrase 9!"}, nil); code != 204 && code != 200 {
 		t.Fatalf("change: %d", code)
 	}
 	if code := s.do("GET", "/api/v1/assets", nil, nil); code != 200 {
@@ -289,9 +289,9 @@ func TestTemporaryPassword(t *testing.T) {
 	// An admin changing their own password is not making it temporary.
 	var self struct{ User store.User }
 	admin.do("GET", "/api/v1/auth/me", nil, &self)
-	admin.do("PATCH", fmt.Sprintf("/api/v1/users/%d", self.User.ID), map[string]string{"password": "admin new passphrase"}, nil)
+	admin.do("PATCH", fmt.Sprintf("/api/v1/users/%d", self.User.ID), map[string]string{"password": "Admin new passphrase 4!"}, nil)
 	a2 := e.anon()
-	a2.do("POST", "/api/v1/auth/login", map[string]string{"email": "admin@x.io", "password": "admin new passphrase"}, nil)
+	a2.do("POST", "/api/v1/auth/login", map[string]string{"email": "admin@x.io", "password": "Admin new passphrase 4!"}, nil)
 	if code := a2.do("GET", "/api/v1/assets", nil, nil); code != 200 {
 		t.Errorf("admin after setting their own password: %d", code)
 	}

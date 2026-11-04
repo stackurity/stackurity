@@ -56,7 +56,7 @@ func newSelftestEnv(t *testing.T, work bool) *selftestEnv {
 	e := &selftestEnv{st: st, srv: httptest.NewServer(s.Handler()), hits: new(int64)}
 	t.Cleanup(e.srv.Close)
 
-	u, err := st.CreateUser(ctx, "admin@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := st.CreateUser(ctx, "admin@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -233,7 +233,7 @@ func TestSelftestFailsAndCleansUp(t *testing.T) {
 	}
 	e.quiet(t)
 
-	u, err := e.st.CreateUser(ctx, "viewer@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := e.st.CreateUser(ctx, "viewer@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

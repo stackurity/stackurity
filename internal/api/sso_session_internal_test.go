@@ -27,11 +27,11 @@ func TestSSOSessions(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	u, err := st.CreateUser(ws1, "both@acme.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := st.CreateUser(ws1, "both@acme.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws2, _, err := st.CreateWorkspace(ws1, "Acme", "acme", "owner@acme.io", "Owner", "correct horse battery")
+	ws2, _, err := st.CreateWorkspace(ws1, "Acme", "acme", "owner@acme.io", "Owner", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,7 +155,7 @@ func TestPinnedSessionSurvivesRotation(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	const password = "correct horse battery"
+	const password = "Correct horse battery 1!"
 	u, err := st.CreateUser(ws1, "both@acme.io", "", auth.RoleAdmin, password)
 	if err != nil {
 		t.Fatal(err)
@@ -244,7 +244,7 @@ func TestPinnedSessionSurvivesRotation(t *testing.T) {
 	}
 
 	old := secret
-	const next = "a much longer passphrase 4917"
+	const next = "A much longer passphrase 4917!"
 	if code := call("POST", "/api/v1/auth/password", map[string]string{"current_password": password, "new_password": next}, nil); code != 200 {
 		t.Fatalf("change password: %d", code)
 	}

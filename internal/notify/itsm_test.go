@@ -1000,7 +1000,7 @@ func TestITSMRefusesInternalAddresses(t *testing.T) {
 	fp, pdSrv := newFakePagerDuty(t)
 	f.d.Sender.PagerDutyURL = pdSrv.URL + "/v2/enqueue"
 
-	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1073,7 +1073,7 @@ func TestITSMWorkspaceIsolation(t *testing.T) {
 	aSN := f.addTracker(ctx, KindServiceNow, snConfig(snSrv.URL), fs.password)
 	f.addTracker(ctx, KindPagerDuty, ChannelConfig{}, fp.key)
 
-	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "correct horse battery")
+	ws, _, err := f.st.CreateWorkspace(context.Background(), "Other", "other", "o@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -27,7 +27,7 @@ func TestSSOSessionNeverInstanceAdmin(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	u, err := st.CreateUser(ws1, "linked@acme.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := st.CreateUser(ws1, "linked@acme.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

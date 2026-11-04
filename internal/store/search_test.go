@@ -303,7 +303,7 @@ func TestSearchFindingTitles(t *testing.T) {
 // their role there and the open findings assigned to them.
 func TestSearchMembers(t *testing.T) {
 	ctx, s, _ := searchFixture(t)
-	dana, err := s.CreateUser(ctx, "dana@example.com", "Dana Scully", "engineer", "correct horse battery")
+	dana, err := s.CreateUser(ctx, "dana@example.com", "Dana Scully", "engineer", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -311,7 +311,7 @@ func TestSearchMembers(t *testing.T) {
 		t.Fatal(err)
 	}
 	// An account in another workspace only.
-	if _, _, err := s.CreateWorkspace(context.Background(), "Other", "other", "dana.other@example.com", "Dana Other", "correct horse battery"); err != nil {
+	if _, _, err := s.CreateWorkspace(context.Background(), "Other", "other", "dana.other@example.com", "Dana Other", "Correct horse battery 1!"); err != nil {
 		t.Fatal(err)
 	}
 

@@ -1623,7 +1623,7 @@ func TestInstanceAdminPowersFollowEveryWorkspacesPolicy(t *testing.T) {
 	_, root, _, bossID := instanceAdminSetup(t, e, []string{"passkey", "totp"})
 	enrol(t, e.login("boss@acme.io"))
 	var out apiErr
-	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "a whole new password 1"}, &out); code != 403 ||
+	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "A whole new password 1!"}, &out); code != 403 ||
 		out.Error.Code != "mfa_enrolment_required" {
 		t.Errorf("change the password of Acme's admin from workspace 1: %d %+v", code, out)
 	}
@@ -1635,7 +1635,7 @@ func TestInstanceAdminPowersFollowEveryWorkspacesPolicy(t *testing.T) {
 		t.Errorf("boss's app after the refused reset: %d %v", n, err)
 	}
 	enrol(t, root)
-	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "a whole new password 1"}, &out); code != 200 {
+	if code := root.do("PATCH", fmt.Sprintf("/api/v1/users/%d", bossID), map[string]any{"password": "A whole new password 1!"}, &out); code != 200 {
 		t.Errorf("password change with the app: %d %+v", code, out)
 	}
 	if code := root.do("DELETE", fmt.Sprintf("/api/v1/users/%d/mfa", bossID), nil, &out); code != 204 {

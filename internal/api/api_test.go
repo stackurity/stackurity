@@ -31,7 +31,7 @@ import (
 	"github.com/stackurity/stackurity/internal/testdb"
 )
 
-const pw = "correct horse battery"
+const pw = "Correct horse battery 1!"
 
 type env struct {
 	t   *testing.T
@@ -659,13 +659,13 @@ func TestChangeOwnPassword(t *testing.T) {
 	e := newEnv(t)
 	e.user("u@x.io", auth.RoleViewer)
 	a, b := e.login("u@x.io"), e.login("u@x.io")
-	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": "wrong one entirely", "new_password": "another long passphrase"}, nil); code != 400 {
+	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": "wrong one entirely", "new_password": "Another long passphrase 2!"}, nil); code != 400 {
 		t.Errorf("wrong current password: %d", code)
 	}
 	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "short"}, nil); code != 400 {
 		t.Errorf("weak new password: %d", code)
 	}
-	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "another long passphrase"}, nil); code != 200 {
+	if code := a.do("POST", "/api/v1/auth/password", map[string]string{"current_password": pw, "new_password": "Another long passphrase 2!"}, nil); code != 200 {
 		t.Fatalf("change: %d", code)
 	}
 	if code := a.do("GET", "/api/v1/auth/me", nil, nil); code != 200 {
@@ -674,7 +674,7 @@ func TestChangeOwnPassword(t *testing.T) {
 	if code := b.do("GET", "/api/v1/auth/me", nil, nil); code != 401 {
 		t.Errorf("other sessions must end: %d", code)
 	}
-	if code := e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "u@x.io", "password": "another long passphrase"}, nil); code != 200 {
+	if code := e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "u@x.io", "password": "Another long passphrase 2!"}, nil); code != 200 {
 		t.Errorf("login with new password: %d", code)
 	}
 }

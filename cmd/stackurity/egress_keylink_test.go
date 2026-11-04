@@ -59,7 +59,7 @@ func TestNoEgressForKeyLink(t *testing.T) {
 		return resp.StatusCode
 	}
 	if code := call("POST", "/api/v1/setup", map[string]string{"setup_token": "egress-keylink-setup-token",
-		"email": "admin@example.com", "name": "Admin", "password": "a long and unusual passphrase 7"}, nil); code/100 != 2 {
+		"email": "admin@example.com", "name": "Admin", "password": "A long and unusual passphrase 7!"}, nil); code/100 != 2 {
 		t.Fatalf("setup: %d", code)
 	}
 	if code := call("GET", "/api/v1/assets", nil, nil); code != 403 {

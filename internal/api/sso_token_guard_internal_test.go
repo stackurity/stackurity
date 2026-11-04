@@ -25,11 +25,11 @@ func TestCreateTokenUnderRequiredSSO(t *testing.T) {
 	st := store.New(testdb.New(t))
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
-	held, err := st.CreateUser(ws1, "held@acme.io", "", auth.RoleAdmin, "correct horse battery")
+	held, err := st.CreateUser(ws1, "held@acme.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	free, err := st.CreateUser(ws1, "free@acme.io", "", auth.RoleAdmin, "correct horse battery")
+	free, err := st.CreateUser(ws1, "free@acme.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -253,7 +253,7 @@ func TestVerifySince(t *testing.T) {
 // TestOutcomesAreWorkspaceScoped: another workspace sees none of it.
 func TestOutcomesAreWorkspaceScoped(t *testing.T) {
 	f := newOutcomeFixture(t)
-	ws, _, err := f.s.CreateWorkspace(context.Background(), "Beta", "", "beta@x.io", "", "correct horse battery")
+	ws, _, err := f.s.CreateWorkspace(context.Background(), "Beta", "", "beta@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

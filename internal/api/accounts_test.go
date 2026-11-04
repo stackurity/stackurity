@@ -169,12 +169,12 @@ func TestWorkspaceAdminCannotTakeOverInstanceAdmin(t *testing.T) {
 	}
 	e.instanceAdmin("ops@x.io")
 	bs := e.login("beta@x.io")
-	for _, body := range []map[string]any{{"password": "attacker chosen password"}, {"disabled": true}, {"name": "x"}} {
+	for _, body := range []map[string]any{{"password": "Attacker chosen password 1!"}, {"disabled": true}, {"name": "x"}} {
 		if code := bs.do("PATCH", fmt.Sprintf("/api/v1/users/%d", ops.ID), body, nil); code != 409 {
 			t.Errorf("workspace admin changed an instance admin account (%v): %d", body, code)
 		}
 	}
-	if code := e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "ops@x.io", "password": "attacker chosen password"}, nil); code == 200 {
+	if code := e.anon().do("POST", "/api/v1/auth/login", map[string]string{"email": "ops@x.io", "password": "Attacker chosen password 1!"}, nil); code == 200 {
 		t.Fatal("signed in as the instance admin with the workspace admin's password")
 	}
 	e.login("ops@x.io") // the real password still works
