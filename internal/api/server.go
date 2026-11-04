@@ -202,7 +202,7 @@ func (s *Server) Handler() http.Handler {
 	if s.TrustProxy {
 		r.Use(s.realIP)
 	}
-	r.Use(s.instrument, middleware.RequestID, s.captureServerErrors, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
+	r.Use(sessionClient, s.instrument, middleware.RequestID, s.captureServerErrors, s.recoverer, s.securityHeaders, s.logRequests, assistantCORS)
 	s.router, s.mux = r, r
 
 	r.Get("/healthz", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, map[string]string{"status": "ok"}) })
@@ -314,6 +314,7 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/auth/email-preferences", s.myEmailPreferences)
 			r.Put("/auth/email-preferences", s.setMyEmailPreferences)
 			s.mfaAccountRoutes(r)
+			s.accountSessionRoutes(r)
 			if editionAccountRoutes != nil {
 				editionAccountRoutes(s, r)
 			}
@@ -651,6 +652,10 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		// A session with a passkey marked meanwhile as possibly copied
 		// (store.CreateSessionWith): refused like the sign-in itself.
 		passkeyFailed(w, "clone")
+	case errors.Is(err, store.ErrSessionEnded):
+		// The session was signed out while this request was in flight
+		// (rotateSession): it is not given a new ID.
+		writeError(w, 401, "unauthorized", "your session has ended; sign in again")
 	case errors.Is(err, store.ErrNotFound):
 		writeError(w, 404, "not_found", "not found")
 	case errors.Is(err, store.ErrConflict):

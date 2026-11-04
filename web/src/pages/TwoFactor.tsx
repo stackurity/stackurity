@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { safeReturn } from "../returnTo";
-import { MFA_METHODS, mustSetUpOwnFirst } from "../mfa";
+import { MFA_METHODS, PASSKEY_COPIED_FIX, mustSetUpOwnFirst } from "../mfa";
 import { api, type MfaMethod, type MfaSignInMethod } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
@@ -336,7 +336,7 @@ function PasskeysSection({
                     {pk.clone_warning_at && (
                       <Notice kind="warn">
                         A sign-in with this passkey was refused <RelativeTime iso={pk.clone_warning_at} />: its counter went backwards, which can mean the key
-                        was copied. It signs in no more: remove it, and add the key again if it is yours.
+                        was copied. It signs in no more. {PASSKEY_COPIED_FIX.join(" ")}
                       </Notice>
                     )}
                   </div>

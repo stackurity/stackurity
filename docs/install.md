@@ -55,17 +55,17 @@ docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
 
 ## Your first ten minutes
 
-After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped; the Dashboard then shows a checklist until the steps are done. Organisations that already have assets never see it.
+After the first administrator signs in, a new organisation with no assets opens in **Set up Stackurity**. Every step can be skipped (**Skip setup, go to the Dashboard**); the Dashboard then shows a checklist until the steps are done. Organisations that already have assets never see it.
 
-1. **Create your first project**: a name and, if you like, a description.
-2. **Add an asset**, which lands in that project:
+1. **Create a project**: a name and, if you like, a description. Use a project for a product, a client, an environment or a team. A button for each existing project (with its asset count) adds to it instead.
+2. **Add a server or repo**, which lands in that project:
    - **A Linux server**: one install command (an enrollment code for up to 5 servers, valid 24 hours; for more, use a fleet code, see [Many servers at once](#many-servers-at-once)). First results in about 2 minutes. The server needs systemd, sudo and outbound HTTPS to the dashboard. A **Windows** tab gives the PowerShell command for Windows servers (see [Windows hosts](#windows-hosts)). **Also check websites and apps on this server** is ticked by default, as under Add server.
    - **A code repository**: a collector token to save as the CI secret `STACKURITY_TOKEN`, and a GitHub Actions step (`stackurity/scan-action@v1`) or the `stackurity scan .` command for other CI. First results on the next CI run.
    - **Upload an SBOM** (CycloneDX or SPDX JSON). First results in under a minute.
-3. **Wait** while it reports: the page shows the packages found and when the check is done.
-4. **The first result**, in plain words: "We found 1,676 packages on commmerceblog. 3 fixes matter now.", with links to them.
-5. **Notifications** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Integrations** with `env:` references.
-6. **Invite people** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
+3. **First check**: progress with real numbers as they arrive (agent connected, components found, issues found, fixes recommended) and what is happening now. Vulnerability feeds are set up for the software found and then synced; until they have, the page says how many components wait for that data, and checks them again by itself once it has synced.
+4. **Review fixes**: "Your first check is done", with the assets, components, issues and coverage (share of components checked against current data) and a link to the top recommended fix.
+5. **Choose alerts** for the project: Slack (**Add to Slack** when the server has a [Slack app](slack-app.md), otherwise an incoming webhook URL) or email (your SMTP server, with presets for common providers, or on Stackurity Cloud email sent by Stackurity), then two questions: what to send right away (urgent issues, all new issues, or nothing) and which summary (daily, weekly or none), see [Notifications](#notifications). The webhook URL or SMTP password is stored as an encrypted secret, which needs `STACKURITY_SECRET_KEY` (see [Configuration](#configuration)); without it, set integrations up under **Integrations** with `env:` references.
+6. **Invite your team** by email with a role on the project. The link works once, for 7 days. It is emailed through the organisation's first email channel; without one, the dashboard shows it to copy and send yourself.
 
 Connecting an asset is quiet: one "connected" message, and no alerts, Jira issues, escalations or overdue reminders for what it already had. See [A quiet first scan](api.md#a-quiet-first-scan).
 
@@ -216,7 +216,7 @@ Each person sets up their second factors under **Your account → Two-factor met
 
 - Attestation is `none`: Stackurity does not ask which make or model of device holds the key.
 - User verification is `preferred` when registering and after a password, and `required` for passkey sign-in without a password.
-- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, the passkey is marked on the page, the sessions signed in or confirmed with it end, and the person is emailed. Two sign-ins with the same counter at once count as that too: only one is accepted.
+- Each passkey's signature counter is checked. A counter that does not go up (when the device keeps one; synced passkeys send 0) can mean the key was copied: the sign-in is refused, logged, recorded as `auth.passkey_clone_warning`, the passkey is marked on the page, the sessions signed in or confirmed with it end, and the person is emailed. Two sign-ins with the same counter at once count as that too: one is refused, and the other keeps no session.
 - Each challenge is kept on the server, bound to the browser by a short-lived cookie, and used once, within five minutes.
 - An account can have up to 20 passkeys; only their public keys are stored, never the private keys.
 - The `Permissions-Policy` header allows passkeys (`publickey-credentials-get` and `-create`) for the dashboard's own origin only.
@@ -260,9 +260,18 @@ The policy applies to every browser session working in the organisation except s
 - With no method that counts there, the person is sent straight to set one up, passkeys first.
 - With one, but signed in with something else (the app where admins must use a passkey), they confirm with it.
 - A recovery code stands in for a lost passkey: a session signed in with one may set up a new passkey, which also ends the account's other sessions. Not for an admin who has a passkey where passkeys are required of admins: they confirm with a passkey, or another admin resets theirs.
-- A session that must confirm with a factor in any of the person's organisations cannot add, rename or remove factors, or make new recovery codes, until it has, even while it works in another organisation with a weaker policy: so a phished password and app code cannot register an attacker's passkey for an admin who has one. Nor can a session whose sign-in never asked for the account's factors (single sign-on, an invitation) while the account has one: it confirms with a factor first (**Two-factor methods** offers it), since factors work in every organisation. A passkey whose signature counter once went backwards (a sign of a copied key) signs in no more; remove it and add it again.
+- A session that must confirm with a factor in any of the person's organisations cannot add, rename or remove factors, or make new recovery codes, until it has, even while it works in another organisation with a weaker policy: so a phished password and app code cannot register an attacker's passkey for an admin who has one. Nor can a session whose sign-in never asked for the account's factors (single sign-on, an invitation) while the account has one: it confirms with a factor first (**Two-factor methods** offers it), since factors work in every organisation. A passkey whose signature counter once went backwards (a sign of a copied key) signs in no more, and no longer counts towards any policy (a removal cannot leave it as the last factor that counts, and an instance administrator's API token does not carry the role's powers on its strength); sign in with another method, then remove it and add it again. Where only passkeys count for the person (an admin under passkey sign-in for admins) and it was their only one, they cannot: confirming needs a passkey, so another admin resets their two-factor sign-in.
 
 **A lost device.** An admin resets a member's two-factor sign-in with **Reset two-factor** on **People → Users**: it removes their passkeys, authenticator app and recovery codes, ends their sessions, and is recorded as `user.mfa_reset`. It needs a dashboard session (not an API token), and not for one's own account (that is **Two-factor methods**, with the password). As with passwords, only an instance administrator can reset it for an account that also belongs to other organisations, or for an instance administrator.
+
+**Locked out, with no other admin.** On a self-hosted server with a single admin (often also the only instance administrator) and passkey sign-in for admins on, a lost passkey, or one blocked as possibly copied, cannot be fixed in the dashboard: recovery codes do not replace a passkey there, and nobody else can reset it. The operator resets it on the server, with the database's address in `STACKURITY_DATABASE_URL` as for the other `admin` commands:
+
+```sh
+stackurity admin reset-mfa --email admin@example.com
+# Docker Compose: docker compose exec stackurity stackurity admin reset-mfa --email admin@example.com
+```
+
+It removes every passkey, authenticator app, email code and recovery code of that account, ends its sessions, and records `user.mfa_reset` (by `cli`) in every organisation the account belongs to. The person then signs in with their password and sets up a passkey again; only someone with shell access to the server and its database can run it, which is why it is not in the dashboard. The reset and its records are made in one transaction: if the audit log cannot be written, nothing is reset and the command fails. API tokens and connected assistants are not revoked; remove them under **API tokens** / **AI assistants** if the account may be compromised.
 
 **The activity log.** Adding, renaming and removing factors are recorded in every organisation the person belongs to: `auth.passkey_added`, `auth.passkey_renamed`, `auth.passkey_removed`, `auth.mfa_enabled` and `auth.mfa_disabled` (with `method` or `methods`). Sign-ins are `auth.login` with `"mfa": "passkey"`, `"totp"` or `"recovery_code"`, or `"method": "passkey"` for passkey sign-in; failures are `auth.mfa_failed` and `auth.login_failed`; confirming a session is `auth.mfa_step_up`; a counter that went backwards is `auth.passkey_clone_warning` (in every organisation, like `auth.mfa_recovery_code_used`); and `auth.mfa_recovery_codes_replaced`; and the policy's changes are `settings.mfa_policy` (before and after).
 
@@ -276,7 +285,8 @@ A browser session ends 30 minutes after it was last used (`STACKURITY_SESSION_ID
 
 - Every sign-in gets a new session ID, and a session the browser already had ends. Adding or removing a second factor, confirming with one, and changing your password replace the current session's ID too. Roles are read on every request, so a role change takes effect at once without one.
 - Changing your password (**Your account → Password**) signs out your other sessions and, unless you untick it, disconnects your AI assistants. API tokens keep working unless you tick **Also revoke my API tokens**; the page then says how many still work, with a link to review them.
-- The activity log records `auth.login`, `auth.logout`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
+- **Your account → Active sessions** lists your own browser sessions: the browser and address each was signed in from, how, when, and when it was last used. **Sign out** ends one at once, and **Sign out of all other sessions** ends every one but yours; API tokens are separate (**Integrations → API tokens**). The browser (`User-Agent`) and address are stored with a session only while it lasts. A session signed in through an organisation's own single sign-on sees and ends only the sessions pinned to that organisation.
+- The activity log records `auth.login`, `auth.logout`, `auth.session_revoked`, `auth.other_sessions_revoked`, and `auth.session_expired` with `reason` `idle` or `absolute` (when the session is next used, or by the hourly housekeeping if it never is).
 
 ### Forgotten passwords
 
@@ -311,7 +321,7 @@ Stackurity can sign people in through any OpenID Connect provider: Google Worksp
 
 How a sign-in finds its account:
 
-- An account already linked to the provider's identity (issuer and subject) is used.
+- An account already linked to the provider's identity (issuer and subject) is used, unless it is now an instance administrator: that sign-in is refused ("instance administrators sign in with their password and second factor") and audited as `auth.sso_refused`, because single sign-on sessions are exempt from the two-factor policy. No single sign-on session has instance-administrator powers or can create an API token for an instance administrator, and no API token of a linked account carries them (also one made from a password session, or before the account was made an instance administrator), so an account made one by SQL while linked gets the role only by signing in with its password and second factor, and its tokens get it once the link is removed. (The store also refuses to make a linked account an instance administrator, as defence in depth; there is no API or command for it.) To find such accounts, OpenID Connect and SAML alike: `SELECT email FROM users WHERE instance_admin AND oidc_subject IS NOT NULL;`. Remove the link (`UPDATE users SET oidc_issuer = NULL, oidc_subject = NULL WHERE email = '...'`) and make sure the account has a password and second factor.
 - Otherwise, if no account has the email, a new one is made with the mapped role.
 - Otherwise the sign-in is refused: an existing account is not taken over by whoever the provider vouches for. With `STACKURITY_OIDC_LINK_EXISTING=true` it is linked, but only if it is a member of `STACKURITY_OIDC_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. Instance administrators always sign in with their password.
 - With `STACKURITY_OIDC_ROLE_MAP` the provider decides each member's role on every sign-in, except that the workspace's last admin is never demoted.
@@ -351,7 +361,7 @@ Then set:
 
 What Stackurity checks on every response: the assertion is signed with a key from the provider's metadata, with RSA-SHA256 or stronger (SHA-1 signatures and digests are refused), by a signature on the assertion itself or on the whole response that contains it (anything else is refused, and an encrypted assertion must be signed too; the service provider metadata therefore does not ask for the assertion's own signature), the issuer is the provider, the audience is this entity ID, the recipient and destination are the ACS URL, the response answers a sign-in this browser started in the last 10 minutes, `NotBefore`, `NotOnOrAfter` and the issue time are within 60 seconds of the server's clock (keep it synchronised with NTP), and each assertion is used once. A response with more than one assertion, or with a document type declaration, is refused. Encrypted assertions are accepted when the key above is set (AES-CBC or AES-128-GCM content encryption, RSA-OAEP key transport; RSA PKCS #1 v1.5 and Triple DES are refused); unencrypted ones always are. The provider's certificates are keys pinned by its metadata: their expiry dates are not checked, so an expired self-signed certificate keeps working, and the server logs a warning to update the metadata. A metadata URL is fetched only over https and is not followed to a plain http address. On https the browser binding is a `__Host-` cookie, which a neighbouring subdomain cannot plant.
 
-Accounts are found like OpenID Connect ones: by the provider and the name ID with its format (an email name ID compares without case; a transient one is replaced by the email address; SAML identities never match OpenID Connect ones, even from the same URL). If no account has the email, a new one is made with the mapped role. An existing account with the email is refused, unless `STACKURITY_SAML_LINK_EXISTING=true`; then it is linked only if it is a member of `STACKURITY_SAML_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. The role map never demotes the workspace's last admin. Refusals of validly signed responses are in the audit log as `auth.sso_refused` with `"method": "saml"` and the reason; responses that fail before their signature is checked are only logged. Successful sign-ins are `auth.login` with `"method": "saml"`. Signing out of Stackurity does not sign out of the provider (single logout is not supported).
+Accounts are found like OpenID Connect ones: by the provider and the name ID with its format (an email name ID compares without case; a transient one is replaced by the email address; SAML identities never match OpenID Connect ones, even from the same URL). If no account has the email, a new one is made with the mapped role. An existing account with the email is refused, unless `STACKURITY_SAML_LINK_EXISTING=true`; then it is linked only if it is a member of `STACKURITY_SAML_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. An account linked earlier that has since become an instance administrator is refused, as with OpenID Connect. The role map never demotes the workspace's last admin. Refusals of validly signed responses are in the audit log as `auth.sso_refused` with `"method": "saml"` and the reason; responses that fail before their signature is checked are only logged. Successful sign-ins are `auth.login` with `"method": "saml"`. Signing out of Stackurity does not sign out of the provider (single logout is not supported).
 
 #### Your organisation's own single sign-on (Stackurity Cloud)
 
@@ -390,6 +400,22 @@ A session started by an organisation's single sign-on works only in that organis
 5. Turn the app **ON** for the organisational units or groups that may sign in. Google does not encrypt assertions. Its **Test SAML login** button starts the sign-in from Google, which needs `STACKURITY_SAML_IDP_INITIATED=true`; otherwise test from Stackurity's sign-in page.
 
 ## Collecting inventory
+
+### What the agent reads and sends
+
+**Assets → Add server** shows this summary before any install command is created. The details for each system are in the sections below.
+
+| | |
+|---|---|
+| Reads and sends | The host's name and machine ID (`/etc/machine-id`, the Windows machine GUID or the Mac's hardware UUID), the OS version, its packages (dpkg, rpm or apk) or installed programs (the Windows registry; applications and Homebrew on a Mac), and on Linux and macOS runtimes installed outside the package manager. Names, versions and where each was found, not file contents. With application discovery (on by default) or `--app-dir`, the libraries of deployed applications; with `STACKURITY_DOCKER=1`, the images of running containers |
+| Keys and passwords | Found in application directories ([leaked-keys.md](leaked-keys.md)) and reported by rule, file, line, setting name, a fingerprint and, for a key with its own format, a masked preview. The value never leaves the host. `--no-leaks` turns it off |
+| Changes | None. The agent never installs, removes or changes software. [Automatic fixing](remediation.md) (Pro and Enterprise, Linux only) needs `--remediate`, root, a token an admin binds to the host and a local allowlist file; the installers never set it up |
+| Account | Its own unprivileged account: `stackurity` (Linux), `_stackurity` (macOS), `NT SERVICE\StackurityAgent` (Windows). Only the install needs root or an administrator. `STACKURITY_DOCKER=1` adds the Docker socket's group, which is equivalent to root |
+| Network | Your Stackurity server only, over HTTPS (plain HTTP only to a local port or with `STACKURITY_ALLOW_HTTP=1`). No telemetry and no update check: [network.md](network.md), checked on every pull request by `cmd/stackurity/egress_test.go` |
+| How often | At start and every 6 hours (`--interval`); between collections, a small `GET` about once a minute asking whether someone pressed **Check again** (`--check-interval`, `0` turns it off) |
+| Removing it | [Linux](#removing-the-agent-from-a-linux-host), [Windows](#windows-hosts) and [macOS](#macs) (`STACKURITY_UNINSTALL=1`) |
+
+`stackurity agent --once --output -` prints what the agent collects without sending it.
 
 ### Linux hosts
 
@@ -456,6 +482,20 @@ Enable it with `sudo systemctl enable --now stackurity-agent`; the host appears 
 If the server is not reachable over HTTPS from the host (for example it listens only on `127.0.0.1`), forward a local port over SSH with a dedicated account whose key allows nothing but that forward (`restrict,port-forwarding,permitopen="127.0.0.1:8180"` in its `authorized_keys`), run the forward as its own systemd unit, and point `STACKURITY_SERVER` at `http://127.0.0.1:<local port>`. The in-app help (**Help → Connect over an SSH tunnel**) has the full units.
 
 Runtimes and servers installed outside the package manager are invisible to the package database, yet they reach end of life like anything else: Node.js from nvm or a tarball, a downloaded Redis, MySQL, MariaDB, PostgreSQL, MongoDB, Meilisearch, nginx or HAProxy binary, and Python, Go, Ruby or PHP builds under `/usr/local` or `/opt`. The agent looks for these in the usual locations, skips any that a package owns, and reports the rest with their version, so their end-of-life dates appear with everything else. For nvm and pyenv the version comes from the install path. Otherwise the agent runs the binary's `--version` flag with an empty environment and a 5-second limit, and only when the binary and every directory above it are owned by root or the agent's user and not writable by anyone else. Binaries under `--root` are never run. Vulnerabilities are not matched for these runtimes (there is no advisory feed keyed by binary), which the **Intelligence** page lists as an evaluation gap. Turn detection off with `--no-runtimes`. With `ProtectHome=yes` the agent cannot see per-user installs such as `~/.nvm`; use `ProtectHome=read-only` to include them.
+
+#### Removing the agent from a Linux host
+
+The installer has no uninstall mode; these commands remove everything it installed (the service, the binary, `/etc/stackurity` with the token, and the `stackurity` user):
+
+```sh
+sudo systemctl disable --now stackurity-agent
+sudo rm -f /etc/systemd/system/stackurity-agent.service /usr/local/bin/stackurity
+sudo systemctl daemon-reload
+sudo rm -rf /etc/stackurity
+sudo userdel stackurity
+```
+
+The host stays in Stackurity until you delete it under **Assets**, and its collector token stays valid until you revoke it under **Integrations → API tokens**.
 
 #### Many servers at once
 

@@ -3,8 +3,10 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   api,
   ApiError,
+  type AssetCoverageList,
   type EnrollmentCreated,
   type FirstResult,
+  type FixGroup,
   type List,
   type Onboarding,
   type Project,
@@ -17,6 +19,8 @@ import { plural } from "../format";
 import { CheckApps, CheckDocker, InstallCommandTabs, installCommand, type ServerOS } from "./AddServer";
 import { InviteForm } from "../components/Invite";
 import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
+import { FirstCheckDone, FirstCheckProgress } from "../components/FirstCheck";
+import { countFixes, firstCheckNumbers, firstCheckPhase, SETUP_STEPS, type FirstCheckNumbers, type FirstCheckPhase, type SetupStep, type Source } from "../firstCheck";
 import {
   browserTimeZone,
   choicesOf,
@@ -33,23 +37,15 @@ import { AddToSlackButton, parseAddresses, RouteQuestions, SmtpProviderPicker, S
 
 /*
  * The first-run flow (0.9): a new organisation's first ten minutes.
- * 1 name a project, 2 add an asset, 3 wait for it to report, 4 the first
- * result in plain words, 5 notifications, 6 invite people. Each step can be
- * skipped; the Dashboard keeps a checklist (which also asks to connect an AI
- * assistant) until every step is done or it is hidden.
+ * 1 name a project, 2 add an asset, 3 the first check, with its numbers as
+ * they arrive, 4 the result: what was found and the top fix, 5 alerts,
+ * 6 invite people. Each step can be skipped; the Dashboard keeps a checklist
+ * (which also asks to connect an AI assistant) until every step is done or
+ * it is hidden.
  */
 
-type Step = "project" | "asset" | "waiting" | "result" | "notify" | "invite";
-type Source = "server" | "repo" | "sbom";
-
-const STEPS: { key: Step; label: string }[] = [
-  { key: "project", label: "Project" },
-  { key: "asset", label: "Add" },
-  { key: "waiting", label: "Check" },
-  { key: "result", label: "Result" },
-  { key: "notify", label: "Alerts" },
-  { key: "invite", label: "People" },
-];
+type Step = SetupStep;
+const STEPS = SETUP_STEPS;
 
 /** Where to resume: the first step not done yet. */
 function firstStep(o: Onboarding): Step {
@@ -66,6 +62,8 @@ export function OnboardingPage() {
   const [step, setStep] = useState<Step | null>(null);
   const [project, setProject] = useState<Project | null>(null);
   const [source, setSource] = useState<Source>("server");
+  // What was sent in this visit; unknown when the page opened on a later step.
+  const [sent, setSent] = useState<Source | undefined>(undefined);
   const [assetName, setAssetName] = useState("");
   // Results are counted from when the flow asked for an asset.
   const [since, setSince] = useState(() => new Date(Date.now() - 10 * 60_000).toISOString());
@@ -108,8 +106,14 @@ export function OnboardingPage() {
           <p className="onboard-kicker">Set up Stackurity</p>
           <h1>{TITLES[step]}</h1>
         </div>
-        <button type="button" className="btn btn-link onboard-skip" onClick={skip} disabled={act.pending}>
-          Skip for now
+        <button
+          type="button"
+          className="btn btn-link onboard-skip"
+          onClick={skip}
+          disabled={act.pending}
+          title="Go to the Dashboard. Its checklist brings you back to each step."
+        >
+          Skip setup, go to the Dashboard
         </button>
       </header>
       <ol className="onboard-steps" aria-label={`Step ${index + 1} of ${STEPS.length}`}>
@@ -119,6 +123,7 @@ export function OnboardingPage() {
               {i < index ? "✓" : i + 1}
             </span>
             <span className="onboard-step-label">{s.label}</span>
+            <span className="onboard-step-text">{s.text}</span>
           </li>
         ))}
       </ol>
@@ -139,6 +144,7 @@ export function OnboardingPage() {
           setSource={setSource}
           onWaiting={(name) => {
             setAssetName(name);
+            setSent(source);
             setSince(new Date(Date.now() - 2 * 60_000).toISOString());
             setStep("waiting");
           }}
@@ -148,7 +154,7 @@ export function OnboardingPage() {
       {step === "waiting" && project && (
         <WaitingStep project={project} source={source} name={assetName} since={since} onBack={() => setStep("asset")} onResult={() => setStep("result")} />
       )}
-      {step === "result" && project && <ResultStep project={project} since={since} onNext={() => setStep("notify")} />}
+      {step === "result" && project && <ResultStep project={project} source={sent} since={since} onNext={() => setStep("notify")} />}
       {step === "notify" && project && <NotifyStep project={project} onNext={() => setStep("invite")} />}
       {step === "invite" && project && <InviteStep project={project} onFinish={finish} pending={act.pending} />}
     </div>
@@ -158,10 +164,10 @@ export function OnboardingPage() {
 const TITLES: Record<Step, string> = {
   project: "Create your first project",
   asset: "Add something to check",
-  waiting: "Checking",
-  result: "Your first result",
-  notify: "Turn on notifications",
-  invite: "Invite people",
+  waiting: "Your first check",
+  result: "Review what was found",
+  notify: "Choose your alerts",
+  invite: "Invite your team",
 };
 
 function StepCard({ children }: { children: ReactNode }) {
@@ -198,7 +204,7 @@ function ProjectStep({ onDone }: { onDone: (p: Project) => void }) {
 
   return (
     <StepCard>
-      <p>A project groups what belongs together: a site, a product or a client. You can add more later.</p>
+      <p>Use a project for a product, a client, an environment or a team. You can add more later.</p>
       <form className="form" onSubmit={create}>
         <ErrorBox error={act.error} title="Could not create the project" />
         <div className="field">
@@ -217,12 +223,12 @@ function ProjectStep({ onDone }: { onDone: (p: Project) => void }) {
       </form>
       {projects.length > 0 && (
         <div className="onboard-existing">
-          <p className="small muted">Or continue with a project you already have:</p>
+          <p className="small muted">Or add to a project that already exists:</p>
           <ul className="onboard-pills">
             {projects.map((p) => (
               <li key={p.id}>
                 <button type="button" className="btn" onClick={() => use(p)} disabled={act.pending}>
-                  {p.name}
+                  Use {p.name} ({plural(p.asset_count, "asset")})
                 </button>
               </li>
             ))}
@@ -279,7 +285,7 @@ function AssetStep({
       </StepCard>
       <p className="small">
         <button type="button" className="btn btn-link" onClick={onLater}>
-          I will add one later
+          Add one later, go on to alerts
         </button>
       </p>
     </>
@@ -450,33 +456,82 @@ async function uploadSbom(file: File, assetName: string, projectId: number): Pro
   return true;
 }
 
-// --- 3. waiting
+// --- 3. the first check
 
 const POLL_MS = 3000;
+/** While vulnerability data syncs: it takes minutes, not seconds. */
+const POLL_FEEDS_MS = 10_000;
+/** Fixes are read a page at a time, at most this many pages (the project's fixes, not only the new assets'). */
+const FIX_PAGE = 500;
+const MAX_FIX_PAGES = 4;
 
-function useResults(project: Project, since: string, live: boolean) {
-  const [data, setData] = useState<FirstResult[] | null>(null);
+interface FirstCheck {
+  results: FirstResult[];
+  x: FirstCheckNumbers;
+  phase: FirstCheckPhase;
+  top: FixGroup | null;
+  overdue: boolean;
+}
+
+/**
+ * Polls what reported since the flow asked for an asset, and once something
+ * did, its coverage, fixes and top fix: every number shown comes from these.
+ * Polling stops once the check is done.
+ */
+function useFirstCheck(project: Project, since: string) {
+  const [data, setData] = useState<FirstCheck | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
   const timer = useRef<number>(undefined);
   useEffect(() => {
     let stop = false;
+    const scope = { project_id: project.id };
     const tick = async () => {
+      let phase: FirstCheckPhase = "waiting";
       try {
-        const r = await api.getAll<List<FirstResult>>("/onboarding/results", { since, project_id: project.id });
+        const r = await api.getAll<List<FirstResult>>("/onboarding/results", { since, ...scope });
+        const results = r.items ?? [];
+        let coverage: AssetCoverageList | null = null;
+        let fixes: number | null = null;
+        let top: FixGroup | null = null;
+        let overdue = false;
+        if (results.length > 0) {
+          coverage = await api.getAll<AssetCoverageList>("/coverage/assets", { ...scope, limit: 500 });
+        }
+        let x = firstCheckNumbers(results, coverage?.items, null);
+        phase = firstCheckPhase(x);
+        if (phase === "feeds" || phase === "done") {
+          // One entry per fix, its places on every asset: the same fix on
+          // two new assets counts once.
+          const groups: FixGroup[] = [];
+          for (let page = 0; page < MAX_FIX_PAGES; page++) {
+            const l = await api.getAll<List<FixGroup>>("/fix-groups", { ...scope, group_by: "fix", limit: FIX_PAGE, offset: page * FIX_PAGE });
+            groups.push(...(l.items ?? []));
+            if (groups.length >= l.total || (l.items ?? []).length === 0) break;
+          }
+          fixes = countFixes(groups, results.map((a) => a.id));
+          x = firstCheckNumbers(results, coverage?.items, fixes);
+          // The top fix: the most urgent on the asset with most issues.
+          const worst = [...results].sort((a, b) => b.issues - a.issues)[0];
+          if (fixes > 0 && worst.issues > 0) {
+            const focus = await api.getAll<List<FixGroup>>("/fix-groups", { ...scope, asset_id: worst.id, bucket: "focus", limit: 1 });
+            top = focus.items?.[0] ?? (await api.getAll<List<FixGroup>>("/fix-groups", { ...scope, asset_id: worst.id, limit: 1 })).items?.[0] ?? null;
+          }
+          if (phase === "feeds") overdue = (await api.getAll<{ overdue: boolean }>("/coverage/unchecked", scope)).overdue;
+        }
         if (stop) return;
-        setData(r.items);
+        setData({ results, x, phase, top, overdue });
         setError(null);
       } catch (e) {
         if (!stop) setError(e as ApiError);
       }
-      if (!stop && live) timer.current = window.setTimeout(tick, POLL_MS);
+      if (!stop && phase !== "done") timer.current = window.setTimeout(tick, phase === "feeds" ? POLL_FEEDS_MS : POLL_MS);
     };
     void tick();
     return () => {
       stop = true;
       window.clearTimeout(timer.current);
     };
-  }, [project.id, since, live]);
+  }, [project.id, since]);
   return { data, error };
 }
 
@@ -495,63 +550,30 @@ function WaitingStep({
   onBack: () => void;
   onResult: () => void;
 }) {
-  const { data, error } = useResults(project, since, true);
+  const { data, error } = useFirstCheck(project, since);
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => setElapsed((s) => s + 1), 1000);
     return () => window.clearInterval(t);
   }, []);
-  const assets = data ?? [];
-  const done = assets.length > 0 && assets.every((a) => a.checked);
+  const phase = data?.phase ?? "waiting";
   useEffect(() => {
-    if (done) {
+    if (phase === "done") {
       const t = window.setTimeout(onResult, 1200);
       return () => window.clearTimeout(t);
     }
-  }, [done, onResult]);
+  }, [phase, onResult]);
 
   const what = name || (source === "server" ? "your server" : source === "repo" ? "your repository" : "your SBOM");
-  const usually = source === "repo" ? "It reports on the next CI run." : source === "sbom" ? "This usually takes under a minute." : "This usually takes under 2 minutes.";
   const slow = elapsed > (source === "repo" ? 600 : 300);
+  const x = data?.x ?? firstCheckNumbers([], null, null);
 
   return (
     <StepCard>
       <ErrorBox error={error} title="Could not check progress" />
-      {assets.length === 0 ? (
-        <div className="onboard-wait" role="status" aria-live="polite">
-          <span className="onboard-spinner" aria-hidden="true" />
-          <div>
-            <p className="onboard-big">Waiting for {what} to report...</p>
-            <p className="muted">
-              {usually} Waiting for {formatElapsed(elapsed)}.
-            </p>
-          </div>
-        </div>
-      ) : (
-        <ul className="onboard-live" aria-live="polite">
-          {assets.map((a) => (
-            <li key={a.id}>
-              {!a.checked && <span className="onboard-spinner" aria-hidden="true" />}
-              {a.checked && (
-                <span className="onboard-check" aria-hidden="true">
-                  ✓
-                </span>
-              )}
-              <div>
-                <p className="onboard-big">
-                  {a.name}: {plural(a.packages, "package")} found
-                </p>
-                <p className="muted">
-                  {a.checked
-                    ? `Checked. ${plural(a.issues, "issue")} found.`
-                    : `Checking them against vulnerability and end-of-life data${a.issues > 0 ? `: ${plural(a.issues, "issue")} so far` : ""}...`}
-                </p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-      {slow && assets.length === 0 && (
+      <FirstCheckProgress x={x} phase={phase} source={source} what={what} overdue={data?.overdue} />
+      {phase === "waiting" && <p className="small muted">Waiting for {formatElapsed(elapsed)}.</p>}
+      {slow && phase === "waiting" && (
         <Notice kind="info">
           Taking longer than usual?{" "}
           {source === "server" ? (
@@ -572,9 +594,9 @@ function WaitingStep({
         <button type="button" className="btn" onClick={onBack}>
           Back
         </button>
-        {assets.length > 0 && (
+        {phase !== "waiting" && (
           <button type="button" className="btn btn-primary" onClick={onResult}>
-            {done ? "See the result" : "Continue while it checks"}
+            {phase === "done" ? "See the result" : phase === "feeds" ? "Continue while data syncs" : "Continue while it checks"}
           </button>
         )}
       </div>
@@ -589,54 +611,35 @@ function formatElapsed(s: number): string {
 
 // --- 4. result
 
-function ResultStep({ project, since, onNext }: { project: Project; since: string; onNext: () => void }) {
-  const { data, error } = useResults(project, since, true);
-  if (error) return <ErrorBox error={error} title="Could not load the result" />;
+function ResultStep({ project, source, since, onNext }: { project: Project; source?: Source; since: string; onNext: () => void }) {
+  const { data, error } = useFirstCheck(project, since);
+  if (error && !data) return <ErrorBox error={error} title="Could not load the result" />;
   if (!data) return <Loading />;
-  const checked = data.filter((a) => a.checked);
-  const q = `project=${project.id}`;
   return (
     <StepCard>
-      {data.length === 0 && <p>Nothing has reported yet. You can come back to this from the Dashboard.</p>}
-      {checked.map((a) => (
-        <div key={a.id} className="onboard-result">
-          <p className="onboard-headline">
-            We found {plural(a.packages, "package")} on {a.name}.{" "}
-            {a.fixes_now === 0 ? "Nothing needs fixing right now." : `${plural(a.fixes_now, "fix", "fixes")} ${a.fixes_now === 1 ? "matters" : "matter"} now.`}
-          </p>
-          <p className="muted">
-            {a.issues === 0
-              ? "No known vulnerabilities or end-of-life software."
-              : `${plural(a.issues, "issue")} in all. Fixes group them into jobs, most urgent first.`}
-          </p>
-          <p className="onboard-links">
-            {a.fixes_now > 0 && (
-              <Link className="btn btn-primary" to={`/?${q}`}>
-                See what matters now
-              </Link>
-            )}
-            <Link className="btn" to={`/fixes?asset_id=${a.id}&${q}`}>
-              All fixes for {a.name}
-            </Link>
-          </p>
-        </div>
-      ))}
-      {data.length > checked.length && (
-        <p className="muted">
-          Still checking {plural(data.length - checked.length, "asset")}. The result appears on the Dashboard when it is ready.
-        </p>
+      {data.phase === "waiting" && <p>Nothing has reported yet. You can come back to this from the Dashboard.</p>}
+      {data.phase === "done" ? (
+        <FirstCheckDone x={data.x} top={data.top} projectId={project.id} />
+      ) : (
+        data.phase !== "waiting" && (
+          <>
+            <FirstCheckProgress x={data.x} phase={data.phase} source={source} what="" overdue={data.overdue} />
+            <p className="muted">The result appears here, and on the Dashboard, when it is ready.</p>
+          </>
+        )
       )}
       <Notice kind="info">
         Connecting an asset does not set off alerts for what it already had. You get one message that it connected, then alerts for new issues only.
       </Notice>
       <div className="form-actions">
         <button type="button" className="btn btn-primary" onClick={onNext}>
-          Next: notifications
+          Next: choose alerts
         </button>
       </div>
     </StepCard>
   );
 }
+
 
 // --- 5. notifications
 
@@ -793,7 +796,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
             Send a test message
           </button>
           <button type="button" className="btn btn-primary" onClick={onNext}>
-            Next: invite people
+            Next: invite your team
           </button>
         </div>
       </StepCard>
@@ -980,9 +983,9 @@ export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChan
   // first only while there is none: adding a server needs one.
   const items: { done: boolean; text: string; to: string }[] = [
     ...(o.steps.project ? [] : [{ done: false, text: "Create a project", to: "/get-started?step=project" }]),
-    { done: o.steps.asset, text: "Add a server, repository or SBOM", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
+    { done: o.steps.asset, text: "Add a server or repo for its first check", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
     { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/integrations/ai-assistants" },
-    { done: o.steps.notifications, text: "Turn on notifications", to: "/integrations" },
+    { done: o.steps.notifications, text: "Choose where alerts about new issues go", to: "/integrations" },
     { done: o.steps.invite, text: "Invite your team", to: "/people" },
     // Recommended for admins: their account can change everything. A
     // passkey is offered first there; they come back here once it is set up.

@@ -6,6 +6,7 @@ import {
   type CredentialGroup,
   type CredentialHealth,
   type DashboardTrend,
+  type Feed,
   type FindingSummary,
   type FixGroup,
   type FixGroupSummary,
@@ -40,7 +41,22 @@ import {
   IconTrend,
 } from "../components/Icons";
 import { Sparkline, WeekBars } from "../components/Sparkline";
-import { glanceTiles, needsYou, quietKinds, reportingCount, slaSplit, trendText, type NeedKind, type NeedRow } from "../dashboard";
+import {
+  feedFreshness,
+  glanceTiles,
+  hiddenReasons,
+  needsYou,
+  quietKinds,
+  reportingCount,
+  slaSplit,
+  termParts,
+  TERMS,
+  trendText,
+  type NeedKind,
+  type Freshness,
+  type NeedRow,
+  type Term,
+} from "../dashboard";
 import { uncheckedBanner } from "../unchecked";
 import { OneOffLine } from "../components/Reporting";
 import { notReportingText } from "../reporting";
@@ -51,6 +67,34 @@ const TOP = 5;
 
 function sum(m: Record<string, number> | null | undefined): number {
   return Object.values(m ?? {}).reduce((a, b) => a + b, 0);
+}
+
+/**
+ * Text with the first use of each Dashboard term (SOS, incident, issue,
+ * fix) in a block underlined, its meaning in a tooltip. seen is shared by
+ * the block so a term is explained once there; called while the block
+ * renders (not as a component) so the order is the order on screen.
+ */
+function withTerms(text: string, seen: Set<Term>): ReactNode {
+  return termParts(text, seen).map((p, i) =>
+    typeof p === "string" ? (
+      p
+    ) : (
+      <abbr key={i} className="dash-term" title={TERMS[p.term]}>
+        {p.text}
+      </abbr>
+    ),
+  );
+}
+
+/** Under the page title: a data source is stale or failing, or nothing synced yet. */
+export function FeedWarning({ fresh }: { fresh: Freshness | null }) {
+  if (!fresh?.warning) return null;
+  return (
+    <p className="home-oneoff small dash-feeds-warn" role="status">
+      <IconSignalOff size={14} /> {fresh.warning} <Link to="/intelligence">See Data sources</Link>
+    </p>
+  );
 }
 
 /** A number that is a link to the list it counts. */
@@ -216,10 +260,15 @@ function Block({ id, icon, title, badge, link, children, className }: {
   );
 }
 
-/** 1. Needs you now: one row per thing, one action each; a green check when there is nothing. */
-function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastReport: string | null; loading: boolean }) {
+/**
+ * 1. Needs you now: one row per kind of thing, one action each; a green
+ * check when there is nothing. No count beside the title: a row can stand
+ * for many incidents or issues, and each row says how many.
+ */
+export function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastReport: string | null; loading: boolean }) {
+  const seen = new Set<Term>();
   return (
-    <Block id="dash-needs" icon={<IconInbox />} title="Needs you now" badge={rows.length > 0 ? plural(rows.length, "thing") : undefined} className="dash-needs">
+    <Block id="dash-needs" icon={<IconInbox />} title="Needs you now" className="dash-needs">
       {loading && rows.length === 0 ? (
         <Loading />
       ) : rows.length === 0 ? (
@@ -230,7 +279,7 @@ function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastRep
           <div>
             <p className="dash-allgood-title">Nothing needs you right now</p>
             <p className="small muted">
-              No SOS incidents, nothing overdue or due today, no approvals waiting, and every asset is reporting. Last report{" "}
+              {withTerms("No SOS incidents, nothing overdue or due today, no approvals waiting, and every asset is reporting.", seen)} Last report{" "}
               <RelativeTime iso={lastReport} />.
             </p>
           </div>
@@ -243,10 +292,12 @@ function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastRep
                 {NEED_ICONS[r.kind]}
               </span>
               <span className="dash-need-text">
-                <span className="dash-need-title">{r.title}</span>
+                <span className="dash-need-title">
+                  {withTerms(r.title, seen)}
+                </span>
                 {(r.detail || r.lastSeen) && (
                   <span className="small muted">
-                    {r.detail}
+                    {r.detail && withTerms(r.detail, seen)}
                     {r.lastSeen && (
                       <>
                         last report <RelativeTime iso={r.lastSeen} />
@@ -539,6 +590,8 @@ export function DashboardPage() {
     () => (paid && !projectOnly ? api.get<List<Plan>>("/remediation/plans", { status: "proposed", limit: 1 }) : Promise.resolve(null)),
     [paid, projectOnly],
   );
+  // Feed freshness, from what the Data sources page lists (shared by every workspace).
+  const feeds = useLoad(() => api.get<List<Feed>>("/feeds"), []);
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   useEffect(() => {
     const was = document.title;
@@ -587,14 +640,7 @@ export function DashboardPage() {
   const hidden = focus?.hidden ?? {};
   const snoozed = byState.suppressed ?? 0;
   const accepted = byState.risk_accepted ?? 0;
-  const reasons: { key: string; n: number; to: string; text: string }[] = [
-    { key: "no_fix", n: hidden.no_fix?.findings ?? 0, to: "/fixes?bucket=no_fix", text: "have no free fix yet" },
-    { key: "old_kernels", n: hidden.old_kernels?.findings ?? 0, to: "/fixes?bucket=old_kernels", text: "are in kernels that are not running" },
-    { key: "non_production", n: hidden.non_production?.findings ?? 0, to: "/fixes?bucket=non_production", text: "are on assets that are not production" },
-    { key: "lower_priority", n: hidden.lower_priority?.findings ?? 0, to: "/fixes?bucket=lower_priority", text: "are lower priority" },
-    { key: "suppressed", n: snoozed, to: "/fixes/issues?state=suppressed", text: "are snoozed" },
-    { key: "risk_accepted", n: accepted, to: "/fixes/issues?state=risk_accepted", text: "are ignored" },
-  ].filter((r) => r.n > 0);
+  const reasons = hiddenReasons(hidden, snoozed, accepted);
   const hiddenTotal = reasons.reduce((a, r) => a + r.n, 0);
 
   const rows = needsYou({
@@ -607,6 +653,7 @@ export function DashboardPage() {
     collectionIncidents: collection.data?.items,
     assets: assets.data?.items,
   });
+  const fresh = feeds.data ? feedFreshness(feeds.data.items) : null;
   const needsLoading = !sos.data || !trend.data || !assets.data;
 
   return (
@@ -623,7 +670,14 @@ export function DashboardPage() {
           {workspace && <>{workspace} · </>}
           <Link to="/assets">{plural(totalAssets, "asset")}</Link>
           {" · "}last report <RelativeTime iso={o.last_collection} empty="never" />
+          {fresh?.lastSuccess && (
+            <>
+              {" · "}
+              <Link to="/intelligence">vulnerability data</Link> updated <RelativeTime iso={fresh.lastSuccess} />
+            </>
+          )}
         </p>
+        <FeedWarning fresh={fresh} />
         {/* "5 repositories scanned once (as of 26 Oct)", once, as on Home before. */}
         <OneOffLine groups={o.one_off} />
       </header>
@@ -641,6 +695,7 @@ export function DashboardPage() {
           title="Top fixes"
           className="dash-fixes"
         >
+          <p className="small muted dash-hint">Each fix is one piece of work that clears one or more issues. An issue is one vulnerability or end-of-life component on one asset.</p>
           <ErrorBox error={plan.error ?? top.error} title="Could not load the fixes" />
           {top.data && top.data.items.length > 0 && (
             <div className="home-fixes">
@@ -670,7 +725,14 @@ export function DashboardPage() {
               {reasons.map((r, i) => (
                 <span key={r.key}>
                   {i > 0 && (i === reasons.length - 1 ? " and " : ", ")}
-                  <Link to={r.to}>{r.n.toLocaleString()}</Link> {r.text}
+                  <Link to={r.to}>{r.n.toLocaleString()}</Link>{" "}
+                  {r.title ? (
+                    <abbr className="dash-term" title={r.title}>
+                      {r.text}
+                    </abbr>
+                  ) : (
+                    r.text
+                  )}
                 </span>
               ))}
               .{(s.until_fix ?? 0) > 0 && <> {plural(s.until_fix ?? 0, "snoozed or ignored issue")} {(s.until_fix ?? 0) === 1 ? "returns" : "return"} when a fix ships.</>}

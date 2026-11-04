@@ -223,14 +223,14 @@ func (s *Server) rotateSession(w http.ResponseWriter, r *http.Request, opts stor
 	// The new session replaces this one: it keeps its single sign-on pin and
 	// its end, so rotating never frees a pinned session or extends one.
 	opts.Pinned, opts.Expires = p.SSOWorkspace, p.SessionExpires
+	// The same row takes the new ID, in one transaction (the old ID stops
+	// working), keeping its public ID and when and where it was signed in. A
+	// session signed out while this request was in flight stays signed out:
+	// store.ErrSessionEnded, which fail answers 401, and no cookie is set.
+	opts.Replaces = sessionSecret(r)
 	secret, err := s.Store.CreateSessionWith(r.Context(), p.User.ID, p.Workspace, opts)
 	if err != nil {
 		return err
-	}
-	if old := sessionSecret(r); old != "" {
-		if err := s.Store.DeleteSession(r.Context(), old); err != nil {
-			return err
-		}
 	}
 	s.setSessionCookie(w, secret)
 	return nil
@@ -405,6 +405,18 @@ func (s *Server) createToken(w http.ResponseWriter, r *http.Request) {
 				return
 			} else if refusal != nil {
 				refusal.write(w)
+				return
+			}
+		}
+		// A single sign-on session has no instance-admin powers (the store
+		// drops the flag from it), but a token of the account would carry
+		// them, so such a session makes none for an instance administrator.
+		if p.Session && p.ssoSession() {
+			if acct, err := s.Store.GetUser(r.Context(), p.User.ID); err != nil {
+				s.fail(w, r, err)
+				return
+			} else if acct.InstanceAdmin {
+				writeError(w, 403, "forbidden", "instance administrators sign in with their password and second factor to create API tokens, not single sign-on")
 				return
 			}
 		}
