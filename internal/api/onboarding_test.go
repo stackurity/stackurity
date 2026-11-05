@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"mime/quotedprintable"
 	"net"
 	"net/http"
 	"strings"
@@ -677,7 +678,10 @@ func TestInvitationEmail(t *testing.T) {
 	if len(smtpd.data) != 1 {
 		t.Fatalf("%d emails", len(smtpd.data))
 	}
-	m := smtpd.data[0]
+	// The parts are quoted-printable: decode the body to read it.
+	head, body, _ := strings.Cut(smtpd.data[0], "\r\n\r\n")
+	decoded, _ := io.ReadAll(quotedprintable.NewReader(strings.NewReader(body)))
+	m := head + "\r\n\r\n" + string(decoded)
 	if !strings.Contains(m, "To: dev@x.io") || !strings.Contains(m, "Subject: You are invited to Default on Stackurity") ||
 		!strings.Contains(m, "https://stk.example/invite#inv_") || !strings.Contains(m, "invited you to Default with access to the project Shop (View and edit).") ||
 		strings.Contains(m, "ops@x.io") || strings.Contains(m, "—") {

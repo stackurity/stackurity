@@ -89,13 +89,7 @@ func (s *Server) sendPasswordReset(ctx context.Context, email, ip string) {
 		return
 	}
 	link := strings.TrimRight(s.BaseURL, "/") + "/reset-password#" + token
-	m := notify.Message{Event: "password_reset", Title: "Reset your Stackurity password", At: time.Now().UTC(),
-		Summary: []string{
-			"Someone (we hope you) asked to reset the password of the Stackurity account " + email + " on " + hostOf(s.BaseURL) + ".",
-			"Choose a new password within 15 minutes: " + link,
-			"The link works once. Your other sessions will be signed out.",
-			"If you did not ask for this, ignore this email: your password stays as it is. The request came from " + ip + ".",
-		}}
+	m := notify.PasswordResetEmail(s.BaseURL, email, link, ip, time.Now().UTC())
 	actor := store.Actor{Type: "anonymous", Name: email, RemoteAddr: ip}
 	wctx := s.userWorkspace(ctx, uid)
 	if err := s.AccountMail.SendMail(ctx, []string{email}, m); err != nil {

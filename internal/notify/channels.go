@@ -60,9 +60,13 @@ type Message struct {
 	Counts       map[string]int `json:"counts,omitempty"` // totals, e.g. new, urgent, fixed, overdue
 	Sections     []Section      `json:"sections,omitempty"`
 	SettingsLink string         `json:"settings_link,omitempty"` // where the route is changed
-	// LinkLabel names Link in bulk email (bulk.go), such as "Read the
-	// release notes".
+	// LinkLabel names Link: the label of an email's button, such as
+	// "Confirm email" or "Read the release notes" ("Open in Stackurity"
+	// when empty).
 	LinkLabel string `json:"link_label,omitempty"`
+	// Code is a one-time code an email shows on its own, large, after the
+	// first Summary line (email sign-in codes). Never sent to webhooks.
+	Code string `json:"-"`
 
 	// Email sent by Stackurity, per recipient: the page that stops these
 	// emails, and its one-click address for the List-Unsubscribe header.
@@ -117,69 +121,61 @@ func (m Message) Grouped() bool {
 	return false
 }
 
-func (m Message) Subject() string {
-	prefix := ""
-	if m.SOS {
-		prefix = "[SOS] "
-	}
-	switch m.Event {
-	case "resolved":
-		return fmt.Sprintf("%s[resolved] %s", prefix, m.Title)
-	case "escalated":
-		return fmt.Sprintf("%s[%s escalated] %s", prefix, m.Priority, m.Title)
-	case "digest", "test", "invitation", "confirm_email", "password_reset", EventSummary, EventOverdue, EventConnected:
-		return m.Title
-	case EventUrgent:
-		return prefix + m.Title
-	case store.CategoryMarketing, store.CategoryVulnerabilityNews:
-		if m.bulk != nil && m.bulk.test {
-			return "[Test] " + m.Title
-		}
-		return m.Title
-	}
-	return fmt.Sprintf("%s[%s] %s", prefix, m.Priority, m.Title)
+// Events of email about a person's own account or organisation (not
+// alerts): their subject is the title alone, never a priority tag.
+var accountEvents = map[string]bool{
+	"test": true, "invitation": true, "confirm_email": true, "password_reset": true,
+	"mfa_email_code": true, "mfa_email_sign_in": true, "mfa_changed": true, "ask_spend": true,
+	// Stackurity Cloud (the pro repository).
+	"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true,
 }
 
-// Text is the plain-text rendering (email, and anything that shows text).
-func (m Message) Text() string {
-	var b strings.Builder
-	b.WriteString(m.Subject() + "\n\n")
-	if len(m.Sections) > 0 {
-		for _, s := range m.Sections {
-			if s.Title != "" {
-				b.WriteString(s.Title + "\n")
-			}
-			writeItems(&b, s.Items, "")
-			b.WriteString("\n")
+// Subject is the message's subject line: the title, with a tag in front
+// for alerts ("[P1] …", "[SOS] [P1] …", "[resolved] …"). A tag is only
+// there when it has a value, so an empty priority never shows as "[]".
+func (m Message) Subject() string {
+	title := cleanSubject(m.Title)
+	var tags []string
+	tag := func(t string) {
+		if t = strings.TrimSpace(t); t != "" {
+			tags = append(tags, "["+t+"]")
 		}
-		if m.Link != "" {
-			b.WriteString("Open in Stackurity: " + m.Link + "\n")
+	}
+	switch {
+	case m.Event == EventDigest || accountEvents[m.Event] || m.Event == EventSummary || m.Event == EventOverdue || m.Event == EventConnected:
+	case m.Event == store.CategoryMarketing || m.Event == store.CategoryVulnerabilityNews:
+		if m.bulk != nil && m.bulk.test {
+			tag("Test")
 		}
-		if m.SettingsLink != "" {
-			b.WriteString("Change these notifications: " + m.SettingsLink + "\n")
+	default:
+		if m.SOS {
+			tag("SOS")
 		}
-		if m.unsubscribe != "" {
-			b.WriteString(m.footerLabel() + ": " + m.unsubscribe + "\n")
+		switch m.Event {
+		case EventUrgent:
+		case "resolved":
+			tag("resolved")
+		case "escalated":
+			tag(m.Priority + " escalated")
+		default:
+			tag(m.Priority)
 		}
-		return b.String()
 	}
-	for _, l := range m.Summary {
-		b.WriteString("• " + l + "\n")
-	}
-	if m.Action != "" {
-		b.WriteString("\nRecommended action: " + m.Action + "\n")
-	}
-	if m.OwnerTeam != "" {
-		b.WriteString("Owner: " + m.OwnerTeam + "\n")
-	}
-	if m.Link != "" {
-		b.WriteString("\n" + m.Link + "\n")
-	}
-	if m.unsubscribe != "" {
-		b.WriteString("\n" + m.footerLabel() + ": " + m.unsubscribe + "\n")
-	}
-	return b.String()
+	return strings.Join(append(tags, title), " ")
 }
+
+// cleanSubject is a title fit for a subject line: one line, single
+// spaces, no separator left dangling at either end.
+func cleanSubject(s string) string {
+	s = strings.Trim(strings.Join(strings.Fields(s), " "), " -–—:|·,;/")
+	if s == "" {
+		return "Stackurity notification"
+	}
+	return s
+}
+
+// Text is the plain-text rendering (the text/plain part of email).
+func (m Message) Text() string { return emailText(m, brandFor(m)) }
 
 func (m Message) footerLabel() string {
 	if m.unsubscribeLabel != "" {

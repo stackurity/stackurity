@@ -1,0 +1,24 @@
+Subject: web-1: 3 new urgent issues
+
+- web-1: 3 new urgent issues (1 known exploited)
+  https://app.stackurity.dev/fixes/issues?asset_id=12
+  - Upgrade openssl to 3.0.15 (clears 2 issues)
+    https://app.stackurity.dev/fixes/openssl-3.0.15
+    Assign to me: https://app.stackurity.dev/fixes/openssl-3.0.15?action=assign
+    Snooze: https://app.stackurity.dev/fixes/openssl-3.0.15?action=snooze
+  - Upgrade nginx to 1.26.2 (clears 1 issue)
+    https://app.stackurity.dev/fixes/nginx-1.26.2
+    Assign to me: https://app.stackurity.dev/fixes/nginx-1.26.2?action=assign
+    Snooze: https://app.stackurity.dev/fixes/nginx-1.26.2?action=snooze
+
+Open in Stackurity:
+https://app.stackurity.dev/
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Change these notifications: https://app.stackurity.dev/integrations
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

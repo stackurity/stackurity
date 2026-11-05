@@ -1,0 +1,12 @@
+Subject: Ask Stackurity's budget for this month is used up
+
+Your organisation has used its Ask Stackurity budget for this month. Questions are paused until the 1st.
+
+An administrator can turn Ask Stackurity off under Integrations → AI assistants.
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you are an administrator of an organisation on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

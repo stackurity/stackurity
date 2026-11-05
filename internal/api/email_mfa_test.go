@@ -97,12 +97,10 @@ func codeIn(t *testing.T, m fakeMsg) string {
 	if m.msg.Title != "Someone is signing in to Stackurity" {
 		t.Errorf("subject %q", m.msg.Title)
 	}
-	for _, l := range m.msg.Summary {
-		if sixDigits.MatchString(l) {
-			return l
-		}
+	if sixDigits.MatchString(m.msg.Code) {
+		return m.msg.Code
 	}
-	t.Fatalf("no code in %+v", m.msg.Summary)
+	t.Fatalf("no code in %+v", m.msg)
 	return ""
 }
 

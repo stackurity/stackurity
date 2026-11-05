@@ -1091,8 +1091,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 		_ = d.Store.ChannelResult(ctx, ch.ID, err)
 		return err
 	}
-	msg := Message{Event: "test", Title: "Stackurity test notification", At: d.now().UTC(),
-		Summary: []string{"This channel is configured correctly."}}
+	msg := testEmail(d.now().UTC())
 	var reservation int64
 	if ch.Kind == KindStackurityEmail {
 		to, err := d.recipients(ctx, ch)

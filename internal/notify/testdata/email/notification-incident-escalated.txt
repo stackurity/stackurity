@@ -1,0 +1,21 @@
+Subject: [P1 escalated] CVE-2026-31337 in openssl 3.0.13 (remote code execution)
+
+- Remediation deadline has passed
+- 4 finding(s) on 3 asset(s): web-1, web-2, api-gateway
+- Components: openssl 3.0.13
+- Environments: production
+- Known exploited in the wild (CISA KEV)
+
+Recommended action: Upgrade to 3.0.15 or later
+Owner: Platform
+
+Open in Stackurity:
+https://app.stackurity.dev/incidents/4182
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

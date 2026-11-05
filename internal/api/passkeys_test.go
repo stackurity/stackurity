@@ -991,7 +991,7 @@ func TestFactorChangesAreEmailed(t *testing.T) {
 		if got := mail.count(); got != n {
 			t.Errorf("%s: %d emails, want %d", what, got, n)
 		}
-		body := strings.Join(m.msg.Summary, "\n")
+		body := strings.Join(m.msg.Summary, "\n") + "\n" + m.msg.Link
 		if m.to != "ann@x.io" || m.msg.Title != "Your Stackurity two-factor sign-in changed" {
 			t.Errorf("%s: to %s, %q", what, m.to, m.msg.Title)
 		}

@@ -13,7 +13,7 @@ import (
 
 // go test ./internal/notify -run TestBulkGolden -update rewrites the golden
 // files after a deliberate change to the layout; review the diff.
-var updateGolden = flag.Bool("update", false, "rewrite the golden files in testdata/bulk")
+var updateGolden = flag.Bool("update", false, "rewrite the golden files in testdata/bulk and testdata/email")
 
 func loadCampaign(t *testing.T, path string) BulkCampaign {
 	t.Helper()
@@ -75,8 +75,9 @@ func TestBulkLayout(t *testing.T) {
 			t.Errorf("HTML lacks %q", want)
 		}
 	}
-	if strings.Contains(p.HTML, "<img") || strings.Contains(p.HTML, "Postal") {
-		t.Errorf("an image, or an address line with no postal address set:\n%s", p.HTML)
+	// The only image is the logo, from the installation's own address.
+	if strings.Count(p.HTML, "<img") != 1 || !strings.Contains(p.HTML, `<img src="https://app.stk.example/favicon-64.png"`) || strings.Contains(p.HTML, "Postal") {
+		t.Errorf("an image other than the logo, or an address line with no postal address set:\n%s", p.HTML)
 	}
 	// Without a postal address the footer ends with the sender, in both parts.
 	if !strings.HasSuffix(p.Text, "Sent by Stackurity (news@stackurity.test)\n") {

@@ -82,8 +82,8 @@ func TestFixActionLinks(t *testing.T) {
 		t.Errorf("%d buttons in %d blocks", buttons, len(blocks))
 	}
 	// Email: the links after each fix; plain text: the assign and snooze links.
-	e := string(buildEmail("a@x.io", []string{"b@x.io"}, m))
-	if !strings.Contains(e, `>Assign to me</a> &middot; <a href="https://stk.example/fixes/1:package_upgrade:0?action=snooze&amp;project=7">Snooze</a>`) ||
+	e := readableEmail(buildEmail("a@x.io", []string{"b@x.io"}, m))
+	if !strings.Contains(e, `>Assign to me</a> &middot; <a href="https://stk.example/fixes/1:package_upgrade:0?action=snooze&amp;project=7" style="color:#0758c9;text-decoration:underline">Snooze</a>`) ||
 		!strings.Contains(e, "Assign to me: https://stk.example/fixes/1:package_upgrade:0?action=assign&project=7\r\n") {
 		t.Errorf("email: %s", e)
 	}

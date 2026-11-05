@@ -345,13 +345,13 @@ func TestGroupedPayloads(t *testing.T) {
 	d := &Dispatcher{BaseURL: "https://stk.example"}
 	r, incs, rows, infos := syntheticUrgent(2, 4, func(a int) string { return []string{"", "commmerceblog", "pos-api"}[a] })
 	m, _ := d.urgentMessage(r, incs, rows, nil, infos, nil)
-	e := string(buildEmail("a@x.io", []string{"b@x.io"}, m))
+	e := readableEmail(buildEmail("a@x.io", []string{"b@x.io"}, m))
 	headers, body, _ := strings.Cut(e, "\r\n\r\n")
 	if !strings.Contains(headers, "Subject: 148 new urgent issues on 2 assets") || !strings.Contains(headers, "multipart/alternative") {
 		t.Errorf("headers = %q", headers)
 	}
 	if !strings.Contains(body, "- commmerceblog: 74 new urgent issues\r\n  https://stk.example/fixes/issues?asset_id=1&priority=P1\r\n") ||
-		!strings.Contains(body, `<a href="https://stk.example/fixes/1:package_upgrade:0">Top fix: Upgrade package-0 to 2.0 (clears 100 issues)</a>`) ||
+		!strings.Contains(body, `<a href="https://stk.example/fixes/1:package_upgrade:0" style="color:#0758c9;text-decoration:underline">Top fix: Upgrade package-0 to 2.0 (clears 100 issues)</a>`) ||
 		!strings.Contains(body, "Change these notifications: https://stk.example/integrations") {
 		t.Errorf("email body = %s", body)
 	}

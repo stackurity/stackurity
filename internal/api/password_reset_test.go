@@ -77,12 +77,10 @@ func (f *fakeMail) wait(t *testing.T) fakeMsg {
 // resetToken is the token in a reset email's link.
 func resetToken(t *testing.T, m fakeMsg) string {
 	t.Helper()
-	for _, l := range m.msg.Summary {
-		if i := strings.Index(l, "/reset-password#"); i >= 0 {
-			return strings.Fields(l[i+len("/reset-password#"):])[0]
-		}
+	if i := strings.Index(m.msg.Link, "/reset-password#"); i >= 0 && m.msg.LinkLabel == "Reset password" {
+		return m.msg.Link[i+len("/reset-password#"):]
 	}
-	t.Fatalf("no link in %+v", m.msg.Summary)
+	t.Fatalf("no link in %+v", m.msg)
 	return ""
 }
 
@@ -129,8 +127,8 @@ func TestPasswordReset(t *testing.T) {
 		t.Fatalf("%d emails, want only ann's", mail.count())
 	}
 	token := resetToken(t, m)
-	if !strings.Contains(strings.Join(m.msg.Summary, " "), "https://stackurity.example.test/reset-password#pwr_") {
-		t.Errorf("link not built from STACKURITY_BASE_URL: %v", m.msg.Summary)
+	if !strings.HasPrefix(m.msg.Link, "https://stackurity.example.test/reset-password#pwr_") {
+		t.Errorf("link not built from STACKURITY_BASE_URL: %v", m.msg.Link)
 	}
 
 	var pv struct {

@@ -230,6 +230,9 @@ func serverCmd() *cobra.Command {
 				BaseURL:  os.Getenv("STACKURITY_BASE_URL"),
 				Escalate: func(ctx context.Context) bool { return gate.Has(ctx, license.Teams) },
 				Platform: checker.PlatformIncidents, PlatformTarget: checker.PlatformTarget, Lease: tm.DeliveryLease}
+			// Every email's header and footer link to this installation; an
+			// edition may add its privacy and support pages (editionNotify).
+			notify.SetEmailBrand(notify.EmailBrand{Home: dispatcher.BaseURL})
 			var pluginRunner *plugins.Runner
 			if dir := os.Getenv("STACKURITY_PLUGIN_DIR"); dir != "" {
 				pluginRunner = &plugins.Runner{Dir: dir, WorkDir: filepath.Join(dataDir, "work"), Timeout: 15 * time.Minute}

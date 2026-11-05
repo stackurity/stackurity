@@ -1,0 +1,20 @@
+Subject: 2 urgent issues past their deadline across 1 fix
+
+- Upgrade openssl to 3.0.15 on web-1 (2 urgent issues, due 1 Nov)
+  https://app.stackurity.dev/fixes/openssl-3.0.15
+  Assign to me: https://app.stackurity.dev/fixes/openssl-3.0.15?action=assign
+  Snooze: https://app.stackurity.dev/fixes/openssl-3.0.15?action=snooze
+- See every overdue urgent issue
+  https://app.stackurity.dev/fixes/issues?overdue=true&priority=P1
+
+Open in Stackurity:
+https://app.stackurity.dev/
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Change these notifications: https://app.stackurity.dev/integrations
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

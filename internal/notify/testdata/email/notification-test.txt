@@ -1,0 +1,11 @@
+Subject: Stackurity test notification
+
+This channel is configured correctly.
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

@@ -1,0 +1,18 @@
+Subject: Confirm you want Stackurity alerts
+
+An organisation on Stackurity named "Northwind Traders" asked to send security alerts to this address.
+
+To receive them, confirm within 7 days.
+
+If you did not expect this, ignore this email: nothing will be sent to you.
+
+Confirm email:
+https://app.stackurity.dev/email/confirm#ec_8Wn3Rk6Tq1Yv4Zx7Bm2Cp5Df9Gh0Js3Lk
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev asked to send its alerts to this address.
+Never email me again (from any organisation): https://app.stackurity.dev/email/block#ec_8Wn3Rk6Tq1Yv4Zx7Bm2Cp5Df9Gh0Js3Lk
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

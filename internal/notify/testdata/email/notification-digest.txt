@@ -1,0 +1,16 @@
+Subject: Stackurity: 3 urgent messages held by the email limit
+
+- [P1] CVE-2026-31337 in openssl 3.0.13 (remote code execution)
+- web-1: 3 new urgent issues
+- billing-api: 2 new urgent issues
+
+Open in Stackurity:
+https://app.stackurity.dev/integrations/deliveries
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because an organisation on app.stackurity.dev sends its notifications to this address.
+Stop these emails: https://app.stackurity.dev/email/unsubscribe#NzpkYW5hQG5vcnRod2luZC10cmFkZXJzLmNvbQ.kJvEDV8mTpkHnFkyHxRW6vbB
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

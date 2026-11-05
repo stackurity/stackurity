@@ -69,18 +69,7 @@ func (s *Server) emailCodeOffer(r *http.Request, u *store.User, methods []string
 func (s *Server) sendEmailCode(ctx context.Context, r *http.Request, u *store.User, code, what string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	host := hostOf(s.BaseURL)
-	where := "Stackurity"
-	if host != "" {
-		where = "Stackurity (" + host + ")"
-	}
-	m := notify.Message{Event: "mfa_email_code", Title: "Someone is signing in to Stackurity", At: time.Now().UTC(),
-		Summary: []string{
-			"Your code for " + what + " to " + where + " as " + u.Email + ":",
-			code,
-			"It works once, for 10 minutes. Nobody from Stackurity will ask you for it.",
-			"If this was not you, someone knows your password: change it now, and tell your administrator. The request came from " + clientIP(r) + ".",
-		}}
+	m := notify.EmailCodeEmail(s.BaseURL, u.Email, what, code, clientIP(r), time.Now().UTC())
 	return s.AccountMail.SendMail(ctx, []string{u.Email}, m)
 }
 
@@ -92,16 +81,7 @@ func (s *Server) notifyEmailCodeSignIn(r *http.Request, u *store.User) {
 	go func() {
 		ctx, cancel := context.WithTimeout(ctx, time.Minute)
 		defer cancel()
-		host := hostOf(s.BaseURL)
-		if host == "" {
-			host = "Stackurity"
-		}
-		m := notify.Message{Event: "mfa_email_sign_in", Title: "You signed in to Stackurity with an email code", At: time.Now().UTC(),
-			Summary: []string{
-				"Your account " + u.Email + " signed in to " + host + " with an email code at " + time.Now().UTC().Format("2 Jan 2006 15:04 UTC") + ", from " + ip + ".",
-				"If this was not you, change your password now and tell your administrator.",
-				"A passkey or an authenticator app is stronger than email codes: set one up under Your account → Two-factor methods.",
-			}}
+		m := notify.EmailCodeSignInEmail(s.BaseURL, u.Email, ip, time.Now().UTC())
 		if err := s.AccountMail.SendMail(ctx, []string{u.Email}, m); err != nil {
 			s.Log.Error("email-code sign-in notification not sent", "err", err)
 		}
