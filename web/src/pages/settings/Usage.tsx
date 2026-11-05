@@ -153,7 +153,15 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
     const u = limitOf(plan, k);
     return u && u.limit !== null;
   });
-  if (kinds.length === 0 && plan.read_only_projects.length === 0 && !plan.allowed_channel_kinds) return null;
+  if (
+    kinds.length === 0 &&
+    plan.read_only_projects.length === 0 &&
+    !plan.allowed_channel_kinds &&
+    plan.sbom_imports.limit === null &&
+    !plan.check_again_cooldown_seconds &&
+    !plan.api_requests_per_hour
+  )
+    return null;
   return (
     <Card
       title={plan.plan ? `What your ${plan.plan} plan includes` : "What your plan includes"}
@@ -163,6 +171,15 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
         const u = limitOf(plan, k)!;
         return <UsageMeter key={k} used={u.used} limit={u.limit} noun={PLAN_LIMIT_WORDS[k]} />;
       })}
+      {plan.sbom_imports.limit !== null && <UsageMeter used={plan.sbom_imports.used} limit={plan.sbom_imports.limit} noun="SBOM imports this month" />}
+      {(plan.check_again_cooldown_seconds > 0 || plan.api_requests_per_hour > 0) && (
+        <p className="small">
+          {plan.check_again_cooldown_seconds > 0 && <>Check again: once every {cooldownWords(plan.check_again_cooldown_seconds)} for each asset. </>}
+          {plan.api_requests_per_hour > 0 && (
+            <>API requests: {plan.api_requests_per_hour.toLocaleString()} an hour (what agents and CI send is not counted).</>
+          )}
+        </p>
+      )}
       {plan.allowed_channel_kinds && (
         <p className="small">Notification channels on this plan: {plan.allowed_channel_kinds.map(channelWord).join(", ")}.</p>
       )}
@@ -175,4 +192,11 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
       )}
     </Card>
   );
+}
+
+/** A cooldown in plain words: "hour", "10 minutes". */
+export function cooldownWords(seconds: number): string {
+  if (seconds % 3600 === 0) return seconds === 3600 ? "hour" : `${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? "minute" : `${seconds / 60} minutes`;
+  return `${seconds} seconds`;
 }

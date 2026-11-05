@@ -434,6 +434,12 @@ export interface PlanUsage {
   allowed_channel_kinds: string[] | null;
   /** Projects over the project limit: their assets collect nothing new. */
   read_only_projects: number[];
+  /** SBOM imports this calendar month (UTC). */
+  sbom_imports: LimitUsage;
+  /** Seconds between two Check agains on one asset; 0: any time. */
+  check_again_cooldown_seconds: number;
+  /** The organisation's API requests an hour; 0: no cap. */
+  api_requests_per_hour: number;
 }
 
 /**

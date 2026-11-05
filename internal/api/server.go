@@ -166,6 +166,9 @@ type Server struct {
 	// limiter counts sign-in, setup and enrollment attempts in the database,
 	// shared by every replica (ratelimit.go).
 	limiter *rateLimiter
+	// planCaps caches each organisation's API requests an hour
+	// (plan_requests.go).
+	planCaps planCapCache
 	// router serves the API to the MCP tools in process (assistants.go).
 	router http.Handler
 	// AccountMail sends password reset links (password_reset.go): the
@@ -311,7 +314,7 @@ func (s *Server) Handler() http.Handler {
 		})
 
 		r.Group(func(r chi.Router) {
-			r.Use(requireAuth, s.projectGate)
+			r.Use(requireAuth, s.projectGate, s.planRequests)
 			r.Get("/auth/me", s.me)
 			r.Put("/auth/default-project", s.setDefaultProject)
 			r.Post("/auth/password", s.changePassword)
@@ -682,6 +685,7 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	var ve *model.ValidationError
 	var refusal *instanceAdminRefusal
 	var weak *auth.ErrWeakPassword
+	var cooldown *store.CheckCooldownError
 	switch {
 	case errors.As(err, &refusal):
 		refusal.write(w)
@@ -707,6 +711,13 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 402, "read_only", err.Error())
 	case planLimit(err) != nil:
 		writeError(w, 402, "plan_limit", planLimit(err).Error())
+	case errors.As(err, &cooldown):
+		secs := int(time.Until(cooldown.At).Seconds()) + 1
+		if secs < 1 {
+			secs = 1
+		}
+		w.Header().Set("Retry-After", strconv.Itoa(secs))
+		writeError(w, http.StatusTooManyRequests, "check_cooldown", err.Error(), "retry_at="+cooldown.At.UTC().Format(time.RFC3339))
 	case errors.Is(err, errForbidden):
 		writeError(w, 403, "forbidden", err.Error())
 	case errors.As(err, &ve):

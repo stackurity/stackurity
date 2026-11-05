@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
@@ -32,6 +33,8 @@ const (
 	LimitTeams      = "teams"
 	// LimitMembers is max_members: members and pending invitations.
 	LimitMembers = "members"
+	// LimitSBOMImports is sbom_imports_per_month.
+	LimitSBOMImports = "sbom_imports"
 	// LimitChannelKind is the refusal of a kind of channel the plan does
 	// not include.
 	LimitChannelKind = "channel_kind"
@@ -61,12 +64,22 @@ type PlanLimits struct {
 	// OverLimitReadOnly: projects beyond the project limit (the newest
 	// ones) are read-only, and assets only in them collect nothing new.
 	OverLimitReadOnly bool `json:"over_limit_read_only,omitempty"`
+	// CheckCooldownSeconds is how long after a Check again on an asset
+	// (or one of its fixes) the next may be asked for; 0: any time.
+	CheckCooldownSeconds int64 `json:"check_again_cooldown_seconds,omitempty"`
+	// APIRequestsPerHour caps the organisation's API requests an hour
+	// (people's and API tokens'; agents, enrollment and CI and SBOM
+	// uploads from agents and CI are not counted); 0: no cap.
+	APIRequestsPerHour int64 `json:"api_requests_per_hour,omitempty"`
+	// SBOMImportsPerMonth caps SBOM imports a calendar month (UTC); nil:
+	// no cap.
+	SBOMImportsPerMonth *int64 `json:"sbom_imports_per_month,omitempty"`
 }
 
 // Empty reports whether no limit is set.
 func (l PlanLimits) Empty() bool {
 	return len(l.RuleLimits) == 0 && l.MaxMembers == nil && l.AllowedChannelKinds == nil && !l.OverLimitReadOnly &&
-		l.Plan == "" && l.NextPlan == ""
+		l.Plan == "" && l.NextPlan == "" && l.CheckCooldownSeconds == 0 && l.APIRequestsPerHour == 0 && l.SBOMImportsPerMonth == nil
 }
 
 func (l PlanLimits) validate() error {
@@ -82,6 +95,15 @@ func (l PlanLimits) validate() error {
 		if v < 0 || v > 1_000_000 {
 			return fmt.Errorf("rule_limits.%s must be between 0 and 1000000: %w", k, ErrInvalid)
 		}
+	}
+	if l.CheckCooldownSeconds < 0 || l.CheckCooldownSeconds > 7*24*3600 {
+		return fmt.Errorf("check_again_cooldown_seconds must be between 0 and 604800: %w", ErrInvalid)
+	}
+	if l.APIRequestsPerHour < 0 || l.APIRequestsPerHour > 100_000_000 {
+		return fmt.Errorf("api_requests_per_hour must be between 0 and 100000000: %w", ErrInvalid)
+	}
+	if l.SBOMImportsPerMonth != nil && (*l.SBOMImportsPerMonth < 0 || *l.SBOMImportsPerMonth > 100_000_000) {
+		return fmt.Errorf("sbom_imports_per_month must be between 0 and 100000000: %w", ErrInvalid)
 	}
 	if l.MaxMembers != nil && (*l.MaxMembers < 1 || *l.MaxMembers > 1_000_000) {
 		return fmt.Errorf("max_members must be between 1 and 1000000: %w", ErrInvalid)
@@ -110,7 +132,7 @@ type PlanLimitError struct {
 var limitNames = map[string]string{
 	LimitAlertRules: "alert rules", LimitChannels: "notification channels", LimitOwnerRules: "owner rules",
 	LimitCITrusts: "CI trusts", LimitVEXSources: "VEX sources", LimitAPITokens: "API tokens", LimitTeams: "teams",
-	LimitMembers: "members (pending invitations count too)",
+	LimitMembers: "members (pending invitations count too)", LimitSBOMImports: "SBOM imports a month",
 }
 
 func (e *PlanLimitError) Error() string {
@@ -222,6 +244,11 @@ type PlanUsage struct {
 	AllowedChannelKinds []string              `json:"allowed_channel_kinds"`
 	// ReadOnlyProjects lists the projects over the project limit.
 	ReadOnlyProjects []int64 `json:"read_only_projects"`
+	// SBOMImports this calendar month (UTC) against the allowance.
+	SBOMImports LimitUsage `json:"sbom_imports"`
+	// CheckCooldownSeconds and APIRequestsPerHour are the plan's (0: none).
+	CheckCooldownSeconds int64 `json:"check_again_cooldown_seconds"`
+	APIRequestsPerHour   int64 `json:"api_requests_per_hour"`
 }
 
 // planUsage counts what workspace ws's plan limits apply to; nil when it
@@ -261,6 +288,11 @@ func (s *Store) planUsage(ctx context.Context, ws int64) (*PlanUsage, error) {
 		return nil, err
 	}
 	u.Members.Limit = l.MaxMembers
+	u.CheckCooldownSeconds, u.APIRequestsPerHour, u.SBOMImports.Limit = l.CheckCooldownSeconds, l.APIRequestsPerHour, l.SBOMImportsPerMonth
+	if err := s.Pool.QueryRow(sys, `SELECT COALESCE((SELECT used FROM plan_allowances WHERE workspace_id = $1 AND kind = 'sbom_imports'
+		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date), 0)`, ws).Scan(&u.SBOMImports.Used); err != nil {
+		return nil, err
+	}
 	if u.ReadOnlyProjects, err = readOnlyProjects(sys, s.Pool, ws); err != nil {
 		return nil, err
 	}
@@ -391,4 +423,102 @@ func (s *Store) PlanRoom(ctx context.Context, kind, channelKind string) error {
 		return &PlanLimitError{Kind: kind, Limit: *r.Limit, Used: r.Used, NextPlan: u.NextPlan}
 	}
 	return nil
+}
+
+// TakeSBOMImport takes one of the current workspace's SBOM imports this
+// month, or returns a *PlanLimitError when none are left. Without an
+// allowance it does nothing. GiveBackSBOMImport returns one whose import
+// failed.
+func (s *Store) TakeSBOMImport(ctx context.Context) error {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return nil
+	}
+	sys := tenant.System(ctx)
+	l, err := planLimits(sys, s.Pool, ws)
+	if err != nil || l.SBOMImportsPerMonth == nil {
+		return err
+	}
+	var used int64
+	err = s.Pool.QueryRow(sys, `INSERT INTO plan_allowances AS a (workspace_id, kind, period_start, used)
+		VALUES ($1, 'sbom_imports', date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1)
+		ON CONFLICT (workspace_id, kind, period_start) DO UPDATE SET used = a.used + 1 WHERE a.used < $2
+		RETURNING used`, ws, *l.SBOMImportsPerMonth).Scan(&used)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && used > *l.SBOMImportsPerMonth {
+		if err == nil {
+			_ = s.GiveBackSBOMImport(ctx)
+		}
+		return &PlanLimitError{Kind: LimitSBOMImports, Limit: *l.SBOMImportsPerMonth, Used: *l.SBOMImportsPerMonth, NextPlan: l.NextPlan}
+	}
+	return err
+}
+
+// GiveBackSBOMImport returns an SBOM import TakeSBOMImport took.
+func (s *Store) GiveBackSBOMImport(ctx context.Context) error {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return nil
+	}
+	_, err := s.Pool.Exec(tenant.System(ctx), `UPDATE plan_allowances SET used = used - 1 WHERE workspace_id = $1 AND kind = 'sbom_imports'
+		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date AND used > 0`, ws)
+	return err
+}
+
+// ErrCheckCooldown matches a *CheckCooldownError with errors.Is.
+var ErrCheckCooldown = errors.New("check again too soon")
+
+// CheckCooldownError means a Check again was refused because the plan
+// allows one per asset every Cooldown, and the last was too recent.
+type CheckCooldownError struct {
+	Cooldown time.Duration
+	At       time.Time // when the next may be asked for
+	NextPlan string
+}
+
+func (e *CheckCooldownError) Error() string {
+	upgrade := "Upgrade your plan to check more often."
+	if e.NextPlan != "" {
+		upgrade = "Upgrade to " + e.NextPlan + " to check more often."
+	}
+	wait := time.Until(e.At).Round(time.Minute)
+	if wait < time.Minute {
+		wait = time.Minute
+	}
+	return fmt.Sprintf("your plan allows Check again once every %s for each asset, so the next one can run in about %s (at %s UTC). "+
+		"Scheduled checks and agent reports carry on as usual. %s", e.Cooldown, wait, e.At.UTC().Format("15:04"), upgrade)
+}
+
+func (e *CheckCooldownError) Is(target error) bool { return target == ErrCheckCooldown }
+
+// checkCooldown, in the transaction of a Check again with asset locked,
+// returns a *CheckCooldownError when the plan's cooldown has not passed
+// since the last Check again on the asset.
+func checkCooldown(ctx context.Context, tx pgx.Tx, ws, asset int64) error {
+	var l PlanLimits
+	var last *time.Time
+	err := asSystem(ctx, tx, func() error {
+		var err error
+		if l, err = planLimits(ctx, tx, ws); err != nil || l.CheckCooldownSeconds == 0 {
+			return err
+		}
+		return tx.QueryRow(ctx, `SELECT max(requested_at) FROM checks WHERE asset_id = $1 AND reason = 'check'`, asset).Scan(&last)
+	})
+	if err != nil || l.CheckCooldownSeconds == 0 || last == nil {
+		return err
+	}
+	cd := time.Duration(l.CheckCooldownSeconds) * time.Second
+	if next := last.Add(cd); time.Now().Before(next) {
+		return &CheckCooldownError{Cooldown: cd, At: next, NextPlan: l.NextPlan}
+	}
+	return nil
+}
+
+// APIRequestsPerHour is the current workspace's API request cap an hour
+// (0: none).
+func (s *Store) APIRequestsPerHour(ctx context.Context, ws int64) (int64, error) {
+	l, err := planLimits(tenant.System(ctx), s.Pool, ws)
+	if errors.Is(err, ErrNotFound) {
+		return 0, nil
+	}
+	return l.APIRequestsPerHour, err
 }

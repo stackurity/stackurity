@@ -254,8 +254,15 @@ func (s *Server) importSBOM(w http.ResponseWriter, r *http.Request) {
 	if p.Token != nil {
 		tokenID = p.Token.ID
 	}
+	// The plan's SBOM imports a month (docs/asset-limits.md, "Plan
+	// limits"); given back when the import fails.
+	if err := s.Store.TakeSBOMImport(r.Context()); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	res, err := s.Store.Ingest(reportSource(r, tokenID), b, tokenID)
 	if err != nil {
+		_ = s.Store.GiveBackSBOMImport(r.Context())
 		s.fail(w, r, err)
 		return
 	}

@@ -93,7 +93,7 @@ func (s *Server) checkAsset(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	s.requestCheck(w, r, store.CheckRequest{AssetID: id})
+	s.requestCheck(w, r, store.CheckRequest{AssetID: id, Cooldown: true})
 }
 
 func fixGroupParam(r *http.Request) (string, error) {
@@ -126,7 +126,7 @@ func (s *Server) checkFixGroup(w http.ResponseWriter, r *http.Request) {
 	if !s.fixGroupAllowed(w, r, id, auth.RoleEngineer) {
 		return
 	}
-	s.requestCheck(w, r, store.CheckRequest{FixGroup: id})
+	s.requestCheck(w, r, store.CheckRequest{FixGroup: id, Cooldown: true})
 }
 
 // fixApplied records "I applied this": the fix's active issues go to in

@@ -49,6 +49,9 @@ const plan = (over: Partial<PlanUsage> = {}): PlanUsage => ({
   members: { used: 2, limit: 2 },
   allowed_channel_kinds: ["stackurity_email", "slack_app"],
   read_only_projects: [],
+  sbom_imports: { used: 1, limit: 5 },
+  check_again_cooldown_seconds: 3600,
+  api_requests_per_hour: 300,
   ...over,
 });
 
@@ -102,6 +105,17 @@ test("Usage: every limit of the plan, the channels it includes, and read-only pr
   assert.match(html, /email sent by Stackurity, Slack \(Stackurity app\)/);
   assert.match(html, /One project is over your plan&#x27;s project\s+limit/);
   assert.match(html, /upgrade to Starter/);
+  assert.match(html, /1<\/strong> of 5 SBOM imports this month/);
+  assert.match(html, /Check again: once every hour for each asset/);
+  assert.match(html, /API requests: 300 an hour \(what agents and CI send is not counted\)/);
+});
+
+test("cooldowns read as people say them", async () => {
+  const { cooldownWords } = (await vite.ssrLoadModule("/src/pages/settings/Usage.tsx")) as { cooldownWords: (s: number) => string };
+  assert.equal(cooldownWords(3600), "hour");
+  assert.equal(cooldownWords(600), "10 minutes");
+  assert.equal(cooldownWords(60), "minute");
+  assert.equal(cooldownWords(7200), "2 hours");
 });
 
 test("Usage without plan limits has no plan card", () => {
