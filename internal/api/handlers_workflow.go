@@ -390,6 +390,18 @@ func (s *Server) listChannels(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
+	s.createChannelAs(w, r, nil)
+}
+
+// createChannelAs creates a channel of the organisation (sc nil) or of a
+// project or asset. Someone who manages a project or asset through a grant,
+// without an organisation-wide admin role, may add Stackurity email only:
+// the other kinds read the organisation's stored secrets.
+func (s *Server) createChannelAs(w http.ResponseWriter, r *http.Request, sc *notifyScope) {
+	owner := store.Owner{}
+	if sc != nil {
+		owner = sc.owner
+	}
 	var req channelRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -442,7 +454,12 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	c, err := s.Store.CreateChannel(r.Context(), req.Kind, strings.TrimSpace(*req.Name), req.Config, ref)
+	if !orgAdmin(r) && req.Kind != notify.KindStackurityEmail {
+		s.fail(w, r, forbidden("project and asset admins can add email sent by Stackurity here; "+
+			"other connections use the organisation's stored secrets, so an organisation admin adds them"))
+		return
+	}
+	c, err := s.Store.CreateOwnedChannel(r.Context(), owner, req.Kind, strings.TrimSpace(*req.Name), req.Config, ref)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -455,16 +472,39 @@ func (s *Server) createChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := idParam(r, "id")
+	s.updateChannelAs(w, r, nil)
+}
+
+// ownedChannel reads the channel the request names: for a project or an
+// asset (sc), one of its own.
+func (s *Server) ownedChannel(w http.ResponseWriter, r *http.Request, sc *notifyScope, param string) (*store.Channel, bool) {
+	id, err := idParam(r, param)
 	if err != nil {
 		s.fail(w, r, err)
-		return
+		return nil, false
 	}
 	cur, err := s.Store.GetChannel(r.Context(), id)
+	if err == nil && sc != nil && !cur.Owner().Same(sc.owner) {
+		err = store.ErrNotFound
+	}
 	if err != nil {
 		s.fail(w, r, err)
+		return nil, false
+	}
+	return cur, true
+}
+
+func (s *Server) updateChannelAs(w http.ResponseWriter, r *http.Request, sc *notifyScope) {
+	param := "id"
+	if sc != nil {
+		param = "cid"
+	}
+	cur, ok := s.ownedChannel(w, r, sc, param)
+	if !ok {
 		return
 	}
+	id := cur.ID
+	var err error
 	var req channelRequest
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -492,6 +532,10 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 	}
 	if teamsAppConfig(req.Config) {
 		s.fail(w, r, badRequest("Teams channels of the Stackurity app are added with Add to Teams"))
+		return
+	}
+	if !orgAdmin(r) && (req.SecretRef != nil || len(req.Config) > 0 && cur.Kind != notify.KindStackurityEmail) {
+		s.fail(w, r, forbidden("only an organisation admin changes the connection details of this channel; you can rename it or switch it off"))
 		return
 	}
 	cfg, ref := cur.Config, cur.SecretRef
@@ -538,16 +582,19 @@ func (s *Server) updateChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := idParam(r, "id")
-	if err != nil {
-		s.fail(w, r, err)
+	s.deleteChannelAs(w, r, nil)
+}
+
+func (s *Server) deleteChannelAs(w http.ResponseWriter, r *http.Request, sc *notifyScope) {
+	param := "id"
+	if sc != nil {
+		param = "cid"
+	}
+	cur, ok := s.ownedChannel(w, r, sc, param)
+	if !ok {
 		return
 	}
-	cur, err := s.Store.GetChannel(r.Context(), id)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
+	id := cur.ID
 	changed, err := s.Store.DeleteChannelFromRoutes(r.Context(), id)
 	if err != nil {
 		s.fail(w, r, err)
@@ -565,16 +612,19 @@ func (s *Server) deleteChannel(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
-	id, err := idParam(r, "id")
-	if err != nil {
-		s.fail(w, r, err)
+	s.testChannelAs(w, r, nil)
+}
+
+func (s *Server) testChannelAs(w http.ResponseWriter, r *http.Request, sc *notifyScope) {
+	param := "id"
+	if sc != nil {
+		param = "cid"
+	}
+	c, ok := s.ownedChannel(w, r, sc, param)
+	if !ok {
 		return
 	}
-	c, err := s.Store.GetChannel(r.Context(), id)
-	if err != nil {
-		s.fail(w, r, err)
-		return
-	}
+	id := c.ID
 	if s.Dispatcher == nil {
 		writeError(w, 503, "unavailable", "notifications are not running")
 		return
@@ -590,6 +640,13 @@ func (s *Server) testChannel(w http.ResponseWriter, r *http.Request) {
 var priorities = map[string]bool{"P1": true, "P2": true, "P3": true, "P4": true}
 
 func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
+	s.saveRouteAs(w, r, id, nil)
+}
+
+// saveRouteAs creates (id 0) or changes a rule of the organisation (sc
+// nil) or of a project or asset. Who owns a rule is set when it is
+// created, never by the request.
+func (s *Server) saveRouteAs(w http.ResponseWriter, r *http.Request, id int64, sc *notifyScope) {
 	body, err := io.ReadAll(http.MaxBytesReader(nil, r.Body, maxJSONBody))
 	if err != nil {
 		s.fail(w, r, badRequest("request too large"))
@@ -607,10 +664,29 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	_ = json.Unmarshal(body, &sent)
 	var cur *store.Route
 	if id > 0 {
-		if cur, err = s.Store.GetRoute(r.Context(), id); err != nil {
+		if cur, err = s.Store.GetRoute(r.Context(), id); err == nil && sc != nil && !cur.Owner().Same(sc.owner) {
+			err = store.ErrNotFound
+		}
+		if err != nil {
 			s.fail(w, r, err)
 			return
 		}
+	}
+	rt.OwnerProjectID, rt.OwnerAssetID, rt.InheritsRouteID = nil, nil, nil
+	switch {
+	case cur != nil:
+		rt.OwnerProjectID, rt.OwnerAssetID, rt.InheritsRouteID = cur.OwnerProjectID, cur.OwnerAssetID, cur.InheritsRouteID
+	case sc != nil:
+		rt.OwnerProjectID, rt.OwnerAssetID = sc.owner.ProjectID, sc.owner.AssetID
+	case len(rt.ProjectIDs) == 1:
+		// A new rule limited to one project is that project's, as
+		// migration 0096 made the older ones: its admins manage it.
+		rt.OwnerProjectID = &rt.ProjectIDs[0]
+	}
+	if rt.OwnerProjectID != nil {
+		rt.ProjectIDs = []int64{*rt.OwnerProjectID}
+	} else if rt.OwnerAssetID != nil {
+		rt.ProjectIDs = nil
 	}
 	if err := resolveRouteEvents(&rt, cur, sent); err != nil {
 		s.fail(w, r, err)
@@ -697,6 +773,10 @@ func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 			s.fail(w, r, badRequest("a route to PagerDuty or ServiceNow cannot be limited to projects: its records describe whole incidents"))
 			return
 		}
+	}
+	if err := s.checkRouteChannels(r, &rt); err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	out, err := s.Store.SaveRoute(r.Context(), rt)
 	if err != nil {
@@ -833,6 +913,63 @@ func (s *Server) checkRouteEvents(r *http.Request, rt *store.Route) error {
 	return nil
 }
 
+// checkRouteChannels checks the channels a rule sends to: the
+// organisation's, or its owner's (an asset's rule may also use the
+// channels of the asset's projects). A rule of the organisation sends to
+// the organisation's channels only. An asset's rule never sends to a
+// tracker: Jira, PagerDuty and ServiceNow records describe whole incidents.
+func (s *Server) checkRouteChannels(r *http.Request, rt *store.Route) error {
+	ctx := r.Context()
+	owner := rt.Owner()
+	var projects []int64
+	if rt.OwnerAssetID != nil {
+		var err error
+		if projects, err = s.Store.AssetProjects(ctx, *rt.OwnerAssetID); err != nil {
+			return err
+		}
+	}
+	ids := []int64{rt.ChannelID}
+	for _, id := range rt.EventChannels {
+		ids = append(ids, id)
+	}
+	for _, id := range ids {
+		ch, err := s.Store.GetChannel(ctx, id)
+		if errors.Is(err, store.ErrNotFound) {
+			continue // refused when saved, as before
+		}
+		if err != nil {
+			return err
+		}
+		if !channelServes(ch, owner, projects) {
+			if owner.Org() {
+				return badRequest("a rule of the organisation sends to the organisation's channels; " + ch.Name + " belongs to a project or an asset")
+			}
+			return badRequest("this rule cannot send to " + ch.Name + ": use the organisation's channels or this project's or asset's own")
+		}
+		if rt.OwnerAssetID != nil && notify.IsTracker(ch.Kind) {
+			return badRequest("a rule of one asset cannot send to Jira, PagerDuty or ServiceNow, whose records describe whole incidents; add the rule to the asset's project instead")
+		}
+	}
+	return nil
+}
+
+// channelServes reports whether a rule of owner may send to the channel.
+// projects are the projects of an asset owner.
+func channelServes(ch *store.Channel, owner store.Owner, projects []int64) bool {
+	co := ch.Owner()
+	switch {
+	case co.Org():
+		return true
+	case owner.Org():
+		return false
+	case co.Same(owner):
+		return true
+	case owner.AssetID != nil && co.ProjectID != nil:
+		return slices.Contains(projects, *co.ProjectID)
+	}
+	return false
+}
+
 func (s *Server) listRoutes(w http.ResponseWriter, r *http.Request) {
 	rs, err := s.Store.ListRoutes(r.Context())
 	if err != nil {
@@ -854,10 +991,28 @@ func (s *Server) updateRoute(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) deleteRoute(w http.ResponseWriter, r *http.Request) {
-	id, err := idParam(r, "id")
+	s.deleteRouteAs(w, r, nil)
+}
+
+func (s *Server) deleteRouteAs(w http.ResponseWriter, r *http.Request, sc *notifyScope) {
+	param := "id"
+	if sc != nil {
+		param = "rid"
+	}
+	id, err := idParam(r, param)
 	if err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if sc != nil {
+		cur, err := s.Store.GetRoute(r.Context(), id)
+		if err == nil && !cur.Owner().Same(sc.owner) {
+			err = store.ErrNotFound
+		}
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
 	}
 	if err := s.Store.DeleteRoute(r.Context(), id); err != nil {
 		s.fail(w, r, err)

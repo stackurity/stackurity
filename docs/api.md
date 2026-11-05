@@ -19,7 +19,7 @@ Roles, from least to most access: `viewer` (read, including the audit log; ask t
 
 A workspace (shown as the organisation in the dashboard) groups its assets into **projects**; one asset can be in several. The roles above apply either to the whole workspace (organisation-wide) or, through **access grants**, to chosen projects or single assets only. See [docs/design/projects.md](design/projects.md).
 
-- **Members with project access only** (`GET /auth/me` returns `"access": "projects"` and an empty `role`) see only the assets of their projects and asset grants, and everything that hangs off them: findings, fix groups, incidents (their counts, names and priority recomputed from what they can see), components and their counts, search hits, reports, audit events about those objects, and exports. Routes for organisation data (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest) answer 403. The database enforces this with row-level security, not only the API.
+- **Members with project access only** (`GET /auth/me` returns `"access": "projects"` and an empty `role`) see only the assets of their projects and asset grants, and everything that hangs off them: findings, fix groups, incidents (their counts, names and priority recomputed from what they can see), components and their counts, search hits, reports, audit events about those objects, and exports. Routes for organisation data (users, teams, integrations, channels, routes, deliveries, jobs, secrets, enrollments, remediation plans and policies, ingest) answer 403. A project's or asset's own notifications ([Notifications of projects and assets](#notifications-of-projects-and-assets)) are the exception. The database enforces this with row-level security, not only the API.
 - **Roles from grants act per asset.** `GET /auth/me` returns `project_role`, the highest role from any grant. A change (`PATCH /assets/{id}`, relations, finding and incident actions) needs that role on each asset it touches; otherwise 403. An organisation-wide viewer with `engineer` on one project can act on that project's findings only.
 - **Choosing a project.** Send `X-Stackurity-Project: <id>` (the dashboard does) or `?project_id=<id>` on any request; `0` or nothing means all projects. Project-scoped routes (the reading routes above, `GET /reports/evidence`, `GET /assets/{id}/sbom`, search, audit) then return only that project's assets and what hangs off them; other routes ignore it. A project the caller cannot see answers 404, a value that is not a number 400. The CLI sends the header for `--project` (or `STACKURITY_PROJECT`).
 - **People and links.** Someone who assigns through a project role (their organisation role alone may not assign) can assign only to the people and teams of their projects (400 otherwise), and `GET /users/directory` gives them only those people. Grants are audited as object type `access_grant` and asset merges as `asset_merge`, which project-only members never see. Incidents shown to them carry no tracker `issues`, no `notified_priority`, and priority, SOS and escalation from their findings; `priority=`, `sos=` and `escalated=` filter on those.
@@ -1567,6 +1567,144 @@ Replaces a route. Without `events`, the route keeps its events; `event_channels`
 
 Deletes a route.
 
+### `GET /settings/notifications`
+
+**Who:** security
+
+`project_chat_apps`: whether project admins may connect their own Slack or Teams workspace to their project (Add to Slack and Add to Teams from the project's Notifications). Off by default.
+
+### `PUT /settings/notifications`
+
+**Who:** admin
+
+Sets `project_chat_apps` (organisation-wide admins only); audited as `settings.notifications`.
+
+### Notifications of projects and assets
+
+Rules and channels belong to the organisation, a project or an asset, like groups and projects in GitLab. The organisation's rules apply to every project and asset (a rule limited to some projects, to those). A project **inherits** them, and an asset inherits the organisation's and its projects' rules: each can be turned **off** there, or **edited** there (the project or asset gets its own copy to change, and the inherited rule is turned off there), and a project or asset can add rules and channels of its own. A rule sends to the organisation's channels or its owner's own (an asset's rule may also use its projects'); a rule of the organisation sends to the organisation's channels only. Routes and channels carry `owner_project_id` and `owner_asset_id` (both null for the organisation's), and a copy `inherits_route_id`. A rule limited to exactly one project is that project's (`POST /routes` with one `project_ids` makes it so; migration 0096 moved the older ones). The same message to the same channel is sent once, also when two rules build it. Turning a rule to Jira, PagerDuty or ServiceNow off for a project stops it creating records for incidents whose every asset it is off for. An asset's rule cannot send to those (their records describe whole incidents), and a rule to PagerDuty or ServiceNow cannot be edited for a project, only turned off.
+
+These routes are open to members with project access only: security on the project or asset reads, admin on it changes; 404 when the caller cannot see it, 403 for a lower role.
+
+### `GET /projects/{id}/notifications`
+
+**Who:** security on the project
+
+`inherited` (each rule with `from` `organisation` or `project` and `from_project_id`, `state` `on`, `off` or `edited`, `copy_id` for an edited one, and `tracker`), `routes` and `channels` (the project's own), `usable_channels` (what its rules may send to, names only), `channel_names`, `can_manage`, `project_chat_apps`, `slack_app`, `teams_app` and `org_admins` (whom to ask).
+
+### `POST /projects/{id}/notifications/routes`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Adds a rule of the project, with the fields of `POST /routes`; owner fields in the body are ignored.
+
+### `PUT /projects/{id}/notifications/routes/{rid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Changes a rule of the project (404 for another owner's), as `PUT /routes/{id}`.
+
+### `DELETE /projects/{id}/notifications/routes/{rid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Deletes a rule of the project. Deleting an edited copy turns the inherited rule on again here.
+
+### `PUT /projects/{id}/notifications/inherited/{rid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+`{"state": "off"}` turns an inherited rule off for the project, `"on"` turns it on again (deleting an edited copy), `"edit"` gives the project its own copy to change (`routes` then has it, with `inherits_route_id`). Answers like `GET`. 404 for a rule the project does not inherit. Audited as `route.inherited`.
+
+### `POST /projects/{id}/notifications/channels`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Adds a channel of the project, with the fields of `POST /channels`. Without an organisation-wide admin role, only email sent by Stackurity (`stackurity_email`): the other kinds read the organisation's stored secrets (403).
+
+### `PATCH /projects/{id}/notifications/channels/{cid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Changes a channel of the project. Without an organisation-wide admin role, only its name and `enabled` (and a Stackurity email channel's addresses).
+
+### `DELETE /projects/{id}/notifications/channels/{cid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Deletes a channel of the project, with the rules that send to it.
+
+### `POST /projects/{id}/notifications/channels/{cid}/test`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+As `POST /channels/{id}/test`.
+
+### `GET /assets/{id}/notifications`
+
+**Who:** security on the asset
+
+`inherited` (each rule with `from` `organisation` or `project` and `from_project_id`, `state` `on`, `off` or `edited`, `copy_id` for an edited one, and `tracker`), `routes` and `channels` (the asset's own), `usable_channels` (what its rules may send to, names only), `channel_names`, `can_manage`, `project_chat_apps`, `slack_app`, `teams_app` and `org_admins` (whom to ask).
+
+### `POST /assets/{id}/notifications/routes`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Adds a rule of the asset, with the fields of `POST /routes`; owner fields in the body are ignored.
+
+### `PUT /assets/{id}/notifications/routes/{rid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Changes a rule of the asset (404 for another owner's), as `PUT /routes/{id}`.
+
+### `DELETE /assets/{id}/notifications/routes/{rid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Deletes a rule of the asset. Deleting an edited copy turns the inherited rule on again here.
+
+### `PUT /assets/{id}/notifications/inherited/{rid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+`{"state": "off"}` turns an inherited rule off for the asset, `"on"` turns it on again (deleting an edited copy), `"edit"` gives the asset its own copy to change (`routes` then has it, with `inherits_route_id`). Answers like `GET`. 404 for a rule the asset does not inherit. Audited as `route.inherited`.
+
+### `POST /assets/{id}/notifications/channels`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Adds a channel of the asset, with the fields of `POST /channels`. Without an organisation-wide admin role, only email sent by Stackurity (`stackurity_email`): the other kinds read the organisation's stored secrets (403).
+
+### `PATCH /assets/{id}/notifications/channels/{cid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Changes a channel of the asset. Without an organisation-wide admin role, only its name and `enabled` (and a Stackurity email channel's addresses).
+
+### `DELETE /assets/{id}/notifications/channels/{cid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Deletes a channel of the asset, with the rules that send to it.
+
+### `POST /assets/{id}/notifications/channels/{cid}/test`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+As `POST /channels/{id}/test`.
+
+### `POST /projects/{id}/notifications/slack/install`
+
+**Who:** admin of the project
+
+Starts Add to Slack for a channel of the project, like `POST /integrations/slack/install`; `POST /integrations/slack/oauth` then makes the project's channel. Without an organisation-wide admin role, the organisation's `project_chat_apps` must be on (403 `forbidden`, naming the organisation's admins, otherwise). A Slack channel already connected for another project or asset answers 409.
+
+### `POST /projects/{id}/notifications/teams/install`
+
+**Who:** admin of the project
+
+Starts Add to Teams for a channel of the project, like `POST /integrations/teams/install`, with the same condition.
+
 ### `GET /deliveries`
 
 **Who:** security
@@ -1751,9 +1889,9 @@ The Slack app's Direct install URL ([slack-app.md](slack-app.md#installs-started
 
 ### `POST /integrations/slack/oauth`
 
-**Who:** admin
+**Who:** admin (of the project, for an install started from a project)
 
-Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
+Finishes Add to Slack with `{"code", "state"}` from Slack's redirect to `/integrations/slack/oauth/callback`: 201 with `channel`, `return_to`, `team_name` and `slack_channel`. An install started from a project (`POST /projects/{id}/notifications/slack/install`) makes the project's channel, if the caller is still an admin of the project and the organisation still allows it (403 otherwise). 400 `slack_state` for a state that is missing (an install started from Slack's side), unknown, used, expired (10 minutes) or someone else's, before Slack is called; 502 `slack_refused`.
 
 ### `POST /integrations/pagerduty/connect`
 
@@ -1793,9 +1931,9 @@ Starts Add to Teams ([teams-app.md](teams-app.md)): answers `id`, `code` (such a
 
 ### `GET /integrations/teams/install/{id}`
 
-**Who:** admin
+**Who:** admin (of the project, for a code made for a project)
 
-What became of the caller's code: `status` `pending`, `expired`, `connected` (with `channel`, the new or revived Teams integration) or `failed`, and `expires_at`. 404 for another person's code.
+What became of the caller's code (a code made for a project connects that project's channel): `status` `pending`, `expired`, `connected` (with `channel`, the new or revived Teams integration) or `failed`, and `expires_at`. 404 for another person's code.
 
 ### `POST /integrations/teams/messages`
 

@@ -19,9 +19,13 @@ type Channel struct {
 	CreatedAt time.Time       `json:"created_at"`
 	LastOKAt  *time.Time      `json:"last_ok_at"`
 	LastError string          `json:"last_error"`
+	// OwnerProjectID and OwnerAssetID: the project or asset the channel
+	// belongs to; both nil for the organisation's (migration 0096).
+	OwnerProjectID *int64 `json:"owner_project_id"`
+	OwnerAssetID   *int64 `json:"owner_asset_id"`
 }
 
-const channelCols = `id, kind, name, config, secret_ref, enabled, created_at, last_ok_at, last_error`
+const channelCols = `id, kind, name, config, secret_ref, enabled, created_at, last_ok_at, last_error, owner_project_id, owner_asset_id`
 
 func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+channelCols+` FROM channels ORDER BY name`)
@@ -41,8 +45,32 @@ func (s *Store) GetChannel(ctx context.Context, id int64) (*Channel, error) {
 }
 
 func (s *Store) CreateChannel(ctx context.Context, kind, name string, config json.RawMessage, secretRef string) (*Channel, error) {
-	rows, err := s.Pool.Query(ctx, `INSERT INTO channels (kind, name, config, secret_ref) VALUES ($1,$2,$3,$4) RETURNING `+channelCols,
-		kind, name, config, secretRef)
+	return s.CreateOwnedChannel(ctx, Owner{}, kind, name, config, secretRef)
+}
+
+// Owner is who a channel or route belongs to: a project, an asset, or
+// (both nil) the organisation.
+type Owner struct {
+	ProjectID *int64 `json:"project_id,omitempty"`
+	AssetID   *int64 `json:"asset_id,omitempty"`
+}
+
+// Org reports whether the owner is the organisation.
+func (o Owner) Org() bool { return o.ProjectID == nil && o.AssetID == nil }
+
+// Same reports whether two owners are the same.
+func (o Owner) Same(p Owner) bool {
+	return eqID(o.ProjectID, p.ProjectID) && eqID(o.AssetID, p.AssetID)
+}
+
+// Owner is the channel's owner.
+func (c Channel) Owner() Owner { return Owner{ProjectID: c.OwnerProjectID, AssetID: c.OwnerAssetID} }
+
+// CreateOwnedChannel creates a channel of a project, an asset or the
+// organisation.
+func (s *Store) CreateOwnedChannel(ctx context.Context, owner Owner, kind, name string, config json.RawMessage, secretRef string) (*Channel, error) {
+	rows, err := s.Pool.Query(ctx, `INSERT INTO channels (kind, name, config, secret_ref, owner_project_id, owner_asset_id) VALUES ($1,$2,$3,$4,$5,$6) RETURNING `+channelCols,
+		kind, name, config, secretRef, owner.ProjectID, owner.AssetID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,6 +188,39 @@ type Route struct {
 	// that fix no known vulnerability) to the route's weekly summary, never
 	// the daily one. Off by default.
 	SummaryUpdates bool `json:"summary_updates"`
+	// OwnerProjectID and OwnerAssetID: the project or asset the route
+	// belongs to, both nil for the organisation's (migration 0096). A
+	// project's route is limited to it (ProjectIDs is the project); an
+	// asset's to that asset. Set when the route is created, never changed.
+	OwnerProjectID *int64 `json:"owner_project_id"`
+	OwnerAssetID   *int64 `json:"owner_asset_id"`
+	// InheritsRouteID: the inherited rule this one replaces for its owner
+	// ("Edit for this project"); the inherited rule is turned off there.
+	InheritsRouteID *int64 `json:"inherits_route_id"`
+	// Excluded is the assets the route is turned off for (route_exclusions):
+	// filled by ListRoutes.
+	Excluded map[int64]bool `json:"-" db:"-"`
+}
+
+// Owner is the route's owner.
+func (r Route) Owner() Owner { return Owner{ProjectID: r.OwnerProjectID, AssetID: r.OwnerAssetID} }
+
+// Narrowed reports whether the route hears about some assets only: it is
+// limited to projects, belongs to an asset, or is turned off for some.
+func (r Route) Narrowed() bool {
+	return r.Limited() || len(r.Excluded) > 0
+}
+
+// Limited reports whether the route hears about the assets of
+// ProjectAssets only (limited to projects, or an asset's route).
+func (r Route) Limited() bool { return len(r.ProjectIDs) > 0 || r.OwnerAssetID != nil }
+
+// Covers reports whether the route hears about the asset.
+func (r Route) Covers(asset int64) bool {
+	if r.Limited() && !r.ProjectAssets[asset] {
+		return false
+	}
+	return !r.Excluded[asset]
 }
 
 // Route events.
@@ -284,9 +345,11 @@ var Weekdays = []string{"sunday", "monday", "tuesday", "wednesday", "thursday", 
 // and is stored with enabled false (migration 0032): a release before 0.8,
 // which ignores project_ids, sees it switched off instead of sending every
 // project's alerts to that project's channel.
-const routeCols = `id, name, channel_id, CASE WHEN cardinality(project_ids) > 0 THEN project_enabled ELSE enabled END, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
+//
+// An asset's route is stored the same way (migration 0096).
+const routeCols = `id, name, channel_id, CASE WHEN cardinality(project_ids) > 0 OR owner_asset_id IS NOT NULL THEN project_enabled ELSE enabled END, min_priority, sos_only, kinds, environments, team_ids, escalation, send_resolved,
 	quiet_start, quiet_end, timezone, max_per_hour, created_at, mode, summary_time, summary_day, last_summary_at, project_ids,
-	events, event_channels, new_min_priority, last_weekly_summary_at, summary_updates`
+	events, event_channels, new_min_priority, last_weekly_summary_at, summary_updates, owner_project_id, owner_asset_id, inherits_route_id`
 
 func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+routeCols+` FROM routes ORDER BY name`)
@@ -302,45 +365,109 @@ func (s *Store) ListRoutes(ctx context.Context) ([]Route, error) {
 
 // routeProjectAssets fills ProjectAssets of the routes limited to projects:
 // the assets of those projects that are not archived. A route whose
-// projects are all archived matches no asset.
+// projects are all archived matches no asset. An asset's route covers that
+// asset. It also fills Excluded from route_exclusions: an inherited rule
+// turned off for an asset leaves it out; turned off for a project, it
+// leaves out that project's assets, except those it still hears about
+// through another of its projects (or, for a rule of the whole
+// organisation, through another project the asset is in).
 func (s *Store) routeProjectAssets(ctx context.Context, routes []Route) error {
-	var ids []int64
-	for _, r := range routes {
-		ids = append(ids, r.ProjectIDs...)
-	}
-	if len(ids) == 0 {
-		return nil
-	}
-	rows, err := s.Pool.Query(ctx, `SELECT pa.project_id, pa.asset_id FROM project_assets pa JOIN projects p ON p.id = pa.project_id
-		WHERE pa.project_id = ANY($1) AND p.archived_at IS NULL`, ids)
+	type exclusion struct{ route, project, asset int64 }
+	rows, err := s.Pool.Query(ctx, `SELECT route_id, COALESCE(project_id, 0), COALESCE(asset_id, 0) FROM route_exclusions`)
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-	byProject := map[int64][]int64{}
-	for rows.Next() {
-		var p, a int64
-		if err := rows.Scan(&p, &a); err != nil {
-			return err
-		}
-		byProject[p] = append(byProject[p], a)
-	}
-	if err := rows.Err(); err != nil {
+	excl, err := pgx.CollectRows(rows, func(row pgx.CollectableRow) (exclusion, error) {
+		var e exclusion
+		return e, row.Scan(&e.route, &e.project, &e.asset)
+	})
+	if err != nil {
 		return err
 	}
-	for i := range routes {
-		if len(routes[i].ProjectIDs) == 0 {
-			continue
+	offProjects := map[int64]map[int64]bool{} // route -> projects it is off for
+	offAssets := map[int64]map[int64]bool{}   // route -> assets it is off for
+	var ids []int64
+	for _, e := range excl {
+		if e.project > 0 {
+			if offProjects[e.route] == nil {
+				offProjects[e.route] = map[int64]bool{}
+			}
+			offProjects[e.route][e.project] = true
+			ids = append(ids, e.project)
+		} else {
+			if offAssets[e.route] == nil {
+				offAssets[e.route] = map[int64]bool{}
+			}
+			offAssets[e.route][e.asset] = true
 		}
-		routes[i].ProjectAssets = map[int64]bool{}
-		routes[i].AssetProject = map[int64]int64{}
-		for _, p := range routes[i].ProjectIDs {
-			for _, a := range byProject[p] {
-				routes[i].ProjectAssets[a] = true
-				if routes[i].AssetProject[a] == 0 {
-					routes[i].AssetProject[a] = p
+	}
+	for _, r := range routes {
+		ids = append(ids, r.ProjectIDs...)
+	}
+	byProject := map[int64][]int64{}
+	inProjects := map[int64][]int64{} // asset -> its active projects, for the assets of the projects above
+	if len(ids) > 0 {
+		rows, err := s.Pool.Query(ctx, `SELECT pa.project_id, pa.asset_id FROM project_assets pa JOIN projects p ON p.id = pa.project_id
+			WHERE p.archived_at IS NULL AND pa.asset_id IN (SELECT asset_id FROM project_assets WHERE project_id = ANY($1))`, ids)
+		if err != nil {
+			return err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var p, a int64
+			if err := rows.Scan(&p, &a); err != nil {
+				return err
+			}
+			byProject[p] = append(byProject[p], a)
+			inProjects[a] = append(inProjects[a], p)
+		}
+		if err := rows.Err(); err != nil {
+			return err
+		}
+	}
+	for i := range routes {
+		r := &routes[i]
+		off := offProjects[r.ID]
+		switch {
+		case len(r.ProjectIDs) > 0:
+			r.ProjectAssets = map[int64]bool{}
+			r.AssetProject = map[int64]int64{}
+			for _, p := range r.ProjectIDs {
+				if off[p] {
+					continue
+				}
+				for _, a := range byProject[p] {
+					r.ProjectAssets[a] = true
+					if r.AssetProject[a] == 0 {
+						r.AssetProject[a] = p
+					}
 				}
 			}
+		case r.OwnerAssetID != nil:
+			r.ProjectAssets = map[int64]bool{*r.OwnerAssetID: true}
+		case len(off) > 0:
+			// The whole organisation's rule: an asset is left out when every
+			// project it is in turned the rule off.
+			for p := range off {
+				for _, a := range byProject[p] {
+					all := true
+					for _, q := range inProjects[a] {
+						all = all && off[q]
+					}
+					if all {
+						if r.Excluded == nil {
+							r.Excluded = map[int64]bool{}
+						}
+						r.Excluded[a] = true
+					}
+				}
+			}
+		}
+		for a := range offAssets[r.ID] {
+			if r.Excluded == nil {
+				r.Excluded = map[int64]bool{}
+			}
+			r.Excluded[a] = true
 		}
 	}
 	return nil
@@ -353,6 +480,17 @@ func (s *Store) GetRoute(ctx context.Context, id int64) (*Route, error) {
 	}
 	r, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Route])
 	return r, notFound(err)
+}
+
+// ListOwnedRoutes lists the routes of one owner (the organisation's when
+// owner is empty).
+func (s *Store) ListOwnedRoutes(ctx context.Context, owner Owner) ([]Route, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT `+routeCols+` FROM routes
+		WHERE owner_project_id IS NOT DISTINCT FROM $1 AND owner_asset_id IS NOT DISTINCT FROM $2 ORDER BY name`, owner.ProjectID, owner.AssetID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[Route])
 }
 
 // SaveRoute inserts (ID == 0) or replaces a route.
@@ -403,14 +541,23 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 		}
 	}
 	if r.ID == 0 {
+		// A project's route is limited to it; an asset's names no project.
+		if r.OwnerProjectID != nil {
+			r.ProjectIDs = []int64{*r.OwnerProjectID}
+			args[17] = r.ProjectIDs
+		} else if r.OwnerAssetID != nil {
+			r.ProjectIDs = []int64{}
+			args[17] = r.ProjectIDs
+		}
 		rows, err = s.Pool.Query(ctx, `INSERT INTO routes (name, channel_id, enabled, min_priority, sos_only, kinds, environments,
 			team_ids, escalation, send_resolved, quiet_start, quiet_end, timezone, max_per_hour, mode, summary_time, summary_day, project_ids,
-			project_enabled, events, event_channels, new_min_priority, summary_updates)
-			VALUES ($1,$2,$3 AND cardinality($18::bigint[]) = 0,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
-			  $3 AND cardinality($18::bigint[]) > 0, $19, $20, $21, $22) RETURNING `+routeCols, args...)
+			project_enabled, events, event_channels, new_min_priority, summary_updates, owner_project_id, owner_asset_id, inherits_route_id)
+			VALUES ($1,$2,$3 AND cardinality($18::bigint[]) = 0 AND $24::bigint IS NULL,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,
+			  $3 AND (cardinality($18::bigint[]) > 0 OR $24::bigint IS NOT NULL), $19, $20, $21, $22, $23, $24, $25) RETURNING `+routeCols,
+			append(args, r.OwnerProjectID, r.OwnerAssetID, r.InheritsRouteID)...)
 	} else {
-		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3 AND cardinality($18::bigint[]) = 0,
-			project_enabled = $3 AND cardinality($18::bigint[]) > 0, min_priority=$4, sos_only=$5, kinds=$6,
+		rows, err = s.Pool.Query(ctx, `UPDATE routes SET name=$1, channel_id=$2, enabled=$3 AND cardinality($18::bigint[]) = 0 AND owner_asset_id IS NULL,
+			project_enabled = $3 AND (cardinality($18::bigint[]) > 0 OR owner_asset_id IS NOT NULL), min_priority=$4, sos_only=$5, kinds=$6,
 			environments=$7, team_ids=$8, escalation=$9, send_resolved=$10, quiet_start=$11, quiet_end=$12, timezone=$13, max_per_hour=$14,
 			mode=$15, summary_time=$16, summary_day=$17, project_ids=$18, events=$19, event_channels=$20, new_min_priority=$21,
 			summary_updates=$22
@@ -429,12 +576,81 @@ func (s *Store) SaveRoute(ctx context.Context, r Route) (*Route, error) {
 	return out, notFound(err)
 }
 
+// DeleteRoute deletes a route. A project's or asset's copy of an inherited
+// rule takes its turn-off with it: the inherited rule applies there again.
 func (s *Store) DeleteRoute(ctx context.Context, id int64) error {
-	tag, err := s.Pool.Exec(ctx, `DELETE FROM routes WHERE id = $1`, id)
-	if err == nil && tag.RowsAffected() == 0 {
-		return ErrNotFound
+	return pgx.BeginTxFunc(ctx, s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		if _, err := tx.Exec(ctx, `DELETE FROM route_exclusions e USING routes r
+			WHERE r.id = $1 AND e.route_id = r.inherits_route_id
+			  AND e.project_id IS NOT DISTINCT FROM r.owner_project_id AND e.asset_id IS NOT DISTINCT FROM r.owner_asset_id`, id); err != nil {
+			return err
+		}
+		tag, err := tx.Exec(ctx, `DELETE FROM routes WHERE id = $1`, id)
+		if err == nil && tag.RowsAffected() == 0 {
+			return ErrNotFound
+		}
+		return err
+	})
+}
+
+// RouteExclusion is an inherited rule turned off for a project or asset.
+type RouteExclusion struct {
+	RouteID   int64     `json:"route_id"`
+	ProjectID *int64    `json:"project_id"`
+	AssetID   *int64    `json:"asset_id"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// RouteExclusions lists the rules turned off for an owner (a project or
+// an asset).
+func (s *Store) RouteExclusions(ctx context.Context, owner Owner) ([]RouteExclusion, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT route_id, project_id, asset_id, created_at FROM route_exclusions
+		WHERE project_id IS NOT DISTINCT FROM $1 AND asset_id IS NOT DISTINCT FROM $2 ORDER BY route_id`, owner.ProjectID, owner.AssetID)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[RouteExclusion])
+}
+
+// SetRouteExcluded turns a route off (off true) or on again for a project
+// or an asset.
+func (s *Store) SetRouteExcluded(ctx context.Context, routeID int64, owner Owner, off bool, by int64) error {
+	if owner.Org() {
+		return fmt.Errorf("a rule is turned off for a project or an asset: %w", ErrInvalid)
+	}
+	if !off {
+		_, err := s.Pool.Exec(ctx, `DELETE FROM route_exclusions WHERE route_id = $1
+			AND project_id IS NOT DISTINCT FROM $2 AND asset_id IS NOT DISTINCT FROM $3`, routeID, owner.ProjectID, owner.AssetID)
+		return err
+	}
+	var byp *int64
+	if by > 0 {
+		byp = &by
+	}
+	_, err := s.Pool.Exec(ctx, `INSERT INTO route_exclusions (route_id, project_id, asset_id, created_by) VALUES ($1, $2, $3, $4)
+		ON CONFLICT DO NOTHING`, routeID, owner.ProjectID, owner.AssetID, byp)
+	if isForeignKey(err) {
+		return fmt.Errorf("no such rule, project or asset: %w", ErrNotFound)
 	}
 	return err
+}
+
+// CustomiseRoute replaces an inherited rule for an owner with a copy of
+// it: the copy is saved as the owner's and the inherited rule is turned
+// off there (the copy is deleted again if that fails). It returns the copy.
+func (s *Store) CustomiseRoute(ctx context.Context, copy Route, by int64) (*Route, error) {
+	if copy.InheritsRouteID == nil || copy.Owner().Org() {
+		return nil, fmt.Errorf("a copy names the rule it replaces and its project or asset: %w", ErrInvalid)
+	}
+	out, err := s.SaveRoute(ctx, copy)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.SetRouteExcluded(ctx, *copy.InheritsRouteID, copy.Owner(), true, by); err != nil {
+		_, _ = s.Pool.Exec(context.WithoutCancel(ctx), `DELETE FROM routes WHERE id = $1`, out.ID)
+		return nil, err
+	}
+	return out, nil
 }
 
 type Delivery struct {

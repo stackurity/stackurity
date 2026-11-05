@@ -13,7 +13,7 @@ An organisation (a workspace; the API, CLI and database keep that name) groups i
 | `access_grants` | A role (`viewer`, `engineer`, `security`, `admin`) for a person (`user_id`) or a team (`team_id`) on a project (`project_id`) or one asset (`asset_id`); exactly one of each pair |
 | `workspace_members.role` | Now nullable: NULL is a member with **project access only** |
 | `workspace_members.default_project_id` | The project the person chose last in the switcher |
-| `routes.project_ids` | A notification route limited to these projects' assets |
+| `routes.project_ids` | A notification route limited to these projects' assets (see [Notifications of projects and assets](#notifications-of-projects-and-assets-migration-0096) for owners) |
 
 Every new table has `workspace_id` defaulting to `stackurity_ws()`, row-level security with the usual `ws` and `sys` policies, and the same-workspace triggers of migration 0025 on every reference, so a grant can never name another workspace's project, asset, team or person.
 
@@ -73,6 +73,26 @@ A route to a Jira channel may name one project (two or more: 400, one route per 
 - **What is kept workspace-wide.** `route_issues` rows, like `incident_issues`, are hidden from narrowed connections (RLS) and written with the dispatcher's workspace connection; the store refuses narrowed callers. Deliveries carry only the incident id and `project_id`; the text is built when the issue is created or updated, after the route is read again (a delivery queued before the route moved to another project or channel, or was deleted, is dropped).
 - **When.** An incident gets an issue when the project's part has an active finding outside a first-scan backlog that matches the route's filters, and it was announced, or the project's finding appeared or came back, after the route was created. Updates follow the project's part (priority, finding and asset counts); it is resolved, with the resolve transition, when none of the project's findings remain open, and gets an "open again" comment if they return. Routes with `escalation` comment escalations of incidents whose part matches.
 - **Who sees the links.** Organisation-wide roles see them on the incident with `project_id`; members with project access see no tracker links, as before.
+
+## Notifications of projects and assets (migration 0096)
+
+Like groups and projects in GitLab: settings made for the organisation apply to every project and asset, and a project or asset can change them for itself.
+
+| Table / column | What it holds |
+| --- | --- |
+| `routes.owner_project_id`, `routes.owner_asset_id` | The rule's owner; both NULL for the organisation's. A project's rule has `project_ids = {owner}` (check constraint); an asset's has none and covers that asset |
+| `routes.inherits_route_id` | A project's or asset's copy of an inherited rule ("Edit for this project") |
+| `channels.owner_project_id`, `channels.owner_asset_id` | The channel's owner |
+| `route_exclusions` | An inherited rule turned off for a project or an asset |
+| `slack_oauth_states.owner_project_id`, `teams_install_codes.owner_project_id` | Add to Slack / Teams started from a project: the channel it makes is the project's |
+| `settings` key `notify_project_chat_apps` | Whether project admins may connect their own Slack or Teams workspace (off by default) |
+
+- **What a rule covers.** `ListRoutes` fills each rule's assets (`Route.Covers`): a rule limited to projects covers their active assets, minus projects it is turned off for; an asset's rule covers that asset; the organisation's rule covers every asset except those all of whose active projects turned it off, and except assets it is turned off for directly. Everything the dispatcher filters per asset (`assetInScope`, `incidentInProjects`) and the second lock (`outsideProjects`) go through `Covers`, so a rule never names an asset it does not cover. Problems of no asset (feeds, the platform) go to rules not limited to projects or an asset, including the organisation's rules turned off somewhere.
+- **Trackers.** Jira, PagerDuty and ServiceNow records describe whole incidents: a rule to one turned off for a project creates no record for an incident all of whose assets it is off for. An asset's rule cannot send to a tracker, and a PagerDuty or ServiceNow rule cannot be edited for a project (only turned off). A project's Jira rule keeps its project issues as in 0.10.
+- **Who.** `GET/POST/PUT/DELETE /projects/{id}/notifications/…` and `/assets/{id}/notifications/…` are scoped routes: the handler reads the project or asset under the caller's row-level security (404 when not visible) and checks the role on it (`ProjectGrantRole` for a project, `GrantRoleOn` for an asset, capped by the token): security reads, admin changes. Owner fields in request bodies are ignored; a rule's owner is set when it is created. Rules send to the organisation's channels or their owner's own (an asset's also to its projects'); the organisation's rules to the organisation's only. Without an organisation-wide admin role, a project admin adds only Stackurity email channels (other kinds read the organisation's stored secrets) and changes only names and switches of other channels.
+- **Slack and Teams.** `POST /projects/{id}/notifications/slack/install` and `…/teams/install` need the setting (or an organisation-wide admin). The state or code records the project; `POST /integrations/slack/oauth` (now open to members with project access) and the Teams bot check the role and the setting again when the install finishes, and make the project's channel. A Slack or Teams channel already connected for another project or asset is refused.
+- **Once per channel.** Within one planning pass the dispatcher sends a message once per channel (`sentAlready`, comparing the message without the rule's name and time), so a rule and a project's copy of it, or an asset in two projects, do not send the same message twice.
+- **Migration.** A route limited to exactly one project becomes that project's; nothing it sends changes.
 
 ## Grouping suggestions
 

@@ -111,6 +111,7 @@ export function AddToSlackButton({
   variant = "primary",
   label = "Add to Slack",
   title,
+  startPath = "/integrations/slack/install",
 }: {
   returnTo: string;
   beforeRedirect?: () => void;
@@ -118,11 +119,13 @@ export function AddToSlackButton({
   variant?: "primary" | "link";
   label?: string;
   title?: string;
+  /** Where the install starts: a project's Add to Slack makes the project's channel. */
+  startPath?: string;
 }) {
   const act = useAction();
   const go = async () => {
     beforeRedirect?.();
-    const r = await act.run(() => api.post<{ url: string }>("/integrations/slack/install", { return_to: returnTo }));
+    const r = await act.run(() => api.post<{ url: string }>(startPath, { return_to: returnTo }));
     if (r?.url) window.location.assign(r.url);
   };
   const button = (

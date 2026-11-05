@@ -80,7 +80,7 @@ import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/Int
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
 import { VexDocumentPage, VexPage } from "./pages/settings/Vex";
-import { ProjectDetailPage, ProjectsPage } from "./pages/settings/Projects";
+import { ProjectDetailPage, ProjectNotificationsIndexPage, ProjectNotificationsPage, ProjectsPage } from "./pages/settings/Projects";
 
 // The help articles are large and rarely needed, so they load on demand.
 const HelpPage = lazy(() => import("./pages/Help").then((m) => ({ default: m.HelpPage })));
@@ -390,6 +390,8 @@ export function App() {
             </RequireRole>
           }
         />
+        <Route path="projects/:id/notifications" element={<ProjectNotificationsPage />} />
+        <Route path="project-notifications" element={<ProjectNotificationsIndexPage />} />
         <Route
           path="assets/conflicts"
           element={

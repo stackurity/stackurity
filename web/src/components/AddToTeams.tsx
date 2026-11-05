@@ -14,7 +14,14 @@ import { CopyBox, ErrorBox } from "./ui";
 
 const POLL_MS = 3000;
 
-export function AddToTeams({ onConnected }: { onConnected: (c: Channel) => void }) {
+export function AddToTeams({
+  onConnected,
+  startPath = "/integrations/teams/install",
+}: {
+  onConnected: (c: Channel) => void;
+  /** Where the code is made: a project's Add to Teams makes the project's channel. */
+  startPath?: string;
+}) {
   const act = useAction();
   const [start, setStart] = useState<TeamsInstallStart | null>(null);
   const [status, setStatus] = useState<TeamsInstallStatus["status"]>("pending");
@@ -22,7 +29,7 @@ export function AddToTeams({ onConnected }: { onConnected: (c: Channel) => void 
   connected.current = onConnected;
 
   const begin = async () => {
-    const r = await act.run(() => api.post<TeamsInstallStart>("/integrations/teams/install", {}));
+    const r = await act.run(() => api.post<TeamsInstallStart>(startPath, {}));
     if (r) {
       setStatus("pending");
       setStart(r);

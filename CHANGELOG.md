@@ -6,9 +6,18 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Notifications for each project and asset, like groups and projects in GitLab.** The organisation's rules still apply to every project and asset, and each project (and asset) now has **Notifications**: the rules it inherits, each **On**, **Off for this project** or **Edited for this project** (**Turn off for this project**, **Edit for this project**, **Use the organisation's rule again**), rules of its own (**Add rule**), and channels of its own (**Add email**, and **Connect Slack** / **Connect Teams**). So the backend, frontend and server teams of one organisation each get their own alerts instead of everyone getting everything. A project's admins (an organisation-wide admin, or the admin role on the project) manage it, also without an organisation-wide role, on the project's page or under **Assets → Project notifications**; security can read it. A rule sends to the organisation's channels or its own project's or asset's, and never names an asset outside its scope. The same message to the same channel is sent once. Webhooks, Jira, PagerDuty and ServiceNow use stored secrets, so an organisation admin adds them for a project.
+- **Projects can connect their own Slack or Teams, if the organisation allows it.** A new organisation setting, **Projects can connect their own Slack or Teams** (Integrations, off by default, organisation admins only). While it is off, a project admin sees **Connect Slack** and **Connect Teams** greyed out with the organisation's admins to ask; the API answers 403. New `GET`/`PUT /api/v1/settings/notifications`, `/api/v1/projects/{id}/notifications/…` and `/api/v1/assets/{id}/notifications/…` ([Notifications of projects and assets](docs/api.md#notifications-of-projects-and-assets)).
+
 ### Changed
 
 - **Clearer settings and pages.** Every settings card now says what it is for, each setting sits on its own row with a line on what changing it does, and options show their meaning under their name instead of on the same line. What a setting means right now ("3 members will be asked to set up a second factor") and Save sit together at the bottom of the card, and side notes are in a separate Good to know box. Pages covered: People (members list first, then invitations and the two-factor policy), Teams, Owner rules, Account, Risk policy (grouped scores with what each number does, a plain sentence for each SOS rule), Fix grouping, VEX, Usage, Billing, Single sign-on, Conflicts, the admin pages, integration set-up (trigger events and notification settings as separate sections), API tokens, sources, adding servers and clusters, and the asset, component, outcomes, coverage, reports and data-source pages. Behaviour and API calls are unchanged. The layout rules are in web/UI-PATTERNS.md.
+
+### Upgrading
+
+- Migration 0096 gives rules and channels an owner. **A rule limited to exactly one project becomes that project's rule**: it sends exactly what it sent before, and that project's admins can now change it. Rules limited to several projects, or to none, stay the organisation's. A new rule created with one project in `project_ids` is that project's too. A rule of the organisation can no longer send to a project's channel.
 
 ## 0.17.1
 

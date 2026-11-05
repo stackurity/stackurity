@@ -233,6 +233,12 @@ func (s *Server) slackRedirectURL() string { return s.baseURL() + "/integrations
 // startSlackInstall begins "Add to Slack": a single-use state bound to the
 // organisation and the person, and Slack's consent page to send them to.
 func (s *Server) startSlackInstall(w http.ResponseWriter, r *http.Request) {
+	s.startSlackInstallFor(w, r, nil)
+}
+
+// startSlackInstallFor is startSlackInstall for a project's channel
+// (project nil: the organisation's).
+func (s *Server) startSlackInstallFor(w http.ResponseWriter, r *http.Request, project *int64) {
 	app := s.slackApp()
 	if app == nil {
 		writeError(w, 404, "not_configured", "the Stackurity Slack app is not set up on this server; use a webhook")
@@ -257,7 +263,7 @@ func (s *Server) startSlackInstall(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	state, err := s.Store.CreateSlackOAuthState(r.Context(), userID(principal(r)), safeReturn(req.ReturnTo))
+	state, err := s.Store.CreateSlackOAuthState(r.Context(), userID(principal(r)), safeReturn(req.ReturnTo), project)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -323,7 +329,7 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	p := principal(r)
-	returnTo, err := s.Store.ClaimSlackOAuthState(ctx, req.State, userID(p))
+	returnTo, project, err := s.Store.ClaimSlackOAuthState(ctx, req.State, userID(p))
 	if err != nil {
 		if errors.Is(err, store.ErrSlackStateInvalid) {
 			writeError(w, 400, "slack_state", err.Error())
@@ -332,6 +338,14 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	// Members with project access reach this route too (an install started
+	// from their project): the state says for whom the channel is.
+	if err := s.mayInstallFor(r, project); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	ctx = tenant.WithoutProject(ctx)
+	owner := store.Owner{ProjectID: project}
 	if req.Code == "" || len(req.Code) > 500 {
 		s.fail(w, r, badRequest("missing code"))
 		return
@@ -356,7 +370,12 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 		SlackChannel: truncate(channelName, 200), SlackChannelID: truncate(sanitizeSlackID(hook.ChannelID), 32), ConfigurationURL: truncate(hook.ConfigurationURL, 500)})
 	// The same Slack channel added again (after an uninstall, or twice):
 	// its integration gets the new webhook and is switched on again.
-	if cur, err := s.Store.SlackAppChannel(ctx, in.Team.ID, sanitizeSlackID(hook.ChannelID)); err == nil {
+	cur, err := s.Store.SlackAppChannel(ctx, in.Team.ID, sanitizeSlackID(hook.ChannelID))
+	if err == nil && !cur.Owner().Org() && !cur.Owner().Same(owner) {
+		writeError(w, 409, "conflict", "this Slack channel is already connected for another project or asset; pick another channel, or ask an organisation admin")
+		return
+	}
+	if err == nil {
 		name := strings.TrimPrefix(cur.SecretRef, "secret:")
 		if !strings.HasPrefix(name, "slack-app-") {
 			name = "slack-app-channel-" + itoa(cur.ID)
@@ -381,7 +400,7 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	name := truncate("Slack "+channelName+" ("+in.Team.Name+")", 100)
-	ch, err := s.createUniqueChannel(ctx, notify.KindSlack, name, cfg, "secret:slack-app-pending")
+	ch, err := s.createUniqueChannel(ctx, owner, notify.KindSlack, name, cfg, "secret:slack-app-pending")
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -406,10 +425,10 @@ func (s *Server) finishSlackInstall(w http.ResponseWriter, r *http.Request) {
 
 // createUniqueChannel creates a channel, adding " 2", " 3"... to the name
 // when it is taken.
-func (s *Server) createUniqueChannel(ctx context.Context, kind, name string, cfg json.RawMessage, ref string) (*store.Channel, error) {
+func (s *Server) createUniqueChannel(ctx context.Context, owner store.Owner, kind, name string, cfg json.RawMessage, ref string) (*store.Channel, error) {
 	try := name
 	for i := 2; ; i++ {
-		ch, err := s.Store.CreateChannel(ctx, kind, try, cfg, ref)
+		ch, err := s.Store.CreateOwnedChannel(ctx, owner, kind, try, cfg, ref)
 		if !errors.Is(err, store.ErrConflict) || i > 50 {
 			return ch, err
 		}

@@ -25,6 +25,7 @@ import {
   type Team,
 } from "../api";
 import { OwnerRulesCard } from "../components/Owners";
+import { ScopeNotificationsCard } from "../components/ScopeNotifications";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useLoad } from "../hooks";
 import { absTime, componentName, humanize, plural } from "../format";
@@ -347,6 +348,7 @@ export function AssetDetailPage() {
         <OwnershipCard asset={a} editable={canAct("engineer")} onSaved={det.reload} />
         <OwnerRulesCard assetId={a.id} />
       </div>
+      {canAct("security") && <ScopeNotificationsCard kind="asset" id={a.id} orgAdmin={can("admin")} />}
 
       </details>
 

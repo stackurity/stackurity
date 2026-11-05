@@ -323,7 +323,7 @@ func (s *Server) savePagerDutyChannel(ctx context.Context, region string, in *no
 		return nil, false, err
 	}
 	raw, _ := json.Marshal(cfg)
-	ch, err := s.createUniqueChannel(ctx, notify.KindPagerDuty, truncate("PagerDuty "+name, 100), raw, "secret:pagerduty-app-pending")
+	ch, err := s.createUniqueChannel(ctx, store.Owner{}, notify.KindPagerDuty, truncate("PagerDuty "+name, 100), raw, "secret:pagerduty-app-pending")
 	if err != nil {
 		return nil, false, err
 	}

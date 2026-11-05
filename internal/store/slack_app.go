@@ -23,8 +23,9 @@ const SlackOAuthTTL = 10 * time.Minute
 var ErrSlackStateInvalid = errors.New("this Slack link is not valid any more; start Add to Slack again")
 
 // CreateSlackOAuthState starts an install for a person of the context's
-// workspace and returns the state to send to Slack.
-func (s *Store) CreateSlackOAuthState(ctx context.Context, userID int64, returnTo string) (string, error) {
+// workspace and returns the state to send to Slack. project (nil: the
+// organisation) owns the channel the install makes.
+func (s *Store) CreateSlackOAuthState(ctx context.Context, userID int64, returnTo string, project *int64) (string, error) {
 	b := make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
 		return "", err
@@ -34,23 +35,25 @@ func (s *Store) CreateSlackOAuthState(ctx context.Context, userID int64, returnT
 	if _, err := s.Pool.Exec(ctx, `DELETE FROM slack_oauth_states WHERE expires_at < now() - interval '1 day'`); err != nil {
 		return "", err
 	}
-	_, err := s.Pool.Exec(ctx, `INSERT INTO slack_oauth_states (state_hash, user_id, return_to, expires_at)
-		VALUES ($1, $2, $3, now() + make_interval(secs => $4))`, sum[:], userID, returnTo, SlackOAuthTTL.Seconds())
+	_, err := s.Pool.Exec(ctx, `INSERT INTO slack_oauth_states (state_hash, user_id, return_to, expires_at, owner_project_id)
+		VALUES ($1, $2, $3, now() + make_interval(secs => $4), $5)`, sum[:], userID, returnTo, SlackOAuthTTL.Seconds(), project)
 	return state, err
 }
 
 // ClaimSlackOAuthState uses a state once: it must be unexpired and started
 // by the same person in the context's workspace (row-level security keeps
-// other workspaces' states out). It returns where to send the person back.
-func (s *Store) ClaimSlackOAuthState(ctx context.Context, state string, userID int64) (string, error) {
+// other workspaces' states out). It returns where to send the person back
+// and the project the install was started for (nil: the organisation).
+func (s *Store) ClaimSlackOAuthState(ctx context.Context, state string, userID int64) (string, *int64, error) {
 	sum := sha256.Sum256([]byte(state))
 	var returnTo string
+	var project *int64
 	err := s.Pool.QueryRow(ctx, `UPDATE slack_oauth_states SET used_at = now()
-		WHERE state_hash = $1 AND user_id = $2 AND used_at IS NULL AND expires_at > now() RETURNING return_to`, sum[:], userID).Scan(&returnTo)
+		WHERE state_hash = $1 AND user_id = $2 AND used_at IS NULL AND expires_at > now() RETURNING return_to, owner_project_id`, sum[:], userID).Scan(&returnTo, &project)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return "", ErrSlackStateInvalid
+		return "", nil, ErrSlackStateInvalid
 	}
-	return returnTo, err
+	return returnTo, project, err
 }
 
 // SlackInstallation is the app installed in a Slack workspace from an

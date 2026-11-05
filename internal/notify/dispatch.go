@@ -260,6 +260,7 @@ func (d *Dispatcher) PlatformFallback(ctx context.Context) error {
 // grouped.go) and, for Jira channels, issue creation and updates per
 // incident.
 func (d *Dispatcher) Plan(ctx context.Context) error {
+	ctx = withSentOnce(ctx)
 	routes, err := d.routes(ctx)
 	if err != nil {
 		return err
@@ -345,7 +346,7 @@ func (d *Dispatcher) Plan(ctx context.Context) error {
 			continue // in the daily and weekly summaries only
 		}
 		for _, r := range routes {
-			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] {
+			if !tracker[r.ChannelID] || r.Escalation || !routeMatches(r, in) || issued[in.ID][r.ChannelID] || excludedIncident(r, rows[in.ID]) {
 				continue
 			}
 			r := r
@@ -568,9 +569,15 @@ func (d *Dispatcher) planOverdue(ctx context.Context, routes []store.Route, trac
 			continue
 		}
 		if tracker[r.ChannelID] {
+			var parts map[int64][]store.IssueCount
+			if len(r.Excluded) > 0 {
+				if parts, err = d.incidentParts(ctx, ids); err != nil {
+					return err
+				}
+			}
 			for _, in := range incs {
 				in.EscalationLevel = esc[in.ID]
-				if !routeMatches(r, in) {
+				if !routeMatches(r, in) || excludedIncident(r, parts[in.ID]) {
 					continue
 				}
 				key := fmt.Sprintf("incident:%d:escalated:%d", in.ID, in.EscalationLevel)
@@ -695,13 +702,43 @@ func (d *Dispatcher) planIssueUpdates(ctx context.Context) error {
 	return nil
 }
 
+// excludedIncident reports whether a rule turned off for some projects or
+// assets is off for every asset of an incident (given as its per-asset
+// counts): its tracker record, which describes the whole incident, is then
+// not for this rule.
+func excludedIncident(r store.Route, counts []store.IssueCount) bool {
+	if len(r.Excluded) == 0 || len(counts) == 0 {
+		return false
+	}
+	for _, c := range counts {
+		if !r.Excluded[c.AssetID] {
+			return false
+		}
+	}
+	return true
+}
+
+// incidentParts reads the per-asset counts of incidents.
+func (d *Dispatcher) incidentParts(ctx context.Context, ids []int64) (map[int64][]store.IssueCount, error) {
+	counts, err := d.Store.IncidentIssues(ctx, ids)
+	if err != nil {
+		return nil, err
+	}
+	out := map[int64][]store.IssueCount{}
+	for _, c := range counts {
+		out[c.IncidentID] = append(out[c.IncidentID], c)
+	}
+	return out, nil
+}
+
 // routeMatches applies a route's filters. Resolved and escalation events use
 // the priority the incident reached.
 func routeMatches(r store.Route, in store.Incident) bool {
 	// Tracker issues describe the whole incident, across every asset, so a
 	// route limited to projects never creates or updates them: it keeps
-	// issues of its own about its project's part (jira_projects.go).
-	if len(r.ProjectIDs) > 0 || !inScope(r, in) {
+	// issues of its own about its project's part (jira_projects.go). An
+	// asset's route has none.
+	if r.Limited() || !inScope(r, in) {
 		return false
 	}
 	pri := in.Priority
@@ -1080,6 +1117,7 @@ func (d *Dispatcher) SendTest(ctx context.Context, ch *store.Channel) error {
 // that has no summary (urgent only) and, for held messages whose route was
 // deleted, one digest per channel.
 func (d *Dispatcher) Digest(ctx context.Context) error {
+	ctx = withSentOnce(ctx)
 	routes, err := d.routes(ctx)
 	if err != nil {
 		return err

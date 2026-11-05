@@ -60,8 +60,9 @@ type TeamsInstallCode struct {
 }
 
 // CreateTeamsInstallCode makes a code for a person of the context's
-// workspace. Their earlier unused codes stop working.
-func (s *Store) CreateTeamsInstallCode(ctx context.Context, userID int64) (*TeamsInstallCode, error) {
+// workspace. Their earlier unused codes stop working. project (nil: the
+// organisation) owns the channel the code connects.
+func (s *Store) CreateTeamsInstallCode(ctx context.Context, userID int64, project *int64) (*TeamsInstallCode, error) {
 	b := make([]byte, TeamsCodeLength)
 	if _, err := rand.Read(b); err != nil {
 		return nil, err
@@ -84,9 +85,9 @@ func (s *Store) CreateTeamsInstallCode(ctx context.Context, userID int64) (*Team
 			OR (user_id = $1 AND used_at IS NULL)`, userID); err != nil {
 			return err
 		}
-		return tx.QueryRow(ctx, `INSERT INTO teams_install_codes (code_hash, user_id, expires_at)
-			VALUES ($1, $2, now() + make_interval(secs => $3)) RETURNING id, expires_at`,
-			teamsCodeHash(out.Code), userID, TeamsCodeTTL.Seconds()).Scan(&out.ID, &out.ExpiresAt)
+		return tx.QueryRow(ctx, `INSERT INTO teams_install_codes (code_hash, user_id, expires_at, owner_project_id)
+			VALUES ($1, $2, now() + make_interval(secs => $3), $4) RETURNING id, expires_at`,
+			teamsCodeHash(out.Code), userID, TeamsCodeTTL.Seconds(), project).Scan(&out.ID, &out.ExpiresAt)
 	})
 	if err != nil {
 		return nil, err
@@ -99,6 +100,8 @@ type TeamsInstallClaim struct {
 	ID        int64
 	Workspace int64
 	UserID    int64
+	// ProjectID: the project the code was made for (nil: the organisation).
+	ProjectID *int64
 }
 
 // ClaimTeamsInstallCode uses a code once, from Teams (system scope: the
@@ -111,8 +114,8 @@ func (s *Store) ClaimTeamsInstallCode(ctx context.Context, code, tenantID string
 	}
 	var c TeamsInstallClaim
 	err := s.Pool.QueryRow(tenant.System(ctx), `UPDATE teams_install_codes SET used_at = now(), tenant_id = $2
-		WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING id, workspace_id, user_id`,
-		teamsCodeHash(code), truncateText(tenantID, 64)).Scan(&c.ID, &c.Workspace, &c.UserID)
+		WHERE code_hash = $1 AND used_at IS NULL AND expires_at > now() RETURNING id, workspace_id, user_id, owner_project_id`,
+		teamsCodeHash(code), truncateText(tenantID, 64)).Scan(&c.ID, &c.Workspace, &c.UserID, &c.ProjectID)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrTeamsCodeInvalid
 	}

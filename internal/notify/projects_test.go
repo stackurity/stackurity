@@ -197,3 +197,78 @@ func TestProjectRouteOffForOlderReleases(t *testing.T) {
 		}
 	}
 }
+
+// A rule turned off for a project (an organisation's rule a project does
+// not want, migration 0096) tells its channel nothing about the assets it
+// is off for, and still about the others and about problems of no asset.
+func TestRouteTurnedOffForProject(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	f.addAsset("shop-web", "production", true)
+	f.addAsset("other-web", "production", true)
+	p, err := f.st.CreateProject(ctx, "Shop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.AddProjectAssets(ctx, p.ID, []int64{f.asset["shop-web"]}); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ := f.st.ListRoutes(ctx)
+	if err := f.st.SetRouteExcluded(ctx, routes[0].ID, store.Owner{ProjectID: &p.ID}, true, 0); err != nil {
+		t.Fatal(err)
+	}
+	routes, _ = f.st.ListRoutes(ctx)
+	if r := routes[0]; r.Covers(f.asset["shop-web"]) || !r.Covers(f.asset["other-web"]) || r.Limited() || !r.Narrowed() {
+		t.Fatalf("route scope: %+v", r)
+	}
+	if !inScope(routes[0], store.Incident{Kind: "feed", Key: "osv:npm"}) {
+		t.Error("a rule turned off for one project stopped hearing about feed problems")
+	}
+
+	// An issue on the project's asset only: nothing.
+	f.findingsOn(map[string][]string{"shop-web": {"CVE-2021-23337"}})
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 0 {
+		t.Fatalf("an issue on a project the rule is off for was announced: %v", ev)
+	}
+	// On both: the alert names the other asset only.
+	f.findingsOn(map[string][]string{"shop-web": {"CVE-2021-23337"}, "other-web": {"CVE-2020-8203"}})
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 1 || !strings.HasPrefix(ev[0], "urgent") {
+		t.Fatalf("want one urgent alert: %v", ev)
+	}
+	for _, m := range f.hook.got {
+		if b, _ := json.Marshal(m); strings.Contains(string(b), "shop-web") {
+			t.Errorf("%s message names an asset of the project the rule is off for: %s", m.Event, b)
+		}
+	}
+}
+
+// Two rules that build the same message for the same channel (a rule and
+// a project's copy of it, or an asset in two projects) send it once.
+func TestSameMessageSentOnce(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	f.addAsset("web", "production", true)
+	routes, _ := f.st.ListRoutes(ctx)
+	twin := routes[0]
+	twin.ID, twin.Name = 0, "twin"
+	if _, err := f.st.SaveRoute(ctx, twin); err != nil {
+		t.Fatal(err)
+	}
+	f.findingsOn(map[string][]string{"web": {"CVE-2021-23337"}})
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 1 {
+		t.Fatalf("two rules to one channel: want one message, got %v", ev)
+	}
+
+	// Within one pass only, and per channel.
+	c := withSentOnce(ctx)
+	m := Message{Event: "urgent", Title: "x", Route: "a", At: time.Now()}
+	if sentAlready(c, 1, "urgent", m) || !sentAlready(c, 1, "urgent", Message{Event: "urgent", Title: "x", Route: "b"}) {
+		t.Error("the same message to channel 1 was not recognised")
+	}
+	if sentAlready(c, 2, "urgent", m) || sentAlready(withSentOnce(ctx), 1, "urgent", m) || sentAlready(ctx, 1, "urgent", m) {
+		t.Error("a message to another channel, or in another pass, was held back")
+	}
+}
