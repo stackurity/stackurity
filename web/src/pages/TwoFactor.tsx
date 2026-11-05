@@ -5,7 +5,21 @@ import { MFA_METHODS, PASSKEY_COPIED_FIX, mustSetUpOwnFirst } from "../mfa";
 import { api, type MfaMethod, type MfaSignInMethod } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
-import { Card, CopyBox, ErrorBox, Loading, Notice, RelativeTime } from "../components/ui";
+import {
+  Card,
+  CardFooter,
+  CheckCard,
+  ChoiceCards,
+  CopyBox,
+  ErrorBox,
+  GoodToKnow,
+  Loading,
+  Notice,
+  OptionBadge,
+  RelativeTime,
+  SettingRow,
+  type ChoiceOption,
+} from "../components/ui";
 import { ProNotice } from "../components/ProNotice";
 import { createPasskey, getPasskey, passkeysSupported } from "../webauthn";
 
@@ -978,10 +992,19 @@ interface SecuritySettings {
   passkeys_unavailable?: string;
 }
 
-const POLICIES: [SecuritySettings["policy"], string, string][] = [
-  ["optional", "Optional", "Each person decides."],
-  ["everyone", "Required for everyone", "Members who sign in with a password or passkey must use a second factor."],
-  ["admins", "Required for admins and security", "Members with the admin or security role, organisation-wide or on a project."],
+const POLICIES: ChoiceOption<SecuritySettings["policy"]>[] = [
+  { value: "optional", label: "Optional", description: "Each person decides whether to turn it on for their own account." },
+  {
+    value: "everyone",
+    label: "Required for everyone",
+    description: "Everyone who signs in with a password or passkey must also confirm with a second factor.",
+    badge: <OptionBadge>Recommended</OptionBadge>,
+  },
+  {
+    value: "admins",
+    label: "Required for admins and security",
+    description: "Only people with the admin or security role (for the whole organisation or a project) must use it.",
+  },
 ];
 
 /** People → Users: who must use two-factor sign-in, and which methods count. */
@@ -1009,11 +1032,14 @@ export function RequireMfaCard() {
       void refresh();
     }
   };
+  const methodsCount = f.methods.filter((m) => m !== "email").length;
   return (
-    <Card title="Two-factor sign-in">
+    <Card
+      title="Two-factor sign-in"
+      description="Asks for a second proof of identity (a passkey or a code from an app) after the password, so a stolen password alone cannot open an account."
+    >
       <form className="form" onSubmit={save}>
         <ErrorBox error={act.error} title="Could not change the setting" />
-        <p className="small">Methods: {MFA_METHODS}.</p>
         {ownMissing && (
           <div className="mfa-own-first" id="mfa-own-first">
             <p className="small">Set up two-factor for your own account first. Requiring it now would lock you out.</p>
@@ -1022,89 +1048,89 @@ export function RequireMfaCard() {
             </Link>
           </div>
         )}
-        <fieldset className="field">
-          <legend>Who must use it</legend>
-          <ul className="choice-list">
-            {POLICIES.map(([v, label, hint]) => (
-              <li key={v}>
-                <label className="choice">
-                  <input
-                    type="radio"
-                    name="mfa-policy"
-                    checked={f.policy === v}
-                    disabled={ownMissing && v !== "optional"}
-                    aria-describedby={ownMissing && v !== "optional" ? "mfa-own-first" : undefined}
-                    onChange={() => setDraft({ ...f, policy: v })}
-                  />
-                  <span>
-                    {label}
-                    <span className="hint"> {hint}</span>
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </fieldset>
-        <fieldset className="field">
-          <legend>Methods that count</legend>
-          <div className="checks">
-            <label className="check">
-              <input type="checkbox" checked={f.methods.includes("passkey")} onChange={(e) => toggle("passkey", e.target.checked)} />
-              Passkey or security key
-            </label>
-            <label className="check">
-              <input type="checkbox" checked={f.methods.includes("totp")} onChange={(e) => toggle("totp", e.target.checked)} />
-              Authenticator app
-            </label>
-            <label className="check">
-              <input
-                type="checkbox"
-                checked={f.methods.includes("email")}
-                disabled={!d.email_available && !f.methods.includes("email")}
-                onChange={(e) => toggle("email", e.target.checked)}
-              />
-              Email code (fallback)
-            </label>
-          </div>
-          <p className="hint">
-            A recovery code counts where the passkey or app it backs up does. Email codes are only for people with no other method, and never count for admins,
-            security or instance administrators.{!d.email_available && " This server cannot send email, so they are not available."}
-          </p>
-          {!d.passkeys_available && d.passkeys_unavailable && <p className="hint">{d.passkeys_unavailable}</p>}
-        </fieldset>
-        <div className="field">
-          <label className="check">
-            <input
-              type="checkbox"
-              checked={f.phishing_resistant_admins}
-              disabled={(ownMissing || !d.phishing_resistant_available) && !f.phishing_resistant_admins}
-              onChange={(e) => setDraft({ ...f, phishing_resistant_admins: e.target.checked })}
+        <SettingRow title="Who must use it" description="People not required can still turn it on for themselves under Account.">
+          <ChoiceCards
+            name="mfa-policy"
+            legend="Who must use it"
+            options={POLICIES.map((o) => ({ ...o, disabled: ownMissing && o.value !== "optional" }))}
+            value={f.policy}
+            describedBy={ownMissing ? "mfa-own-first" : undefined}
+            onChange={(v) => setDraft({ ...f, policy: v })}
+          />
+        </SettingRow>
+        <SettingRow
+          title="Methods that count"
+          description="Which second factors meet the rule above. A recovery code counts wherever the passkey or app it backs up does."
+        >
+          <div className="choice-cards">
+            <CheckCard
+              checked={f.methods.includes("passkey")}
+              onChange={(on) => toggle("passkey", on)}
+              label="Passkey or security key"
+              description="Fingerprint, face or device PIN, or a USB key. The safest choice: it cannot be phished."
             />
-            Require phishing-resistant sign-in (passkeys only) for admins
-          </label>
-          <p className="hint">
-            {d.admins_without_passkey === 0
-              ? "Every admin has a passkey."
-              : `${d.admins_without_passkey} admin${d.admins_without_passkey === 1 ? " has" : "s have"} no passkey yet.`}
-          </p>
+            <CheckCard
+              checked={f.methods.includes("totp")}
+              onChange={(on) => toggle("totp", on)}
+              label="Authenticator app"
+              description="A 6-digit code from an app such as Google Authenticator, Microsoft Authenticator or 1Password."
+            />
+            <CheckCard
+              checked={f.methods.includes("email")}
+              disabled={!d.email_available && !f.methods.includes("email")}
+              onChange={(on) => toggle("email", on)}
+              label="Email code (fallback)"
+              description={
+                <>
+                  Only for people with no other method, and never counts for admins, security or instance administrators.
+                  {!d.email_available && " This server cannot send email, so it is not available."}
+                </>
+              }
+            />
+          </div>
+          {methodsCount === 0 && <p className="hint hint-error">Keep at least a passkey or an authenticator app.</p>}
+          {!d.passkeys_available && d.passkeys_unavailable && <p className="hint">{d.passkeys_unavailable}</p>}
+        </SettingRow>
+        <SettingRow
+          title="Passkeys only for admins"
+          badge={!d.phishing_resistant_available ? <span className="pro-badge">Enterprise</span> : undefined}
+          description="Stops admins from signing in with codes, which a fake sign-in page can trick someone into typing."
+        >
+          <CheckCard
+            checked={f.phishing_resistant_admins}
+            disabled={(ownMissing || !d.phishing_resistant_available) && !f.phishing_resistant_admins}
+            onChange={(on) => setDraft({ ...f, phishing_resistant_admins: on })}
+            label="Require phishing-resistant sign-in (passkeys only) for admins"
+            description={
+              d.admins_without_passkey === 0
+                ? "Every admin has a passkey."
+                : `${d.admins_without_passkey} admin${d.admins_without_passkey === 1 ? " has" : "s have"} no passkey yet. Ask them to add one (two is safer) before turning this on.`
+            }
+          />
           {!d.phishing_resistant_available && !f.phishing_resistant_admins && <ProNotice feature="phishing_resistant_mfa" />}
-        </div>
-        <p className="hint">
-          {d.members_needing_setup === 0
-            ? "Every member meets this policy."
-            : `${d.members_needing_setup} member${d.members_needing_setup === 1 ? "" : "s"} will be asked to set up a second factor at their next sign-in.`}{" "}
-          People who sign in with single sign-on use their identity provider&apos;s second factor instead. API tokens are not affected.
-        </p>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={!changed || act.pending}>
-            Save
-          </button>
+        </SettingRow>
+        <GoodToKnow>
+          <ul>
+            <li>People who sign in with single sign-on use their identity provider&apos;s second factor instead.</li>
+            <li>API tokens are not affected.</li>
+          </ul>
+        </GoodToKnow>
+        <CardFooter
+          status={
+            d.members_needing_setup === 0
+              ? "Every member meets this policy."
+              : `${d.members_needing_setup} member${d.members_needing_setup === 1 ? "" : "s"} will be asked to set up a second factor at their next sign-in.`
+          }
+        >
           {changed && (
             <button type="button" className="btn" onClick={() => (setDraft(null), act.clear())}>
               Cancel
             </button>
           )}
-        </div>
+          <button type="submit" className="btn btn-primary" disabled={!changed || act.pending}>
+            Save
+          </button>
+        </CardFooter>
       </form>
     </Card>
   );
