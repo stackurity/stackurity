@@ -9695,6 +9695,36 @@
     }
    }
   },
+  "/admin/free-plan/preview": {
+   "get": {
+    "operationId": "get_admin_free_plan_preview",
+    "summary": "Free plan dry run: organisations it would change (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `items`: every organisation turning on the Free plan (STACKURITY_CLOUD_FREE_PLAN) would change, with `workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored` and `asset_limit`; `free_plan_on`. `400 no_free_plan` when the plans list no Free plan. Read only\n\nRole: instance admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin",
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/trials": {
    "get": {
     "operationId": "get_admin_trials",

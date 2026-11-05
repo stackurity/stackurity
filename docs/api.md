@@ -2489,6 +2489,12 @@ Invoices of the organisation's subscriptions.
 
 The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and `items` (`id`, `key_id`, `email`, `name`, `company`, `issued_at`), newest first; `?limit=` 1 to 500, default 100.
 
+### `GET /admin/free-plan/preview`
+
+**Who:** instance admin · Stackurity Cloud
+
+A dry run of the Free plan (`STACKURITY_CLOUD_FREE_PLAN`) that changes nothing: `items`, every organisation turning it on would change (`workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored`, `asset_limit`), and `free_plan_on`. `400 no_free_plan` when the plans list no Free plan. Organisations the cloud's configuration keeps as they are are left out.
+
 ### `GET /admin/trials`
 
 **Who:** instance admin · Stackurity Cloud
