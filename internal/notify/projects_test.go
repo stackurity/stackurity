@@ -276,7 +276,9 @@ func TestSameMessageSentOnce(t *testing.T) {
 	// Two of the organisation's own rules to one channel both send, as
 	// before rules had owners (TestManyIncidentsEscalateAtOnce).
 	c = withSentOnce(ctx)
-	if sentAlready(c, org, 1, "overdue", m) || sentAlready(c, org, 1, "overdue", m) {
+	first := sentAlready(c, org, 1, "overdue", m)
+	second := sentAlready(c, org, 1, "overdue", m)
+	if first || second {
 		t.Error("an organisation rule's message was held back by another organisation rule's")
 	}
 	if !sentAlready(c, proj, 1, "overdue", m) {
