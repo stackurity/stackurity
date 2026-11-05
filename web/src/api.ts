@@ -469,7 +469,9 @@ export type BillingStatus =
   | "past_due"
   | "halted"
   | "cancelling"
-  | "cancelled";
+  | "cancelled"
+  /** On the hosted Free plan (its limits instead of read-only). */
+  | "free";
 
 /** GET /billing (admins, hosted edition). */
 export interface Billing {
