@@ -4,7 +4,7 @@
   "title": "Stackurity",
   "description": "Installed software, vulnerabilities and end-of-life components across your servers, apps and repos",
   "version": "0.18.0",
-  "websiteUrl": "https://stackurity.dev",
+  "websiteUrl": "https://stackurity.ai",
   "repository": {
     "url": "https://github.com/stackurity/stackurity",
     "source": "github",
