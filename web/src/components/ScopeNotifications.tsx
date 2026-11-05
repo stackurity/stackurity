@@ -18,7 +18,7 @@ import { useAction, useLoad } from "../hooks";
 import { AddToSlackButton, RouteQuestions, parseAddresses } from "./NotifyChoices";
 import { AddToTeams } from "./AddToTeams";
 import { Badge } from "./Badge";
-import { Card, ErrorBox, Loading } from "./ui";
+import { Card, CheckCard, ErrorBox, FieldGroup, Loading, SettingRow } from "./ui";
 import { confirmAction } from "./ConfirmDialog";
 
 /*
@@ -143,14 +143,24 @@ export function ScopeNotificationsBody({
   const copyOf = (r: InheritedRule) => view.routes.find((x) => x.id === r.copy_id);
 
   return (
-    <Card title="Notifications">
-      <p className="small muted">
-        Rules from the {kind === "project" ? "organisation" : "organisation and this asset's projects"} apply here too. Turn one off for this {w}, or edit it
-        for this {w} only, and add rules and channels that only this {w}&apos;s people need.
-        {!manage && ` Only admins of this ${w} change them.`}
-      </p>
-
-      <h3>{kind === "project" ? "From the organisation" : "Inherited"}</h3>
+    <Card
+      title="Notifications"
+      description={
+        <>
+          Who is told about issues on this {w}, and where. Rules from the {kind === "project" ? "organisation" : "organisation and this asset's projects"}{" "}
+          apply here too. Turn one off for this {w}, or edit it for this {w} only, and add rules and channels that only this {w}&apos;s people need.
+          {!manage && ` Only admins of this ${w} change them.`}
+        </>
+      }
+    >
+      <SettingRow
+        title={kind === "project" ? "From the organisation" : "Inherited"}
+        description={
+          kind === "project"
+            ? "Rules set for the whole organisation. They cover this project unless you turn them off or edit them here."
+            : "Rules of the organisation and of this asset's projects. They cover this asset unless you turn them off or edit them here."
+        }
+      >
       {view.inherited.length === 0 ? (
         <p className="muted">No rule {kind === "project" ? "of the organisation" : "of the organisation or its projects"} reaches this {w}.</p>
       ) : (
@@ -199,8 +209,12 @@ export function ScopeNotificationsBody({
           ))}
         </ul>
       )}
+      </SettingRow>
 
-      <h3>This {w}&apos;s rules</h3>
+      <SettingRow
+        title={<>This {w}&apos;s rules</>}
+        description={`Rules that only cover this ${w}: what is sent, how often, and to which channel.`}
+      >
       {view.routes.length === 0 ? (
         <p className="muted">No rules of its own yet.</p>
       ) : (
@@ -251,8 +265,12 @@ export function ScopeNotificationsBody({
           }}
         />
       )}
+      </SettingRow>
 
-      <h3>This {w}&apos;s channels</h3>
+      <SettingRow
+        title={<>This {w}&apos;s channels</>}
+        description={`Places only this ${w}'s rules send to, such as a team's own email list or Slack channel.`}
+      >
       {view.channels.length === 0 ? (
         <p className="muted">
           No channels of its own. Its rules can send to the organisation&apos;s channels
@@ -314,6 +332,7 @@ export function ScopeNotificationsBody({
           )}
         </>
       )}
+      </SettingRow>
     </Card>
   );
 }
@@ -406,7 +425,8 @@ export function RuleForm({
     );
   };
   return (
-    <form className="form" onSubmit={submit} aria-label={rule ? `Edit ${rule.name}` : `New rule for this ${word(kind)}`}>
+    <form className="form scope-rule-form" onSubmit={submit} aria-label={rule ? `Edit ${rule.name}` : `New rule for this ${word(kind)}`}>
+      <FieldGroup title={rule ? `Edit ${rule.name}` : "New rule"} description="A name you will recognise, and the channel it sends to.">
       <div className="form-grid">
         <div className="field">
           <label htmlFor={`${idp}-name`}>Name</label>
@@ -424,6 +444,7 @@ export function RuleForm({
           </select>
         </div>
       </div>
+      </FieldGroup>
       <RouteQuestions
         idp={idp}
         now={now}
@@ -437,9 +458,7 @@ export function RuleForm({
         timezone={tz}
         minPriority={rule?.min_priority}
       />
-      <label className="check">
-        <input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> On
-      </label>
+      <CheckCard checked={enabled} onChange={setEnabled} label="On" description="Untick to keep the rule but stop it sending for now." />
       {err && (
         <div className="alert alert-warn" role="alert">
           {err}
@@ -471,7 +490,8 @@ export function EmailChannelForm({ pending, onSave, onCancel }: { pending: boole
     onSave(name.trim(), addresses);
   };
   return (
-    <form className="form" onSubmit={submit} aria-label="New email channel">
+    <form className="form scope-rule-form" onSubmit={submit} aria-label="New email channel">
+      <FieldGroup title="New email channel" description="Stackurity sends the emails; each address confirms once before it gets anything.">
       <div className="form-grid">
         <div className="field">
           <label htmlFor="scope-email-name">Name</label>
@@ -483,6 +503,7 @@ export function EmailChannelForm({ pending, onSave, onCancel }: { pending: boole
           <p className="hint">Each address gets an email with a link to confirm, once. Nothing is sent to it until it is confirmed.</p>
         </div>
       </div>
+      </FieldGroup>
       {err && (
         <div className="alert alert-warn" role="alert">
           {err}
@@ -513,21 +534,31 @@ export function ProjectChatAppsSetting({
   onChange: (on: boolean) => void;
 }) {
   return (
-    <Card title="Project notifications">
-      <p className="small muted">
-        The organisation&apos;s rules apply to every project. Each project&apos;s admins can turn a rule off for their project, edit it for their project, or add
-        their own, on the project&apos;s Notifications.
-      </p>
-      <label className="check">
-        <input type="checkbox" checked={on} disabled={!admin || pending} onChange={(e) => onChange(e.target.checked)} /> Projects can connect their own Slack or
-        Teams
-      </label>
-      <p className="hint">
-        {on
-          ? "Project admins can add the Stackurity app to a Slack or Teams workspace for their project's channels."
-          : "Off: project admins send to the organisation's channels, and ask an organisation admin for anything else."}
-        {!admin && " Only organisation admins change this."}
-      </p>
+    <Card
+      title="Project notifications"
+      description={
+        <>
+          The organisation&apos;s rules apply to every project. Each project&apos;s admins can turn a rule off for their project, edit it for their project, or add
+          their own, on the project&apos;s Notifications.
+        </>
+      }
+    >
+      <SettingRow title="Project chat apps" description="Whether a project's admins may connect Slack or Teams themselves, without an organisation admin.">
+        <CheckCard
+          checked={on}
+          disabled={!admin || pending}
+          onChange={onChange}
+          label="Projects can connect their own Slack or Teams"
+          description={
+            <>
+              {on
+                ? "Project admins can add the Stackurity app to a Slack or Teams workspace for their project's channels."
+                : "Off: project admins send to the organisation's channels, and ask an organisation admin for anything else."}
+              {!admin && " Only organisation admins change this."}
+            </>
+          }
+        />
+      </SettingRow>
     </Card>
   );
 }

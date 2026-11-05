@@ -19,7 +19,7 @@ import { plural, humanize } from "../../format";
 import { AssetPicker } from "../../components/AssetPicker";
 import { InvitationList, InviteForm } from "../../components/Invite";
 import { NewTeamInline } from "../../components/Teams";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, ChoiceCards, EmptyState, ErrorBox, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { PasswordChecklist } from "../../components/PasswordStrength";
 import { passwordOK } from "../../passwordStrength";
 import { PROJECTS_EMPTY } from "../../emptyCopy";
@@ -129,7 +129,10 @@ export function ProjectsPage() {
       {(suggestions.data?.items.length ?? 0) > 0 && (
         <section aria-labelledby="sg-head">
           <h2 id="sg-head">Suggested groupings</h2>
-          <p className="small muted">From how assets relate (an application runs on a host, is built from a repository). Nothing changes until you accept.</p>
+          <p className="small muted section-hint">
+            Stackurity noticed assets that belong together, from how they relate (an application runs on a host, is built from a repository). Nothing changes
+            until you accept.
+          </p>
           {suggestions.data!.items.map((sg) => (
             <div key={sg.key} className="card suggestion-card">
               <p>
@@ -167,6 +170,7 @@ export function ProjectsPage() {
 
       <Card
         title="Projects"
+        description="Each project is a group of assets, such as one site, client or product. Open one to add assets, give people access and set its notifications."
         actions={
           <label className="check">
             <input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived
@@ -216,7 +220,7 @@ function NewProject({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     if (p) onCreated(p);
   };
   return (
-    <Card title="New project">
+    <Card title="New project" description="Start with a name; you add its assets and people on the next page.">
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create the project" />
         <div className="form-grid">
@@ -281,15 +285,20 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
     <form className="form" onSubmit={submit}>
       <ErrorBox error={act.error} title="Could not give access" />
       {created && <Notice kind="success">An account was created for {created}. Share the password with them securely.</Notice>}
-      <fieldset className="field">
-        <legend>Give access to</legend>
-        <label className="check">
-          <input type="radio" name={`${idp}-kind`} checked={kind === "person"} onChange={() => setKind("person")} /> A person
-        </label>
-        <label className="check">
-          <input type="radio" name={`${idp}-kind`} checked={kind === "team"} onChange={() => setKind("team")} /> A team
-        </label>
-      </fieldset>
+      <div className="field">
+        <span className="label">Give access to</span>
+        <ChoiceCards
+          name={`${idp}-kind`}
+          legend="Give access to"
+          columns={2}
+          value={kind}
+          onChange={setKind}
+          options={[
+            { value: "person", label: "A person", description: "One person, by their email address." },
+            { value: "team", label: "A team", description: "Everyone in a team, including people who join it later." },
+          ]}
+        />
+      </div>
       <div className="form-grid">
         {kind === "person" ? (
           <>
@@ -363,9 +372,11 @@ function AddAccess({ target, onAdded }: { target: { project_id: number } | { ass
           <RoleSelect id={`${idp}-role`} value={role} onChange={setRole} />
         </div>
       </div>
-      <button type="submit" className="btn btn-primary" disabled={act.pending || (kind === "team" && !team) || (kind === "person" && !inviteOnly && password !== "" && !passwordOK(password))}>
-        Give access
-      </button>
+      <div className="form-actions">
+        <button type="submit" className="btn btn-primary" disabled={act.pending || (kind === "team" && !team) || (kind === "person" && !inviteOnly && password !== "" && !passwordOK(password))}>
+          Give access
+        </button>
+      </div>
     </form>
   );
 }
@@ -420,6 +431,7 @@ function AssetGrants() {
   return (
     <Card
       title="Access to single assets"
+      description="Gives someone one asset without a whole project, for the rare case of one server for one contractor. Prefer projects."
       actions={
         !adding && (
           <button type="button" className="btn btn-sm" onClick={() => setAdding(true)}>
@@ -428,7 +440,6 @@ function AssetGrants() {
         )
       }
     >
-      <p className="small muted">For the rare case of one server for one contractor. Prefer projects.</p>
       <ErrorBox error={grants.error} title="Could not load access" />
       {adding && (
         <div className="form">
@@ -447,9 +458,11 @@ function AssetGrants() {
               }}
             />
           )}
-          <button type="button" className="btn" onClick={() => setAdding(false)}>
-            Cancel
-          </button>
+          <div className="form-actions">
+            <button type="button" className="btn" onClick={() => setAdding(false)}>
+              Cancel
+            </button>
+          </div>
         </div>
       )}
       {grants.data && <GrantList grants={rows} onChanged={grants.reload} showTarget />}
@@ -544,7 +557,10 @@ export function ProjectDetailPage() {
         />
       )}
 
-      <Card title={`Assets (${p.asset_count.toLocaleString()})`}>
+      <Card
+        title={`Assets (${p.asset_count.toLocaleString()})`}
+        description="The servers, repositories and applications in this project. People with access to the project see these, and only these."
+      >
         <div className="field">
           <label htmlFor="pd-add">Add an asset</label>
           <AssetPicker id="pd-add" value={picked} onChange={(a) => (a ? void add(a) : setPicked(null))} allProjects inProject={p.id} />
@@ -578,23 +594,26 @@ export function ProjectDetailPage() {
         )}
       </Card>
 
-      <Card title="Who has access">
-        <p className="small muted">
-          People with an organisation-wide role see every project. The people and teams here see this project&apos;s assets with the role shown.
-        </p>
-        <GrantList grants={res.data.grants?.items ?? []} onChanged={res.reload} />
-        <h3>Give access</h3>
-        <AddAccess target={{ project_id: p.id }} onAdded={res.reload} />
+      <Card
+        title="Who has access"
+        description="People with an organisation-wide role see every project. The people and teams here see this project's assets with the role shown."
+      >
+        <SettingRow title="People and teams" description="Change someone's role here, or remove their access to this project.">
+          <GrantList grants={res.data.grants?.items ?? []} onChanged={res.reload} />
+        </SettingRow>
+        <SettingRow title="Give access" description="Add a person or a team, and the role they get on this project. The role decides what they may do; the project decides what they see.">
+          <AddAccess target={{ project_id: p.id }} onAdded={res.reload} />
+        </SettingRow>
       </Card>
 
       <OwnerRulesCard projectId={p.id} />
 
       <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
 
-      <Card title="Invite by email">
-        <p className="small muted">
-          Sends a link that works once, for 7 days. It starts with this project; choose their permission, or give them more.
-        </p>
+      <Card
+        title="Invite by email"
+        description="For someone who is not in your organisation yet. Sends a link that works once, for 7 days. It starts with this project; choose their permission, or give them more."
+      >
         <InviteForm projectId={p.id} projectName={p.name} onInvited={() => setInvites((n) => n + 1)} />
         <InvitationList projectId={p.id} reloadKey={invites} />
       </Card>
@@ -612,7 +631,7 @@ function EditProject({ project, onDone }: { project: Project; onDone: () => void
     if (ok) onDone();
   };
   return (
-    <Card title="Rename">
+    <Card title="Rename" description="The name and description shown in the project list and the project switcher.">
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not save" />
         <div className="form-grid">
@@ -625,9 +644,11 @@ function EditProject({ project, onDone }: { project: Project; onDone: () => void
             <input id="ep-desc" maxLength={1000} value={description} onChange={(e) => setDescription(e.target.value)} />
           </div>
         </div>
-        <button type="submit" className="btn btn-primary" disabled={act.pending}>
-          Save
-        </button>
+        <div className="form-actions">
+          <button type="submit" className="btn btn-primary" disabled={act.pending}>
+            Save
+          </button>
+        </div>
       </form>
     </Card>
   );
@@ -676,7 +697,7 @@ export function ProjectNotificationsIndexPage() {
         title="Project notifications"
         sub="Each project gets the organisation's rules, and can turn them off, edit them for itself, or add its own."
       />
-      <Card>
+      <Card title="Projects" description="Open a project to see the rules it gets from the organisation and the ones it has of its own.">
         {items.length === 0 ? (
           <p className="muted">No projects yet.</p>
         ) : (
