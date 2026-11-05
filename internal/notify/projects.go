@@ -57,7 +57,7 @@ func (d *Dispatcher) enqueueTo(ctx context.Context, r store.Route, channelID int
 		}
 		return nil
 	}
-	if sentAlready(ctx, channelID, event, msg) {
+	if sentAlready(ctx, r, channelID, event, msg) {
 		return nil
 	}
 	if _, err := d.Store.EnqueueDelivery(ctx, channelID, &r.ID, nil, event, key, msg); err != nil {
@@ -79,11 +79,20 @@ func (d *Dispatcher) enqueueTo(ctx context.Context, r store.Route, channelID int
 // The same message to the same channel is sent once per planning pass:
 // an asset in two projects, or a rule and a project's copy of it, can make
 // two routes build the same message for one channel. The rule's name and
-// the time are not compared.
+// the time are not compared. Two of the organisation's own rules to one
+// channel still both send, as they did before rules had owners.
 
 type sentKey struct{}
 
+// sentSet maps a channel's message to whether a project's or asset's rule
+// (or a copy of an inherited rule) queued it.
 type sentSet map[string]bool
+
+// scoped reports whether the route belongs to a project or an asset, or is
+// a project's or asset's copy of an inherited rule.
+func scoped(r store.Route) bool {
+	return r.OwnerProjectID != nil || r.OwnerAssetID != nil || r.InheritsRouteID != nil
+}
 
 // withSentOnce starts a planning pass that sends each message once per
 // channel.
@@ -95,8 +104,9 @@ func withSentOnce(ctx context.Context) context.Context {
 }
 
 // sentAlready reports whether this pass already queued the message for
-// the channel, and records it otherwise.
-func sentAlready(ctx context.Context, channelID int64, event string, msg Message) bool {
+// the channel and a project's or asset's rule took part (the earlier one
+// or r), and records it otherwise.
+func sentAlready(ctx context.Context, r store.Route, channelID int64, event string, msg Message) bool {
 	seen, ok := ctx.Value(sentKey{}).(sentSet)
 	if !ok {
 		return false
@@ -109,9 +119,10 @@ func sentAlready(ctx context.Context, channelID int64, event string, msg Message
 	}
 	sum := sha256.Sum256(b)
 	k := fmt.Sprintf("%d:%s:%x", channelID, event, sum)
-	if seen[k] {
+	byScoped, sent := seen[k]
+	if sent && (byScoped || scoped(r)) {
 		return true
 	}
-	seen[k] = true
+	seen[k] = byScoped || scoped(r)
 	return false
 }

@@ -252,7 +252,7 @@ func TestSameMessageSentOnce(t *testing.T) {
 	f.addAsset("web", "production", true)
 	routes, _ := f.st.ListRoutes(ctx)
 	twin := routes[0]
-	twin.ID, twin.Name = 0, "twin"
+	twin.ID, twin.Name, twin.InheritsRouteID = 0, "twin", &routes[0].ID
 	if _, err := f.st.SaveRoute(ctx, twin); err != nil {
 		t.Fatal(err)
 	}
@@ -264,11 +264,22 @@ func TestSameMessageSentOnce(t *testing.T) {
 
 	// Within one pass only, and per channel.
 	c := withSentOnce(ctx)
+	pid := int64(7)
+	org, proj := store.Route{}, store.Route{OwnerProjectID: &pid}
 	m := Message{Event: "urgent", Title: "x", Route: "a", At: time.Now()}
-	if sentAlready(c, 1, "urgent", m) || !sentAlready(c, 1, "urgent", Message{Event: "urgent", Title: "x", Route: "b"}) {
+	if sentAlready(c, org, 1, "urgent", m) || !sentAlready(c, proj, 1, "urgent", Message{Event: "urgent", Title: "x", Route: "b"}) {
 		t.Error("the same message to channel 1 was not recognised")
 	}
-	if sentAlready(c, 2, "urgent", m) || sentAlready(withSentOnce(ctx), 1, "urgent", m) || sentAlready(ctx, 1, "urgent", m) {
+	if sentAlready(c, proj, 2, "urgent", m) || sentAlready(withSentOnce(ctx), proj, 1, "urgent", m) || sentAlready(ctx, proj, 1, "urgent", m) {
 		t.Error("a message to another channel, or in another pass, was held back")
+	}
+	// Two of the organisation's own rules to one channel both send, as
+	// before rules had owners (TestManyIncidentsEscalateAtOnce).
+	c = withSentOnce(ctx)
+	if sentAlready(c, org, 1, "overdue", m) || sentAlready(c, org, 1, "overdue", m) {
+		t.Error("an organisation rule's message was held back by another organisation rule's")
+	}
+	if !sentAlready(c, proj, 1, "overdue", m) {
+		t.Error("a project rule's copy of an organisation rule's message was sent again")
 	}
 }
