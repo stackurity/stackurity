@@ -4,6 +4,8 @@ Stackurity is a [Model Context Protocol](https://modelcontextprotocol.io) (MCP) 
 
 There is nothing to install. Your server's MCP endpoint is **`https://<your server>/mcp`**.
 
+**On Stackurity Cloud** the address is **`https://app.stackurity.dev/mcp`**. In Claude, the quickest way is the [Stackurity connector in Claude's directory](https://claude.ai/directory/stackurity): click **Connect**, sign in, and you are done (the steps below do the same by hand).
+
 ## Connect an assistant
 
 **Integrations → AI assistants** (also **Connect an AI assistant** in the account menu, and **Help → Connect an AI assistant**) shows your server's MCP address with a Copy button, a card for each assistant that opens its steps (with one-click install links for Cursor, VS Code and Replit), and questions to try. Paste `https://<your server>/mcp` into your assistant as a custom connector (it may be called a remote MCP server, an app or a plugin), then sign in when it asks:
