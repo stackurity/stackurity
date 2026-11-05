@@ -5262,6 +5262,9 @@ h6.md-h {
   align-self: flex-start;
   margin-top: auto;
 }
+.int-card .form-actions {
+  margin-top: auto;
+}
 .int-card-head {
   display: flex;
   align-items: center;

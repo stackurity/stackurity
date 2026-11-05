@@ -30,8 +30,9 @@ const TEXT = {
     name: "Google Cloud",
     ids: [
       { key: "project_id", label: "Project id", placeholder: "acme-prod", hint: "Lowercase letters, digits and hyphens." },
-      { key: "project_number", label: "Project number", placeholder: "123456789012", hint: "On the project's welcome page, or: gcloud projects describe <id> --format='value(projectNumber)'" },
+      { key: "project_number", label: "Project number", placeholder: "123456789012", hint: "Digits, shown next to the project id on the Google Cloud console's Welcome page." },
     ],
+    shell: { name: "Cloud Shell", url: "https://shell.cloud.google.com/" },
     run: "Run these commands in Cloud Shell, or wherever gcloud is signed in as a project owner.",
     help: "/help/google-cloud",
     fallbackTitle: "Use a service account key instead",
@@ -42,6 +43,7 @@ const TEXT = {
       { key: "tenant_id", label: "Directory (tenant) id", placeholder: "00000000-0000-0000-0000-000000000000", hint: "Microsoft Entra ID ▸ Overview." },
       { key: "subscription_id", label: "Subscription id", placeholder: "00000000-0000-0000-0000-000000000000", hint: "Subscriptions ▸ your subscription." },
     ],
+    shell: { name: "Azure Cloud Shell", url: "https://shell.azure.com/" },
     run: "Run these commands in Azure Cloud Shell, or wherever az is signed in as an Owner or User Access Administrator of the subscription.",
     help: "/help/azure",
     fallbackTitle: "Use a service principal with a client secret instead",
@@ -86,7 +88,17 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
           <Link to="/integrations/plugins">Integrations → Plugins</Link>.
         </Notice>
       )}
+      <p>
+        How it works: enter the {provider === "gcp" ? "project" : "subscription"} below, run the commands Stackurity writes for it in{" "}
+        <a href={t.shell.url} target="_blank" rel="noopener noreferrer">
+          {t.shell.name}
+        </a>
+        , then create the integration. Access is read-only and no key is needed.
+      </p>
       <form className="form" onSubmit={show}>
+        <p>
+          <strong>1.</strong> Your {provider === "gcp" ? "Google Cloud project" : "Azure subscription"}
+        </p>
         <div className="form-grid">
           {t.ids.map((f) => (
             <div className="field" key={f.key}>
@@ -105,7 +117,7 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
         </div>
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={load.pending}>
-            {load.pending ? "Generating…" : "Show the commands"}
+            {load.pending ? "Generating…" : "Next: get the commands"}
           </button>
         </div>
       </form>
@@ -116,7 +128,7 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
             <>
               {setup.consent_url && (
                 <p>
-                  <strong>1.</strong> Add Stackurity's app to your tenant:{" "}
+                  <strong>2.</strong> Add Stackurity's app to your tenant:{" "}
                   <a className="btn btn-sm" href={setup.consent_url} target="_blank" rel="noopener noreferrer">
                     Open admin consent
                   </a>{" "}
@@ -124,11 +136,11 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
                 </p>
               )}
               <p>
-                <strong>{setup.consent_url ? "2." : "1."}</strong> {t.run} No key or secret is created.
+                <strong>{setup.consent_url ? "3." : "2."}</strong> {t.run} No key or secret is created.
               </p>
               <CodeBlock text={setup.commands ?? ""} label={`${t.name} setup commands`} />
               <p>
-                <strong>{setup.consent_url ? "3." : "2."}</strong> Create the integration, then run it from{" "}
+                <strong>{setup.consent_url ? "4." : "3."}</strong> Create the integration, then run it from{" "}
                 <Link to="/integrations">Integrations</Link>.
               </p>
               <div className="form-actions">

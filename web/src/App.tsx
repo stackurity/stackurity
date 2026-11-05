@@ -75,7 +75,7 @@ import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
 import { AwsPage } from "./pages/settings/Aws";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
-import { DeliveryLogPage, IntegrationsHubPage } from "./pages/settings/Integrations";
+import { DeliveryLogPage, IntegrationStepsPage, IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
@@ -422,6 +422,7 @@ export function App() {
             </RequireRole>
           }
         />
+        <Route path="integrations/setup/:steps" element={<IntegrationStepsPage />} />
         <Route
           path="integrations/aws"
           element={

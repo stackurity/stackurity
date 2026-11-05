@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Changed
+
+- **Integrations page: GitHub and GitLab have their own cards, and set-up steps open on their own page.** Where the server has both the GitHub App and Connect GitLab, the Git repository card showed only Install on GitHub, so Connect GitLab could not be found; now **GitHub**, **GitLab** and **Other Git host** are separate cards, **Other Git host** opens the Git form straight away, and that form offers Install on GitHub / Connect GitLab above the token fields. **CI pipeline**, **SBOM upload**, **Google Cloud** and **Azure** open their steps on a page of their own (`/integrations/setup/ci`, `sbom`, `gcp`, `azure`) instead of a panel below all the cards that was easy to miss. Buttons say **Add**, **Connect**, **Show steps** or **Open**. **Connect Google Cloud** and **Connect Azure** start with how it works (with a link to Cloud Shell), number every step, and name the button **Next: get the commands**.
+
 ## 0.17.0
 
 ### Security

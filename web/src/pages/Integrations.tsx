@@ -14,7 +14,13 @@ import {
   type RegistryDiscovery,
   type RegistryImage,
   type RegistryProvider,
+  NO_GITHUB_APP,
+  NO_GITLAB,
+  type GitHubAppStatus,
+  type GitLabStatus,
 } from "../api";
+import { InstallOnGitHubButton } from "./settings/GitHubApp";
+import { ConnectGitLabButton } from "./settings/GitLab";
 import { useAuth } from "../auth";
 import { useAction, useJobRunner, useLoad } from "../hooks";
 import { minutesLabel } from "../format";
@@ -91,10 +97,11 @@ export function IntegrationsPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [params] = useSearchParams();
-  // Integrations → Container image / registry opens the choice.
-  const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() =>
-    params.get("add") === "container" && admin ? "container" : null,
-  );
+  // Integrations → Container image / registry opens the choice; Other Git host opens the Git form.
+  const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() => {
+    const add = params.get("add");
+    return !admin ? null : add === "container" ? "container" : add === "git" ? "git_repository" : null;
+  });
   const [imagesOf, setImagesOf] = useState<Integration | null>(null);
 
   const job = useJobRunner(res.reload);
@@ -434,8 +441,22 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
     const ok = await act.run(() => api.post<Integration>("/integrations", bodyOf("git_repository", c, config)));
     if (ok) onCreated();
   };
+  const gh = useLoad(() => api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP), []).data ?? NO_GITHUB_APP;
+  const gl = useLoad(() => api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB), []).data ?? NO_GITLAB;
   return (
     <FormShell title="Add Git repository" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
+      {(gh.configured || gl.configured) && (
+        <Notice kind="info">
+          <p>
+            On {gh.configured && gl.configured ? "GitHub or GitLab" : gh.configured ? "GitHub" : "GitLab"}? Connect instead: no token to paste, and repositories are rescanned when a lockfile
+            changes. Use the form below for other Git hosts.
+          </p>
+          <div className="form-actions">
+            {gh.configured && <InstallOnGitHubButton />}
+            {gl.configured && <ConnectGitLabButton />}
+          </div>
+        </Notice>
+      )}
       <div className="form-grid">
         <div className="field field-span">
           <label htmlFor="gi-url">Repository URL</label>
