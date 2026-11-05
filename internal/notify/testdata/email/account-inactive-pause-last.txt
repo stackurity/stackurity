@@ -1,0 +1,17 @@
+Subject: Last reminder: sign in to keep Stackurity checking Northwind Traders
+
+Nobody in Northwind Traders has signed in to Stackurity for a while. On 9 November 2026 it will be paused: nothing new is collected and no notifications are sent until someone signs in.
+
+Everything already there is kept, and signing in at any time resumes it at once.
+
+Any member signing in is enough, also after the pause.
+
+Sign in:
+https://app.stackurity.dev/
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you are an administrator of an organisation on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

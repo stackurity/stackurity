@@ -64,18 +64,26 @@ const (
 // workspace, like assetLimitLock.
 const projectLimitLock = 726_354_141
 
-// readOnly returns a *ReadOnlyError when workspace ws is read-only.
+// readOnly returns a *ReadOnlyError when workspace ws is read-only, or
+// paused for inactivity (plan_history.go).
 func readOnly(ctx context.Context, db q, ws int64) error {
-	var since *time.Time
+	var since, paused *time.Time
 	var reason string
-	err := db.QueryRow(ctx, `SELECT read_only_at, read_only_reason FROM workspaces WHERE id = $1`, ws).Scan(&since, &reason)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && since == nil {
+	err := db.QueryRow(ctx, `SELECT read_only_at, read_only_reason, CASE WHEN `+inactivePaused+` THEN w.inactive_paused_at END
+		FROM workspaces w WHERE id = $1`, ws).Scan(&since, &reason, &paused)
+	if errors.Is(err, pgx.ErrNoRows) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	return &ReadOnlyError{Since: *since, Reason: reason}
+	switch {
+	case since != nil:
+		return &ReadOnlyError{Since: *since, Reason: reason}
+	case paused != nil:
+		return &ReadOnlyError{Since: *paused, Reason: PausedReason}
+	}
+	return nil
 }
 
 // CheckWritable returns a *ReadOnlyError when the current workspace is
@@ -165,13 +173,18 @@ func (s *Store) GetWorkspaceState(ctx context.Context, ws int64) (*WorkspaceStat
 	var since *time.Time
 	st := &WorkspaceState{}
 	var reason string
-	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT read_only_at, read_only_reason, report_mode FROM workspaces WHERE id = $1`, ws).
-		Scan(&since, &reason, &st.ReportMode)
+	var paused *time.Time
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT read_only_at, read_only_reason, report_mode,
+		CASE WHEN `+inactivePaused+` THEN w.inactive_paused_at END FROM workspaces w WHERE id = $1`, ws).
+		Scan(&since, &reason, &st.ReportMode, &paused)
 	if err != nil {
 		return nil, notFound(err)
 	}
-	if since != nil {
+	switch {
+	case since != nil:
 		st.ReadOnly = &ReadOnlyState{Since: *since, Reason: reason}
+	case paused != nil:
+		st.ReadOnly = &ReadOnlyState{Since: *paused, Reason: PausedReason}
 	}
 	return st, nil
 }
@@ -228,7 +241,8 @@ func checkNewProject(ctx context.Context, tx pgx.Tx) error {
 // CollectingWorkspaceIDs lists enabled workspaces that are not read-only:
 // those background collection, evaluation and notifications run for.
 func (s *Store) CollectingWorkspaceIDs(ctx context.Context) ([]int64, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT id FROM workspaces WHERE disabled_at IS NULL AND read_only_at IS NULL ORDER BY id`)
+	rows, err := s.Pool.Query(ctx, `SELECT id FROM workspaces w WHERE disabled_at IS NULL AND read_only_at IS NULL AND NOT (`+inactivePaused+`)
+		ORDER BY id`)
 	if err != nil {
 		return nil, err
 	}

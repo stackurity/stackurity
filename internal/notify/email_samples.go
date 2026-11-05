@@ -117,6 +117,8 @@ func EmailSamples(base string) []EmailSample {
 			"Priya Shah (priya@northwind-traders.com)", ip, "Firefox on Windows", at), Secrets: []string{ip}},
 		{Name: "account-ask-budget-80", Message: AskSpendEmail(80, at)},
 		{Name: "account-ask-budget-used-up", Message: AskSpendEmail(100, at)},
+		{Name: "account-inactive-pause-first", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(15*24*time.Hour), false, at)},
+		{Name: "account-inactive-pause-last", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(5*24*time.Hour), true, at)},
 		{Name: "alerts-confirm-address", Message: alertConfirmEmail("Northwind Traders", d.url("/email/confirm", nil)+"#"+confTok,
 			d.url("/email/block", nil)+"#"+confTok, d.url("/email/block/one-click", url.Values{"t": {confTok}}), at),
 			Notification: true, Secrets: []string{confTok}},

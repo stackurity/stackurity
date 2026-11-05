@@ -74,12 +74,20 @@ type PlanLimits struct {
 	// SBOMImportsPerMonth caps SBOM imports a calendar month (UTC); nil:
 	// no cap.
 	SBOMImportsPerMonth *int64 `json:"sbom_imports_per_month,omitempty"`
+	// HistoryDays is how far back resolved issues, past inventory and
+	// resolved incidents are shown (data is kept; open issues and current
+	// inventory are always shown); 0: everything.
+	HistoryDays int64 `json:"history_days,omitempty"`
+	// InactivePauseDays pauses the organisation after that many days
+	// without a sign-in by any member (plan_history.go); 0: never.
+	InactivePauseDays int64 `json:"inactive_pause_days,omitempty"`
 }
 
 // Empty reports whether no limit is set.
 func (l PlanLimits) Empty() bool {
 	return len(l.RuleLimits) == 0 && l.MaxMembers == nil && l.AllowedChannelKinds == nil && !l.OverLimitReadOnly &&
-		l.Plan == "" && l.NextPlan == "" && l.CheckCooldownSeconds == 0 && l.APIRequestsPerHour == 0 && l.SBOMImportsPerMonth == nil
+		l.Plan == "" && l.NextPlan == "" && l.CheckCooldownSeconds == 0 && l.APIRequestsPerHour == 0 && l.SBOMImportsPerMonth == nil &&
+		l.HistoryDays == 0 && l.InactivePauseDays == 0
 }
 
 func (l PlanLimits) validate() error {
@@ -104,6 +112,12 @@ func (l PlanLimits) validate() error {
 	}
 	if l.SBOMImportsPerMonth != nil && (*l.SBOMImportsPerMonth < 0 || *l.SBOMImportsPerMonth > 100_000_000) {
 		return fmt.Errorf("sbom_imports_per_month must be between 0 and 100000000: %w", ErrInvalid)
+	}
+	if l.HistoryDays < 0 || l.HistoryDays > 36500 {
+		return fmt.Errorf("history_days must be between 0 and 36500: %w", ErrInvalid)
+	}
+	if l.InactivePauseDays != 0 && (l.InactivePauseDays < 20 || l.InactivePauseDays > 3650) {
+		return fmt.Errorf("inactive_pause_days must be 0, or between 20 and 3650 (its warnings come 15 and 5 days before): %w", ErrInvalid)
 	}
 	if l.MaxMembers != nil && (*l.MaxMembers < 1 || *l.MaxMembers > 1_000_000) {
 		return fmt.Errorf("max_members must be between 1 and 1000000: %w", ErrInvalid)
@@ -249,6 +263,9 @@ type PlanUsage struct {
 	// CheckCooldownSeconds and APIRequestsPerHour are the plan's (0: none).
 	CheckCooldownSeconds int64 `json:"check_again_cooldown_seconds"`
 	APIRequestsPerHour   int64 `json:"api_requests_per_hour"`
+	// HistoryDays and InactivePauseDays are the plan's (0: none).
+	HistoryDays       int64 `json:"history_days"`
+	InactivePauseDays int64 `json:"inactive_pause_days"`
 }
 
 // planUsage counts what workspace ws's plan limits apply to; nil when it
@@ -289,6 +306,7 @@ func (s *Store) planUsage(ctx context.Context, ws int64) (*PlanUsage, error) {
 	}
 	u.Members.Limit = l.MaxMembers
 	u.CheckCooldownSeconds, u.APIRequestsPerHour, u.SBOMImports.Limit = l.CheckCooldownSeconds, l.APIRequestsPerHour, l.SBOMImportsPerMonth
+	u.HistoryDays, u.InactivePauseDays = l.HistoryDays, l.InactivePauseDays
 	if err := s.Pool.QueryRow(sys, `SELECT COALESCE((SELECT used FROM plan_allowances WHERE workspace_id = $1 AND kind = 'sbom_imports'
 		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date), 0)`, ws).Scan(&u.SBOMImports.Used); err != nil {
 		return nil, err

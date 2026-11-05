@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/store"
 )
 
 // The plan's API requests an hour (docs/asset-limits.md, "Plan limits"):
@@ -35,6 +36,9 @@ type planCap struct {
 
 func (s *Server) planRequests(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// People's lists keep to the plan's history window
+		// (store.WithHistoryWindow); background work does not.
+		r = r.WithContext(store.WithHistoryWindow(r.Context()))
 		p := principal(r)
 		if p == nil || p.Workspace == 0 || p.Role == auth.RoleCollector || uncounted(r.URL.Path) {
 			next.ServeHTTP(w, r)

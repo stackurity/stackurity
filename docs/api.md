@@ -2277,7 +2277,7 @@ Audit events, paged. Query: `object_type`, `object_id`.
 
 **Who:** viewer (organisation-wide)
 
-[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not), `report_mode` (`full` or `trial`) and `plan`: the [plan limits](asset-limits.md#plan-limits) and their use (`plan`, `next_plan`, `rules` with `used` and `limit` per kind, `members`, `allowed_channel_kinds`, `read_only_projects`, `sbom_imports`, `check_again_cooldown_seconds`, `api_requests_per_hour`), or null when there are none.
+[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not), `report_mode` (`full` or `trial`) and `plan`: the [plan limits](asset-limits.md#plan-limits) and their use (`plan`, `next_plan`, `rules` with `used` and `limit` per kind, `members`, `allowed_channel_kinds`, `read_only_projects`, `sbom_imports`, `check_again_cooldown_seconds`, `api_requests_per_hour`, `history_days`, `inactive_pause_days`), or null when there are none.
 
 ## Automatic fixes
 

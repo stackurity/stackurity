@@ -75,3 +75,23 @@ export function channelWord(k: string): string {
   }
   return k;
 }
+
+/**
+ * On a plan with a history window: what lists leave out ("Showing the
+ * last 30 days. Upgrade to Starter for full history.").
+ */
+export function HistoryWindowLine({ plan }: { plan: PlanUsage | null | undefined }) {
+  if (!plan || !plan.history_days) return null;
+  return (
+    <p className="small muted plan-limit">
+      Showing the last {plan.history_days} days of resolved issues and past software; open issues are always shown.{" "}
+      {plan.next_plan ? `Upgrade to ${plan.next_plan} for full history.` : "Upgrade your plan for full history."}
+    </p>
+  );
+}
+
+/** HistoryWindowLine for the current organisation. */
+export function HistoryWindowNote() {
+  const res = useLoad(() => api.usage(), []);
+  return <HistoryWindowLine plan={res.data?.plan} />;
+}

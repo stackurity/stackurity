@@ -125,7 +125,7 @@ func (m Message) Grouped() bool {
 // alerts): their subject is the title alone, never a priority tag.
 var accountEvents = map[string]bool{
 	"test": true, "invitation": true, "confirm_email": true, "password_reset": true,
-	"mfa_email_code": true, "mfa_email_sign_in": true, "mfa_changed": true, "ask_spend": true,
+	"mfa_email_code": true, "mfa_email_sign_in": true, "mfa_changed": true, "ask_spend": true, "inactive_pause": true,
 	// Stackurity Cloud (the pro repository).
 	"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true,
 }

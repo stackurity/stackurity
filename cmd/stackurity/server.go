@@ -425,6 +425,7 @@ func serverCmd() *cobra.Command {
 					RedirectURL: strings.TrimRight(os.Getenv("STACKURITY_BASE_URL"), "/") + "/integrations/gitlab/callback"}
 			}
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
+			registerInactivePause(w, st, srv.AccountMail, srv.BaseURL, log)
 			registerFeedbackRetention(w, st, feedbackQueue, log)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
@@ -1671,4 +1672,27 @@ func registerGitLab(w *worker.Worker, st *store.Store, glRunner *gitlab.Runner) 
 // (docs/install.md#error-reports). They never leave the installation.
 func clientErrorsOn() bool {
 	return !strings.EqualFold(strings.TrimSpace(os.Getenv("STACKURITY_CLIENT_ERRORS")), "off")
+}
+
+// registerInactivePause runs the plan's inactive pause (docs/asset-limits.md,
+// "Plan limits") every hour: it warns the administrators of an
+// organisation nobody has signed in to for a while, by email, and pauses
+// it once warned twice. Organisations without the limit are not touched.
+func registerInactivePause(w *worker.Worker, st *store.Store, mail notify.Mailer, base string, log *slog.Logger) {
+	w.Every("inactive-pause", time.Hour, func(ctx context.Context) error {
+		notices, err := st.SweepInactive(ctx, time.Now())
+		if err != nil {
+			return err
+		}
+		for _, n := range notices {
+			log.Info("inactive organisation warned", "workspace", n.WorkspaceID, "pause_on", n.PauseOn, "last", n.Last)
+			if mail == nil || len(n.Admins) == 0 {
+				continue
+			}
+			if err := mail.SendMail(ctx, n.Admins, notify.InactivePauseEmail(base, n.Name, n.PauseOn, n.Last, time.Now())); err != nil {
+				log.Error("inactive pause warning not sent", "workspace", n.WorkspaceID, "err", err)
+			}
+		}
+		return nil
+	})
 }

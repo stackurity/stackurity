@@ -193,6 +193,15 @@ var resolvedInWindow = `WITH res AS (
 // OutcomesReport builds the report for [from, to). fixDays is the risk
 // policy's fix deadline per priority.
 func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays map[string]int) (*OutcomesReport, error) {
+	// The plan's history window (plan_history.go) starts the report no
+	// earlier than it.
+	hist, err := s.historySince(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if hist != nil && from.Before(*hist) {
+		from = hist.UTC()
+	}
 	r := &OutcomesReport{From: from, To: to, GeneratedAt: time.Now().UTC(), TimeToRemedy: []OutcomeTiming{}, Causes: []OutcomeCause{},
 		NotRemediation: OutcomeNotRemediation{ByKind: map[string]int64{}},
 		SLA:            []OutcomeSLA{}, Reopened: OutcomeReopened{Recent: []OutcomeReopen{}, RecentTruncatedAt: outcomeRecent}}

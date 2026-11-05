@@ -159,7 +159,9 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
     !plan.allowed_channel_kinds &&
     plan.sbom_imports.limit === null &&
     !plan.check_again_cooldown_seconds &&
-    !plan.api_requests_per_hour
+    !plan.api_requests_per_hour &&
+    !plan.history_days &&
+    !plan.inactive_pause_days
   )
     return null;
   return (
@@ -172,11 +174,15 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
         return <UsageMeter key={k} used={u.used} limit={u.limit} noun={PLAN_LIMIT_WORDS[k]} />;
       })}
       {plan.sbom_imports.limit !== null && <UsageMeter used={plan.sbom_imports.used} limit={plan.sbom_imports.limit} noun="SBOM imports this month" />}
-      {(plan.check_again_cooldown_seconds > 0 || plan.api_requests_per_hour > 0) && (
+      {(plan.check_again_cooldown_seconds > 0 || plan.api_requests_per_hour > 0 || plan.history_days > 0 || plan.inactive_pause_days > 0) && (
         <p className="small">
           {plan.check_again_cooldown_seconds > 0 && <>Check again: once every {cooldownWords(plan.check_again_cooldown_seconds)} for each asset. </>}
           {plan.api_requests_per_hour > 0 && (
             <>API requests: {plan.api_requests_per_hour.toLocaleString()} an hour (what agents and CI send is not counted).</>
+          )}
+          {plan.history_days > 0 && <> History: the last {plan.history_days} days of resolved issues are shown (everything is kept).</>}
+          {plan.inactive_pause_days > 0 && (
+            <> Paused after {plan.inactive_pause_days} days without anyone signing in, with two email reminders first.</>
           )}
         </p>
       )}

@@ -440,6 +440,10 @@ export interface PlanUsage {
   check_again_cooldown_seconds: number;
   /** The organisation's API requests an hour; 0: no cap. */
   api_requests_per_hour: number;
+  /** Days of resolved issues and past software shown; 0: all. */
+  history_days: number;
+  /** Paused after this many days without a sign-in; 0: never. */
+  inactive_pause_days: number;
 }
 
 /**

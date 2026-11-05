@@ -52,6 +52,8 @@ const plan = (over: Partial<PlanUsage> = {}): PlanUsage => ({
   sbom_imports: { used: 1, limit: 5 },
   check_again_cooldown_seconds: 3600,
   api_requests_per_hour: 300,
+  history_days: 30,
+  inactive_pause_days: 60,
   ...over,
 });
 
@@ -108,6 +110,8 @@ test("Usage: every limit of the plan, the channels it includes, and read-only pr
   assert.match(html, /1<\/strong> of 5 SBOM imports this month/);
   assert.match(html, /Check again: once every hour for each asset/);
   assert.match(html, /API requests: 300 an hour \(what agents and CI send is not counted\)/);
+  assert.match(html, /History: the last 30 days of resolved issues are shown/);
+  assert.match(html, /Paused after 60 days without anyone signing in/);
 });
 
 test("cooldowns read as people say them", async () => {
@@ -120,4 +124,14 @@ test("cooldowns read as people say them", async () => {
 
 test("Usage without plan limits has no plan card", () => {
   assert.doesNotMatch(details(null), /plan includes/);
+});
+
+test("history window: what is left out, and the plan for all of it", () => {
+  const line = (p: PlanUsage | null) => renderToStaticMarkup(h(limit.HistoryWindowLine, { plan: p }));
+  assert.equal(line(null), "");
+  assert.equal(line(plan({ history_days: 0 })), "");
+  const html = line(plan());
+  assert.match(html, /Showing the last 30 days of resolved issues/);
+  assert.match(html, /open issues are always shown/);
+  assert.match(html, /Upgrade to Starter for full history/);
 });

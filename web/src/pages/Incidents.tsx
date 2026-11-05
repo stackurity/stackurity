@@ -9,6 +9,7 @@ import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { incidentsEmpty } from "../emptyCopy";
 import { IssueLinks } from "../components/IssueLinks";
+import { HistoryWindowNote } from "../components/PlanLimit";
 
 const LIMIT = 50;
 
@@ -132,6 +133,7 @@ export function IncidentsPage() {
         title="Incidents"
         sub="Findings grouped by vulnerability and owner team, plus system problems (feeds, collection, coverage, the platform itself). Notifications are sent per incident."
       />
+      <HistoryWindowNote />
       {sosCount > 0 && (
         <div className="alert sos-banner" role="alert">
           <strong>SOS: {plural(sosCount, "open incident")} need urgent attention.</strong>{" "}
