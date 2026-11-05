@@ -10,7 +10,7 @@ import {
 } from "../api";
 import { useAction } from "../hooks";
 import { SMTP_PRESETS } from "../smtpPresets";
-import { ErrorBox } from "./ui";
+import { ChoiceCards, ErrorBox, FieldGroup, OptionBadge, type ChoiceOption } from "./ui";
 import { errorView } from "../errors";
 
 /*
@@ -21,7 +21,7 @@ import { errorView } from "../errors";
 
 export const NOTHING_CHOSEN = "Pick at least one: something right away or a summary.";
 
-/** "Send right away" and "Summary", as two groups of radio buttons. */
+/** "Send right away" and "Summary", as two titled groups of option cards. */
 export function RouteQuestions({
   idp,
   now,
@@ -42,54 +42,32 @@ export function RouteQuestions({
   /** The route's urgent threshold, shown as a note when it is not P1. */
   minPriority?: Priority;
 }) {
-  const nowOptions: { key: SendNow; label: string; hint?: string }[] = [
-    { key: "urgent", label: "Urgent issues", hint: "Exploited, critical, or came back after a fix." },
-    { key: "all", label: "All new issues" },
-    { key: "none", label: "Nothing right away" },
+  const nowOptions: ChoiceOption<SendNow>[] = [
+    {
+      value: "urgent",
+      label: "Urgent issues",
+      description: "Exploited, critical, or came back after a fix. The ones someone should look at today.",
+      badge: <OptionBadge>Recommended</OptionBadge>,
+    },
+    { value: "all", label: "All new issues", description: "Every new issue as it is found. Can be busy on a large estate." },
+    { value: "none", label: "Nothing right away", description: "Only the summary below." },
   ];
-  const sumOptions: { key: SummaryChoice; label: string }[] = [
-    { key: "daily", label: summaryText("daily", time, day, timezone) },
-    { key: "weekly", label: summaryText("weekly", time, day, timezone) },
-    { key: "none", label: "No summary" },
+  const sumOptions: ChoiceOption<SummaryChoice>[] = [
+    { value: "daily", label: summaryText("daily", time, day, timezone), description: "What is new, what was fixed and the top fixes still open." },
+    { value: "weekly", label: summaryText("weekly", time, day, timezone), description: "The same summary, once a week." },
+    { value: "none", label: "No summary" },
   ];
   return (
     <>
-      <div className="form-grid">
-        <fieldset className="field">
-          <legend>Send right away</legend>
-          <ul className="choice-list">
-            {nowOptions.map((o) => (
-              <li key={o.key}>
-                <label className="choice">
-                  <input type="radio" name={`${idp}-now`} checked={now === o.key} onChange={() => onChange(o.key, summary)} />
-                  <span>
-                    <strong>{o.label}</strong>
-                    {o.hint && <span className="hint"> {o.hint}</span>}
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-          {now === "urgent" && minPriority && minPriority !== "P1" && minPriority !== "P4" && (
-            <p className="hint">Urgent from {minPriority} (see More options).</p>
-          )}
-        </fieldset>
-        <fieldset className="field">
-          <legend>Summary</legend>
-          <ul className="choice-list">
-            {sumOptions.map((o) => (
-              <li key={o.key}>
-                <label className="choice">
-                  <input type="radio" name={`${idp}-sum`} checked={summary === o.key} onChange={() => onChange(now, o.key)} />
-                  <span>
-                    <strong>{o.label}</strong>
-                  </span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        </fieldset>
-      </div>
+      <FieldGroup title="Send right away" description="Messages sent as soon as a check finds something.">
+        <ChoiceCards name={`${idp}-now`} legend="Send right away" options={nowOptions} value={now} onChange={(v) => onChange(v, summary)} />
+        {now === "urgent" && minPriority && minPriority !== "P1" && minPriority !== "P4" && (
+          <p className="hint">Urgent from {minPriority} (see More options).</p>
+        )}
+      </FieldGroup>
+      <FieldGroup title="Summary" description="A digest on a schedule. Skipped when nothing changed.">
+        <ChoiceCards name={`${idp}-sum`} legend="Summary" options={sumOptions} value={summary} onChange={(v) => onChange(now, v)} />
+      </FieldGroup>
       {now === "none" && summary === "none" && (
         <div className="alert alert-warn" role="alert">
           {NOTHING_CHOSEN}
