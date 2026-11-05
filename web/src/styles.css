@@ -7187,3 +7187,24 @@ a.cov-chip:hover {
 .choice-card-static {
   cursor: default;
 }
+/* A field group straight after other fields gets the same divider as later groups. */
+.card .form > .field-group:not(:first-child) {
+  border-top: 1px dashed var(--border);
+}
+/* The legend's spacing plus the flex gap leaves the description too far under its title. */
+.field-group > .field-group-desc {
+  margin-top: calc(-1 * var(--s2));
+}
+/* The rule and email forms that open inside a notifications row. */
+.scope-rule-form {
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+}
+.scope-rule-form > .field-group:first-child {
+  padding-top: 0;
+}
+.scope-rule-form > .field-group:first-child > .field-group-desc {
+  margin-top: 0;
+}

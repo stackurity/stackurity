@@ -17,7 +17,7 @@ import {
 import { useAction, useLoad, useUnsavedChanges, type Loaded } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, Code, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
+import { Card, CheckCard, Code, EmptyState, ErrorBox, FieldGroup, Loading, Notice, Pager, RelativeTime, SaveBar } from "../../components/ui";
 import { deliveriesEmpty } from "../../emptyCopy";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton, ConnectPagerDutyButton, parseAddresses, SmtpProviderPicker, StackurityEmailFields } from "../../components/NotifyChoices";
@@ -172,6 +172,50 @@ const fieldsText = (m: Record<string, string> | undefined) =>
 const SN_DEFAULT_URGENCY: Record<Priority, string> = { P1: "1", P2: "1", P3: "2", P4: "3" };
 const SN_DEFAULT_IMPACT: Record<Priority, string> = { P1: "1", P2: "2", P3: "2", P4: "2" };
 const PD_DEFAULT_SEVERITY: Record<Priority, string> = { P1: "critical", P2: "error", P3: "warning", P4: "info" };
+
+/** What the Connection card is for, by kind, in one sentence. */
+function connectionDescription(
+  kind: ChannelKind,
+  f: { appOnly: boolean; slackApp: boolean; teamsApp: boolean; pdApp: boolean; jiraOAuth: boolean },
+): string {
+  if (f.appOnly) return "Connect the app first; you choose what to send on the next screen.";
+  switch (kind) {
+    case "slack":
+      return f.slackApp
+        ? "The Slack channel this integration posts to, through the Stackurity app."
+        : "Slack gives you a webhook address for one channel; Stackurity posts the messages to it.";
+    case "teams":
+      return f.teamsApp
+        ? "The Teams channel this integration posts to, through the Stackurity app."
+        : "A Workflows webhook in Microsoft Teams posts the messages to one channel.";
+    case "stackurity_email":
+      return "Stackurity emails the people you pick. Nothing to set up.";
+    case "email":
+      return "Stackurity sends the emails through your own mail server.";
+    case "webhook":
+      return "Stackurity sends each message to your own address, for tools that are not listed here.";
+    case "jira":
+      return f.jiraOAuth
+        ? "Stackurity opens one Jira issue per incident, through Connect Jira."
+        : "Stackurity opens one Jira issue per incident and updates it; here is where, and how it signs in.";
+    case "pagerduty":
+      return f.pdApp ? "The PagerDuty service that gets an alert for each incident." : "The PagerDuty service that gets an alert for each incident, and its key.";
+    case "servicenow":
+      return "Stackurity opens one ServiceNow record per incident; here is where, and how it signs in.";
+    default:
+      return "Where messages go, and how Stackurity signs in to send them.";
+  }
+}
+
+/** The credential a kind's secret reference points at, in plain words. */
+function secretWhat(kind: ChannelKind, deployment: string, snAuth: string): string {
+  if (kind === "email") return "mail server password";
+  if (kind === "webhook") return "signing key";
+  if (kind === "jira") return deployment === "cloud" ? "Atlassian API token" : "personal access token";
+  if (kind === "pagerduty") return "integration key of an Events API v2 integration on the service";
+  if (kind === "servicenow") return snAuth === "oauth" ? "OAuth client secret" : "integration user's password";
+  return "incoming webhook URL (it works like a password)";
+}
 
 /**
  * The connection of a notification integration (a channel). For a new one,
@@ -478,112 +522,123 @@ export function ChannelForm({
   );
   const form = (
     <form className="form" onSubmit={submit}>
-      <Card title={title}>
+      <Card title={title} description={connectionDescription(kind, { appOnly, slackApp, teamsApp, pdApp, jiraOAuth })}>
       <div className="form">
-      <div className="form-grid">
-        {/* The kind is in the page's heading; it is chosen only when nothing fixed it. */}
-        {!channel && !fixedKind && (
-          <div className="field">
-            <label htmlFor={`${idp}-kind`}>Kind</label>
-            <select id={`${idp}-kind`} value={group} onChange={(e) => setGroup(e.target.value as Group)}>
-              {GROUPS.map((g) => (
-                <option key={g.key} value={g.key}>
-                  {g.label}
-                </option>
-              ))}
-            </select>
-          </div>
-        )}
-        {!appOnly && (
-          <div className="field">
-            <label htmlFor={`${idp}-name`}>Name</label>
-            <input id={`${idp}-name`} required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. security-oncall" />
-          </div>
-        )}
-        {addToSlack && (
-          <div className="field field-span">
-            <p>Slack asks you to pick a channel, then brings you back here to choose what to send. Buttons in the messages work inside Slack.</p>
-            <AddToSlackButton returnTo={returnTo} />
-          </div>
-        )}
-        {connectPD && (
-          <div className="field field-span">
-            <p>
-              PagerDuty asks you to allow Stackurity, then you pick the service here. Stackurity adds an Events API V2 integration named Stackurity to it and keeps its
-              key; you never copy one. Stackurity does not keep access to your PagerDuty account.
-            </p>
-            <ConnectPagerDutyButton returnTo={returnTo} />
-          </div>
-        )}
-        {channel && pdApp && (
-          <p className="field-span">
-            Sends to the PagerDuty service <strong>{cfg.pagerduty_service_name || cfg.pagerduty_service_id}</strong>
-            {cfg.region === "eu" ? " (EU service region)" : ""} through the integration named Stackurity, added with Connect PagerDuty.{" "}
-            {cfg.pagerduty_manage_url && (
-              <a href={cfg.pagerduty_manage_url} target="_blank" rel="noreferrer">
-                Open it in PagerDuty
+      {((!channel && !fixedKind) || !appOnly) && (
+        <div className="form-grid">
+          {/* The kind is in the page's heading; it is chosen only when nothing fixed it. */}
+          {!channel && !fixedKind && (
+            <div className="field">
+              <label htmlFor={`${idp}-kind`}>Kind</label>
+              <select id={`${idp}-kind`} value={group} onChange={(e) => setGroup(e.target.value as Group)}>
+                {GROUPS.map((g) => (
+                  <option key={g.key} value={g.key}>
+                    {g.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+          {!appOnly && (
+            <div className="field">
+              <label htmlFor={`${idp}-name`}>Name</label>
+              <input id={`${idp}-name`} required value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. security-oncall" />
+              <p className="hint">How it is listed under Integrations and in the delivery log.</p>
+            </div>
+          )}
+        </div>
+      )}
+      {addToSlack && (
+        <div className="field">
+          <p>Slack asks you to pick a channel, then brings you back here to choose what to send. Buttons in the messages work inside Slack.</p>
+          <AddToSlackButton returnTo={returnTo} />
+        </div>
+      )}
+      {connectPD && (
+        <div className="field">
+          <p>
+            PagerDuty asks you to allow Stackurity, then you pick the service here. Stackurity adds an Events API V2 integration named Stackurity to it and keeps its
+            key; you never copy one. Stackurity does not keep access to your PagerDuty account.
+          </p>
+          <ConnectPagerDutyButton returnTo={returnTo} />
+        </div>
+      )}
+      {channel && pdApp && (
+        <p>
+          Sends to the PagerDuty service <strong>{cfg.pagerduty_service_name || cfg.pagerduty_service_id}</strong>
+          {cfg.region === "eu" ? " (EU service region)" : ""} through the integration named Stackurity, added with Connect PagerDuty.{" "}
+          {cfg.pagerduty_manage_url && (
+            <a href={cfg.pagerduty_manage_url} target="_blank" rel="noreferrer">
+              Open it in PagerDuty
+            </a>
+          )}
+        </p>
+      )}
+      {addToTeams && (
+        <div className="field">
+          <AddToTeams onConnected={(c) => onSaved(c, true)} />
+        </div>
+      )}
+      {channel && teamsApp && (
+        <p>
+          Sends to <strong>{teamsAppTarget(cfg)}</strong>. To stop, delete this integration or remove the app from the team in Teams.
+        </p>
+      )}
+      {channel && slackApp && (
+        <p>
+          Sends to <strong>{slackAppTarget(cfg)}</strong>. Buttons act in Slack.
+          {cfg.configuration_url && (
+            <>
+              {" "}
+              <a href={cfg.configuration_url} target="_blank" rel="noreferrer">
+                Manage the app in Slack
               </a>
-            )}
-          </p>
-        )}
-        {addToTeams && (
-          <div className="field field-span">
-            <AddToTeams onConnected={(c) => onSaved(c, true)} />
+            </>
+          )}
+        </p>
+      )}
+      {kind === "stackurity_email" && (
+        <FieldGroup title="Who gets the emails" description="Members of your organisation, and other addresses. Stackurity sends the emails for you.">
+          <div className="form-grid">
+            <StackurityEmailFields
+              idp={idp}
+              options={options}
+              members={members}
+              userIds={userIds}
+              setUserIds={setUserIds}
+              others={others}
+              setOthers={setOthers}
+            />
           </div>
-        )}
-        {channel && teamsApp && (
-          <p className="field-span">
-            Sends to <strong>{teamsAppTarget(cfg)}</strong>. To stop, delete this integration or remove the app from the team in Teams.
-          </p>
-        )}
-        {channel && slackApp && (
-          <p className="field-span">
-            Sends to <strong>{slackAppTarget(cfg)}</strong>. Buttons act in Slack.
-            {cfg.configuration_url && (
-              <>
-                {" "}
-                <a href={cfg.configuration_url} target="_blank" rel="noreferrer">
-                  Manage the app in Slack
-                </a>
-              </>
-            )}
-          </p>
-        )}
-        {kind === "stackurity_email" && (
-          <StackurityEmailFields
-            idp={idp}
-            options={options}
-            members={members}
-            userIds={userIds}
-            setUserIds={setUserIds}
-            others={others}
-            setOthers={setOthers}
-          />
-        )}
-        {kind === "webhook" && (
-          <div className="field field-span">
+        </FieldGroup>
+      )}
+      {kind === "webhook" && (
+        <FieldGroup title="Where to send" description="Stackurity posts each message to this address as JSON.">
+          <div className="field">
             <label htmlFor={`${idp}-url`}>Webhook URL</label>
             <input id={`${idp}-url`} type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://hooks.example.com/stackurity" />
             <p className="hint">HTTPS required. Do not include credentials or tokens in the URL.</p>
           </div>
-        )}
-        {kind === "jira" && (options.jira_app || jiraOAuth) && (
-          <p className="field-span small">
-            {jiraOAuth ? (
-              <button type="button" className="btn btn-link btn-inline" onClick={() => setJiraAuth("token")}>
-                Use an API token instead (Jira Data Center and Server always do)
+        </FieldGroup>
+      )}
+      {kind === "jira" && (options.jira_app || jiraOAuth) && (
+        <p className="small">
+          {jiraOAuth ? (
+            <button type="button" className="btn btn-link btn-inline" onClick={() => setJiraAuth("token")}>
+              Use an API token instead (Jira Data Center and Server always do)
+            </button>
+          ) : (
+            options.jira_app && (
+              <button type="button" className="btn btn-link btn-inline" onClick={() => setJiraAuth("oauth")}>
+                Use Connect Jira instead (Jira Cloud, no token)
               </button>
-            ) : (
-              options.jira_app && (
-                <button type="button" className="btn btn-link btn-inline" onClick={() => setJiraAuth("oauth")}>
-                  Use Connect Jira instead (Jira Cloud, no token)
-                </button>
-              )
-            )}
-          </p>
-        )}
-        {jiraOAuth && (
-          <>
+            )
+          )}
+        </p>
+      )}
+      {jiraOAuth && (
+        <FieldGroup title="Jira site and project" description="Connect Jira signs in for Stackurity; you pick the site and the project its issues go to.">
+          <div className="form-grid">
             <JiraConnectFields
               idp={idp}
               value={jiraPick}
@@ -600,251 +655,287 @@ export function ChannelForm({
                 <p className="hint">Comma-separated. Every issue also gets the labels stackurity and stackurity-incident-…, which keep it to one issue per incident.</p>
               </div>
             )}
-            {jiraPick.project && <p className="field-span hint">Send test checks the connection and the project without creating an issue.</p>}
-          </>
-        )}
-        {kind === "jira" && !jiraOAuth && (
-          <>
-            <div className="field">
-              <label htmlFor={`${idp}-dep`}>Jira edition</label>
-              <select id={`${idp}-dep`} value={deployment} onChange={(e) => setDeployment(e.target.value)}>
-                <option value="cloud">Jira Cloud (email and API token)</option>
-                <option value="datacenter">Jira Data Center or Server (personal access token)</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-jurl`}>Site URL</label>
-              <input
-                id={`${idp}-jurl`}
-                type="url"
-                required
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                placeholder={deployment === "cloud" ? "https://your-site.atlassian.net" : "https://jira.example.com"}
-              />
-            </div>
-            {deployment === "cloud" && (
+          </div>
+          {jiraPick.project && <p className="hint">Send test checks the connection and the project without creating an issue.</p>}
+        </FieldGroup>
+      )}
+      {kind === "jira" && !jiraOAuth && (
+        <>
+          <FieldGroup title="Jira site" description="Which Jira Stackurity signs in to, and as whom.">
+            <div className="form-grid">
               <div className="field">
-                <label htmlFor={`${idp}-juser`}>Account email</label>
-                <input id={`${idp}-juser`} type="email" required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+                <label htmlFor={`${idp}-dep`}>Jira edition</label>
+                <select id={`${idp}-dep`} value={deployment} onChange={(e) => setDeployment(e.target.value)}>
+                  <option value="cloud">Jira Cloud (email and API token)</option>
+                  <option value="datacenter">Jira Data Center or Server (personal access token)</option>
+                </select>
               </div>
-            )}
-            <div className="field">
-              <label htmlFor={`${idp}-proj`}>Project key</label>
-              <input id={`${idp}-proj`} required className="mono" value={project} onChange={(e) => setProject(e.target.value)} placeholder="SEC" />
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-itype`}>Issue type</label>
-              <input id={`${idp}-itype`} value={issueType} onChange={(e) => setIssueType(e.target.value)} placeholder="Task" />
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-labels`}>Labels (optional)</label>
-              <input id={`${idp}-labels`} value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="security, vulnerability" />
-              <p className="hint">Comma-separated. Every issue also gets the labels stackurity and stackurity-incident-…, which keep it to one issue per incident.</p>
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-trans`}>Transition when resolved (optional)</label>
-              <input id={`${idp}-trans`} value={transition} onChange={(e) => setTransition(e.target.value)} placeholder="Done" />
-              <p className="hint">Transition or status name. Empty: the issue is only commented on when the incident resolves.</p>
-            </div>
-            <fieldset className="field field-span">
-              <legend>Jira priority per Stackurity priority (optional)</legend>
-              <div className="form-grid">
-                {PRIORITIES.map((p) => (
-                  <div className="field" key={p}>
-                    <label htmlFor={`${idp}-prio-${p}`}>{p}</label>
-                    <input
-                      id={`${idp}-prio-${p}`}
-                      value={priorities[p] ?? ""}
-                      onChange={(e) => setPriorities({ ...priorities, [p]: e.target.value })}
-                      placeholder={{ P1: "Highest", P2: "High", P3: "Medium", P4: "Low" }[p]}
-                    />
-                  </div>
-                ))}
+              <div className="field">
+                <label htmlFor={`${idp}-jurl`}>Site URL</label>
+                <input
+                  id={`${idp}-jurl`}
+                  type="url"
+                  required
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                  placeholder={deployment === "cloud" ? "https://your-site.atlassian.net" : "https://jira.example.com"}
+                />
               </div>
-              <p className="hint">Leave empty to use the project's default priority.</p>
-            </fieldset>
-          </>
-        )}
-        {kind === "pagerduty" && !connectPD && (
-          <>
-            {!pdApp && (
-            <div className="field">
-              <label htmlFor={`${idp}-region`}>Service region</label>
-              <select id={`${idp}-region`} value={region} onChange={(e) => setRegion(e.target.value)}>
-                <option value="us">US (events.pagerduty.com)</option>
-                <option value="eu">EU (events.eu.pagerduty.com)</option>
-              </select>
-              <p className="hint">The region of your PagerDuty account.</p>
+              {deployment === "cloud" && (
+                <div className="field">
+                  <label htmlFor={`${idp}-juser`}>Account email</label>
+                  <input id={`${idp}-juser`} type="email" required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+                </div>
+              )}
             </div>
-            )}
-            <fieldset className="field field-span">
-              <legend>PagerDuty severity per Stackurity priority</legend>
+          </FieldGroup>
+          <FieldGroup title="Where issues go" description="Stackurity opens one issue per incident in this project, and updates it as the incident changes.">
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor={`${idp}-proj`}>Project key</label>
+                <input id={`${idp}-proj`} required className="mono" value={project} onChange={(e) => setProject(e.target.value)} placeholder="SEC" />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-itype`}>Issue type</label>
+                <input id={`${idp}-itype`} value={issueType} onChange={(e) => setIssueType(e.target.value)} placeholder="Task" />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-labels`}>Labels (optional)</label>
+                <input id={`${idp}-labels`} value={labels} onChange={(e) => setLabels(e.target.value)} placeholder="security, vulnerability" />
+                <p className="hint">Comma-separated. Every issue also gets the labels stackurity and stackurity-incident-…, which keep it to one issue per incident.</p>
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-trans`}>Transition when resolved (optional)</label>
+                <input id={`${idp}-trans`} value={transition} onChange={(e) => setTransition(e.target.value)} placeholder="Done" />
+                <p className="hint">Transition or status name. Empty: the issue is only commented on when the incident resolves.</p>
+              </div>
+            </div>
+          </FieldGroup>
+          <FieldGroup title="Jira priority per Stackurity priority (optional)" description="Leave empty to use the project's default priority.">
+            <div className="form-grid">
+              {PRIORITIES.map((p) => (
+                <div className="field" key={p}>
+                  <label htmlFor={`${idp}-prio-${p}`}>{p}</label>
+                  <input
+                    id={`${idp}-prio-${p}`}
+                    value={priorities[p] ?? ""}
+                    onChange={(e) => setPriorities({ ...priorities, [p]: e.target.value })}
+                    placeholder={{ P1: "Highest", P2: "High", P3: "Medium", P4: "Low" }[p]}
+                  />
+                </div>
+              ))}
+            </div>
+          </FieldGroup>
+        </>
+      )}
+      {kind === "pagerduty" && !connectPD && (
+        <>
+          {!pdApp && (
+            <FieldGroup title="Service" description="Where your PagerDuty account lives.">
               <div className="form-grid">
-                {PRIORITIES.map((p) => (
-                  <div className="field" key={p}>
-                    <label htmlFor={`${idp}-sev-${p}`}>{p}</label>
-                    <select id={`${idp}-sev-${p}`} value={severities[p] ?? ""} onChange={(e) => setSeverities({ ...severities, [p]: e.target.value })}>
-                      <option value="">Default ({PD_DEFAULT_SEVERITY[p]})</option>
-                      {["critical", "error", "warning", "info"].map((v) => (
+                <div className="field">
+                  <label htmlFor={`${idp}-region`}>Service region</label>
+                  <select id={`${idp}-region`} value={region} onChange={(e) => setRegion(e.target.value)}>
+                    <option value="us">US (events.pagerduty.com)</option>
+                    <option value="eu">EU (events.eu.pagerduty.com)</option>
+                  </select>
+                  <p className="hint">The region of your PagerDuty account.</p>
+                </div>
+              </div>
+            </FieldGroup>
+          )}
+          <FieldGroup
+            title="PagerDuty severity per Stackurity priority"
+            description="SOS incidents are always critical. Your service's urgency rules decide who is paged."
+          >
+            <div className="form-grid">
+              {PRIORITIES.map((p) => (
+                <div className="field" key={p}>
+                  <label htmlFor={`${idp}-sev-${p}`}>{p}</label>
+                  <select id={`${idp}-sev-${p}`} value={severities[p] ?? ""} onChange={(e) => setSeverities({ ...severities, [p]: e.target.value })}>
+                    <option value="">Default ({PD_DEFAULT_SEVERITY[p]})</option>
+                    {["critical", "error", "warning", "info"].map((v) => (
+                      <option key={v} value={v}>
+                        {v}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ))}
+            </div>
+          </FieldGroup>
+        </>
+      )}
+      {kind === "servicenow" && (
+        <>
+          <FieldGroup title="Instance and sign-in" description="Your ServiceNow address, and the integration account Stackurity signs in with.">
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor={`${idp}-snurl`}>Instance URL</label>
+                <input id={`${idp}-snurl`} type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://acme.service-now.com" />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-snauth`}>Sign-in</label>
+                <select id={`${idp}-snauth`} value={snAuth} onChange={(e) => setSnAuth(e.target.value)}>
+                  <option value="basic">User name and password (Basic)</option>
+                  <option value="oauth">OAuth client credentials</option>
+                </select>
+              </div>
+              {snAuth === "oauth" ? (
+                <div className="field">
+                  <label htmlFor={`${idp}-sncid`}>OAuth client ID</label>
+                  <input id={`${idp}-sncid`} required autoComplete="off" className="mono" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+                </div>
+              ) : (
+                <div className="field">
+                  <label htmlFor={`${idp}-snuser`}>User name</label>
+                  <input id={`${idp}-snuser`} required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="stackurity.integration" />
+                </div>
+              )}
+            </div>
+          </FieldGroup>
+          <FieldGroup title="Where records go" description="Stackurity opens one record per incident in this table, filled in as below.">
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor={`${idp}-sntable`}>Table</label>
+                <input id={`${idp}-sntable`} className="mono" value={table} onChange={(e) => setTable(e.target.value)} placeholder="incident" />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-sngroup`}>Assignment group (optional)</label>
+                <input id={`${idp}-sngroup`} value={assignGroup} onChange={(e) => setAssignGroup(e.target.value)} placeholder="Security Operations" />
+                <p className="hint">Name or sys_id. Send test checks that it exists.</p>
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-sncat`}>Category (optional)</label>
+                <input id={`${idp}-sncat`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="software" />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-snsub`}>Subcategory (optional)</label>
+                <input id={`${idp}-snsub`} value={subcategory} onChange={(e) => setSubcategory(e.target.value)} />
+              </div>
+              <div className="field field-span">
+                <label htmlFor={`${idp}-snfields`}>Other fields (optional)</label>
+                <textarea id={`${idp}-snfields`} className="mono" rows={3} value={fields} onChange={(e) => setFields(e.target.value)} placeholder={"u_business_service=Payments\ncaller_id=stackurity.integration"} />
+                <p className="hint">One column name=value per line, set when the record is created. Fields the account may not write are reported after the first record.</p>
+              </div>
+            </div>
+          </FieldGroup>
+          <FieldGroup title="Urgency and impact per Stackurity priority" description="The defaults give priorities 1 to 4 with ServiceNow's standard priority matrix.">
+            <div className="form-grid">
+              {PRIORITIES.map((p) => (
+                <div className="field" key={p}>
+                  <span className="label">{p}</span>
+                  <div className="inline-controls">
+                    <label className="sr-only" htmlFor={`${idp}-urg-${p}`}>
+                      Urgency for {p}
+                    </label>
+                    <select id={`${idp}-urg-${p}`} value={urgency[p] ?? ""} onChange={(e) => setUrgency({ ...urgency, [p]: e.target.value })}>
+                      <option value="">Urgency {SN_DEFAULT_URGENCY[p]}</option>
+                      {["1", "2", "3"].map((v) => (
                         <option key={v} value={v}>
-                          {v}
+                          Urgency {v}
+                        </option>
+                      ))}
+                    </select>
+                    <label className="sr-only" htmlFor={`${idp}-imp-${p}`}>
+                      Impact for {p}
+                    </label>
+                    <select id={`${idp}-imp-${p}`} value={impact[p] ?? ""} onChange={(e) => setImpact({ ...impact, [p]: e.target.value })}>
+                      <option value="">Impact {SN_DEFAULT_IMPACT[p]}</option>
+                      {["1", "2", "3"].map((v) => (
+                        <option key={v} value={v}>
+                          Impact {v}
                         </option>
                       ))}
                     </select>
                   </div>
-                ))}
-              </div>
-              <p className="hint">SOS incidents are always critical. Your service's urgency rules decide who is paged.</p>
-            </fieldset>
-          </>
-        )}
-        {kind === "servicenow" && (
-          <>
-            <div className="field">
-              <label htmlFor={`${idp}-snurl`}>Instance URL</label>
-              <input id={`${idp}-snurl`} type="url" required value={url} onChange={(e) => setUrl(e.target.value)} placeholder="https://acme.service-now.com" />
+                </div>
+              ))}
             </div>
-            <div className="field">
-              <label htmlFor={`${idp}-snauth`}>Sign-in</label>
-              <select id={`${idp}-snauth`} value={snAuth} onChange={(e) => setSnAuth(e.target.value)}>
-                <option value="basic">User name and password (Basic)</option>
-                <option value="oauth">OAuth client credentials</option>
-              </select>
-            </div>
-            {snAuth === "oauth" ? (
+          </FieldGroup>
+          <FieldGroup title="When an incident resolves" description="How Stackurity closes the record once the issues are fixed.">
+            <div className="form-grid">
               <div className="field">
-                <label htmlFor={`${idp}-sncid`}>OAuth client ID</label>
-                <input id={`${idp}-sncid`} required autoComplete="off" className="mono" value={clientId} onChange={(e) => setClientId(e.target.value)} />
+                <label htmlFor={`${idp}-snstate`}>State when resolved</label>
+                <input id={`${idp}-snstate`} className="mono" value={resolveState} onChange={(e) => setResolveState(e.target.value)} placeholder="6" />
               </div>
-            ) : (
               <div className="field">
-                <label htmlFor={`${idp}-snuser`}>User name</label>
-                <input id={`${idp}-snuser`} required autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} placeholder="stackurity.integration" />
+                <label htmlFor={`${idp}-sncode`}>Close code</label>
+                <input id={`${idp}-sncode`} value={closeCode} onChange={(e) => setCloseCode(e.target.value)} placeholder="Solution provided" />
               </div>
-            )}
-            <div className="field">
-              <label htmlFor={`${idp}-sntable`}>Table</label>
-              <input id={`${idp}-sntable`} className="mono" value={table} onChange={(e) => setTable(e.target.value)} placeholder="incident" />
             </div>
-            <div className="field">
-              <label htmlFor={`${idp}-sngroup`}>Assignment group (optional)</label>
-              <input id={`${idp}-sngroup`} value={assignGroup} onChange={(e) => setAssignGroup(e.target.value)} placeholder="Security Operations" />
-              <p className="hint">Name or sys_id. Send test checks that it exists.</p>
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-sncat`}>Category (optional)</label>
-              <input id={`${idp}-sncat`} value={category} onChange={(e) => setCategory(e.target.value)} placeholder="software" />
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-snsub`}>Subcategory (optional)</label>
-              <input id={`${idp}-snsub`} value={subcategory} onChange={(e) => setSubcategory(e.target.value)} />
-            </div>
-            <fieldset className="field field-span">
-              <legend>Urgency and impact per Stackurity priority</legend>
-              <div className="form-grid">
-                {PRIORITIES.map((p) => (
-                  <div className="field" key={p}>
-                    <span className="label">{p}</span>
-                    <div className="inline-controls">
-                      <label className="sr-only" htmlFor={`${idp}-urg-${p}`}>
-                        Urgency for {p}
-                      </label>
-                      <select id={`${idp}-urg-${p}`} value={urgency[p] ?? ""} onChange={(e) => setUrgency({ ...urgency, [p]: e.target.value })}>
-                        <option value="">Urgency {SN_DEFAULT_URGENCY[p]}</option>
-                        {["1", "2", "3"].map((v) => (
-                          <option key={v} value={v}>
-                            Urgency {v}
-                          </option>
-                        ))}
-                      </select>
-                      <label className="sr-only" htmlFor={`${idp}-imp-${p}`}>
-                        Impact for {p}
-                      </label>
-                      <select id={`${idp}-imp-${p}`} value={impact[p] ?? ""} onChange={(e) => setImpact({ ...impact, [p]: e.target.value })}>
-                        <option value="">Impact {SN_DEFAULT_IMPACT[p]}</option>
-                        {["1", "2", "3"].map((v) => (
-                          <option key={v} value={v}>
-                            Impact {v}
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                ))}
+            <CheckCard
+              checked={syncBack}
+              onChange={setSyncBack}
+              label="Read the state back from ServiceNow"
+              description="Every few minutes. A record resolved, closed or canceled in ServiceNow shows so on the incident and is no longer updated; findings stay open until a scan shows them fixed."
+            />
+          </FieldGroup>
+        </>
+      )}
+      {kind === "email" && (
+        <>
+          <FieldGroup title="Mail server" description="The SMTP server Stackurity sends through. Your email provider lists these settings.">
+            <div className="form-grid">
+              {!channel && (
+                <SmtpProviderPicker
+                  idp={idp}
+                  onApply={(v) => {
+                    setHost(v.host);
+                    setPort(String(v.port));
+                    setTls(v.tls);
+                    if (v.username) setUsername(v.username);
+                  }}
+                />
+              )}
+              <div className="field">
+                <label htmlFor={`${idp}-host`}>SMTP host</label>
+                <input id={`${idp}-host`} required value={host} onChange={(e) => setHost(e.target.value)} />
               </div>
-              <p className="hint">The defaults give priorities 1 to 4 with ServiceNow's standard priority matrix.</p>
-            </fieldset>
-            <div className="field field-span">
-              <label htmlFor={`${idp}-snfields`}>Other fields (optional)</label>
-              <textarea id={`${idp}-snfields`} className="mono" rows={3} value={fields} onChange={(e) => setFields(e.target.value)} placeholder={"u_business_service=Payments\ncaller_id=stackurity.integration"} />
-              <p className="hint">One column name=value per line, set when the record is created. Fields the account may not write are reported after the first record.</p>
+              <div className="field">
+                <label htmlFor={`${idp}-port`}>Port</label>
+                <input id={`${idp}-port`} type="number" min={1} max={65535} required value={port} onChange={(e) => setPort(e.target.value)} />
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-tls`}>Encryption</label>
+                <select id={`${idp}-tls`} value={tls} onChange={(e) => setTls(e.target.value)}>
+                  <option value="starttls">STARTTLS (usually port 587)</option>
+                  <option value="tls">TLS (usually port 465)</option>
+                  <option value="none">None (not recommended)</option>
+                </select>
+              </div>
+              <div className="field">
+                <label htmlFor={`${idp}-user`}>SMTP username (optional)</label>
+                <input id={`${idp}-user`} autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor={`${idp}-snstate`}>State when resolved</label>
-              <input id={`${idp}-snstate`} className="mono" value={resolveState} onChange={(e) => setResolveState(e.target.value)} placeholder="6" />
+          </FieldGroup>
+          <FieldGroup title="Messages" description="Who the emails come from, and who gets them.">
+            <div className="form-grid">
+              <div className="field">
+                <label htmlFor={`${idp}-from`}>From address</label>
+                <input id={`${idp}-from`} type="email" required value={from} onChange={(e) => setFrom(e.target.value)} />
+              </div>
+              <div className="field field-span">
+                <label htmlFor={`${idp}-to`}>Recipients</label>
+                <input id={`${idp}-to`} required value={to} onChange={(e) => setTo(e.target.value)} placeholder="sec@example.com, oncall@example.com" />
+                <p className="hint">Comma-separated, up to 50.</p>
+              </div>
             </div>
-            <div className="field">
-              <label htmlFor={`${idp}-sncode`}>Close code</label>
-              <input id={`${idp}-sncode`} value={closeCode} onChange={(e) => setCloseCode(e.target.value)} placeholder="Solution provided" />
-            </div>
-            <div className="field field-span">
-              <label className="check">
-                <input type="checkbox" checked={syncBack} onChange={(e) => setSyncBack(e.target.checked)} /> Read the state back from ServiceNow
-              </label>
-              <p className="hint">
-                Every few minutes. A record resolved, closed or canceled in ServiceNow shows so on the incident and is no longer updated; findings stay open until
-                a scan shows them fixed.
-              </p>
-            </div>
-          </>
-        )}
-        {kind === "email" && (
-          <>
-            {!channel && (
-              <SmtpProviderPicker
-                idp={idp}
-                onApply={(v) => {
-                  setHost(v.host);
-                  setPort(String(v.port));
-                  setTls(v.tls);
-                  if (v.username) setUsername(v.username);
-                }}
-              />
-            )}
-            <div className="field">
-              <label htmlFor={`${idp}-host`}>SMTP host</label>
-              <input id={`${idp}-host`} required value={host} onChange={(e) => setHost(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-port`}>Port</label>
-              <input id={`${idp}-port`} type="number" min={1} max={65535} required value={port} onChange={(e) => setPort(e.target.value)} />
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-tls`}>Encryption</label>
-              <select id={`${idp}-tls`} value={tls} onChange={(e) => setTls(e.target.value)}>
-                <option value="starttls">STARTTLS (usually port 587)</option>
-                <option value="tls">TLS (usually port 465)</option>
-                <option value="none">None (not recommended)</option>
-              </select>
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-from`}>From address</label>
-              <input id={`${idp}-from`} type="email" required value={from} onChange={(e) => setFrom(e.target.value)} />
-            </div>
-            <div className="field field-span">
-              <label htmlFor={`${idp}-to`}>Recipients</label>
-              <input id={`${idp}-to`} required value={to} onChange={(e) => setTo(e.target.value)} placeholder="sec@example.com, oncall@example.com" />
-              <p className="hint">Comma-separated, up to 50.</p>
-            </div>
-            <div className="field">
-              <label htmlFor={`${idp}-user`}>SMTP username (optional)</label>
-              <input id={`${idp}-user`} autoComplete="off" value={username} onChange={(e) => setUsername(e.target.value)} />
-            </div>
-          </>
-        )}
-        {showSecret && (
-          <div className="field field-span">
+          </FieldGroup>
+        </>
+      )}
+      {showSecret && (
+        <FieldGroup
+          title={kind === "webhook" || kind === "email" ? "Credentials (optional)" : "Credentials"}
+          description={
+            <>
+              Passwords, tokens and webhook addresses are never typed into this form. Save the {secretWhat(kind, deployment, snAuth)} once under{" "}
+              <Link to="/integrations/secrets">Integrations → Secrets</Link>, then enter its name here as <Code>secret:NAME</Code>.
+            </>
+          }
+        >
+          <div className="field">
             <label htmlFor={`${idp}-secret`}>
               {kind === "email"
                 ? "SMTP password reference (optional)"
@@ -876,33 +967,16 @@ export function ChannelForm({
                     : kind === "servicenow"
                       ? "secret:SERVICENOW_PASSWORD"
                       : kind === "email"
-                    ? "secret:SMTP_PASSWORD"
-                    : kind === "webhook"
-                      ? "secret:WEBHOOK_SIGNING_KEY"
-                      : kind === "teams"
-                        ? "secret:TEAMS_WEBHOOK_URL"
-                        : "secret:SLACK_WEBHOOK_URL"
+                        ? "secret:SMTP_PASSWORD"
+                        : kind === "webhook"
+                          ? "secret:WEBHOOK_SIGNING_KEY"
+                          : kind === "teams"
+                            ? "secret:TEAMS_WEBHOOK_URL"
+                            : "secret:SLACK_WEBHOOK_URL"
               }
             />
             <p className="hint">
-              Secrets are never stored here. Store the{" "}
-              {kind === "email"
-                ? "password"
-                : kind === "webhook"
-                  ? "HMAC signing key"
-                  : kind === "jira"
-                    ? deployment === "cloud"
-                      ? "Atlassian API token"
-                      : "personal access token"
-                    : kind === "pagerduty"
-                      ? "integration key of an Events API v2 integration on the service"
-                      : kind === "servicenow"
-                        ? snAuth === "oauth"
-                          ? "OAuth client secret"
-                          : "integration user's password"
-                        : "incoming webhook URL (it is a credential)"}{" "}
-              under <Link to="/integrations/secrets">Integrations → Secrets</Link> and reference it as <Code>secret:NAME</Code>; instance administrators can also use{" "}
-              <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
+              Instance administrators can also use <Code>env:STACKURITY_SECRET_…</Code> or <Code>file:/run/secrets/…</Code>.
               {kind === "jira" && " Send test checks the credentials and project access without creating an issue."}
               {kind === "servicenow" && " Send test checks the credentials, read access to the table and the assignment group without creating a record."}
               {kind === "pagerduty" && " Send test raises a test alert (severity info) and resolves it at once; depending on the service's rules it can notify someone."}
@@ -911,9 +985,11 @@ export function ChannelForm({
                 " Clear the field and save to remove the reference."}
             </p>
           </div>
-        )}
-        {kind === "slack" && !slackApp && (
-          <div className="field field-span">
+        </FieldGroup>
+      )}
+      {kind === "slack" && !slackApp && (
+        <FieldGroup title="Buttons in Slack (optional)" description="Lets people act on an alert without leaving Slack.">
+          <div className="field">
             <label htmlFor={`${idp}-signing`}>Slack app signing secret reference (optional)</label>
             <input
               id={`${idp}-signing`}
@@ -932,8 +1008,8 @@ export function ChannelForm({
               <Link to="/help/notifications">How to set it up</Link>
             </p>
           </div>
-        )}
-      </div>
+        </FieldGroup>
+      )}
       {!channel && group === "slack" && options.slack_app && (
         <p className="small">
           <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>

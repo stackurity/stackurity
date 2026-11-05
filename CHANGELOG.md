@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Changed
+
+- **Clearer notification and project settings.** The same layout as the other settings pages now covers integration connections (Jira, ServiceNow, email, webhook, PagerDuty: titled groups, and a plain explanation of secret references), project and asset notification rules (organisation rules, this project's rules and channels as separate rows; "Send right away" and "Summary" as explained options, also in onboarding) and the Projects pages (who has access, giving access to a person or a team).
+
 ## 0.18.0
 
 ### Added
