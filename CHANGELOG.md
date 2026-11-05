@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.18.0
+
 ### Added
 
 - **Notifications for each project and asset, like groups and projects in GitLab.** The organisation's rules still apply to every project and asset, and each project (and asset) now has **Notifications**: the rules it inherits, each **On**, **Off for this project** or **Edited for this project** (**Turn off for this project**, **Edit for this project**, **Use the organisation's rule again**), rules of its own (**Add rule**), and channels of its own (**Add email**, and **Connect Slack** / **Connect Teams**). So the backend, frontend and server teams of one organisation each get their own alerts instead of everyone getting everything. A project's admins (an organisation-wide admin, or the admin role on the project) manage it, also without an organisation-wide role, on the project's page or under **Assets → Project notifications**; security can read it. A rule sends to the organisation's channels or its own project's or asset's, and never names an asset outside its scope. The same message to the same channel is sent once. Webhooks, Jira, PagerDuty and ServiceNow use stored secrets, so an organisation admin adds them for a project.
