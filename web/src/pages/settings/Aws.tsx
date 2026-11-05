@@ -4,7 +4,21 @@ import { api, type List } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import {
+  Card,
+  CardFooter,
+  CheckCard,
+  Code,
+  CodeBlock,
+  EmptyState,
+  ErrorBox,
+  KeyValues,
+  Loading,
+  Notice,
+  PageHeader,
+  RelativeTime,
+  SettingRow,
+} from "../../components/ui";
 import { awsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 
@@ -221,12 +235,17 @@ function ConnectForm({ setup, onLaunched }: { setup: AwsSetup; onLaunched: (id: 
   };
 
   return (
-    <Card title="Connect an AWS account">
+    <Card
+      title="Connect an AWS account"
+      description="Creates a read-only role in your AWS account with one CloudFormation stack. Stackurity then lists your managed databases, caches, clusters and functions, and their versions."
+    >
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not start the connection" />
-        <div className="form-grid">
+        <SettingRow title="Regions to read" description="Where your resources run. Stackurity only looks in these regions.">
           <div className="field">
-            <label htmlFor="aws-regions">Regions to read</label>
+            <label className="sr-only" htmlFor="aws-regions">
+              Regions to read
+            </label>
             <input
               id="aws-regions"
               className="mono"
@@ -245,8 +264,12 @@ function ConnectForm({ setup, onLaunched }: { setup: AwsSetup; onLaunched: (id: 
               {parsed.bad.length > 0 ? `Not a region code: ${parsed.bad.join(", ")}` : "Comma-separated region codes, e.g. eu-west-1, us-east-1."}
             </p>
           </div>
+        </SettingRow>
+        <SettingRow title="Create the stack in" description="The role is global; the region only decides where the stack lives.">
           <div className="field">
-            <label htmlFor="aws-stack-region">Create the stack in</label>
+            <label className="sr-only" htmlFor="aws-stack-region">
+              Create the stack in
+            </label>
             <select id="aws-stack-region" value={stackRegion} onChange={(e) => setStackRegion(e.target.value)}>
               <option value="">{parsed.regions[0] ?? "the first region"} (first region)</option>
               {AWS_REGIONS.map((r) => (
@@ -255,16 +278,27 @@ function ConnectForm({ setup, onLaunched }: { setup: AwsSetup; onLaunched: (id: 
                 </option>
               ))}
             </select>
-            <p className="hint">The role is global; the region only decides where the stack lives.</p>
           </div>
-          <div className="field field-span">
-            <label className="check" htmlFor="aws-agent">
-              <input id="aws-agent" type="checkbox" checked={agent} onChange={(e) => setAgent(e.target.checked)} /> Allow installing the agent on EC2
-              instances through SSM
-            </label>
-            <p className="hint">Adds {setup.agent_install_permissions.map((p, i) => <span key={p}>{i > 0 && ", "}<Code>{p}</Code></span>)} (Run Command with AWS-RunShellScript only). Off by default.</p>
-          </div>
-        </div>
+        </SettingRow>
+        <SettingRow title="Agent on EC2" description="Optional. Lets you install the server agent on your EC2 instances from Stackurity, without signing in to each one.">
+          <CheckCard
+            checked={agent}
+            onChange={setAgent}
+            label="Allow installing the agent on EC2 instances through SSM"
+            description={
+              <>
+                Adds{" "}
+                {setup.agent_install_permissions.map((p, i) => (
+                  <span key={p}>
+                    {i > 0 && ", "}
+                    <Code>{p}</Code>
+                  </span>
+                ))}{" "}
+                (Run Command with AWS-RunShellScript only). Off by default.
+              </>
+            }
+          />
+        </SettingRow>
         <details className="schema-help">
           <summary>What the role can do</summary>
           <p className="small">
@@ -282,11 +316,11 @@ function ConnectForm({ setup, onLaunched }: { setup: AwsSetup; onLaunched: (id: 
             to review it.
           </p>
         </details>
-        <div className="form-actions">
+        <CardFooter status={setup.launch_stack ? "Next, you create the stack in AWS and come back here." : undefined}>
           <button type="submit" className="btn btn-primary" disabled={act.pending || invalid}>
             {setup.launch_stack ? "Launch Stack in AWS" : "Create the connection"}
           </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

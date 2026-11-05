@@ -69,7 +69,17 @@ export function AutomaticFixesPage() {
         </ProNotice>
       )}
       {has("remediation") && <RemediationTiles />}
-      <PlansTab />
+      {/* Without the feature the plans list only answers "part of Pro", which the notice above already says. */}
+      {has("remediation") && (
+        <>
+          <h2 className="section-title">Plans</h2>
+          <p className="hint section-hint">
+            Each plan is one upgrade Stackurity proposes for one or more assets. Open a plan to approve it, follow its rollout or see what
+            changed.
+          </p>
+          <PlansTab />
+        </>
+      )}
     </>
   );
 }

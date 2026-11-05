@@ -323,10 +323,10 @@ export function AssetDetailPage() {
       <details className="asset-details">
         <summary>
           <h2>Details</h2>
-          <span className="small muted">attributes, identifiers, owner and context</span>
+          <span className="small muted">Show attributes, identifiers, owner and context</span>
         </summary>
       <div className="grid-3">
-        <Card title="Attributes">
+        <Card title="Attributes" description="What the collector reported about this asset.">
           <KeyValues
             entries={[
               ...appEntries,
@@ -337,7 +337,7 @@ export function AssetDetailPage() {
             ]}
           />
         </Card>
-        <Card title="Identifiers">
+        <Card title="Identifiers" description="Names this asset is recognised by, such as a hostname or Git address, so reports from different places land on it.">
           {identifiers.length === 0 ? (
             <p className="muted">No identifiers recorded.</p>
           ) : (
@@ -414,6 +414,7 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
     return (
       <Card
         title="Ownership & context"
+        description="Who owns this asset and how important it is. Environment, criticality and exposure raise or lower the priority of its issues."
         actions={
           editable && (
             <button type="button" className="btn btn-sm" onClick={() => setEditing(true)}>
@@ -448,7 +449,10 @@ function OwnershipCard({ asset, editable, onSaved }: { asset: Asset; editable: b
   }
 
   return (
-    <Card title="Ownership & context">
+    <Card
+      title="Ownership & context"
+      description="Who owns this asset and how important it is. Environment, criticality and exposure raise or lower the priority of its issues."
+    >
       <form className="form form-compact" onSubmit={save}>
         <ErrorBox error={act.error} title="Save failed" />
         <ErrorBox error={teams.error} title="Could not load teams" />
@@ -626,6 +630,7 @@ function FindingsTab({ assetId }: { assetId: number }) {
   );
   return (
     <>
+      <p className="hint tab-intro">Every open vulnerability and end-of-life component found on this asset. The Fixes tab groups them into changes to make.</p>
       <div className="filters">
         <label className="check">
           <input
@@ -776,6 +781,7 @@ function InventoryTab({ assetId }: { assetId: number }) {
 
   return (
     <>
+      <p className="hint tab-intro">Every package, library and runtime the last report found on this asset, with its version and whether it was checked.</p>
       <div className="filters">
         <div className="field">
           <label htmlFor="inv-q">Search</label>
@@ -903,7 +909,7 @@ function CollectionsTab({ assetId }: { assetId: number }) {
   ];
   return (
     <>
-      <p className="hint">The 50 most recent collections received for this asset.</p>
+      <p className="hint">The 50 most recent collections received for this asset. A collection is one report from an agent, a scan or an integration.</p>
       <ErrorBox error={res.error} title="Could not load collections" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <EmptyState title="No collections yet" />}
@@ -987,6 +993,10 @@ function RelationsTab({ asset, editable, onChanged }: { asset: Asset; editable: 
 
   return (
     <>
+      <p className="hint tab-intro">
+        How this asset is linked to others, such as the server an application runs on or the repository an image is built from. The Stack tab
+        uses these links to show everything an application relies on.
+      </p>
       <ErrorBox error={res.error} title="Could not load relations" />
       <ErrorBox error={remove.error} title="Remove failed" />
       {!res.data && !res.error && <Loading />}
@@ -1218,6 +1228,7 @@ function AssetHealth({ asset, findingCount }: { asset: Asset; findingCount: numb
   return (
     <section className="card asset-health" aria-label="Health">
       <div className="asset-health-main">
+        <h2 className="h-sm">What needs doing</h2>
         {summary.data ? (
           <p className="asset-health-line">
             {n > 0 ? (
@@ -1237,8 +1248,17 @@ function AssetHealth({ asset, findingCount }: { asset: Asset; findingCount: numb
         ) : (
           <Loading />
         )}
+        <p className="small muted asset-health-help">
+          A fix is one change, such as an upgrade, that clears one or more issues. An issue is one vulnerability or end-of-life component found
+          here.
+        </p>
       </div>
-      {asset.collection_status !== "removed" && <CheckAgain asset={asset} />}
+      {asset.collection_status !== "removed" && (
+        <div className="asset-health-check">
+          <h2 className="h-sm">Check again</h2>
+          <CheckAgain asset={asset} />
+        </div>
+      )}
     </section>
   );
 }

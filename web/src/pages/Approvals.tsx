@@ -7,6 +7,7 @@ import { absTime, plural } from "../format";
 import { Badge, IGNORE_REASON_LABEL, type Tone } from "../components/Badge";
 import { EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { ProjectFilter } from "../components/AssetPicker";
+import { useProject } from "../project";
 import { ignoreRulesEmpty, requestsEmpty } from "../emptyCopy";
 
 const LIMIT = 50;
@@ -278,6 +279,7 @@ function Rules() {
 
 /** The approval inbox: requests to ignore issues, and the ignore rules in force. */
 export function ApprovalsPage() {
+  const { projects } = useProject();
   const [params, setParams] = useSearchParams();
   const tab = (params.get("tab") as Tab) || "pending";
   const tabs: { id: Tab; label: string }[] = [
@@ -292,9 +294,11 @@ export function ApprovalsPage() {
         title="Approvals"
         sub="Requests to ignore issues, from people whose role cannot ignore them, and the ignore rules in force."
       />
-      <div className="filters">
-        <ProjectFilter id="apr-project" />
-      </div>
+      {projects.length > 0 && (
+        <div className="filters">
+          <ProjectFilter id="apr-project" />
+        </div>
+      )}
       <nav className="link-tabs" aria-label="Approvals">
         <ul>
           {tabs.map((t) => (

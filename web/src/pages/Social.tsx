@@ -4,7 +4,7 @@ import { api, ApiError, type MfaSignInMethod, type SignupMeta, type SocialConnec
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { confirmAction } from "../components/ConfirmDialog";
-import { ErrorBox, Loading, Notice, RelativeTime } from "../components/ui";
+import { Card, ErrorBox, GoodToKnow, Loading, Notice, RelativeTime } from "../components/ui";
 import { MfaLoginStep } from "./TwoFactor";
 
 // Signing up and signing in with Google, Microsoft or GitHub (Stackurity
@@ -277,14 +277,16 @@ export function SocialConnectionsCard() {
 
   const items = res.data?.providers ?? [];
   return (
-    <section id="sign-in" className="card">
-      <header className="card-head">
-        <h2>Sign in with Google, Microsoft or GitHub</h2>
-      </header>
-      <p className="hint">
-        Connect an account at a provider to sign in with it. Your two-factor sign-in, if you set it up, is still asked for, and organisations that
-        require their own single sign-on still require it. <Link to="/help/social-sign-in">How this works</Link>
-      </p>
+    <Card
+      id="sign-in"
+      title="Sign in with Google, Microsoft or GitHub"
+      description={
+        <>
+          Connect an account you already have at one of these providers, then use its button on the sign-in page instead of typing your password.{" "}
+          <Link to="/help/social-sign-in">How this works</Link>
+        </>
+      }
+    >
       {connected && <Notice kind="success">Connected. You can now sign in with it.</Notice>}
       <ErrorBox error={res.error ?? act.error} title="Could not load or change your sign-in methods" />
       {!res.data && !res.error ? (
@@ -353,12 +355,17 @@ export function SocialConnectionsCard() {
           </div>
         </form>
       )}
-      {res.data && !res.data.has_password && (
-        <p className="small muted">
-          Your account has no password: you sign in with a provider. To add one, sign out and use Forgot password. Two-factor sign-in needs a
-          password.
-        </p>
-      )}
-    </section>
+      <GoodToKnow>
+        <ul>
+          <li>Your two-factor sign-in, if you set it up, is still asked for.</li>
+          <li>Organisations that require their own single sign-on still require it.</li>
+          {res.data && !res.data.has_password && (
+            <li>
+              Your account has no password: you sign in with a provider. To add one, sign out and use Forgot password. Two-factor sign-in needs a password.
+            </li>
+          )}
+        </ul>
+      </GoodToKnow>
+    </Card>
   );
 }

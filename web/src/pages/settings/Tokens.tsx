@@ -1,10 +1,24 @@
 import { useState, type FormEvent } from "react";
-import { api, atLeast, USER_ROLES, type List, type Role, type Token } from "../../api";
+import { api, atLeast, USER_ROLES, type List, type Role, type Token, type UserRole } from "../../api";
+import { PERMISSIONS, ROLE_HELP } from "../../roles";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, Code, CopyBox, EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import {
+  Card,
+  CardFooter,
+  ChoiceCards,
+  Code,
+  CopyBox,
+  EmptyState,
+  ErrorBox,
+  Loading,
+  PageHeader,
+  RelativeTime,
+  SettingRow,
+  type ChoiceOption,
+} from "../../components/ui";
 import { tokensEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 
@@ -149,36 +163,48 @@ function CreateToken({ role, admin, onCreated }: { role: Role; admin: boolean; o
     }
   };
 
+  const options: ChoiceOption<Role>[] = roles.map((x) =>
+    x === "collector"
+      ? {
+          value: x,
+          label: "collector (submit observations only)",
+          description: "For servers, CI pipelines and scanners that send what they find. It cannot read anything back.",
+        }
+      : { value: x, label: PERMISSIONS.find((p) => p.role === x)?.label ?? x, description: ROLE_HELP[x as UserRole] },
+  );
+
   return (
-    <Card title="Create token">
+    <Card
+      title="Create token"
+      description="A token lets a script, CI pipeline or server talk to Stackurity without signing in. Create one per use, so you can revoke it on its own."
+    >
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create token" />
-        <div className="form-grid">
+        <SettingRow title="Name" description="Where it will be used, so you recognise it in the list later.">
           <div className="field">
-            <label htmlFor="tk-name">Name</label>
+            <label className="sr-only" htmlFor="tk-name">
+              Name
+            </label>
             <input id="tk-name" required maxLength={100} placeholder="e.g. github-actions" value={name} onChange={(e) => setName(e.target.value)} />
           </div>
+        </SettingRow>
+        <SettingRow title="Role" description="What the token may do. Give it the least it needs; it can never do more than you.">
+          <ChoiceCards name="tk-role" legend="Role" options={options} value={r} onChange={setR} />
+        </SettingRow>
+        <SettingRow title="Expires after (hours)" description="A token that expires is safer if it leaks. Leave empty for no expiry.">
           <div className="field">
-            <label htmlFor="tk-role">Role</label>
-            <select id="tk-role" value={r} onChange={(e) => setR(e.target.value as Role)}>
-              {roles.map((x) => (
-                <option key={x} value={x}>
-                  {x === "collector" ? "collector (submit observations only)" : x}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor="tk-ttl">Expires after (hours)</label>
+            <label className="sr-only" htmlFor="tk-ttl">
+              Expires after (hours)
+            </label>
             <input id="tk-ttl" type="number" min={1} max={8784} placeholder="never" value={ttl} onChange={(e) => setTtl(e.target.value)} />
-            <p className="hint">Leave empty for no expiry. Maximum 8784 (one year).</p>
+            <p className="hint">Maximum 8784 (one year). For example, 720 is 30 days.</p>
           </div>
-        </div>
-        <div className="form-actions">
+        </SettingRow>
+        <CardFooter status="The token is shown once, right after you create it.">
           <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
             Create token
           </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

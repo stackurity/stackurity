@@ -3,7 +3,7 @@ import { api, type List, type User, type Workspace, type WorkspaceUpdate } from 
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, CardFooter, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { PasswordChecklist } from "../../components/PasswordStrength";
 import { passwordOK } from "../../passwordStrength";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
@@ -230,7 +230,7 @@ function CreateWorkspace({ onCancel, onCreated }: { onCancel: () => void; onCrea
     if (r) onCreated(r.workspace, r.admin);
   };
   return (
-    <Card title="New workspace">
+    <Card title="New workspace" description="A separate organisation on this server with its own assets, people and settings. Its first admin can then invite everyone else.">
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create the workspace" />
         <div className="form-grid">
@@ -254,14 +254,14 @@ function CreateWorkspace({ onCancel, onCreated }: { onCancel: () => void; onCrea
             {f.admin_password && <PasswordChecklist id="nw-pw-rules" password={f.admin_password} context={[f.admin_email, f.admin_name, f.name]} />}
           </div>
         </div>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending || (f.admin_password !== "" && !passwordOK(f.admin_password))}>
-            Create workspace
-          </button>
+        <CardFooter>
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-        </div>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || (f.admin_password !== "" && !passwordOK(f.admin_password))}>
+            Create workspace
+          </button>
+        </CardFooter>
       </form>
     </Card>
   );

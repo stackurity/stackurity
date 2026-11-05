@@ -6914,3 +6914,276 @@ a.cov-chip:hover {
     padding: var(--s5) 20px;
   }
 }
+
+/* --- Settings layout (ui.tsx SettingRow, ChoiceCards, CardFooter; web/UI-PATTERNS.md).
+   A card says what it is for under its title; each setting is a row with its
+   name and purpose on the left and its control on the right; options carry
+   their meaning on a second line. */
+.card-head-desc {
+  align-items: flex-start;
+}
+.card-head-text {
+  min-width: 0;
+}
+.card-desc {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+  max-width: 72ch;
+}
+.setting-row {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) minmax(0, 1.7fr);
+  gap: var(--s3) var(--s6);
+  padding: var(--s5) 0;
+  border-top: 1px solid var(--border);
+}
+.card-head + .setting-row,
+.form > .setting-row:first-child,
+.card > .setting-row:first-child,
+.setting-row:first-child {
+  border-top: none;
+  padding-top: var(--s2);
+}
+.setting-row-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.setting-row-desc {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.setting-row-desc p {
+  margin: 0 0 6px;
+}
+.setting-row-control {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  min-width: 0;
+}
+.field-group {
+  border: none;
+  margin: 0;
+  padding: var(--s4) 0 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+}
+.field-group + .field-group {
+  margin-top: var(--s3);
+  border-top: 1px dashed var(--border);
+}
+.field-group-title {
+  padding: 0;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--text);
+}
+.field-group-desc {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+.choice-cards-set {
+  border: none;
+  margin: 0;
+  padding: 0;
+  min-width: 0;
+}
+.choice-cards {
+  display: grid;
+  gap: var(--s2);
+}
+@media (min-width: 900px) {
+  .choice-cards-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .choice-cards-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+.choice-card {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  padding: var(--s3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.1s ease, background 0.1s ease;
+}
+.choice-card:hover {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
+}
+.choice-card:has(input:checked) {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+.choice-card:has(input:focus-visible) {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.choice-card-disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+.choice-card input {
+  margin-top: 2px;
+  flex: none;
+}
+.choice-card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+.choice-card-label {
+  font-weight: 600;
+  color: var(--text);
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.choice-card-desc {
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.option-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 7px;
+  border-radius: 999px;
+}
+.option-badge-info {
+  background: var(--info-bg);
+  color: var(--info-fg);
+}
+.option-badge-good {
+  background: var(--good-bg);
+  color: var(--good-fg);
+}
+.option-badge-muted {
+  background: var(--muted-bg);
+  color: var(--muted-fg);
+}
+.card-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3) var(--s4);
+  margin: var(--s4) calc(-1 * var(--s5)) calc(-1 * var(--s4));
+  padding: var(--s3) var(--s5);
+  border-top: 1px solid var(--border);
+  background: var(--surface-2);
+  border-radius: 0 0 var(--radius) var(--radius);
+}
+.card-footer-status {
+  color: var(--text-2);
+  flex: 1 1 320px;
+  min-width: 0;
+}
+.card-footer-actions {
+  margin-left: auto;
+}
+.good-to-know {
+  margin-top: var(--s2);
+  padding: var(--s3) var(--s4);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  font-size: 13px;
+  color: var(--text-2);
+}
+.good-to-know-title {
+  margin: 0 0 4px;
+  font-weight: 600;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.good-to-know-body ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.good-to-know-body li + li {
+  margin-top: 3px;
+}
+@media (max-width: 900px) {
+  .setting-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--s3);
+    padding: var(--s4) 0;
+  }
+}
+/* Intro lines under a section heading or at the top of a tab. */
+.section-hint {
+  margin: calc(-1 * var(--s2)) 0 var(--s3);
+  max-width: 80ch;
+}
+.tab-intro {
+  margin: 0 0 var(--s3);
+  max-width: 80ch;
+}
+.asset-health-help {
+  margin: var(--s2) 0 0;
+}
+/* The flex summary hides the disclosure marker; put one back so it looks clickable. */
+.asset-details > summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+.asset-details[open] > summary::before {
+  content: "▾";
+}
+.good-to-know {
+  margin-bottom: var(--s3);
+}
+/* A lone button in a setting's control column keeps its own width. */
+.setting-row-control > .btn {
+  align-self: flex-start;
+}
+/* Number inputs side by side inside a setting row (RiskPolicy). */
+.form-grid-tight {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+/* "How a priority is worked out" steps. */
+.steps-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+}
+/* The plain-words sentence under an SOS rule's name. */
+.rule-summary {
+  margin: 6px 0 10px;
+  color: var(--text-2);
+}
+.field-group-title {
+  margin-bottom: 0;
+}
+.field-group-desc {
+  margin-top: 0;
+}
+/* An option card that holds other controls, so it is a div, not a label. */
+.choice-card-static {
+  cursor: default;
+}

@@ -4,7 +4,22 @@ import { api, type Enrollment, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
+import {
+  Card,
+  CardFooter,
+  CheckCard,
+  Code,
+  CodeBlock,
+  EmptyState,
+  ErrorBox,
+  KeyValues,
+  Loading,
+  Notice,
+  PageHeader,
+  RelativeTime,
+  SettingRow,
+  Tabs,
+} from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
 import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
@@ -74,17 +89,14 @@ export function InstallCommandTabs({
  * command. Off by default: it gives the agent's user access to the Docker
  * socket, which is equivalent to root on the server.
  */
-export function CheckDocker({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+export function CheckDocker({ checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
   return (
-    <>
-      <label className="check" htmlFor={id}>
-        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check Docker containers
-      </label>
-      <p className="hint">
-        Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user
-        joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images.
-      </p>
-    </>
+    <CheckCard
+      checked={checked}
+      onChange={onChange}
+      label="Also check Docker containers"
+      description="Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images."
+    />
   );
 }
 
@@ -93,17 +105,14 @@ export function CheckDocker({ id, checked, onChange }: { id: string; checked: bo
  * turns on the agent's application discovery (discover_apps). On by
  * default; the agent only lists directories and reads lockfiles.
  */
-export function CheckApps({ id, checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+export function CheckApps({ checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
   return (
-    <>
-      <label className="check" htmlFor={id}>
-        <input id={id} type="checkbox" checked={checked} onChange={(e) => onChange(e.target.checked)} /> Also check websites and apps on this server
-      </label>
-      <p className="hint">
-        Looks in /srv, /var/www, /opt, /app and home directories for sites and apps (Node.js, PHP, Python, Ruby, Go and more), and lists the
-        libraries they use. It only reads.
-      </p>
-    </>
+    <CheckCard
+      checked={checked}
+      onChange={onChange}
+      label="Also check websites and apps on this server"
+      description="Looks in /srv, /var/www, /opt, /app and home directories for sites and apps (Node.js, PHP, Python, Ruby, Go and more), and lists the libraries they use. It only reads."
+    />
   );
 }
 
@@ -232,7 +241,7 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
   const e = created.enrollment;
   const appsAsked = e.discover_apps || (e.app_dirs?.length ?? 0) > 0;
   return (
-    <Card title="Install command">
+    <Card title="Install command" description="Run this on the server you are adding. It takes about a minute, and the server then appears under Assets.">
       <div className="form">
         <Notice kind="warn">
           <strong>Copy this command now.</strong> The code in it is shown only once and cannot be recovered. If it is
@@ -380,17 +389,25 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
   };
 
   return (
-    <Card title="New install command">
+    <Card
+      title="New install command"
+      description="Creates a one-time code and the command that installs the agent with it. Nothing is installed until you run the command on the server."
+    >
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create install command" />
-        <div className="form-grid">
+        <SettingRow title="Label" description="Optional. Helps you recognise the code in the list below, for example web servers.">
           <div className="field">
-            <label htmlFor="en-label">Label</label>
+            <label className="sr-only" htmlFor="en-label">
+              Label
+            </label>
             <input id="en-label" maxLength={100} placeholder="e.g. web servers" value={label} onChange={(e) => setLabel(e.target.value)} />
-            <p className="hint">Optional. Helps you recognise the code in the list below.</p>
           </div>
+        </SettingRow>
+        <SettingRow title="Environment" description="Optional. Issues on production servers are ranked higher, so name it production if it is.">
           <div className="field">
-            <label htmlFor="en-env">Environment</label>
+            <label className="sr-only" htmlFor="en-env">
+              Environment
+            </label>
             <input
               id="en-env"
               maxLength={64}
@@ -400,9 +417,14 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
               value={environment}
               onChange={(e) => setEnvironment(e.target.value)}
             />
-            <p className="hint">Optional. Production counts towards priority.</p>
           </div>
-          <div className="field field-span">
+        </SettingRow>
+        <SettingRow
+          title="Websites and apps"
+          description="Besides the operating system's packages, the agent can find the websites and apps on the server and list the libraries they use."
+        >
+          <CheckApps checked={discover} onChange={setDiscover} id="en-apps" />
+          <div className="field">
             <label htmlFor="en-dirs">Application directories</label>
             <textarea
               id="en-dirs"
@@ -414,30 +436,33 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
             />
             <p className="hint">Optional, one per line, for apps outside the usual places, e.g. /data/shop.</p>
           </div>
-          <div className="field field-span">
-            <CheckApps checked={discover} onChange={setDiscover} id="en-apps" />
-          </div>
-        </div>
+        </SettingRow>
         <details className="schema-help">
           <summary>Options</summary>
-          <div className="form-grid">
+          <SettingRow title="Number of servers this code can enroll" description="For a rollout to many servers, use a fleet code under For many servers.">
             <div className="field">
-              <label htmlFor="en-uses">Number of servers this code can enroll</label>
+              <label className="sr-only" htmlFor="en-uses">
+                Number of servers this code can enroll
+              </label>
               <input id="en-uses" type="number" min={1} max={500} required value={uses} onChange={(e) => setUses(e.target.value)} />
-              <p className="hint">1 to 500. For a rollout to many servers, use a fleet code under For many servers.</p>
+              <p className="hint">1 to 500.</p>
             </div>
+          </SettingRow>
+          <SettingRow title="Valid for (hours)" description="After this the code stops working, whether it was used or not.">
             <div className="field">
-              <label htmlFor="en-ttl">Valid for (hours)</label>
+              <label className="sr-only" htmlFor="en-ttl">
+                Valid for (hours)
+              </label>
               <input id="en-ttl" type="number" min={1} max={720} required value={ttl} onChange={(e) => setTtl(e.target.value)} />
               <p className="hint">1 to 720 (30 days).</p>
             </div>
-          </div>
+          </SettingRow>
         </details>
-        <div className="form-actions">
+        <CardFooter status={`The code can enroll ${plural(Number(uses) || 1, "server")} within ${Number(ttl) || 24} hours.`}>
           <button type="submit" className="btn btn-primary" disabled={act.pending}>
             Create install command
           </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

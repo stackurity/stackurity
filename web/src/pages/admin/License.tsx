@@ -3,7 +3,7 @@ import { api, type LicenseInfo } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
-import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 const EDITION_LABEL = { community: "Community", pro: "Pro", enterprise: "Enterprise" } as const;
@@ -88,7 +88,7 @@ export function LicensePage() {
               {d.active_assets} assets are active, above the licence&apos;s {l.max_assets}. Nothing stops working; please extend the licence.
             </Notice>
           )}
-          <Card title={`Stackurity ${EDITION_LABEL[d.status.edition]}`}>
+          <Card title={`Stackurity ${EDITION_LABEL[d.status.edition]}`} description="The licence this server runs under and the paid features it turns on.">
             <KeyValues
               entries={[
                 ["Status", <Badge key="s" status={d.status.state === "none" ? "community" : d.status.state} />],
@@ -108,17 +108,17 @@ export function LicensePage() {
               ]}
             />
             {l && !d.managed_by_env && (
-              <div className="form-actions">
+              <CardFooter>
                 <button type="button" className="btn btn-sm btn-link-danger" disabled={act.pending} onClick={() => void remove()}>
                   Remove licence
                 </button>
-              </div>
+              </CardFooter>
             )}
           </Card>
           {d.managed_by_env ? (
             <Notice kind="info">This server reads its licence from STACKURITY_LICENSE; change it there.</Notice>
           ) : (
-            <Card title={l ? "Replace the key" : "Add a key"}>
+            <Card title={l ? "Replace the key" : "Add a key"} description="Paste a free Community key or a paid licence key. It is checked on this server; nothing is sent anywhere.">
               {me?.license_key && !l && (
                 <p className="small">
                   Self-hosted Stackurity Community is free; each server needs a free key.{" "}
@@ -132,7 +132,6 @@ export function LicensePage() {
                 <div className="field">
                   <label htmlFor="lic-key">Free key or licence key</label>
                   <textarea id="lic-key" rows={4} required value={key} onChange={(e) => setKey(e.target.value)} spellCheck={false} />
-                  <p className="hint">Checked on this server; nothing is sent anywhere.</p>
                 </div>
                 <div className="form-actions">
                   <button type="submit" className="btn btn-primary" disabled={act.pending || key.trim() === ""}>

@@ -17,7 +17,7 @@ import { absTime, dayCount, durationDays, humanize, plural } from "../format";
 import { NOT_REMEDIATION_KINDS } from "../resolution";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, PageHeader, StatTile } from "../components/ui";
+import { Card, EmptyState, ErrorBox, GoodToKnow, Loading, PageHeader, StatTile } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
 
 const WINDOWS = [30, 90, 180, 365] as const;
@@ -109,12 +109,6 @@ export function OutcomesPage() {
           </select>
         </div>
       </form>
-      <p className="hint">
-        Counts findings remediated in the window that are still resolved: upgraded or fixed on the asset, or removed. Findings that closed
-        with nothing changed on the asset, such as a withdrawn advisory, are listed apart and never counted. Time to remedy runs from
-        detection, or from the last reopening, to resolution. SLA uses the current <Link to="/settings/risk-policy">risk policy</Link>'s fix deadline for each priority, counted from
-        first detection.
-      </p>
       <ErrorBox error={res.error} title="Could not build the report" />
       <TrialBanner trial={res.data?.trial} />
       {!r && !res.error && <Loading />}
@@ -178,6 +172,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
 
   return (
     <>
+      <Card title="Summary" description="How many findings were fixed in this window, how fast, and how many are late now.">
       <div className="tiles">
         <StatTile
           label="Remediated"
@@ -210,22 +205,36 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
           Resolutions and reopenings are recorded from {absTime(r.events_since!)}; reopen counts before then are not known.
         </p>
       )}
+      <GoodToKnow title="How these numbers are counted">
+        <ul>
+          <li>
+            A finding counts as remediated only when something changed on the asset: the component was upgraded, fixed or removed, and it is
+            still resolved. Findings that closed with nothing changed, such as a withdrawn advisory, are listed apart and never counted.
+          </li>
+          <li>Time to remedy runs from detection, or from the last reopening, to resolution.</li>
+          <li>
+            SLA uses the fix deadline for each priority in the current <Link to="/settings/risk-policy">risk policy</Link>, counted from first
+            detection.
+          </li>
+        </ul>
+      </GoodToKnow>
+      </Card>
 
       {r.resolved === 0 ? (
         <EmptyState title="No findings were remediated in this window">Choose a longer window, or check back after the next scans.</EmptyState>
       ) : (
         <div className="grid-2">
-          <Card title="Time to remedy by priority">
+          <Card title="Time to remedy by priority" description="How long fixes took, from P1 (most urgent) to P4.">
             <Table caption="Time to remedy by priority" columns={timingCols} rows={byPriority} rowKey={(t) => t.priority} />
           </Card>
-          <Card title="Time to remedy by kind">
+          <Card title="Time to remedy by kind" description="How long fixes took for vulnerabilities compared with end-of-life components.">
             <Table caption="Time to remedy by kind" columns={timingCols} rows={byKind} rowKey={(t) => t.kind} />
           </Card>
         </div>
       )}
 
       {causes.length > 0 && (
-        <Card title="How findings closed">
+        <Card title="How findings closed" description="Why each finding stopped being open, and whether that counts as a real fix.">
           <p className="hint">
             {share(r.resolved, closedTotal)} were remediated: a newer inventory from the asset shows the component upgraded, fixed or
             removed. The rest closed with nothing fixed on the asset and are not counted as remediation.
@@ -248,7 +257,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
         </Card>
       )}
 
-      <Card title="SLA compliance">
+      <Card title="SLA compliance" description="Whether findings were fixed within the deadline your risk policy sets for each priority, and how many are late now.">
         <Table caption="SLA compliance by priority" columns={slaCols} rows={sla} rowKey={(s) => s.priority} />
         <p className="hint">
           Also open now: {n(r.open.excepted)} suppressed or risk-accepted, {n(r.open.stale_asset)} on assets that stopped reporting (not
@@ -266,7 +275,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
         )}
       </Card>
 
-      <Card title="Reopened after resolution">
+      <Card title="Reopened after resolution" description="Findings that came back after being fixed, for example when an old version was reinstalled.">
         {r.reopened.events === 0 ? (
           <p className="muted">No finding was detected again after being resolved in this window.</p>
         ) : (
@@ -290,7 +299,7 @@ function RemediationOutcomes({ r, trial }: { r: OutcomesReport; trial?: ReportTr
   const m = r.remediation;
   if (!m) {
     return (
-      <Card title="Automatic remediation">
+      <Card title="Automatic remediation" description="Upgrades Stackurity applied for you, and whether they worked.">
         <p className="muted">No remediation plans or actions were created in this window.</p>
       </Card>
     );
@@ -309,7 +318,7 @@ function RemediationOutcomes({ r, trial }: { r: OutcomesReport; trial?: ReportTr
       .map(([k, v]) => `${humanize(k)} ${n(v)}`)
       .join(" · ") || "none";
   return (
-    <Card title="Automatic remediation">
+    <Card title="Automatic remediation" description="Upgrades Stackurity applied for you, and whether they worked.">
       <div className="tiles tiles-tight">
         <StatTile label="Succeeded" value={m.finished ? share(m.verified, m.finished) : <span className="muted">none finished</span>} sub="verified by a newer inventory" />
         <StatTile label="Failed" value={n(m.failed)} tone={m.failed > 0 ? "bad" : undefined} />

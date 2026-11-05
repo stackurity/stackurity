@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { api, type FixGrouping } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
-import { Card, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, ChoiceCards, ErrorBox, Loading, OptionBadge, PageHeader, SettingRow } from "../../components/ui";
 
 const CHOICES: { value: FixGrouping; label: string; about: string }[] = [
   {
@@ -48,26 +48,38 @@ export function FixGroupingPage() {
       <ErrorBox error={act.error} title="Could not save the setting" />
       {!res.data && !res.error && <Loading />}
       {current && (
-        <Card>
-          <fieldset className="field" disabled={!can("admin") || act.pending}>
-            <legend>Show the same fix in several places as</legend>
-            <ul className="choice-list">
-              {CHOICES.map((c) => (
-                <li key={c.value}>
-                  <label className="choice">
-                    <input type="radio" name="fix-grouping" checked={current === c.value} onChange={() => void choose(c.value)} />
-                    <span>
-                      <strong>{c.label}</strong>
-                      {c.value === "fix" && <span className="muted"> (default)</span>}
-                      <span className="hint"> {c.about}</span>
-                    </span>
-                  </label>
-                </li>
-              ))}
-            </ul>
-          </fieldset>
-          {!can("admin") && <p className="hint">Only an admin can change this.</p>}
-          {saved && <Notice kind="success">Saved. Fix lists now use this grouping.</Notice>}
+        <Card
+          title="Same fix in several places"
+          description="When one upgrade fixes the same problem in several places (the same library in two apps, or the same package on ten servers), choose whether Fixes shows it once or once per place."
+        >
+          <SettingRow
+            title="Show the same fix in several places as"
+            description="One card per fix keeps the list short and suits one team patching everything. One card per asset suits teams that each own their own servers or apps."
+          >
+            <fieldset className="choice-cards-set" disabled={!can("admin") || act.pending}>
+              <ChoiceCards
+                name="fix-grouping"
+                legend="Show the same fix in several places as"
+                value={current}
+                onChange={(v) => void choose(v)}
+                options={CHOICES.map((c) => ({
+                  value: c.value,
+                  label: c.label,
+                  description: c.about,
+                  badge: c.value === "fix" ? <OptionBadge tone="muted">Default</OptionBadge> : undefined,
+                }))}
+              />
+            </fieldset>
+          </SettingRow>
+          <CardFooter
+            status={
+              saved
+                ? "Saved. Fix lists now use this grouping."
+                : can("admin")
+                  ? "Applies to everyone in this workspace. Saved as soon as you pick one."
+                  : "Only an admin can change this."
+            }
+          />
         </Card>
       )}
     </>

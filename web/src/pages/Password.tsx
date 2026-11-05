@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
-import { Card, ErrorBox, Loading, Notice } from "../components/ui";
+import { Card, CardFooter, CheckCard, ErrorBox, Loading, Notice, SettingRow } from "../components/ui";
 import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
 import { passwordOK } from "../passwordStrength";
 
@@ -179,8 +179,18 @@ interface ChangeResult {
   tokens_kept?: number;
 }
 
+// On the narrow sign-in style screen (compact) the parts stack without row titles or a card footer.
+function PlainRow({ children }: { title: string; description: string; children: ReactNode }) {
+  return <>{children}</>;
+}
+function PlainFooter({ children }: { status: string; children: ReactNode }) {
+  return <div className="form-actions">{children}</div>;
+}
+
 /** Your account → Password, and the screen after an administrator set a temporary password. */
-export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | undefined) => void }) {
+export function ChangePasswordForm({ onDone, compact }: { onDone?: (r: ChangeResult | undefined) => void; compact?: boolean }) {
+  const Row = compact ? PlainRow : SettingRow;
+  const Footer = compact ? PlainFooter : CardFooter;
   const [f, setF] = useState({ current: "", password: "", confirm: "" });
   const [revoke, setRevoke] = useState({ assistants: true, tokens: false });
   const user = useAuth().me?.user;
@@ -229,31 +239,44 @@ export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | und
           {localErr}
         </div>
       )}
-      <div className="field">
-        <label htmlFor="current-password">Current password</label>
-        <input id="current-password" type="password" required autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} />
-      </div>
-      <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} context={[user?.email, user?.name]} />
-      <p className="hint">Your other sessions are signed out.</p>
-      <label className="check">
-        <input type="checkbox" checked={revoke.assistants} onChange={(e) => setRevoke({ ...revoke, assistants: e.target.checked })} /> Also disconnect my AI
-        assistants
-      </label>
-      <label className="check">
-        <input type="checkbox" checked={revoke.tokens} onChange={(e) => setRevoke({ ...revoke, tokens: e.target.checked })} /> Also revoke my API tokens
-      </label>
-      <div className="form-actions">
+      <Row title="Change password" description="Enter your current password, then the new one twice.">
+        <div className="field">
+          <label htmlFor="current-password">Current password</label>
+          <input id="current-password" type="password" required autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} />
+        </div>
+        <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} context={[user?.email, user?.name]} />
+      </Row>
+      <Row
+        title="Also sign out"
+        description="Your other browser sessions are always signed out. If you think someone else knew your password, cut off these too."
+      >
+        <div className="choice-cards">
+          <CheckCard
+            checked={revoke.assistants}
+            onChange={(on) => setRevoke({ ...revoke, assistants: on })}
+            label="Also disconnect my AI assistants"
+            description="Assistants such as Claude or ChatGPT that use Stackurity as you. You connect them again afterwards."
+          />
+          <CheckCard
+            checked={revoke.tokens}
+            onChange={(on) => setRevoke({ ...revoke, tokens: on })}
+            label="Also revoke my API tokens"
+            description="Scripts and CI jobs using your tokens stop working until you give them new ones."
+          />
+        </div>
+      </Row>
+      <Footer status="Your other sessions are signed out.">
         <button type="submit" className="btn btn-primary" disabled={act.pending || !passwordOK(f.password)}>
           Change password
         </button>
-      </div>
+      </Footer>
     </form>
   );
 }
 
 export function PasswordCard() {
   return (
-    <Card title="Password">
+    <Card title="Password" description="The password you sign in with. Change it here if you think someone else may know it.">
       <ChangePasswordForm />
     </Card>
   );
@@ -267,7 +290,7 @@ export function ChangeTemporaryPasswordPage() {
       <div className="auth-card auth-card-wide">
         <h1 className="auth-title">Choose your own password</h1>
         <p>An administrator set a temporary password for your account. Choose your own to continue.</p>
-        <ChangePasswordForm onDone={() => void refresh()} />
+        <ChangePasswordForm compact onDone={() => void refresh()} />
         <p className="small" style={{ textAlign: "center" }}>
           <button type="button" className="btn btn-link" onClick={() => void logout()}>
             Sign out

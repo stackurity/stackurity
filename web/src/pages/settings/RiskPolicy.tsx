@@ -14,7 +14,7 @@ import { useAuth } from "../../auth";
 import { forgetRiskPolicy, useAction, useLoad } from "../../hooks";
 import { PriorityBadge, SosBadge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, ErrorBox, FieldGroup, GoodToKnow, Loading, Notice, PageHeader, RelativeTime, SettingRow } from "../../components/ui";
 import { plural } from "../../format";
 import { PatchCalendarCard } from "./PatchCalendarCard";
 import { UnmaintainedCard, unmaintainedValid } from "./UnmaintainedCard";
@@ -250,6 +250,22 @@ function PreviewCard({ pv }: { pv: RiskPolicyPreview }) {
   );
 }
 
+/** A rule's conditions as one sentence ("known exploited, and in production"). */
+function sosSummary(r: SOSRule): string {
+  const parts: string[] = [];
+  if (r.min_priority) parts.push(`priority ${r.min_priority} or higher`);
+  if (r.min_severity) parts.push(`severity ${r.min_severity} or higher`);
+  const tri = (v: boolean | undefined, yes: string, no: string) => {
+    if (v !== undefined) parts.push(v ? yes : no);
+  };
+  tri(r.known_exploited, "known exploited", "not known exploited");
+  tri(r.production, "in production", "not in production");
+  tri(r.internet_exposed, "exposed to the internet", "not exposed to the internet");
+  tri(r.fix_available, "a fix is available", "no fix is available");
+  if (parts.length === 0) return "always (add a condition)";
+  return parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(", ")} and ${parts[parts.length - 1]}`;
+}
+
 function cleanRule(r: SOSRule): SOSRule {
   const out: SOSRule = { name: r.name.trim() };
   if (r.min_priority) out.min_priority = r.min_priority;
@@ -348,70 +364,116 @@ export function RiskPolicyPage() {
       <form className="form" onSubmit={submit}>
         <fieldset disabled={!admin || act.pending} className="field">
           <legend className="sr-only">Risk policy</legend>
-          <Card title="Base score">
-            <p className="hint">
-              A finding starts from its CVSS score when one is known, otherwise from the value for its severity. End-of-life findings use
-              the end-of-life base.
-            </p>
-            <div className="form-grid">
-              {SEVERITY_KEYS.map((k) => (
-                <NumField
-                  key={k}
-                  id={`sev-${k}`}
-                  label={`Severity ${k}`}
-                  value={p.severity_base[k] ?? 0}
-                  onChange={(n) => set("severity_base", { ...p.severity_base, [k]: n })}
-                />
-              ))}
+          <Card
+            title="How a priority is worked out"
+            description="Every open finding gets a score from the settings on this page, and the score decides its priority (P1 is the most urgent). Change these only if the priorities you see don't match how your team judges risk; Preview impact shows what would move before you save."
+          >
+            <ol className="steps-list">
+              <li>
+                <strong>Start</strong> from the vulnerability&apos;s own severity score (CVSS, 0 to 10), or the base score below when it has none.
+              </li>
+              <li>
+                <strong>Add or take away points</strong> for what makes it more or less dangerous for you: exploited in the wild, open to the
+                internet, in production, and so on.
+              </li>
+              <li>
+                <strong>Scale it down</strong> when the evidence is less certain (version not confirmed, asset not seen for a while).
+              </li>
+              <li>
+                <strong>Compare</strong> the total with the priority thresholds to get P1, P2, P3 or P4, which sets its deadlines.
+              </li>
+            </ol>
+          </Card>
+          <Card title="Base score" description="The starting score for a finding whose vulnerability has no CVSS score. Most have one, so these matter less than the points further down.">
+            <SettingRow title="By severity" description="Used when only a severity word (critical, high and so on) is known. On the same 0 to 10 scale as CVSS.">
+              <div className="form-grid form-grid-tight">
+                {SEVERITY_KEYS.map((k) => (
+                  <NumField
+                    key={k}
+                    id={`sev-${k}`}
+                    label={`Severity ${k}`}
+                    value={p.severity_base[k] ?? 0}
+                    onChange={(n) => set("severity_base", { ...p.severity_base, [k]: n })}
+                  />
+                ))}
+              </div>
+            </SettingRow>
+            <SettingRow title="End of life" description="The starting score for software its maintainers no longer support, which gets no more security fixes.">
               <NumField id="eol" label="End of life" value={p.eol_base} onChange={(n) => set("eol_base", n)} />
-            </div>
+            </SettingRow>
           </Card>
-          <Card title="Adjustments (points added)">
-            <div className="form-grid">
-              <NumField id="kev" label="Known exploited (CISA KEV)" value={p.known_exploited} onChange={(n) => set("known_exploited", n)} />
-              <NumField
-                id="epss"
-                label="Likely exploit (FIRST EPSS)"
-                value={p.epss ?? 0}
-                onChange={(n) => set("epss", n)}
-                hint="Added at or above the EPSS threshold, not for KEV entries. At most the known exploited value."
-              />
-              <NumField
-                id="epss-threshold"
-                label="EPSS threshold (%)"
-                value={Math.round((p.epss_threshold ?? 0.1) * 100000) / 1000}
-                step={1}
-                min={0.001}
-                max={100}
-                onChange={(n) => set("epss_threshold", Math.round(n * 1000) / 100000)}
-                hint="Chance of exploitation in the next 30 days. A finding keeps the points until it falls below 80% of this, so daily changes do not move its priority."
-              />
-              <NumField id="exp" label="Internet exposed" value={p.internet_exposed} onChange={(n) => set("internet_exposed", n)} />
-              <NumField id="expu" label="Exposure unknown" value={p.exposure_unknown} onChange={(n) => set("exposure_unknown", n)} />
-              <NumField id="prod" label="Production environment" value={p.production} onChange={(n) => set("production", n)} />
-              <NumField
-                id="envu"
-                label="Environment unknown"
-                value={p.environment_unknown ?? 0}
-                onChange={(n) => set("environment_unknown", n)}
-                hint="Asset has no environment. At most the production value."
-              />
-              <NumField id="fix" label="Fix available" value={p.fix_available} onChange={(n) => set("fix_available", n)} />
-              <NumField id="over" label="Overdue" value={p.overdue} onChange={(n) => set("overdue", n)} />
-              <NumField id="dev" label="Dev-only dependency" value={p.dev_dependency} onChange={(n) => set("dev_dependency", n)} hint="Usually negative." />
-              {CRITICALITY_KEYS.map((k) => (
+          <Card
+            title="Adjustments (points added)"
+            description="Points added to (or, when negative, taken from) the starting score. Raise a value to make that situation more urgent; lower it to make it matter less."
+          >
+            <SettingRow
+              title="Exploitation"
+              description="Whether attackers are using the vulnerability. Known exploited comes from CISA's KEV list; likely exploit from FIRST's EPSS prediction."
+            >
+              <div className="form-grid form-grid-tight">
+                <NumField id="kev" label="Known exploited (CISA KEV)" value={p.known_exploited} onChange={(n) => set("known_exploited", n)} />
                 <NumField
-                  key={k}
-                  id={`crit-${k}`}
-                  label={`Asset criticality ${k}`}
-                  value={p.criticality[k] ?? 0}
-                  onChange={(n) => set("criticality", { ...p.criticality, [k]: n })}
+                  id="epss"
+                  label="Likely exploit (FIRST EPSS)"
+                  value={p.epss ?? 0}
+                  onChange={(n) => set("epss", n)}
+                  hint="Added at or above the EPSS threshold, not for KEV entries. At most the known exploited value."
                 />
-              ))}
-            </div>
+                <NumField
+                  id="epss-threshold"
+                  label="EPSS threshold (%)"
+                  value={Math.round((p.epss_threshold ?? 0.1) * 100000) / 1000}
+                  step={1}
+                  min={0.001}
+                  max={100}
+                  onChange={(n) => set("epss_threshold", Math.round(n * 1000) / 100000)}
+                  hint="Chance of exploitation in the next 30 days. A finding keeps the points until it falls below 80% of this, so daily changes do not move its priority."
+                />
+              </div>
+            </SettingRow>
+            <SettingRow title="Exposure" description="Whether the asset can be reached from the internet. Set exposure on each asset; until then the smaller 'unknown' value applies.">
+              <div className="form-grid form-grid-tight">
+                <NumField id="exp" label="Internet exposed" value={p.internet_exposed} onChange={(n) => set("internet_exposed", n)} />
+                <NumField id="expu" label="Exposure unknown" value={p.exposure_unknown} onChange={(n) => set("exposure_unknown", n)} />
+              </div>
+            </SettingRow>
+            <SettingRow title="Environment" description="Whether the asset runs in production (the names under Production environments below).">
+              <div className="form-grid form-grid-tight">
+                <NumField id="prod" label="Production environment" value={p.production} onChange={(n) => set("production", n)} />
+                <NumField
+                  id="envu"
+                  label="Environment unknown"
+                  value={p.environment_unknown ?? 0}
+                  onChange={(n) => set("environment_unknown", n)}
+                  hint="Asset has no environment. At most the production value."
+                />
+              </div>
+            </SettingRow>
+            <SettingRow title="Fix and deadline" description="A finding with a fix ready is easier to act on; one past its fix deadline gets more urgent.">
+              <div className="form-grid form-grid-tight">
+                <NumField id="fix" label="Fix available" value={p.fix_available} onChange={(n) => set("fix_available", n)} />
+                <NumField id="over" label="Overdue" value={p.overdue} onChange={(n) => set("overdue", n)} />
+              </div>
+            </SettingRow>
+            <SettingRow title="Development-only packages" description="Packages used only to build or test the code, not shipped with it. Usually negative, so they rank lower.">
+              <NumField id="dev" label="Dev-only dependency" value={p.dev_dependency} onChange={(n) => set("dev_dependency", n)} hint="Usually negative." />
+            </SettingRow>
+            <SettingRow title="Asset criticality" description="How important the asset is to the business, set on each asset. Use negative points for assets that matter less.">
+              <div className="form-grid form-grid-tight">
+                {CRITICALITY_KEYS.map((k) => (
+                  <NumField
+                    key={k}
+                    id={`crit-${k}`}
+                    label={`Asset criticality ${k}`}
+                    value={p.criticality[k] ?? 0}
+                    onChange={(n) => set("criticality", { ...p.criticality, [k]: n })}
+                  />
+                ))}
+              </div>
+            </SettingRow>
           </Card>
-          <Card title="Evidence multipliers">
-            <div className="form-grid">
+          <Card title="Evidence multipliers" description="The score is multiplied by these when the evidence is less certain, so guesses rank below confirmed findings. 1 means no change; 0.5 halves the score.">
+            <SettingRow title="Version not confirmed" description="The installed version could not be read exactly, so the vulnerability may not apply.">
               <NumField
                 id="mul-nv"
                 label="Version not confirmed"
@@ -422,10 +484,12 @@ export function RiskPolicyPage() {
                 onChange={(n) => set("needs_validation_multiplier", n)}
                 hint="Between 0 and 1."
               />
+            </SettingRow>
+            <SettingRow title="Stale asset" description="The asset has not reported for a while, so what it runs now may have changed.">
               <NumField id="mul-st" label="Stale asset" value={p.stale_multiplier} step={0.05} min={0.05} max={1} onChange={(n) => set("stale_multiplier", n)} hint="Between 0 and 1." />
-            </div>
+            </SettingRow>
           </Card>
-          <Card title="Production environments">
+          <Card title="Production environments" description="Assets whose environment has one of these names count as production, for the points above and for SOS rules.">
             <TagsField
               id="prod-envs"
               label="Environment names treated as production"
@@ -433,70 +497,73 @@ export function RiskPolicyPage() {
               onChange={(v) => set("production_environments", v)}
             />
           </Card>
-          <Card title="Priority thresholds and deadlines">
-            <div className="form-grid">
-              <NumField id="t1" label="P1 at score ≥" value={p.thresholds.p1} onChange={(n) => set("thresholds", { ...p.thresholds, p1: n })} />
-              <NumField id="t2" label="P2 at score ≥" value={p.thresholds.p2} onChange={(n) => set("thresholds", { ...p.thresholds, p2: n })} />
-              <NumField id="t3" label="P3 at score ≥" value={p.thresholds.p3} onChange={(n) => set("thresholds", { ...p.thresholds, p3: n })} hint="Below this is P4. Must be P1 > P2 > P3." />
-            </div>
-            <div className="table-wrap">
-              <table className="table">
-                <caption className="sr-only">Deadlines per priority</caption>
-                <thead>
-                  <tr>
-                    <th scope="col">Priority</th>
-                    <th scope="col">Acknowledge within (hours)</th>
-                    <th scope="col">Fix within (days)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {PRIORITIES.map((pr) => {
-                    const s = p.sla[pr] ?? { ack_hours: 0, fix_days: 0 };
-                    return (
-                      <tr key={pr}>
-                        <th scope="row">{pr}</th>
-                        <td>
-                          <label className="sr-only" htmlFor={`ack-${pr}`}>
-                            {pr} acknowledge within hours
-                          </label>
-                          <input
-                            id={`ack-${pr}`}
-                            className="num-input"
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={String(s.ack_hours)}
-                            onChange={(e) => set("sla", { ...p.sla, [pr]: { ...s, ack_hours: Math.round(Number(e.target.value) || 0) } })}
-                          />
-                        </td>
-                        <td>
-                          <label className="sr-only" htmlFor={`fix-${pr}`}>
-                            {pr} fix within days
-                          </label>
-                          <input
-                            id={`fix-${pr}`}
-                            className="num-input"
-                            type="number"
-                            min={1}
-                            step={1}
-                            value={String(s.fix_days)}
-                            onChange={(e) => set("sla", { ...p.sla, [pr]: { ...s, fix_days: Math.round(Number(e.target.value) || 0) } })}
-                          />
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
+          <Card title="Priority thresholds and deadlines" description="Which score makes a finding P1, P2, P3 or P4, and how long your team has to respond to each.">
+            <SettingRow title="Thresholds" description="A finding gets the highest priority whose threshold its score reaches. Below the P3 threshold it is P4.">
+              <div className="form-grid form-grid-tight">
+                <NumField id="t1" label="P1 at score ≥" value={p.thresholds.p1} onChange={(n) => set("thresholds", { ...p.thresholds, p1: n })} />
+                <NumField id="t2" label="P2 at score ≥" value={p.thresholds.p2} onChange={(n) => set("thresholds", { ...p.thresholds, p2: n })} />
+                <NumField id="t3" label="P3 at score ≥" value={p.thresholds.p3} onChange={(n) => set("thresholds", { ...p.thresholds, p3: n })} hint="Below this is P4. Must be P1 > P2 > P3." />
+              </div>
+            </SettingRow>
+            <FieldGroup
+              title="Deadlines"
+              description="Acknowledge: someone must look at it. Fix: it must be resolved. Missing a deadline makes the finding overdue and escalates its incident. The clock starts when the asset first had the vulnerability."
+            >
+              <div className="table-wrap">
+                <table className="table">
+                  <caption className="sr-only">Deadlines per priority</caption>
+                  <thead>
+                    <tr>
+                      <th scope="col">Priority</th>
+                      <th scope="col">Acknowledge within (hours)</th>
+                      <th scope="col">Fix within (days)</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {PRIORITIES.map((pr) => {
+                      const s = p.sla[pr] ?? { ack_hours: 0, fix_days: 0 };
+                      return (
+                        <tr key={pr}>
+                          <th scope="row">{pr}</th>
+                          <td>
+                            <label className="sr-only" htmlFor={`ack-${pr}`}>
+                              {pr} acknowledge within hours
+                            </label>
+                            <input
+                              id={`ack-${pr}`}
+                              className="num-input"
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={String(s.ack_hours)}
+                              onChange={(e) => set("sla", { ...p.sla, [pr]: { ...s, ack_hours: Math.round(Number(e.target.value) || 0) } })}
+                            />
+                          </td>
+                          <td>
+                            <label className="sr-only" htmlFor={`fix-${pr}`}>
+                              {pr} fix within days
+                            </label>
+                            <input
+                              id={`fix-${pr}`}
+                              className="num-input"
+                              type="number"
+                              min={1}
+                              step={1}
+                              value={String(s.fix_days)}
+                              onChange={(e) => set("sla", { ...p.sla, [pr]: { ...s, fix_days: Math.round(Number(e.target.value) || 0) } })}
+                            />
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </FieldGroup>
           </Card>
           <PatchCalendarCard policy={p} onChange={set} />
-          <Card title="Exceptions">
-            <p className="hint">
-              Suppressions and risk acceptances always expire; this is the longest expiry anyone can set. The finding returns as new
-              when it passes.
-            </p>
-            <div className="form-grid">
+          <Card title="Exceptions" description="People can hide a finding for a while (snooze, accept the risk, ignore). This caps how long; when it runs out the finding comes back as new.">
+            <SettingRow title="Longest exception" description="Suppressions and risk acceptances always expire; this is the longest expiry anyone can set.">
               <NumField
                 id="exc-days"
                 label="Longest exception (days)"
@@ -507,23 +574,32 @@ export function RiskPolicyPage() {
                 onChange={(n) => set("exception_max_days", n)}
                 hint={`Between 1 and 730. Default ${DEFAULT_EXCEPTION_MAX_DAYS}.`}
               />
-            </div>
-            {!exceptionDaysValid && <p className="hint text-bad">Longest exception must be a whole number of days between 1 and 730.</p>}
+              {!exceptionDaysValid && <p className="hint text-bad">Longest exception must be a whole number of days between 1 and 730.</p>}
+            </SettingRow>
           </Card>
           <UnmaintainedCard policy={p} onChange={(n) => set("unmaintained_months", n)} />
-          <Card title="SOS rules">
-            <p className="hint">
-              A finding is SOS when any rule matches (all its conditions hold). Only confirmed findings can be SOS, and a rule cannot rely
-              on severity alone: add an exploitation, exposure, environment or priority condition.
-            </p>
+          <Card
+            title="SOS rules"
+            description="SOS marks the few findings that need someone right now, ahead of the normal priorities. A finding is SOS when every condition of any one rule holds."
+          >
+            <GoodToKnow>
+              <ul>
+                <li>Only confirmed findings can be SOS.</li>
+                <li>A rule cannot rely on severity alone: add an exploitation, exposure, environment or priority condition.</li>
+                <li>Unknown exposure counts as exposed, and no environment counts as production.</li>
+              </ul>
+            </GoodToKnow>
             {rules.length === 0 && <p className="muted">No SOS rules: nothing will be flagged SOS.</p>}
             {rules.map((r, i) => (
               <div key={i} className="rule-card">
+                <div className="field">
+                  <label htmlFor={`sos-${i}-name`}>Rule name</label>
+                  <input id={`sos-${i}-name`} required value={r.name} onChange={(e) => setRule(i, { ...r, name: e.target.value })} />
+                </div>
+                <p className="small rule-summary">
+                  <strong>SOS when:</strong> {sosSummary(r)}
+                </p>
                 <div className="form-grid">
-                  <div className="field field-span">
-                    <label htmlFor={`sos-${i}-name`}>Rule name</label>
-                    <input id={`sos-${i}-name`} required value={r.name} onChange={(e) => setRule(i, { ...r, name: e.target.value })} />
-                  </div>
                   <div className="field">
                     <label htmlFor={`sos-${i}-prio`}>Minimum priority</label>
                     <select

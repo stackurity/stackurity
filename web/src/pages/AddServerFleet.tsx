@@ -14,7 +14,7 @@ import { useAction, useLoad, type Loaded } from "../hooks";
 import { absTime, plural } from "../format";
 import { Table, type Column } from "../components/Table";
 import { Badge } from "../components/Badge";
-import { Card, Code, CodeBlock, EmptyState, ErrorBox, KeyValues, Loading, Notice, RelativeTime, Tabs } from "../components/ui";
+import { Card, CardFooter, Code, CodeBlock, EmptyState, ErrorBox, FieldGroup, KeyValues, Loading, Notice, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { fleetSnippets, sshCommand, sshLoop, cloudInit, type SnippetKind } from "../fleetSnippets";
 import { CheckApps, installCommand } from "./AddServer";
@@ -137,13 +137,13 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
 
   const active = (projects.data?.items ?? []).filter((p) => !p.archived_at);
   return (
-    <Card title="New fleet code">
+    <Card
+      title="New fleet code"
+      description="One code for a rollout across many servers, with snippets for cloud-init, Ansible, Terraform and an SSH loop. Choose the count and expiry to fit the rollout, and revoke the code when it is done."
+    >
       <form className="form" onSubmit={submit}>
-        <p className="hint">
-          One code for a rollout across many servers, with snippets for cloud-init, Ansible, Terraform and an SSH loop.
-          Choose the count and expiry to fit the rollout, and revoke the code when it is done.
-        </p>
         <ErrorBox error={act.error} title="Could not create fleet code" />
+        <FieldGroup title="The code" description="How many servers may use it, and for how long.">
         <div className="form-grid">
           <div className="field">
             <label htmlFor="fl-count">How many servers</label>
@@ -159,6 +159,10 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
             <label htmlFor="fl-label">Label</label>
             <input id="fl-label" maxLength={100} placeholder="e.g. web fleet, November rollout" value={label} onChange={(e) => setLabel(e.target.value)} />
           </div>
+        </div>
+        </FieldGroup>
+        <FieldGroup title="Where the servers go" description="Optional. The project and environment every server enrolled with this code gets. Production is ranked higher.">
+        <div className="form-grid">
           <div className="field">
             <label htmlFor="fl-project">Project</label>
             <select id="fl-project" value={project} onChange={(e) => setProject(e.target.value)}>
@@ -183,20 +187,21 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
               onChange={(e) => setEnvironment(e.target.value)}
             />
           </div>
-          <div className="field field-span">
+        </div>
+        </FieldGroup>
+        <FieldGroup title="Websites and apps" description="Besides the operating system's packages, the agent can find the websites and apps on each server and list the libraries they use.">
+          <CheckApps checked={discover} onChange={setDiscover} id="fl-apps" />
+          <div className="field">
             <label htmlFor="fl-dirs">Application directories</label>
             <textarea id="fl-dirs" className="mono" rows={2} placeholder="/data/shop" value={dirs} onChange={(e) => setDirs(e.target.value)} />
-            <p className="hint">Optional, one per line.</p>
+            <p className="hint">Optional, one per line, for apps outside the usual places.</p>
           </div>
-          <div className="field field-span">
-            <CheckApps checked={discover} onChange={setDiscover} id="fl-apps" />
-          </div>
-        </div>
-        <div className="form-actions">
+        </FieldGroup>
+        <CardFooter>
           <button type="submit" className="btn btn-primary" disabled={act.pending}>
             Create fleet code
           </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

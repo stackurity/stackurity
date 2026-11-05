@@ -5,7 +5,7 @@ import { Link } from "react-router";
 import { api, type Asset, type InvitationGrant, type List, type Project, type Team, type User, type UserRole } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, PageHeader } from "../../components/ui";
+import { Card, CardFooter, EmptyState, ErrorBox, Loading, PageHeader, SettingRow } from "../../components/ui";
 import { teamsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { AccessPicker } from "../../components/AccessPicker";
@@ -126,7 +126,7 @@ export function TeamsPage() {
           // wide for a table that scrolls sideways on a phone.
           const t = teams.data?.items.find((x) => x.id === editing);
           return t ? (
-            <Card title={`Edit ${t.name}`}>
+            <Card title={`Edit ${t.name}`} description="Who is in the team, what its members can see, and which assets' alerts it gets. Saved together.">
               <EditTeam key={t.id} team={t} users={users.data?.items ?? []} onCancel={() => setEditing(null)} onSaved={done} />
             </Card>
           ) : null;
@@ -153,8 +153,7 @@ export function TeamsPage() {
 
 function Members({ idp, users, members, onToggle }: { idp: string; users: User[]; members: Set<number>; onToggle: (id: number) => void }) {
   return (
-    <fieldset className="field">
-      <legend>Members</legend>
+    <SettingRow title="Members" description="People in this team. They see what the team can see, for as long as they are in it.">
       {users.length === 0 ? (
         <p className="muted">No users to add.</p>
       ) : (
@@ -167,7 +166,7 @@ function Members({ idp, users, members, onToggle }: { idp: string; users: User[]
           ))}
         </div>
       )}
-    </fieldset>
+    </SettingRow>
   );
 }
 
@@ -193,29 +192,30 @@ function NewTeam({ users, onCancel, onSaved }: { users: User[]; onCancel: () => 
     if (ok) onSaved();
   };
   return (
-    <Card title="Add team">
+    <Card title="Add team" description="A group of people who look after the same assets. After creating it, use Edit to choose what it can see and which assets it owns.">
       <form className="form" onSubmit={submit} aria-label="Add team">
         <ErrorBox error={act.error} title="Could not create the team" />
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="tnew-name">Name</label>
-            <input id="tnew-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+        <SettingRow title="Name and contact" description="The contact email is where the team's alerts can go, for example a shared mailbox.">
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="tnew-name">Name</label>
+              <input id="tnew-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+            </div>
+            <div className="field">
+              <label htmlFor="tnew-email">Contact email (optional)</label>
+              <input id="tnew-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="tnew-email">Contact email (optional)</label>
-            <input id="tnew-email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-        </div>
+        </SettingRow>
         <Members idp="tnew" users={users} members={members} onToggle={toggle} />
-        <p className="hint">Then choose what it can see and which assets it owns with Edit.</p>
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
-            Create team
-          </button>
+        <CardFooter status="Then choose what it can see and which assets it owns with Edit.">
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-        </div>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
+            Create team
+          </button>
+        </CardFooter>
       </form>
     </Card>
   );
@@ -266,21 +266,24 @@ function EditTeam({ team, users, onCancel, onSaved }: { team: Team; users: User[
   return (
     <form className="form" onSubmit={submit} aria-label={`Edit ${team.name}`} noValidate>
       <ErrorBox error={act.error} title="Could not save the team" />
-      <div className="form-grid">
-        <div className="field">
-          <label htmlFor={`${idp}-name`}>Name</label>
-          <input id={`${idp}-name`} required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+      <SettingRow title="Name and contact" description="The contact email is where the team's alerts can go, for example a shared mailbox.">
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor={`${idp}-name`}>Name</label>
+            <input id={`${idp}-name`} required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="field">
+            <label htmlFor={`${idp}-email`}>Contact email (optional)</label>
+            <input id={`${idp}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
         </div>
-        <div className="field">
-          <label htmlFor={`${idp}-email`}>Contact email (optional)</label>
-          <input id={`${idp}-email`} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-        </div>
-      </div>
+      </SettingRow>
       <Members idp={idp} users={users} members={members} onToggle={toggle} />
 
-      <fieldset className="field team-sees">
-        <legend>Can see</legend>
-        <p className="hint">Its members see these, with these permissions, while they are in the team. A team gets specific projects and assets, never all of them.</p>
+      <SettingRow
+        title="Can see"
+        description="The projects and assets its members can open, and what they may do there. A team gets specific projects and assets, never all of them."
+      >
         {current.length === 0 ? (
           <p className="muted">Nothing yet.</p>
         ) : (
@@ -328,11 +331,12 @@ function EditTeam({ team, users, onCancel, onSaved }: { team: Team; users: User[
             Adds: {adding}
           </p>
         )}
-      </fieldset>
+      </SettingRow>
 
-      <fieldset className="field team-owns">
-        <legend>Owns</legend>
-        <p className="hint">Alerts and incidents for these assets go to this team. Owning gives no access: give it access above.</p>
+      <SettingRow
+        title="Owns"
+        description="Alerts and incidents for these assets go to this team. Owning gives no access: give it access under Can see."
+      >
         <ErrorBox error={assets.error} title="Could not load assets" />
         {!assets.data && !assets.error && <Loading />}
         {assets.data && (
@@ -371,16 +375,16 @@ function EditTeam({ team, users, onCancel, onSaved }: { team: Team; users: User[
             )}
           </>
         )}
-      </fieldset>
+      </SettingRow>
 
-      <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
-          Save team
-        </button>
+      <CardFooter>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel
         </button>
-      </div>
+        <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
+          Save team
+        </button>
+      </CardFooter>
     </form>
   );
 }

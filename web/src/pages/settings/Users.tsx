@@ -4,7 +4,7 @@ import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, EmptyState, ErrorBox, FieldGroup, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { PasswordChecklist } from "../../components/PasswordStrength";
 import { passwordOK } from "../../passwordStrength";
 import { RequireMfaCard } from "../TwoFactor";
@@ -53,7 +53,9 @@ export function UsersPage() {
       header: "User",
       cell: (u) => (
         <>
-          <div>{u.name || <span className="muted">(no name)</span>}</div>
+          <div>
+            {u.name || <span className="muted">(no name)</span>} {u.disabled && <Badge status="disabled" />}
+          </div>
           <div className="small muted">{u.email}</div>
           {u.phone && <div className="small muted">{u.phone}</div>}
         </>
@@ -88,8 +90,12 @@ export function UsersPage() {
         </>
       ),
     },
-    { key: "scope", header: "Can see", cell: (u) => <span className={u.role ? undefined : "muted"}>{scopeSummary(u)}</span> },
-    { key: "status", header: "Status", cell: (u) => (u.disabled ? <Badge status="disabled" /> : <Badge status="active" />) },
+    {
+      key: "scope",
+      header: "Can see",
+      // An organisation-wide role already shows in Role: say only that it covers everything.
+      cell: (u) => (u.role ? "All projects and assets" : <span className="muted">{scopeSummary(u)}</span>),
+    },
     {
       key: "mfa",
       header: "Two-factor",
@@ -101,8 +107,18 @@ export function UsersPage() {
         ),
     },
     { key: "teams", header: "Teams", cell: (u) => (u.teams?.length ? u.teams.join(", ") : <span className="muted">—</span>) },
-    { key: "login", header: "Last sign-in", cell: (u) => <RelativeTime iso={u.last_login_at} /> },
-    { key: "created", header: "Created", cell: (u) => <RelativeTime iso={u.created_at} /> },
+    {
+      key: "login",
+      header: "Last sign-in",
+      cell: (u) => (
+        <>
+          <RelativeTime iso={u.last_login_at} />
+          <div className="small muted">
+            added <RelativeTime iso={u.created_at} />
+          </div>
+        </>
+      ),
+    },
     {
       key: "actions",
       header: <span className="sr-only">Actions</span>,
@@ -226,14 +242,11 @@ export function UsersPage() {
       />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
-      <RequireMfaCard />
-      {inviteOnly && !showInvite && (
-        <p className="small muted">People join this organisation by invitation: they get a link by email and set up their own account.</p>
-      )}
-      {!showCreate && !showInvite && <PermissionsDisclosure />}
       {showInvite && (
-        <Card title="Invite by email">
-          <p className="small muted">Sends a link that works once, for 7 days. They create their account with it, or join with the one they have.</p>
+        <Card
+          title="Invite by email"
+          description="Sends a link that works once, for 7 days. They create their account with it, or join with the one they have."
+        >
           <InviteForm
             onInvited={() => {
               setInvites((n) => n + 1);
@@ -253,42 +266,55 @@ export function UsersPage() {
           }}
         />
       )}
-      <ErrorBox error={res.error} title="Could not load users" />
-      {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState title="No users" />}
-      {res.data && res.data.items.length > 0 && (
-        <Table
-          caption="Users"
-          columns={columns}
-          rows={res.data.items}
-          rowKey={(u) => u.id}
-          selectedKey={open?.id ?? null}
-          renderExpanded={(u) =>
-            open?.kind === "edit" ? (
-              <EditUser
-                user={u}
-                onDone={() => {
-                  setOpen(null);
-                  setMsg(`${u.email} was updated.`);
-                  res.reload();
-                }}
-                onCancel={() => setOpen(null)}
-              />
-            ) : (
-              <ResetPassword
-                user={u}
-                onDone={() => {
-                  setOpen(null);
-                  setMsg(`Password for ${u.email} was reset.`);
-                }}
-                onCancel={() => setOpen(null)}
-              />
-            )
-          }
-          rowClassName={(u) => (u.disabled ? "row-removed" : undefined)}
-        />
-      )}
-      <InvitationList reloadKey={invites} />
+      <Card
+        title={`Members${res.data ? ` (${res.data.items.length})` : ""}`}
+        description={
+          <>
+            <strong>Role</strong> is what someone may do. <strong>Can see</strong> is where: every project and asset, or only the projects and assets they
+            were given (directly or through a team).
+            {inviteOnly && " People join this organisation by invitation: they get a link by email and set up their own account."}
+          </>
+        }
+      >
+        {!showCreate && !showInvite && <PermissionsDisclosure />}
+        <ErrorBox error={res.error} title="Could not load users" />
+        {!res.data && !res.error && <Loading />}
+        {res.data && res.data.items.length === 0 && <EmptyState title="No users" />}
+        {res.data && res.data.items.length > 0 && (
+          <Table
+            caption="Users"
+            columns={columns}
+            rows={res.data.items}
+            rowKey={(u) => u.id}
+            selectedKey={open?.id ?? null}
+            renderExpanded={(u) =>
+              open?.kind === "edit" ? (
+                <EditUser
+                  user={u}
+                  onDone={() => {
+                    setOpen(null);
+                    setMsg(`${u.email} was updated.`);
+                    res.reload();
+                  }}
+                  onCancel={() => setOpen(null)}
+                />
+              ) : (
+                <ResetPassword
+                  user={u}
+                  onDone={() => {
+                    setOpen(null);
+                    setMsg(`Password for ${u.email} was reset.`);
+                  }}
+                  onCancel={() => setOpen(null)}
+                />
+              )
+            }
+            rowClassName={(u) => (u.disabled ? "row-removed" : undefined)}
+          />
+        )}
+      </Card>
+      <InvitationList reloadKey={invites} asCard />
+      <RequireMfaCard />
     </>
   );
 }
@@ -391,32 +417,34 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     if (u) onCreated(u);
   };
   return (
-    <Card title="Add user">
+    <Card title="Add user" description="Creates the account now, with a password you choose and share with them. To let them set their own, use Invite by email.">
       <form className="form" onSubmit={submit} aria-label="Add user" noValidate>
         <ErrorBox error={act.error} title="Could not create user" />
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor="nu-name">Name</label>
-            <input id="nu-name" autoComplete="off" maxLength={200} value={f.name} onChange={(e) => dispatch({ type: "field", field: "name", value: e.target.value })} />
+        <FieldGroup title="Who they are">
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor="nu-name">Name</label>
+              <input id="nu-name" autoComplete="off" maxLength={200} value={f.name} onChange={(e) => dispatch({ type: "field", field: "name", value: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="nu-email">Email</label>
+              <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => dispatch({ type: "field", field: "email", value: e.target.value })} />
+            </div>
+            <div className="field">
+              <label htmlFor="nu-phone">Phone (optional)</label>
+              <input id="nu-phone" type="tel" autoComplete="off" maxLength={32} placeholder="+91 98450 12345" value={f.phone}
+                aria-invalid={phoneProblem(f.phone) ? true : undefined} onChange={(e) => dispatch({ type: "field", field: "phone", value: e.target.value })} />
+              <p className="hint">{phoneProblem(f.phone) || "Contact information only. Nothing is sent to it."}</p>
+            </div>
+            <div className="field">
+              <label htmlFor="nu-pw">Initial password</label>
+              <input id="nu-pw" type="password" minLength={12} maxLength={256} autoComplete="new-password" value={f.password} aria-describedby="nu-pw-rules"
+                onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
+              <p className="hint">Leave empty if they already have an account; they join this workspace with it.</p>
+              {f.password && <PasswordChecklist id="nu-pw-rules" password={f.password} context={[f.email, f.name]} />}
+            </div>
           </div>
-          <div className="field">
-            <label htmlFor="nu-email">Email</label>
-            <input id="nu-email" type="email" required autoComplete="off" value={f.email} onChange={(e) => dispatch({ type: "field", field: "email", value: e.target.value })} />
-          </div>
-          <div className="field">
-            <label htmlFor="nu-phone">Phone (optional)</label>
-            <input id="nu-phone" type="tel" autoComplete="off" maxLength={32} placeholder="+91 98450 12345" value={f.phone}
-              aria-invalid={phoneProblem(f.phone) ? true : undefined} onChange={(e) => dispatch({ type: "field", field: "phone", value: e.target.value })} />
-            <p className="hint">{phoneProblem(f.phone) || "Contact information only. Nothing is sent to it."}</p>
-          </div>
-          <div className="field">
-            <label htmlFor="nu-pw">Initial password</label>
-            <input id="nu-pw" type="password" minLength={12} maxLength={256} autoComplete="new-password" value={f.password} aria-describedby="nu-pw-rules"
-              onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
-            <p className="hint">Leave empty if they already have an account; they join this workspace with it.</p>
-            {f.password && <PasswordChecklist id="nu-pw-rules" password={f.password} context={[f.email, f.name]} />}
-          </div>
-        </div>
+        </FieldGroup>
 
         <AccessPicker idp="nu" f={f} dispatch={dispatch} projects={projects} teams={teams} />
 

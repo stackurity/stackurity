@@ -575,7 +575,10 @@ export function AssistantsPage() {
       <ErrorBox error={res.error ?? act.error} title="Could not load or change the connections" />
       {!res.data && !res.error && <Loading />}
       {res.data && (
-        <Card title="Connect your assistant">
+        <Card
+          title="Connect your assistant"
+          description="Add Stackurity to the AI assistant you already use. You sign in once and choose what it may see; it works with your permissions, never more."
+        >
           {off ? (
             <Notice kind="warn">
               <strong>Assistants cannot sign in to this server yet.</strong> Whoever runs it has to set <code>STACKURITY_BASE_URL</code> to its

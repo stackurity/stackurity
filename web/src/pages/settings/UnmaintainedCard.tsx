@@ -1,5 +1,5 @@
 import { DEFAULT_UNMAINTAINED_MONTHS, MAX_UNMAINTAINED_MONTHS, MIN_UNMAINTAINED_MONTHS, type RiskPolicy } from "../../api";
-import { Card } from "../../components/ui";
+import { Card, SettingRow } from "../../components/ui";
 
 /** The months a policy applies: its own value, or the default when it leaves it out. */
 export function unmaintainedMonths(p: RiskPolicy): number {
@@ -16,12 +16,14 @@ export function unmaintainedValid(p: RiskPolicy): boolean {
 export function UnmaintainedCard({ policy, onChange }: { policy: RiskPolicy; onChange: (months: number) => void }) {
   const months = unmaintainedMonths(policy);
   return (
-    <Card title="Issues with no fix">
-      <p className="hint">
-        When an issue has no fixed version, How to fix says a package is unmaintained (a fix is unlikely) when its maintainers deprecated
-        it or it has had no release for this long.
-      </p>
-      <div className="form-grid">
+    <Card
+      title="Issues with no fix"
+      description="Some vulnerabilities have no fixed version yet. For those, How to fix says whether a fix is still likely to come, or whether the package looks abandoned and should be replaced."
+    >
+      <SettingRow
+        title="Unmaintained after"
+        description="A package counts as unmaintained (a fix is unlikely) when its maintainers deprecated it or it has had no release for this long."
+      >
         <div className="field">
           <label htmlFor="unmaintained-months">Treat a package as unmaintained after (months without a release)</label>
           <input
@@ -40,12 +42,12 @@ export function UnmaintainedCard({ policy, onChange }: { policy: RiskPolicy; onC
             action plan is next rebuilt, within about a minute.
           </p>
         </div>
-      </div>
-      {!unmaintainedValid(policy) && (
-        <p className="hint text-bad">
-          Months without a release must be a whole number between {MIN_UNMAINTAINED_MONTHS} and {MAX_UNMAINTAINED_MONTHS}.
-        </p>
-      )}
+        {!unmaintainedValid(policy) && (
+          <p className="hint text-bad">
+            Months without a release must be a whole number between {MIN_UNMAINTAINED_MONTHS} and {MAX_UNMAINTAINED_MONTHS}.
+          </p>
+        )}
+      </SettingRow>
     </Card>
   );
 }

@@ -28,7 +28,7 @@ import {
 import { useAuth } from "../../auth";
 import { useAction, useFacets, useLoad } from "../../hooks";
 import { Badge, Chip } from "../../components/Badge";
-import { Card, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CheckCard, ErrorBox, FieldGroup, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton } from "../../components/NotifyChoices";
 import { IntegrationIcon } from "./Integrations";
@@ -71,11 +71,34 @@ const TEST_OK: Record<string, string> = {
   pagerduty: "PagerDuty accepted a test alert (severity info) and it was resolved at once.",
 };
 
-const EVENT_HINT: Partial<Record<RouteEvent, string>> = {
-  urgent: "Exploited, critical, or came back after a fix.",
-  new_issues: "Every new issue at or above the priority set below.",
+/** What each event sends, under its name. */
+const EVENT_HINT: Record<RouteEvent, string> = {
+  urgent: "Exploited, critical, or came back after a fix. Use this for anything someone should look at today.",
+  new_issues: "Every new issue at or above the priority set under Notification settings. Can be busy.",
+  regressed: "An issue that an upgrade or removal fixed, and that has appeared again.",
   overdue: "Urgent issues past their fix deadline, at most once a day.",
+  connected: "One message when a new server, repository or other asset sends its first results, instead of an alert for every old issue.",
+  problems: "A server stopped reporting, a scan is late, an integration keeps failing or a vulnerability feed is out of date.",
+  daily_summary: "What is new, what was fixed and the top fixes still open, once a day.",
+  weekly_summary: "The same summary, once a week.",
 };
+
+/** A rule's section: a card on the integration's page, a titled group inside a rule editor. */
+type Section = (key: string, title: string, description: ReactNode, body: ReactNode) => ReactNode;
+
+const groupSection: Section = (key, title, description, body) => (
+  <FieldGroup key={key} title={title} description={description}>
+    {body}
+  </FieldGroup>
+);
+
+const cardSection =
+  (unsaved: boolean): Section =>
+  (key, title, description, body) => (
+    <Card key={key} title={unsaved ? `${title} (not saved yet)` : title} description={description}>
+      <div className="form">{body}</div>
+    </Card>
+  );
 
 function newRule(channelId: number, name: string): Route {
   return {
@@ -146,6 +169,7 @@ function RuleFields({
   options,
   returnTo,
   showName,
+  section = groupSection,
 }: {
   idp: string;
   r: Route;
@@ -158,8 +182,10 @@ function RuleFields({
   options: NotificationOptions;
   returnTo: string;
   showName?: boolean;
+  section?: Section;
 }) {
   const facets = useFacets();
+  const hasTeams = useAuth().has("teams");
   const set = <K extends keyof Route>(k: K, v: Route[K]) => setR({ ...r, [k]: v });
   const events = (r.events ?? []) as RouteEvent[];
   const jira = isTracker(kind);
@@ -194,95 +220,108 @@ function RuleFields({
     />
   );
 
-  return (
+  const trigger = (
     <>
-      {!jira && (
-        <fieldset className="field">
-          <legend className="h-sm">Trigger</legend>
-          <p className="hint">What this integration sends. Messages are grouped: at most one per check, never one per issue.</p>
-          <ul className="trigger-list">
-            {ROUTE_EVENTS.map((e) => {
-              const on = events.includes(e);
-              return (
-                <li key={e}>
-                  <label className="check">
-                    <input type="checkbox" checked={on} onChange={() => toggle(e)} /> <strong>{ROUTE_EVENT_LABEL[e]}</strong>
-                  </label>
-                  {e === "daily_summary" && <span className="trigger-extra">at {timeInput}</span>}
-                  {e === "weekly_summary" && (
-                    <span className="trigger-extra">
-                      on{" "}
-                      <select aria-label="Summary day" value={r.summary_day || "monday"} onChange={(ev) => set("summary_day", ev.target.value)}>
-                        {WEEKDAYS.map((d) => (
-                          <option key={d} value={d}>
-                            {dayLabel(d)}
-                          </option>
-                        ))}
-                      </select>{" "}
-                      at {timeInput}
-                    </span>
-                  )}
-                  {EVENT_HINT[e] && <span className="hint trigger-hint">{EVENT_HINT[e]}</span>}
-                  {slack && on && (others.length > 0 || canAddChannel) && (
-                    <span className="trigger-extra trigger-dest">
-                      {others.length > 0 && (
-                        <>
-                          <label className="sr-only" htmlFor={`${idp}-dest-${e}`}>
-                            Slack channel for {ROUTE_EVENT_LABEL[e]}
-                          </label>
-                          <select id={`${idp}-dest-${e}`} value={String(r.event_channels?.[e] ?? "")} onChange={(ev) => setDest(e, Number(ev.target.value))}>
-                            <option value="">Same channel</option>
-                            {others.map((c) => (
-                              <option key={c.id} value={String(c.id)}>
-                                {c.config?.slack_app ? slackAppTarget(c.config) : c.name}
-                              </option>
-                            ))}
-                          </select>
-                        </>
-                      )}
-                      {canAddChannel && (
-                        <AddToSlackButton
-                          variant="link"
-                          label={others.length > 0 ? "+ Add another channel" : "+ Send to another channel"}
-                          title={`Add a Slack channel for ${ROUTE_EVENT_LABEL[e]}`}
-                          returnTo={`${returnTo}?for=${e}`}
-                        />
-                      )}
-                    </span>
-                  )}
-                </li>
-              );
-            })}
-          </ul>
-          {(events.includes("daily_summary") || events.includes("weekly_summary")) && (
-            <p className="hint">Summaries are skipped when nothing changed. Daily and weekly summaries share the time.</p>
-          )}
-          {events.includes("weekly_summary") && (
-            <>
-              <label className="check">
-                <input type="checkbox" checked={Boolean(r.summary_updates)} onChange={(e) => set("summary_updates", e.target.checked)} /> Include updates
-                available in the weekly summary
-              </label>
-              <span className="hint">
-                Packages behind their latest stable release (patch, minor, major) and the 10 most behind, never in daily summaries. Not security
-                issues: they never raise issues or urgent messages, and send the weekly summary on their own.{" "}
-                <Link to="/components/updates">See them</Link>.
+      <div className="choice-cards trigger-cards">
+        {ROUTE_EVENTS.map((e) => {
+          const on = events.includes(e);
+          const id = `${idp}-ev-${e}`;
+          return (
+            <div key={e} className="choice-card choice-card-static">
+              <input id={id} type="checkbox" checked={on} onChange={() => toggle(e)} aria-describedby={`${id}-hint`} />
+              <span className="choice-card-text">
+                <label className="choice-card-label" htmlFor={id}>
+                  {ROUTE_EVENT_LABEL[e]}
+                  {e === "overdue" && !hasTeams && <span className="pro-badge">Pro</span>}
+                </label>
+                <span className="choice-card-desc" id={`${id}-hint`}>
+                  {EVENT_HINT[e]}
+                </span>
+                {e === "daily_summary" && <span className="trigger-extra">at {timeInput}</span>}
+                {e === "weekly_summary" && (
+                  <span className="trigger-extra">
+                    on{" "}
+                    <select aria-label="Summary day" value={r.summary_day || "monday"} onChange={(ev) => set("summary_day", ev.target.value)}>
+                      {WEEKDAYS.map((d) => (
+                        <option key={d} value={d}>
+                          {dayLabel(d)}
+                        </option>
+                      ))}
+                    </select>{" "}
+                    at {timeInput}
+                  </span>
+                )}
+                {slack && on && (others.length > 0 || canAddChannel) && (
+                  <span className="trigger-extra">
+                    {others.length > 0 && (
+                      <>
+                        <label htmlFor={`${idp}-dest-${e}`}>Send to</label>
+                        <select id={`${idp}-dest-${e}`} value={String(r.event_channels?.[e] ?? "")} onChange={(ev) => setDest(e, Number(ev.target.value))}>
+                          <option value="">Same channel</option>
+                          {others.map((c) => (
+                            <option key={c.id} value={String(c.id)}>
+                              {c.config?.slack_app ? slackAppTarget(c.config) : c.name}
+                            </option>
+                          ))}
+                        </select>
+                      </>
+                    )}
+                    {canAddChannel && (
+                      <AddToSlackButton
+                        variant="link"
+                        label={others.length > 0 ? "+ Add another channel" : "+ Send to another channel"}
+                        title={`Add a Slack channel for ${ROUTE_EVENT_LABEL[e]}`}
+                        returnTo={`${returnTo}?for=${e}`}
+                      />
+                    )}
+                  </span>
+                )}
               </span>
-            </>
-          )}
-        </fieldset>
-      )}
-      {jira && <Notice kind="info">{TRACKER_NOTICE[kind]}</Notice>}
-
-      <fieldset className="field field-sections">
-        <legend className="h-sm">Notification settings</legend>
-        <div className="form-grid">
-          {showName && (
-            <div className="field">
-              <label htmlFor={`${idp}-name`}>Rule name</label>
-              <input id={`${idp}-name`} value={r.name} onChange={(e) => set("name", e.target.value)} />
             </div>
-          )}
+          );
+        })}
+      </div>
+      {(events.includes("daily_summary") || events.includes("weekly_summary")) && (
+        <p className="hint">Summaries are skipped when nothing changed. Daily and weekly summaries share the time.</p>
+      )}
+      {events.includes("weekly_summary") && (
+        <CheckCard
+          checked={Boolean(r.summary_updates)}
+          onChange={(on) => set("summary_updates", on)}
+          label="Include updates available in the weekly summary"
+          description={
+            <>
+              Packages behind their latest stable release (patch, minor, major) and the 10 most behind, never in daily summaries. Not security issues: they
+              never raise issues or urgent messages, and send the weekly summary on their own. <Link to="/components/updates">See them</Link>.
+            </>
+          }
+        />
+      )}
+    </>
+  );
+
+  const settings = (
+    <>
+      {jira && <Notice kind="info">{TRACKER_NOTICE[kind]}</Notice>}
+      {showName && (
+        <SettingRow title="Rule name" description="Shown in the list of rules and in the delivery log.">
+          <div className="field">
+            <label className="sr-only" htmlFor={`${idp}-name`}>
+              Rule name
+            </label>
+            <input id={`${idp}-name`} value={r.name} onChange={(e) => set("name", e.target.value)} />
+          </div>
+        </SettingRow>
+      )}
+      <SettingRow
+        title="Priorities"
+        description={
+          jira
+            ? "Which incidents count as urgent. P1 is the most serious, P4 the least."
+            : "Which issues count as urgent, and the lowest priority All new issues sends. P1 is the most serious, P4 the least."
+        }
+      >
+        <div className="form-grid">
           <div className="field">
             <label htmlFor={`${idp}-prio`}>Urgent from</label>
             <select id={`${idp}-prio`} value={r.min_priority} onChange={(e) => set("min_priority", e.target.value as Priority)}>
@@ -304,76 +343,12 @@ function RuleFields({
                   </option>
                 ))}
               </select>
+              <p className="hint">Only used when All new issues is ticked.</p>
             </div>
           )}
-          {!jira && (
-            <>
-              <div className="field">
-                <label htmlFor={`${idp}-tz`}>Time zone</label>
-                <input id={`${idp}-tz`} list={`${idp}-tzs`} value={r.timezone} onChange={(e) => set("timezone", e.target.value)} placeholder="UTC" />
-                <datalist id={`${idp}-tzs`}>
-                  {TZ_SUGGESTIONS.map((z) => (
-                    <option key={z} value={z} />
-                  ))}
-                </datalist>
-                <p className="hint">For summaries and quiet hours, e.g. Europe/Berlin.</p>
-              </div>
-              <div className="field">
-                <label htmlFor={`${idp}-max`}>Hourly limit</label>
-                <input
-                  id={`${idp}-max`}
-                  type="number"
-                  min={0}
-                  max={1000}
-                  value={String(r.max_per_hour)}
-                  onChange={(e) => set("max_per_hour", Math.max(0, Number(e.target.value) || 0))}
-                />
-                <p className="hint">Messages an hour; 0 = no limit. Extra messages go into the next summary, or one message an hour without a summary.</p>
-              </div>
-              <fieldset className="field field-span">
-                <legend>Quiet hours</legend>
-                <div className="inline-controls">
-                  <select
-                    aria-label="Quiet hours"
-                    value={quiet ? "on" : "off"}
-                    onChange={(e) => setR({ ...r, quiet_start: e.target.value === "on" ? "22:00" : "", quiet_end: e.target.value === "on" ? "07:00" : "" })}
-                  >
-                    <option value="off">Off</option>
-                    <option value="on">On</option>
-                  </select>
-                  {quiet && (
-                    <>
-                      <label htmlFor={`${idp}-qs`}>from</label>
-                      <input id={`${idp}-qs`} type="time" required value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
-                      <label htmlFor={`${idp}-qe`}>to</label>
-                      <input id={`${idp}-qe`} type="time" required value={r.quiet_end} onChange={(e) => set("quiet_end", e.target.value)} />
-                    </>
-                  )}
-                </div>
-                <p className="hint">Quiet hours hold everything except SOS until they end, in the time zone above.</p>
-              </fieldset>
-            </>
-          )}
         </div>
-        <fieldset className="field">
-          <legend>Options</legend>
-          <div className="check-stack">
-            {/* One rule: the page's Disable switches the integration off; the rule's own switch only to turn a switched-off rule back on. */}
-            {(showName || !r.enabled) && (
-              <label className="check">
-                <input type="checkbox" checked={r.enabled} onChange={(e) => set("enabled", e.target.checked)} /> {showName ? "Enabled" : "This rule is on"}
-              </label>
-            )}
-            <label className="check">
-              <input type="checkbox" checked={r.sos_only} onChange={(e) => set("sos_only", e.target.checked)} /> SOS incidents only
-            </label>
-            {!jira && (
-              <label className="check">
-                <input type="checkbox" checked={r.send_resolved} onChange={(e) => set("send_resolved", e.target.checked)} /> Also send when issues are fixed
-              </label>
-            )}
-          </div>
-        </fieldset>
+      </SettingRow>
+      <SettingRow title="Which issues" description="Narrow it down to some assets or kinds of issue. A list with nothing ticked includes everything in it.">
         {projects.length > 0 &&
           kind !== "pagerduty" &&
           kind !== "servicenow" &&
@@ -388,7 +363,7 @@ function RuleFields({
                   </option>
                 ))}
               </select>
-              <p className="hint">With a project, each issue describes only that project's part of an incident. Add a rule for each project.</p>
+              <p className="hint">With a project, each issue describes only that project&apos;s part of an incident. Add a rule for each project.</p>
             </div>
           ) : (
             <CheckGroup
@@ -409,7 +384,7 @@ function RuleFields({
           value={r.kinds ?? []}
           onChange={(v) => set("kinds", v)}
           label={(k) => k.replace(/_/g, " ")}
-          hint="None ticked = all kinds."
+          hint="None ticked = all kinds. Vulnerability: a known security flaw. End of life: software that no longer gets fixes. Leak: a key or password found in a file. Feed, collection, coverage and platform: problems with Stackurity's own checks."
         />
         {teams.length > 0 && (
           <CheckGroup
@@ -421,7 +396,91 @@ function RuleFields({
             hint="None ticked = all teams, including unowned incidents."
           />
         )}
-      </fieldset>
+        <CheckCard
+          checked={r.sos_only}
+          onChange={(on) => set("sos_only", on)}
+          label="SOS incidents only"
+          description="Only the most serious incidents: the ones your risk policy marks SOS, such as a known exploited issue in production."
+        />
+      </SettingRow>
+      {!jira && (
+        <SettingRow title="Timing and limits" description="When messages may go out, so nobody is woken at night or flooded.">
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor={`${idp}-tz`}>Time zone</label>
+              <input id={`${idp}-tz`} list={`${idp}-tzs`} value={r.timezone} onChange={(e) => set("timezone", e.target.value)} placeholder="UTC" />
+              <datalist id={`${idp}-tzs`}>
+                {TZ_SUGGESTIONS.map((z) => (
+                  <option key={z} value={z} />
+                ))}
+              </datalist>
+              <p className="hint">For summaries and quiet hours, e.g. Europe/Berlin.</p>
+            </div>
+            <div className="field">
+              <label htmlFor={`${idp}-max`}>Hourly limit</label>
+              <input
+                id={`${idp}-max`}
+                type="number"
+                min={0}
+                max={1000}
+                value={String(r.max_per_hour)}
+                onChange={(e) => set("max_per_hour", Math.max(0, Number(e.target.value) || 0))}
+              />
+              <p className="hint">Messages an hour; 0 = no limit. Extra messages go into the next summary, or one message an hour without a summary.</p>
+            </div>
+          </div>
+          <fieldset className="field">
+            <legend>Quiet hours</legend>
+            <div className="inline-controls">
+              <select
+                aria-label="Quiet hours"
+                value={quiet ? "on" : "off"}
+                onChange={(e) => setR({ ...r, quiet_start: e.target.value === "on" ? "22:00" : "", quiet_end: e.target.value === "on" ? "07:00" : "" })}
+              >
+                <option value="off">Off</option>
+                <option value="on">On</option>
+              </select>
+              {quiet && (
+                <>
+                  <label htmlFor={`${idp}-qs`}>from</label>
+                  <input id={`${idp}-qs`} type="time" required value={r.quiet_start} onChange={(e) => set("quiet_start", e.target.value)} />
+                  <label htmlFor={`${idp}-qe`}>to</label>
+                  <input id={`${idp}-qe`} type="time" required value={r.quiet_end} onChange={(e) => set("quiet_end", e.target.value)} />
+                </>
+              )}
+            </div>
+            <p className="hint">Quiet hours hold everything except SOS until they end, in the time zone above.</p>
+          </fieldset>
+        </SettingRow>
+      )}
+      {(!jira || showName || !r.enabled) && (
+        <SettingRow title="Options">
+          {/* One rule: the page's Disable switches the integration off; the rule's own switch only to turn a switched-off rule back on. */}
+          {(showName || !r.enabled) && (
+            <CheckCard
+              checked={r.enabled}
+              onChange={(on) => set("enabled", on)}
+              label={showName ? "Enabled" : "This rule is on"}
+              description="Untick to stop this rule sending without deleting it."
+            />
+          )}
+          {!jira && (
+            <CheckCard
+              checked={r.send_resolved}
+              onChange={(on) => set("send_resolved", on)}
+              label="Also send when issues are fixed"
+              description="Summaries list what was closed, and by which fix."
+            />
+          )}
+        </SettingRow>
+      )}
+    </>
+  );
+
+  return (
+    <>
+      {!jira && section("trigger", "Trigger", "What this integration sends. Messages are grouped: at most one per check, never one per issue.", trigger)}
+      {section("settings", "Notification settings", "Which issues it covers, and when it may send.", settings)}
     </>
   );
 }
@@ -662,22 +721,19 @@ function ChannelEditor({
         setBase(JSON.stringify(r));
       }}
       extra={
-        <Card title={ruleId.current === 0 ? "What to send (not saved yet)" : "What to send"}>
-          <div className="form">
-            <RuleFields
-              idp={rule ? `rule${rule.id}` : `rulenew${channel.id}`}
-              r={r}
-              setR={setR}
-              kind={channel.kind}
-              channelId={channel.id}
-              slackChannels={ctx.slackChannels}
-              projects={ctx.projects}
-              teams={ctx.teams}
-              options={ctx.options}
-              returnTo={`/integrations/channels/${channel.id}`}
-            />
-          </div>
-        </Card>
+        <RuleFields
+          section={cardSection(ruleId.current === 0)}
+          idp={rule ? `rule${rule.id}` : `rulenew${channel.id}`}
+          r={r}
+          setR={setR}
+          kind={channel.kind}
+          channelId={channel.id}
+          slackChannels={ctx.slackChannels}
+          projects={ctx.projects}
+          teams={ctx.teams}
+          options={ctx.options}
+          returnTo={`/integrations/channels/${channel.id}`}
+        />
       }
     />
   );
@@ -983,22 +1039,19 @@ export function IntegrationAddPage() {
           returnTo="/integrations"
           submitLabel="Add integration"
           extra={
-            <Card title="What to send">
-              <div className="form">
-                <RuleFields
-                  idp="addrule"
-                  r={r}
-                  setR={setR}
-                  kind={kind}
-                  channelId={0}
-                  slackChannels={ctx.slackChannels}
-                  projects={ctx.projects}
-                  teams={ctx.teams}
-                  options={ctx.options}
-                  returnTo="/integrations"
-                />
-              </div>
-            </Card>
+            <RuleFields
+              section={cardSection(false)}
+              idp="addrule"
+              r={r}
+              setR={setR}
+              kind={kind}
+              channelId={0}
+              slackChannels={ctx.slackChannels}
+              projects={ctx.projects}
+              teams={ctx.teams}
+              options={ctx.options}
+              returnTo="/integrations"
+            />
           }
         />
     </>

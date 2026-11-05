@@ -3,7 +3,7 @@ import { api, type Invitation, type InvitationCreated, type List, type Project, 
 import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
 import { confirmAction } from "./ConfirmDialog";
-import { CopyBox, ErrorBox, Notice } from "./ui";
+import { Card, CopyBox, ErrorBox, Notice } from "./ui";
 import { PERMISSIONS, ROLE_HELP, invitationSummary } from "../roles";
 import { EMPTY, forProject, preview, problems, reduce, toInvitation } from "../userAccess";
 import { AccessPicker, teamInfo } from "./AccessPicker";
@@ -148,7 +148,7 @@ const INVITE_STATUS: Record<Invitation["status"], string> = {
  * Invitations of the organisation (or those naming projectId): who was
  * invited, to what, and whether they joined. Pending ones can be withdrawn.
  */
-export function InvitationList({ projectId = 0, reloadKey }: { projectId?: number; reloadKey: number }) {
+export function InvitationList({ projectId = 0, reloadKey, asCard }: { projectId?: number; reloadKey: number; asCard?: boolean }) {
   const res = useLoad(() => api.getAll<List<Invitation>>("/invitations", projectId ? { project_id: projectId } : {}), [projectId, reloadKey]);
   const act = useAction();
   const list = res.data?.items ?? [];
@@ -158,9 +158,8 @@ export function InvitationList({ projectId = 0, reloadKey }: { projectId?: numbe
     if (ok) res.reload();
   };
   if (list.length === 0) return <ErrorBox error={res.error} title="Could not load the invitations" />;
-  return (
-    <section className="invitations" aria-label="Invitations">
-      <h3>Invitations</h3>
+  const body = (
+    <>
       <ErrorBox error={act.error ?? res.error} title="That did not work" />
       <ul className="project-list">
         {list.map((i) => {
@@ -189,6 +188,20 @@ export function InvitationList({ projectId = 0, reloadKey }: { projectId?: numbe
           );
         })}
       </ul>
+    </>
+  );
+  // On People → Users the list is a card of its own; inside a project's
+  // Invite card it is a section under the form.
+  if (asCard)
+    return (
+      <Card title="Invitations" description="Open invitations and those of the last 30 days. Withdraw a pending one to stop its link working.">
+        <div className="invitations">{body}</div>
+      </Card>
+    );
+  return (
+    <section className="invitations" aria-label="Invitations">
+      <h3>Invitations</h3>
+      {body}
     </section>
   );
 }

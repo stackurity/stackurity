@@ -277,17 +277,209 @@ export function KeyValues({ entries }: { entries: [string, ReactNode][] }) {
   );
 }
 
-export function Card({ title, actions, children }: { title?: ReactNode; actions?: ReactNode; children: ReactNode }) {
+/**
+ * A card. `description` says in one plain sentence what this card is for,
+ * under the title, so someone new can tell what they would change here.
+ */
+export function Card({
+  title,
+  description,
+  actions,
+  children,
+  id,
+}: {
+  title?: ReactNode;
+  description?: ReactNode;
+  actions?: ReactNode;
+  children: ReactNode;
+  id?: string;
+}) {
   return (
-    <section className="card">
+    <section className="card" id={id}>
       {(title || actions) && (
-        <header className="card-head">
-          {title && <h2>{title}</h2>}
+        <header className={`card-head${description ? " card-head-desc" : ""}`}>
+          <div className="card-head-text">
+            {title && <h2>{title}</h2>}
+            {description && <p className="card-desc">{description}</p>}
+          </div>
           {actions && <div className="card-actions">{actions}</div>}
         </header>
       )}
       {children}
     </section>
+  );
+}
+
+/*
+ * Settings layout (see web/UI-PATTERNS.md). A settings card is a stack of
+ * SettingRows: what the setting is and what it is for on the left, its
+ * control on the right (stacked on phones), with a line between rows. Choices
+ * are ChoiceCards: the option's name on one line, what it means under it.
+ * What the current setting means for people now, and Save, go in CardFooter.
+ */
+
+/** One setting: its name and purpose beside (or above) its control. */
+export function SettingRow({
+  title,
+  description,
+  children,
+  id,
+  badge,
+}: {
+  title: ReactNode;
+  /** What this setting is for, in plain words; the effect of changing it. */
+  description?: ReactNode;
+  children: ReactNode;
+  id?: string;
+  /** A plan or state badge shown beside the title. */
+  badge?: ReactNode;
+}) {
+  return (
+    <div className="setting-row" id={id}>
+      <div className="setting-row-text">
+        <h3 className="setting-row-title">
+          {title}
+          {badge}
+        </h3>
+        {description && <div className="setting-row-desc">{description}</div>}
+      </div>
+      <div className="setting-row-control">{children}</div>
+    </div>
+  );
+}
+
+/** A titled group of related fields inside a card (e.g. "Base scores"). */
+export function FieldGroup({ title, description, children }: { title: ReactNode; description?: ReactNode; children: ReactNode }) {
+  return (
+    <fieldset className="field-group">
+      <legend className="field-group-title">{title}</legend>
+      {description && <p className="field-group-desc">{description}</p>}
+      {children}
+    </fieldset>
+  );
+}
+
+export interface ChoiceOption<T extends string> {
+  value: T;
+  label: ReactNode;
+  /** What picking this means, on its own line under the label. */
+  description?: ReactNode;
+  /** e.g. "Recommended" or a plan badge, beside the label. */
+  badge?: ReactNode;
+  disabled?: boolean;
+}
+
+/**
+ * Radio choices as cards: the label on top, its meaning under it. Use for
+ * any pick-one setting with more than two options or options that need a word
+ * of explanation.
+ */
+export function ChoiceCards<T extends string>({
+  name,
+  options,
+  value,
+  onChange,
+  legend,
+  describedBy,
+  columns,
+}: {
+  name: string;
+  options: ChoiceOption<T>[];
+  value: T;
+  onChange: (v: T) => void;
+  /** Visually hidden label for the group when the SettingRow title already says it. */
+  legend: string;
+  describedBy?: string;
+  /** Lay the cards side by side (2 or 3) on wide screens. */
+  columns?: 2 | 3;
+}) {
+  return (
+    <fieldset className="choice-cards-set">
+      <legend className="sr-only">{legend}</legend>
+      <div className={`choice-cards${columns ? ` choice-cards-${columns}` : ""}`}>
+        {options.map((o) => (
+          <label key={o.value} className={`choice-card${o.disabled ? " choice-card-disabled" : ""}`}>
+            <input
+              type="radio"
+              name={name}
+              checked={value === o.value}
+              disabled={o.disabled}
+              aria-describedby={describedBy}
+              onChange={() => onChange(o.value)}
+            />
+            <span className="choice-card-text">
+              <span className="choice-card-label">
+                {o.label}
+                {o.badge}
+              </span>
+              {o.description && <span className="choice-card-desc">{o.description}</span>}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
+
+/** A checkbox with a label and a line saying what ticking it does. */
+export function CheckCard({
+  checked,
+  onChange,
+  label,
+  description,
+  disabled,
+  badge,
+}: {
+  checked: boolean;
+  onChange: (on: boolean) => void;
+  label: ReactNode;
+  description?: ReactNode;
+  disabled?: boolean;
+  badge?: ReactNode;
+}) {
+  return (
+    <label className={`choice-card${disabled ? " choice-card-disabled" : ""}`}>
+      <input type="checkbox" checked={checked} disabled={disabled} onChange={(e) => onChange(e.target.checked)} />
+      <span className="choice-card-text">
+        <span className="choice-card-label">
+          {label}
+          {badge}
+        </span>
+        {description && <span className="choice-card-desc">{description}</span>}
+      </span>
+    </label>
+  );
+}
+
+/** Small "Recommended" style badge for a ChoiceCards option. */
+export function OptionBadge({ children, tone = "info" }: { children: ReactNode; tone?: "info" | "good" | "muted" }) {
+  return <span className={`option-badge option-badge-${tone}`}>{children}</span>;
+}
+
+/**
+ * The bottom strip of a settings card: what the current choice means for
+ * people right now (status), and the card's Save.
+ */
+export function CardFooter({ status, children }: { status?: ReactNode; children?: ReactNode }) {
+  return (
+    <div className="card-footer">
+      {status && (
+        <div className="card-footer-status small" role="status">
+          {status}
+        </div>
+      )}
+      {children && <div className="form-actions card-footer-actions">{children}</div>}
+    </div>
+  );
+}
+
+/** Side notes a newcomer needs but that do not change a setting. */
+export function GoodToKnow({ children, title = "Good to know" }: { children: ReactNode; title?: string }) {
+  return (
+    <aside className="good-to-know">
+      <p className="good-to-know-title">{title}</p>
+      <div className="good-to-know-body">{children}</div>
+    </aside>
   );
 }
 

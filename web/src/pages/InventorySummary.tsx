@@ -97,25 +97,25 @@ export function InventorySummary() {
       </div>
 
       <div className="grid-2">
-        <Card title="Assets by kind">
+        <Card title="Assets by kind" description="Servers, repositories, images and applications Stackurity knows about.">
           <BarRows bars={sortedBars(o.assets, (k) => <Link to={`/assets?kind=${k}`}>{assetKindLabel(k)}</Link>)} />
         </Card>
-        <Card title="Asset collection status">
+        <Card title="Asset collection status" description="Whether each asset reported recently and completely.">
           <BarRows bars={statusBars} />
           <p className="hint">Stale and partial assets may be missing components; their inventory should not be treated as complete.</p>
         </Card>
-        <Card title="Components by ecosystem">
+        <Card title="Components by ecosystem" description="Packages and libraries found, by where they come from (npm, PyPI, Ubuntu and so on).">
           <BarRows
             bars={sortedBars(o.ecosystems, (k) => <Link to={`/components?type=${encodeURIComponent(k)}`}>{k}</Link>)}
             emptyText="No components collected yet."
           />
         </Card>
-        <Card title="Coverage status">
+        <Card title="Coverage status" description="How much of each asset the collectors could read.">
           <BarRows bars={covBars} emptyText="No coverage recorded yet." />
           <p className="hint">Unsupported, failed and skipped areas were not inventoried. Stackurity cannot vouch for them.</p>
         </Card>
         {o.confidence && Object.keys(o.confidence).length > 0 && (
-          <Card title="Inventory version confidence">
+          <Card title="Inventory version confidence" description="How sure Stackurity is of each installed version: confirmed (read from a package database or manifest) or inferred (worked out from other clues).">
             <BarRows bars={sortedBars(o.confidence).map((b) => ({ ...b, tone: toneFor(b.key) }))} />
           </Card>
         )}

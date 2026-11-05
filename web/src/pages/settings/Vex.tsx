@@ -17,7 +17,7 @@ import { useAction, useLoad } from "../../hooks";
 import { plural } from "../../format";
 import { Badge, type Tone } from "../../components/Badge";
 import { Table } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../../components/ui";
+import { Card, CheckCard, EmptyState, ErrorBox, FieldGroup, GoodToKnow, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../../components/ui";
 import { vexEmpty } from "../../emptyCopy";
 
 const LIMIT = 50;
@@ -58,12 +58,10 @@ function ImportCard({ sources, onDone }: { sources: VEXSource[]; onDone: () => v
     }
   };
   return (
-    <Card title="Import a VEX document">
-      <p className="hint">
-        OpenVEX or CycloneDX VEX (also embedded in a CycloneDX SBOM), plain or as a signed attestation (<span className="mono">cosign attest</span>{" "}
-        output). <strong>Not affected</strong> statements wait under <Link to="/approvals">Approvals</Link> until a security or admin user approves
-        them, unless the source is trusted to apply on its own.
-      </p>
+    <Card
+      title="Import a VEX document"
+      description="Upload a file a vendor (or your own team) published saying which vulnerabilities do or don't affect their product. Matching findings can then be closed as not affected."
+    >
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not import" />
         <div className="field">
@@ -87,6 +85,18 @@ function ImportCard({ sources, onDone }: { sources: VEXSource[]; onDone: () => v
           <input id="vex-asset" inputMode="numeric" pattern="[0-9]*" value={asset} onChange={(e) => setAsset(e.target.value)} />
           <p className="hint">Match only on this asset. Needed for a document about a product with no package URL or digest of its own.</p>
         </div>
+        <GoodToKnow>
+          <ul>
+            <li>
+              Accepted formats: OpenVEX or CycloneDX VEX (also embedded in a CycloneDX SBOM), plain or as a signed attestation (
+              <span className="mono">cosign attest</span> output).
+            </li>
+            <li>
+              <strong>Not affected</strong> statements wait under <Link to="/approvals">Approvals</Link> until a security or admin user approves them,
+              unless the source is trusted to apply on its own.
+            </li>
+          </ul>
+        </GoodToKnow>
         <div className="form-actions">
           <button type="submit" className="btn btn-primary" disabled={act.pending || !file}>
             {act.pending ? "Importing…" : "Import"}
@@ -129,7 +139,7 @@ function Documents({ reloadKey }: { reloadKey: number }) {
   if (res.error) return <ErrorBox error={res.error} title="Could not load VEX documents" />;
   if (!res.data) return <Loading />;
   return (
-    <Card title="Imported documents">
+    <Card title="Imported documents" description="Every VEX file imported so far, how many of its statements matched your findings, and any waiting for a decision.">
       {done && <Notice kind="success">{done}</Notice>}
       <ErrorBox error={act.error} title="Could not decide" />
       {res.data.items.length === 0 ? (
@@ -225,11 +235,14 @@ function Sources({ sources, reload, error }: { sources: VEXSource[] | null; relo
     if (await act.run(() => api.del(`/vex/sources/${s.id}`))) reload();
   };
   return (
-    <Card title="Sources">
-      <p className="hint">
-        A document's author is whatever it says, so a source can apply its not affected statements without approval only when it is pinned: to
-        a public key its signed attestations must verify with, or to the API token its uploads come from. Everything else waits for a person.
-      </p>
+    <Card
+      title="Sources"
+      description="Vendors or teams whose VEX documents you receive, and whether you trust them enough to close findings without a person approving each one."
+    >
+      <GoodToKnow title="Why trust needs a key or token">
+        A document&apos;s author is whatever it says, so a source can apply its not affected statements without approval only when it is pinned: to a
+        public key its signed attestations must verify with, or to the API token its uploads come from. Everything else waits for a person.
+      </GoodToKnow>
       <ErrorBox error={act.error} title="Could not change the source" />
       {error ? <ErrorBox error={error as never} title="Could not load sources" /> : null}
       {sources && sources.length > 0 && (
@@ -266,6 +279,8 @@ function Sources({ sources, reload, error }: { sources: VEXSource[] | null; relo
       )}
       {admin && (
         <form className="form" onSubmit={add}>
+          <FieldGroup title="Add a source" description="Name it, then pin it to a signing key or an API token if it should be able to apply statements on its own.">
+          <div className="form">
           <div className="field">
             <label htmlFor="vs-name">Name</label>
             <input id="vs-name" required maxLength={100} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Acme images" />
@@ -288,10 +303,14 @@ function Sources({ sources, reload, error }: { sources: VEXSource[] | null; relo
                 ))}
             </select>
           </div>
-          <label className="check">
-            <input type="checkbox" checked={auto} onChange={(e) => setAuto(e.target.checked)} /> Apply its not affected statements without approval
-            (needs a key or a token)
-          </label>
+          <CheckCard
+            checked={auto}
+            onChange={setAuto}
+            label="Apply its not affected statements without approval"
+            description="Needs a key or a token. Findings it says don't apply are closed straight away instead of waiting under Approvals."
+          />
+          </div>
+          </FieldGroup>
           <div className="form-actions">
             <button type="submit" className="btn" disabled={act.pending || !name.trim()}>
               Add source
@@ -313,7 +332,7 @@ export function VexPage() {
       <PageHeader
         help="vex"
         title="VEX"
-        sub="Vendors' statements about whether their products are affected by a vulnerability, and your own decisions to share."
+        sub="VEX (Vulnerability Exploitability eXchange) documents are vendors' statements about whether their products are really affected by a vulnerability. Import them to close findings that don't apply, or export your own decisions to share."
         actions={
           <>
             <a className="btn" href={vexExportURL("openvex")} download>

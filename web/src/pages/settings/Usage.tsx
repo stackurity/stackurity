@@ -97,7 +97,7 @@ function UsageDetails({ u }: { u: AssetUsage }) {
       {u.report_mode === "trial" && (
         <Notice kind="info">Reports and exports are trial versions: each list shows its first rows, with a watermark.</Notice>
       )}
-      <Card title="Monitored assets">
+      <Card title="Monitored assets" description="Every server, application, repository, image and cloud service Stackurity checks counts towards your plan's limit.">
         <UsageMeter used={u.monitored} limit={u.limit} />
         {kinds.length > 0 && (
           <dl className="usage-kinds">
@@ -122,14 +122,14 @@ function UsageDetails({ u }: { u: AssetUsage }) {
           run.
         </p>
       </Card>
-      <Card title="Projects">
+      <Card title="Projects" description="Projects group assets for a team or product. Your plan may limit how many you can have.">
         <UsageMeter used={u.projects} limit={u.project_limit} noun="projects" />
         <p className="small muted">
           Archived projects are not counted. At the limit new projects are refused; existing ones are always kept.{" "}
           <Link to="/projects">Projects</Link>
         </p>
       </Card>
-      <Card title="New assets refused at the limit">
+      <Card title="New assets refused at the limit" description="Assets that tried to report while the organisation was full. Make room and they are added the next time they report.">
         {u.refused.length === 0 ? (
           <EmptyState title="Nothing refused">New assets are refused only when the organisation is at its limit.</EmptyState>
         ) : (

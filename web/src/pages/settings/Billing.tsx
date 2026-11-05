@@ -4,7 +4,7 @@ import { api, type Billing, type BillingPlan, type BillingStatus, type Invoice, 
 import { useAction, useLoad } from "../../hooks";
 import { absTime } from "../../format";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { UsageMeter } from "./Usage";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { errorView } from "../../errors";
@@ -148,6 +148,7 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
   return (
     <Card
       title="Your plan"
+      description="What this organisation pays for now, how much of it is used, and when it renews."
       actions={
         cur.status === "active" ? (
           <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void doCancel()} disabled={cancel.pending}>
@@ -241,7 +242,10 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
   const replaceRequired = act.error?.code === "replace_required";
 
   return (
-    <Card title={subscribed ? "Change your plan" : "Choose a plan"}>
+    <Card
+      title={subscribed ? "Change your plan" : "Choose a plan"}
+      description="Choose how often you are billed, then the plan that fits how many projects and assets you need."
+    >
       <form className="form" onSubmit={submit}>
         {replaceRequired ? (
           <Notice kind="warn">
@@ -343,17 +347,22 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
                     </p>
                   </div>
                 ) : null}
-                {plan && valid && (
-                  <p className="bill-total">
-                    {priceWords(planTotal(plan, n), plan)} per {PERIOD_WORDS[plan.period]}
-                    {b.test_mode ? " (test mode)" : ""}
-                  </p>
-                )}
-                <div className="form-actions">
+                <CardFooter
+                  status={
+                    plan && valid ? (
+                      <p className="bill-total">
+                        Total: {priceWords(planTotal(plan, n), plan)} per {PERIOD_WORDS[plan.period]}
+                        {b.test_mode ? " (test mode)" : ""}
+                      </p>
+                    ) : (
+                      "Pick a plan to see the total."
+                    )
+                  }
+                >
                   <button type="submit" className="btn btn-primary" disabled={act.pending || !valid || unchanged || !country}>
                     {act.pending ? "Saving…" : subscribed ? "Change plan" : "Subscribe"}
                   </button>
-                </div>
+                </CardFooter>
               </>
             )}
             {b.contact_url && (
@@ -425,7 +434,7 @@ const invoiceColumns: Column<Invoice>[] = [
 function Invoices() {
   const res = useLoad(() => api.get<List<Invoice>>("/billing/invoices"), []);
   return (
-    <Card title="Invoices">
+    <Card title="Invoices" description="Every charge, with a link to download the invoice.">
       <ErrorBox error={res.error} title="Could not load invoices" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <EmptyState title="No invoices yet">Invoices appear here after the first payment.</EmptyState>}

@@ -87,7 +87,7 @@ function UpdatesBody({ d }: { d: UpdateStatus }) {
         Stackurity {d.latest} is available; you run {shown(d.current)} ({plural(d.releases.length, "newer release")}). Last checked{" "}
         <RelativeTime iso={d.checked_at} />.
       </Notice>
-      <Card title="How to upgrade">
+      <Card title="How to upgrade" description="The commands for each way of running Stackurity: use the one that matches how you installed it.">
         <p>
           <strong>Take a backup first.</strong> Downgrades are not supported: to roll back, you restore the backup taken before the upgrade.
           Migrations run automatically when the new version starts. Read the notes below for anything marked <em>Upgrading</em>.
