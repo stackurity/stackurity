@@ -44,7 +44,7 @@ jobs:
     env:
       STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -78,7 +78,7 @@ jobs:
       contents: read
       pull-requests: read # only-new-issues reads the pull request's diff
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -97,7 +97,7 @@ jobs:
     name: Docs and release metadata
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -128,7 +128,7 @@ jobs:
     env:
       STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
@@ -146,7 +146,7 @@ jobs:
       PROMETHEUS_VERSION: 3.5.0
       PROMETHEUS_SHA256: e811827af26d822afb09a4f28314f61b618b12cff5369835a67f674d8b46f39a
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install promtool
         run: |
           f=prometheus-$PROMETHEUS_VERSION.linux-amd64
@@ -163,8 +163,8 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -204,11 +204,11 @@ jobs:
       # can get one; it unlocks nothing paid.
       STACKURITY_LICENSE: eyJ2IjoxLCJpZCI6ImNrX2NiY2Q1ZDk3YTkzMmRlNmIiLCJjdXN0b21lciI6IlN0YWNrdXJpdHkgQ0kiLCJuYW1lIjoiU3RhY2t1cml0eSBDSSIsImVkaXRpb24iOiJjb21tdW5pdHkiLCJtYXhfYXNzZXRzIjowLCJpc3N1ZWRfYXQiOiIyMDI2LTExLTAxVDE3OjQ4OjIwWiIsImV4cGlyZXNfYXQiOiIyMTI2LTEwLTA4VDE3OjQ4OjIwWiJ9.ZwnzCfVB4Yt_o-o4ziglboCXWIrZhkIp_kgnNyysRZXmfnRcsw9SFkZmoy2GokuMc62J8z_5NeM9jKIiV6FiCQ
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -236,7 +236,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: [go, web]
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - run: docker build -t stackurity:ci .
       - name: Agent builds are readable by the server user
         run: docker run --rm --entrypoint sh stackurity:ci -c 'cd "$STACKURITY_AGENT_DIR" && sha256sum -c stackurity-linux-amd64.sha256 stackurity-linux-arm64.sha256 stackurity-darwin-amd64.sha256 stackurity-darwin-arm64.sha256 stackurity-windows-amd64.sha256'
@@ -244,7 +244,7 @@ jobs:
   helm:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
       - run: helm lint deploy/helm/stackurity --set database.existingSecret=db
       - name: The Kubernetes reporter chart lints and renders
