@@ -15784,6 +15784,1032 @@
      }
     }
    }
+  },
+  "/projects/{id}/notifications": {
+   "get": {
+    "operationId": "get_projects_id_notifications",
+    "summary": "A project's notifications",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Answer: `inherited` (each with `state` `on`, `off` or `edited` and `copy_id`), `routes`, `channels`, `usable_channels`, `project_chat_apps`, `org_admins`.\n\nRole: security on the project",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/routes": {
+   "post": {
+    "operationId": "post_projects_id_notifications_routes",
+    "summary": "Add a rule of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Fields as POST /routes; the rule belongs to the project. It sends to the organisation's channels or the project's own.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/routes/{rid}": {
+   "delete": {
+    "operationId": "delete_projects_id_notifications_routes_rid",
+    "summary": "Delete a rule of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Deleting an edited copy of an inherited rule turns the inherited rule on again here.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_projects_id_notifications_routes_rid",
+    "summary": "Change a rule of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/inherited/{rid}": {
+   "put": {
+    "operationId": "put_projects_id_notifications_inherited_rid",
+    "summary": "Turn an inherited rule on, off, or edit it for the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. `state`: `off` (turned off here), `on` (applies again; an edited copy is deleted) or `edit` (the project gets its own copy to change, and the inherited rule is turned off here).\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/channels": {
+   "post": {
+    "operationId": "post_projects_id_notifications_channels",
+    "summary": "Add a channel of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Fields as POST /channels. Without an organisation-wide admin role, only email sent by Stackurity.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/channels/{cid}": {
+   "delete": {
+    "operationId": "delete_projects_id_notifications_channels_cid",
+    "summary": "Delete a channel of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "patch_projects_id_notifications_channels_cid",
+    "summary": "Change a channel of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/channels/{cid}/test": {
+   "post": {
+    "operationId": "post_projects_id_notifications_channels_cid_test",
+    "summary": "Test a channel of the project",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications": {
+   "get": {
+    "operationId": "get_assets_id_notifications",
+    "summary": "A asset's notifications",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Answer: `inherited` (each with `state` `on`, `off` or `edited` and `copy_id`), `routes`, `channels`, `usable_channels`, `project_chat_apps`, `org_admins`.\n\nRole: security on the asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security on the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/routes": {
+   "post": {
+    "operationId": "post_assets_id_notifications_routes",
+    "summary": "Add a rule of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Fields as POST /routes; the rule belongs to the asset. It sends to the organisation's channels or the asset's own.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/routes/{rid}": {
+   "delete": {
+    "operationId": "delete_assets_id_notifications_routes_rid",
+    "summary": "Delete a rule of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Deleting an edited copy of an inherited rule turns the inherited rule on again here.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_assets_id_notifications_routes_rid",
+    "summary": "Change a rule of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/inherited/{rid}": {
+   "put": {
+    "operationId": "put_assets_id_notifications_inherited_rid",
+    "summary": "Turn an inherited rule on, off, or edit it for the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. `state`: `off` (turned off here), `on` (applies again; an edited copy is deleted) or `edit` (the asset gets its own copy to change, and the inherited rule is turned off here).\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "rid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/channels": {
+   "post": {
+    "operationId": "post_assets_id_notifications_channels",
+    "summary": "Add a channel of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes. Fields as POST /channels. Without an organisation-wide admin role, only email sent by Stackurity.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/channels/{cid}": {
+   "delete": {
+    "operationId": "delete_assets_id_notifications_channels_cid",
+    "summary": "Delete a channel of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "patch": {
+    "operationId": "patch_assets_id_notifications_channels_cid",
+    "summary": "Change a channel of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/notifications/channels/{cid}/test": {
+   "post": {
+    "operationId": "post_assets_id_notifications_channels_cid_test",
+    "summary": "Test a channel of the asset",
+    "description": "The project's (or asset's) notifications: rules inherited from the organisation (and, for an asset, from its projects), its own rules and channels. Security on the project or asset reads; admin on it (an organisation-wide admin, or an admin grant) changes.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "cid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/slack/install": {
+   "post": {
+    "operationId": "post_projects_id_notifications_slack_install",
+    "summary": "Add to Slack for a project",
+    "description": "Starts Add to Slack for a channel of the project. Needs the admin role on the project and, without an organisation-wide admin role, the organisation's `project_chat_apps` setting (403 otherwise).\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/notifications/teams/install": {
+   "post": {
+    "operationId": "post_projects_id_notifications_teams_install",
+    "summary": "Add to Teams for a project",
+    "description": "Starts Add to Teams for a channel of the project; as Add to Slack for a project.\n\nRole: admin of the project or asset",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin of the project or asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/settings/notifications": {
+   "get": {
+    "operationId": "get_settings_notifications",
+    "summary": "Notification settings of the organisation",
+    "description": "`project_chat_apps`: whether project admins may connect their own Slack or Teams workspace (default false).\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_settings_notifications",
+    "summary": "Change notification settings",
+    "description": "Sets `project_chat_apps`; audited as `settings.notifications`.\n\nRole: admin",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

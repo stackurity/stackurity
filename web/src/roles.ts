@@ -23,11 +23,15 @@ export const PERMISSIONS: Permission[] = [
   { role: "viewer", label: "View only", short: "Sees issues, fixes, assets, incidents and reports. Changes nothing." },
   { role: "engineer", label: "View and edit", short: "Also acknowledges, assigns and comments on issues, edits assets and checks them again." },
   { role: "security", label: "View, edit and decide", short: "Also snoozes, accepts and ignores issues, and decides requests to ignore." },
-  { role: "admin", label: "Admin", short: "Also manages people, projects, integrations and settings. Needs all projects and assets." },
+  {
+    role: "admin",
+    label: "Admin",
+    short: "Also manages notifications. With all projects and assets, also people, projects, integrations and settings.",
+  },
 ];
 
-/** The permissions offered for chosen projects or assets: Admin needs all of them. */
-export const SPECIFIC_ROLES: UserRole[] = ["viewer", "engineer", "security"];
+/** The permissions offered for chosen projects or assets. */
+export const SPECIFIC_ROLES: UserRole[] = ["viewer", "engineer", "security", "admin"];
 
 export function permissionLabel(role: UserRole | "none" | "" | undefined): string {
   if (!role || role === "none") return "Specific projects only";
@@ -53,6 +57,7 @@ export const CAPABILITIES: Capability[] = [
   { what: "See integrations, run them, refresh feeds and import VEX", min: "engineer", allProjectsOnly: true },
   { what: "Snooze, accept risk on, ignore and reopen issues; decide requests to ignore; end ignore rules", min: "security" },
   { what: "See notification settings and the delivery log; decide VEX documents and remediation plans", min: "security", allProjectsOnly: true },
+  { what: "Set up the notifications of their projects and assets: turn the organisation's rules off or edit them there, add rules and channels", min: "admin" },
   { what: "Manage users, teams, invitations, projects and who has access", min: "admin", allProjectsOnly: true },
   { what: "Set up integrations, notifications, the risk policy and secrets; delete assets", min: "admin", allProjectsOnly: true },
 ];
@@ -75,7 +80,7 @@ export function permissionTable(): string[][] {
 export const PERMISSION_NOTES = [
   `"${ALL_ONLY}": only for someone given **All projects and assets**. With specific projects or assets, these pages are not shown.`,
   "With specific projects or assets, everything else applies to those only. Ignoring an issue everywhere (every asset) needs View, edit and decide on all projects.",
-  "Someone given specific projects never gets more from Admin than from View, edit and decide, so Admin is offered for all projects and assets only.",
+  "Admin on specific projects or assets adds only their notifications to View, edit and decide.",
 ];
 
 /** A member's access at a glance, for the Users list. */

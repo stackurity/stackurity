@@ -2858,6 +2858,9 @@ export interface Channel {
   created_at: string;
   last_ok_at: string | null;
   last_error: string;
+  /** The project or asset the channel belongs to; both null for the organisation's. */
+  owner_project_id?: number | null;
+  owner_asset_id?: number | null;
 }
 
 export interface Route {
@@ -2897,6 +2900,60 @@ export interface Route {
   last_weekly_summary_at?: string;
   /** The weekly summary ends with "Updates available" (non-security newer releases); never the daily one. Off by default. */
   summary_updates?: boolean;
+  /** The project or asset the rule belongs to; both null for the organisation's. */
+  owner_project_id?: number | null;
+  owner_asset_id?: number | null;
+  /** For a project's or asset's own copy of an inherited rule: the rule it replaces there. */
+  inherits_route_id?: number | null;
+}
+
+/** A channel that is not the project's or asset's own: its name only. */
+export interface ChannelRef {
+  id: number;
+  kind: string;
+  name: string;
+  enabled: boolean;
+  owner_project_id: number | null;
+  owner_asset_id: number | null;
+}
+
+/** A rule a project or asset inherits, and what it did with it there. */
+export interface InheritedRule {
+  id: number;
+  name: string;
+  channel_id: number;
+  enabled: boolean;
+  events: string[] | null;
+  min_priority: Priority;
+  new_min_priority: Priority;
+  summary_time: string;
+  summary_day: string;
+  timezone: string;
+  from: "organisation" | "project";
+  from_project_id?: number | null;
+  /** on; off: turned off here; edited: replaced here by copy_id. */
+  state: "on" | "off" | "edited";
+  copy_id?: number | null;
+  /** Sends to Jira, PagerDuty or ServiceNow. */
+  tracker: boolean;
+}
+
+/** GET /projects/{id}/notifications and /assets/{id}/notifications. */
+export interface ScopeNotifications {
+  scope: { kind: "project" | "asset"; id: number; name: string; project_ids: number[] | null };
+  can_manage: boolean;
+  inherited: InheritedRule[];
+  routes: Route[];
+  channels: Channel[];
+  usable_channels: ChannelRef[];
+  channel_names: Record<string, string>;
+  /** The organisation lets project admins connect their own Slack or Teams. */
+  project_chat_apps: boolean;
+  /** The server sends email itself (Add email). */
+  platform_email: boolean;
+  slack_app: boolean;
+  teams_app: boolean;
+  org_admins: string[];
 }
 
 export type RouteMode = "urgent_summary" | "urgent_weekly" | "urgent_only" | "daily" | "weekly" | "custom";

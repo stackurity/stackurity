@@ -99,7 +99,7 @@ func inScope(r store.Route, in store.Incident) bool {
 	if !r.Enabled || r.SOSOnly && !in.SOS {
 		return false
 	}
-	if len(r.ProjectIDs) > 0 && !incidentInProjects(r, in) {
+	if r.Narrowed() && !incidentInProjects(r, in) {
 		return false
 	}
 	if len(r.Kinds) > 0 && !contains(r.Kinds, in.Kind) {
@@ -135,20 +135,21 @@ func teamIn(ids []int64, team *int64) bool {
 	return false
 }
 
-// incidentInProjects: a route limited to projects hears about an issue
-// (its findings are then counted per asset, for the project's assets only)
-// and about collection and coverage problems and leaked keys of the
-// project's assets, not about other problems.
+// incidentInProjects: a route limited to projects (or an asset, or turned
+// off for some) hears about an issue (its findings are then counted per
+// asset, for the assets it covers only) and about collection and coverage
+// problems and leaked keys of the assets it covers. Other problems, about
+// no asset, go to the organisation's routes only.
 func incidentInProjects(r store.Route, in store.Incident) bool {
 	if isFindingKind(in.Kind) {
 		return true
 	}
 	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" {
-		return false
+		return !r.Limited()
 	}
 	if rd, ok := readReporting(in); ok {
 		for _, id := range rd.AssetIDs {
-			if r.ProjectAssets[id] {
+			if r.Covers(id) {
 				return true
 			}
 		}
@@ -160,13 +161,13 @@ func incidentInProjects(r store.Route, in store.Incident) bool {
 	}
 	id, _, _ := strings.Cut(rest, ":")
 	n, err := strconv.ParseInt(id, 10, 64)
-	return err == nil && r.ProjectAssets[n]
+	return err == nil && r.Covers(n)
 }
 
 // assetInScope applies a route's project, team and environment filters to
 // an asset.
 func assetInScope(r store.Route, id int64, env string, team *int64) bool {
-	if len(r.ProjectIDs) > 0 && !r.ProjectAssets[id] {
+	if !r.Covers(id) {
 		return false
 	}
 	if len(r.TeamIDs) > 0 && !teamIn(r.TeamIDs, team) {
@@ -1172,7 +1173,7 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	counts["problems"] = len(sys)
 	// Assets scanned once: a nudge, weekly, for routes not limited to a
 	// project or team.
-	if weekly && len(r.ProjectIDs) == 0 && len(r.TeamIDs) == 0 {
+	if weekly && !r.Narrowed() && len(r.TeamIDs) == 0 {
 		if it, ok := d.oneOffItem(data); ok {
 			sections = append(sections, Section{Title: "Scanned once", Items: []Item{it}})
 		}

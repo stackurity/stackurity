@@ -39,6 +39,7 @@ const proof: Record<string, string[]> = {
   "See notification": ["GET /channels", "GET /routes", "GET /deliveries", "POST /vex/documents/{id}/decision"],
   "Manage users": ["POST /users", "PATCH /users/{id}", "POST /teams", "POST /invitations", "POST /projects", "POST /access-grants"],
   "Set up integrations": ["POST /integrations", "POST /routes", "PUT /risk-policy", "PUT /secrets/{name}", "DELETE /assets/{id}"],
+  "Set up the notifications of their": ["PUT /projects/{id}/notifications/inherited/{rid}", "POST /assets/{id}/notifications/routes"],
 };
 
 test("every row of the table is proved against the router", () => {
@@ -58,11 +59,15 @@ test("snoozing, accepting, ignoring and reopening need security", () => {
   assert.match(workflow, /securityActions = map\[string\]bool\{"suppress": true, "accept_risk": true, "ignore": true, "reopen": true\}/);
 });
 
-test("no admin-only route is open to someone with specific projects", () => {
-  // So Admin on chosen projects is no more than View, edit and decide, and
-  // the form offers Admin only for all projects.
-  for (const [r, role] of routeRoles()) if (role === "admin") assert.ok(!scoped.has(r), r);
-  assert.deepEqual(SPECIFIC_ROLES, ["viewer", "engineer", "security"]);
+test("the only admin routes open to someone with specific projects are their notifications", () => {
+  // Admin on chosen projects adds the notifications of those projects and
+  // assets to View, edit and decide (the handlers check the role on each),
+  // and finishing Add to Slack started from one of them.
+  const notifications = /^(GET|POST|PUT|PATCH|DELETE) \/(projects|assets)\/\{id\}\/notifications(\/|$)/;
+  for (const [r, role] of routeRoles()) {
+    if (role === "admin" && scoped.has(r)) assert.ok(notifications.test(r) || r === "POST /integrations/slack/oauth" || r === "GET /integrations/teams/install/{id}", r);
+  }
+  assert.deepEqual(SPECIFIC_ROLES, ["viewer", "engineer", "security", "admin"]);
 });
 
 test("the table: header from the labels, each role includes the one below it", () => {

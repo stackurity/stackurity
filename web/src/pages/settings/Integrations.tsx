@@ -11,6 +11,7 @@ import { CloudConnectPanel } from "./CloudConnect";
 import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
+import { ProjectChatAppsCard } from "../../components/ScopeNotifications";
 
 /*
  * Integrations: everything Stackurity connects to. Notification
@@ -402,6 +403,7 @@ export function IntegrationsHubPage() {
       ) : (
         <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
       )}
+      {security && <ProjectChatAppsCard admin={admin} />}
       <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
       <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
       <h2 className="h-sm">Add an integration</h2>

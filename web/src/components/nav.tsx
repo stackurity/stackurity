@@ -27,7 +27,7 @@ const under = (path: string, ...prefixes: string[]) => prefixes.some((p) => path
 export function sectionOf(path: string): Section {
   if (path === "/") return "dashboard";
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
-  if (under(path, "/assets", "/components", "/coverage", "/projects")) return "assets";
+  if (under(path, "/assets", "/components", "/coverage", "/projects", "/project-notifications")) return "assets";
   if (under(path, "/activity", "/incidents", "/checks", "/approvals")) return "activity";
   if (under(path, "/outcomes", "/reports", "/audit")) return "reports";
   if (under(path, "/integrations", "/intelligence")) return "integrations";
@@ -45,6 +45,8 @@ interface TabLink {
   match?: (path: string) => boolean;
   /** Lowest organisation-wide role that may open it (members with project access only have none). */
   min?: UserRole;
+  /** Lowest role, organisation-wide or on some project, that may open it. */
+  act?: UserRole;
   /** For instance administrators, who operate this installation. */
   instanceAdmin?: boolean;
   /** Shown only where the server offers billing (a hosted edition). */
@@ -54,11 +56,12 @@ interface TabLink {
 }
 
 /** Whether the signed-in person may open a tab: the same rules as the routes in App.tsx. */
-function useAllowed(): (t: Pick<TabLink, "min" | "instanceAdmin" | "billing" | "communityKeys">) => boolean {
-  const { can, me, meta } = useAuth();
+function useAllowed(): (t: Pick<TabLink, "min" | "act" | "instanceAdmin" | "billing" | "communityKeys">) => boolean {
+  const { can, canAct, me, meta } = useAuth();
   return (t) =>
     (!t.billing || Boolean(meta?.billing)) &&
     (!t.communityKeys || Boolean(meta?.community_keys)) &&
+    (!t.act || canAct(t.act)) &&
     (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
 }
 
@@ -111,6 +114,7 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/coverage", label: "Coverage" },
       { to: "/components/updates", label: "Updates available" },
       { to: "/projects", label: "Projects", min: "admin" },
+      { to: "/project-notifications", label: "Project notifications", act: "security", match: (p) => under(p, "/project-notifications") || /^\/projects\/\d+\/notifications/.test(p) },
       { to: "/assets/conflicts", label: "Identity conflicts", min: "admin" },
     ],
   },

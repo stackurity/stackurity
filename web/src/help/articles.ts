@@ -1812,7 +1812,7 @@ jobs:
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
     where: ["Integrations"],
-    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
+    keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel project asset inherited turn off edit for this project group gitlab urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
         p: "Everything Stackurity connects to is in [Integrations](/integrations): **Active integrations** with their status and a settings button, and **Add an integration** for notifications (email, Slack, Teams, Jira, PagerDuty, ServiceNow, webhooks), sources (Git repositories, container registries, Kubernetes, AWS, plugins) and AI assistants. The **Delivery log** is a tab there.",
@@ -1866,6 +1866,19 @@ jobs:
       },
       {
         note: "Email sent by Stackurity has limits per organisation (for example 30 a minute, 300 an hour, 1,000 a day). Messages over a limit are held and added to the next summary; the **Delivery log** shows them as held, with the reason.",
+      },
+      { h: "Notifications of a project or an asset" },
+      {
+        p: "Like groups and projects in GitLab, rules and channels belong to the organisation, a project or an asset, so the backend, frontend and server teams of one organisation are not all sent everything. The organisation's rules apply to every project and asset. Each project's page (and [Project notifications](/project-notifications) for its admins) has **Notifications**; each asset has the same under **Details**:",
+      },
+      {
+        list: [
+          "**From the organisation** (on an asset, **Inherited**, also from its projects): each rule shows **On**, **Off for this project** or **Edited for this project**. **Turn off for this project** stops it sending about the project's assets; an asset also in another project still gets it through that one. **Edit for this project** gives the project its own copy to change (where to send, what to send), and **Use the organisation's rule again** removes the copy.",
+          "**This project's rules**: rules only this project's people need, with **Add rule**. They send to the organisation's channels or the project's own, and only ever about the project's assets.",
+          "**This project's channels**: **Add email** (sent by Stackurity, to addresses that confirm once). **Connect Slack** and **Connect Teams** add the Stackurity app for the project's own channel, when the organisation allows it: an organisation admin ticks **Projects can connect their own Slack or Teams** in [Integrations](/integrations) (off by default). Until then the buttons are greyed out and say whom to ask. Webhooks, Jira, PagerDuty and ServiceNow use the organisation's stored secrets, so an organisation admin adds them for the project.",
+          "Who: admins of the project (an organisation-wide admin, or the admin role on the project) change these; security can read them. A rule that was limited to exactly one project is now that project's.",
+          "The same message to the same channel is sent once, even when two rules build it. Turning off a rule to Jira, PagerDuty or ServiceNow for a project stops records for incidents only on its assets; such rules cannot be edited for one asset.",
+        ],
       },
       { h: "What people receive" },
       {

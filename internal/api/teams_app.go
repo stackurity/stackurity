@@ -59,6 +59,12 @@ func formatTeamsCode(c string) string {
 // startTeamsInstall begins Add to Teams: a code for the person and the
 // link that opens the app in Teams.
 func (s *Server) startTeamsInstall(w http.ResponseWriter, r *http.Request) {
+	s.startTeamsInstallFor(w, r, nil)
+}
+
+// startTeamsInstallFor is startTeamsInstall for a project's channel
+// (project nil: the organisation's).
+func (s *Server) startTeamsInstallFor(w http.ResponseWriter, r *http.Request, project *int64) {
 	app := s.teamsApp()
 	if app == nil {
 		writeError(w, 404, "not_configured", "the Stackurity Teams app is not set up on this server; use a Workflows webhook")
@@ -69,7 +75,7 @@ func (s *Server) startTeamsInstall(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, forbidden("Add to Teams is done signed in, from the dashboard"))
 		return
 	}
-	code, err := s.Store.CreateTeamsInstallCode(r.Context(), uid)
+	code, err := s.Store.CreateTeamsInstallCode(r.Context(), uid, project)
 	if err != nil {
 		s.fail(w, r, err)
 		return
@@ -306,6 +312,10 @@ func (s *Server) teamsBind(ctx context.Context, app *notify.TeamsApp, act *teams
 	}
 	wctx := tenant.WithWorkspace(ctx, claim.Workspace)
 	ch, err := s.bindTeamsChannel(wctx, act, claim)
+	if errors.Is(err, errProjectTeamsOff) || errors.Is(err, errTeamsChannelTaken) {
+		s.teamsReply(ctx, app, act, err.Error())
+		return
+	}
 	if err != nil {
 		s.Log.Warn("teams app: binding a channel failed", "err", err)
 		s.teamsReply(ctx, app, act, "Something went wrong. Click **Add to Teams** in Stackurity again for a new code.")
@@ -318,6 +328,11 @@ func (s *Server) teamsBind(ctx context.Context, app *notify.TeamsApp, act *teams
 	s.teamsReply(ctx, app, act, "Connected. Stackurity will post notifications for **"+teamsEscape(org)+"** in this channel ("+teamsEscape(ch.Name)+"). "+
 		"Choose what to send in Stackurity.")
 }
+
+var (
+	errProjectTeamsOff   = errors.New("Your organisation does not let projects connect their own Teams any more. Ask an organisation admin in Stackurity.")
+	errTeamsChannelTaken = errors.New("This channel is already connected to Stackurity for another project. Pick another channel, or ask an organisation admin.")
+)
 
 // teamsEscape keeps names from adding markdown or mentions to a reply.
 func teamsEscape(s string) string {
@@ -336,7 +351,23 @@ func (s *Server) bindTeamsChannel(ctx context.Context, act *teamsActivity, claim
 	actor := store.Actor{Type: "user", ID: claim.UserID, Name: "Add to Teams"}
 	detail := map[string]string{"source": "teams_app", "tenant_id": tenantID, "teams_team_id": team, "teams_channel_id": channel}
 	var ch *store.Channel
-	if cur, err := s.Store.TeamsAppChannel(ctx, tenantID, channel); err == nil {
+	owner := store.Owner{ProjectID: claim.ProjectID}
+	if claim.ProjectID != nil {
+		// The organisation may have stopped projects connecting their own
+		// Teams since the code was made.
+		on, err := s.Store.ProjectChatApps(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if !on {
+			return nil, errProjectTeamsOff
+		}
+	}
+	cur, err := s.Store.TeamsAppChannel(ctx, tenantID, channel)
+	if err == nil && !cur.Owner().Org() && !cur.Owner().Same(owner) {
+		return nil, errTeamsChannelTaken
+	}
+	if err == nil {
 		// The same Teams channel again: switched on again, details refreshed.
 		if err := s.Store.ReviveChannel(ctx, cur.ID, cfg); err != nil {
 			return nil, err
@@ -355,7 +386,7 @@ func (s *Server) bindTeamsChannel(ctx context.Context, act *teamsActivity, claim
 			label += " (" + teamName + ")"
 		}
 		var err error
-		if ch, err = s.createUniqueChannel(ctx, notify.KindTeams, truncate("Teams "+label, 100), cfg, ""); err != nil {
+		if ch, err = s.createUniqueChannel(ctx, owner, notify.KindTeams, truncate("Teams "+label, 100), cfg, ""); err != nil {
 			return nil, err
 		}
 		_ = s.Store.Audit(ctx, actor, "channel.create", "channel", itoa(ch.ID), detail)

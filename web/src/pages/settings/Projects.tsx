@@ -12,6 +12,7 @@ import {
   type UserRole,
 } from "../../api";
 import { OwnerRulesCard } from "../../components/Owners";
+import { ScopeNotificationsCard } from "../../components/ScopeNotifications";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { plural, humanize } from "../../format";
@@ -459,7 +460,7 @@ function AssetGrants() {
 export function ProjectDetailPage() {
   const { id } = useParams();
   const pid = Number(id);
-  const { refresh } = useAuth();
+  const { refresh, can } = useAuth();
   const res = useLoad(() => api.getAll<{ project: Project; grants?: List<Grant> }>(`/projects/${pid}`), [pid]);
   const assets = useLoad(() => api.getAll<List<Asset>>("/assets", { project_id: pid, limit: 500 }), [pid]);
   const [editing, setEditing] = useState(false);
@@ -588,6 +589,8 @@ export function ProjectDetailPage() {
 
       <OwnerRulesCard projectId={p.id} />
 
+      <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
+
       <Card title="Invite by email">
         <p className="small muted">
           Sends a link that works once, for 7 days. It starts with this project; choose their permission, or give them more.
@@ -627,5 +630,67 @@ function EditProject({ project, onDone }: { project: Project; onDone: () => void
         </button>
       </form>
     </Card>
+  );
+}
+
+/**
+ * A project's notifications on a page of their own, for the project's
+ * admins and security people who have no organisation-wide role.
+ */
+export function ProjectNotificationsPage() {
+  const { id } = useParams();
+  const pid = Number(id);
+  const { can, canAct } = useAuth();
+  const res = useLoad(() => api.get<{ project: Project }>(`/projects/${pid}`), [pid]);
+  if (!canAct("security")) {
+    return (
+      <div className="alert alert-warn" role="alert">
+        A project&apos;s notifications are for its admins and security people. Ask an administrator if you need access.
+      </div>
+    );
+  }
+  if (res.error) return <ErrorBox error={res.error} title="Could not load the project" />;
+  if (!res.data) return <Loading />;
+  const p = res.data.project;
+  return (
+    <>
+      <nav className="crumbs" aria-label="Breadcrumb">
+        {can("admin") ? <Link to={`/projects/${p.id}`}>{p.name}</Link> : <Link to="/project-notifications">Notifications</Link>}
+      </nav>
+      <PageHeader help="projects" title={`${p.name}: notifications`} sub="What this project's people are told, and where." />
+      <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
+    </>
+  );
+}
+
+/** The projects whose notifications the caller can see, each linking to them. */
+export function ProjectNotificationsIndexPage() {
+  const res = useLoad(() => api.getAll<List<Project>>("/projects"), []);
+  if (res.error) return <ErrorBox error={res.error} title="Could not load the projects" />;
+  if (!res.data) return <Loading />;
+  const items = res.data.items.filter((p) => !p.archived_at);
+  return (
+    <>
+      <PageHeader
+        help="projects"
+        title="Project notifications"
+        sub="Each project gets the organisation's rules, and can turn them off, edit them for itself, or add its own."
+      />
+      <Card>
+        {items.length === 0 ? (
+          <p className="muted">No projects yet.</p>
+        ) : (
+          <ul className="project-list">
+            {items.map((p) => (
+              <li key={p.id}>
+                <span className="grow">
+                  <Link to={`/projects/${p.id}/notifications`}>{p.name}</Link> <span className="small muted">{plural(p.asset_count, "asset")}</span>
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
+    </>
   );
 }

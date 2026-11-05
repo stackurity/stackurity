@@ -176,6 +176,34 @@ var projectRoutes = map[string]projectScope{
 	// organisation-wide security or admin role (Server.everywhere).
 	"POST /api/v1/ignore-requests/{id}/decision": scopedWrite,
 	"DELETE /api/v1/ignore-rules/{id}":           scopedWrite,
+
+	// Notifications of a project or an asset: the handler checks the
+	// caller's role on it (security to read, admin to change).
+	"GET /api/v1/projects/{id}/notifications":                      scopedRead,
+	"POST /api/v1/projects/{id}/notifications/routes":              scopedWrite,
+	"PUT /api/v1/projects/{id}/notifications/routes/{rid}":         scopedWrite,
+	"DELETE /api/v1/projects/{id}/notifications/routes/{rid}":      scopedWrite,
+	"PUT /api/v1/projects/{id}/notifications/inherited/{rid}":      scopedWrite,
+	"POST /api/v1/projects/{id}/notifications/channels":            scopedWrite,
+	"PATCH /api/v1/projects/{id}/notifications/channels/{cid}":     scopedWrite,
+	"DELETE /api/v1/projects/{id}/notifications/channels/{cid}":    scopedWrite,
+	"POST /api/v1/projects/{id}/notifications/channels/{cid}/test": scopedWrite,
+	"GET /api/v1/assets/{id}/notifications":                        scopedRead,
+	"POST /api/v1/assets/{id}/notifications/routes":                scopedWrite,
+	"PUT /api/v1/assets/{id}/notifications/routes/{rid}":           scopedWrite,
+	"DELETE /api/v1/assets/{id}/notifications/routes/{rid}":        scopedWrite,
+	"PUT /api/v1/assets/{id}/notifications/inherited/{rid}":        scopedWrite,
+	"POST /api/v1/assets/{id}/notifications/channels":              scopedWrite,
+	"PATCH /api/v1/assets/{id}/notifications/channels/{cid}":       scopedWrite,
+	"DELETE /api/v1/assets/{id}/notifications/channels/{cid}":      scopedWrite,
+	"POST /api/v1/assets/{id}/notifications/channels/{cid}/test":   scopedWrite,
+	"POST /api/v1/projects/{id}/notifications/slack/install":       scopedWrite,
+	"POST /api/v1/projects/{id}/notifications/teams/install":       scopedWrite,
+	// Add to Slack finishes here for an install started from a project
+	// too; the handler checks the role the install's state asks for.
+	"POST /api/v1/integrations/slack/oauth": scopedWrite,
+	// Whether the caller's own Add to Teams code was used.
+	"GET /api/v1/integrations/teams/install/{id}": accountScope,
 }
 
 // ProjectScopeOf returns how a route ("METHOD pattern") treats project

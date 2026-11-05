@@ -2,26 +2,29 @@ package notify
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"regexp"
 	"strconv"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/store"
 )
 
-// A route limited to projects must never name an asset outside them. The
-// messages are built from per-asset counts filtered by assetInScope; as a
-// second lock, every message to such a route is checked before it is
+// A route limited to projects (or an asset's route, or a rule turned off
+// for some projects or assets) must never name an asset it does not cover.
+// The messages are built from per-asset counts filtered by assetInScope;
+// as a second lock, every message to such a route is checked before it is
 // queued: an asset it links to (an asset page, an asset's issues or fixes,
-// a fix of an asset) outside the route's projects stops it.
+// a fix of an asset) outside the route's scope stops it.
 
 var linkedAsset = regexp.MustCompile(`/assets/(\d+)|(?:\?|&|\\u0026)asset_id=(\d+)|/fixes/(\d+)(?:%3A|:)`)
 
-// outsideProjects returns the assets a message links to that are not in
-// the route's projects; nil for a route that is not limited to projects.
+// outsideProjects returns the assets a message links to that the route
+// does not cover; nil for a route that hears about every asset.
 func outsideProjects(r store.Route, m Message) []int64 {
-	if len(r.ProjectIDs) == 0 {
+	if !r.Narrowed() {
 		return nil
 	}
 	b, _ := json.Marshal(m)
@@ -31,7 +34,7 @@ func outsideProjects(r store.Route, m Message) []int64 {
 			if v == "" {
 				continue
 			}
-			if id, err := strconv.ParseInt(v, 10, 64); err == nil && !r.ProjectAssets[id] {
+			if id, err := strconv.ParseInt(v, 10, 64); err == nil && !r.Covers(id) {
 				out = append(out, id)
 			}
 		}
@@ -54,6 +57,9 @@ func (d *Dispatcher) enqueueTo(ctx context.Context, r store.Route, channelID int
 		}
 		return nil
 	}
+	if sentAlready(ctx, r, channelID, event, msg) {
+		return nil
+	}
 	if _, err := d.Store.EnqueueDelivery(ctx, channelID, &r.ID, nil, event, key, msg); err != nil {
 		// One route's message that cannot be queued must not stop every
 		// other route's: it is logged, and the route's channel shows the
@@ -68,4 +74,55 @@ func (d *Dispatcher) enqueueTo(ctx context.Context, r store.Route, channelID int
 		return nil
 	}
 	return nil
+}
+
+// The same message to the same channel is sent once per planning pass:
+// an asset in two projects, or a rule and a project's copy of it, can make
+// two routes build the same message for one channel. The rule's name and
+// the time are not compared. Two of the organisation's own rules to one
+// channel still both send, as they did before rules had owners.
+
+type sentKey struct{}
+
+// sentSet maps a channel's message to whether a project's or asset's rule
+// (or a copy of an inherited rule) queued it.
+type sentSet map[string]bool
+
+// scoped reports whether the route belongs to a project or an asset, or is
+// a project's or asset's copy of an inherited rule.
+func scoped(r store.Route) bool {
+	return r.OwnerProjectID != nil || r.OwnerAssetID != nil || r.InheritsRouteID != nil
+}
+
+// withSentOnce starts a planning pass that sends each message once per
+// channel.
+func withSentOnce(ctx context.Context) context.Context {
+	if _, ok := ctx.Value(sentKey{}).(sentSet); ok {
+		return ctx
+	}
+	return context.WithValue(ctx, sentKey{}, sentSet{})
+}
+
+// sentAlready reports whether this pass already queued the message for
+// the channel and a project's or asset's rule took part (the earlier one
+// or r), and records it otherwise.
+func sentAlready(ctx context.Context, r store.Route, channelID int64, event string, msg Message) bool {
+	seen, ok := ctx.Value(sentKey{}).(sentSet)
+	if !ok {
+		return false
+	}
+	m := msg
+	m.Route, m.At = "", time.Time{}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return false
+	}
+	sum := sha256.Sum256(b)
+	k := fmt.Sprintf("%d:%s:%x", channelID, event, sum)
+	byScoped, sent := seen[k]
+	if sent && (byScoped || scoped(r)) {
+		return true
+	}
+	seen[k] = byScoped || scoped(r)
+	return false
 }
