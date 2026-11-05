@@ -190,6 +190,12 @@ same() {
 log "install $PREV"
 postgres old-db
 cli "$PREV" old-db migrate
+# From 0.17.0 a new Community install needs its free key before the API
+# answers (license_requirement, migration 0094). These checks are about
+# upgrades, so treat the install as a server that existed before the key
+# was required: inside its 30-day grace period, as every real upgrade is.
+psql old-db "DO \$\$ BEGIN IF to_regclass('license_requirement') IS NOT NULL THEN
+	UPDATE license_requirement SET required_from = now() + interval '30 days', upgraded = true; END IF; END \$\$" >/dev/null
 cli "$PREV" old-db admin create-user --email admin@example.com --name Admin --role admin
 cli "$PREV" old-db admin load-demo
 cli "$PREV" old-db admin create-workspace --name "Second org" --admin-email second@example.com
