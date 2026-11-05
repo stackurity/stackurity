@@ -22,7 +22,7 @@ func id64(v int64) *int64 { return &v }
 func TestCreateMemberScope(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -68,7 +68,7 @@ func TestCreateMemberScope(t *testing.T) {
 	}
 	before := grants()
 
-	const pw = "correct horse battery"
+	const pw = "Correct horse battery 1!"
 	refused := []struct {
 		name string
 		m    store.NewMember

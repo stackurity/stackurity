@@ -54,7 +54,7 @@ func TestBundleRedacts(t *testing.T) {
 	if _, err := st.Ingest(ctx, b, 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(ctx, "alice@acmecorp.example", "Alice", auth.RoleAdmin, "a long enough password"); err != nil {
+	if _, err := st.CreateUser(ctx, "alice@acmecorp.example", "Alice", auth.RoleAdmin, "A long enough password 1!"); err != nil {
 		t.Fatal(err)
 	}
 	cfgJSON, _ := json.Marshal(map[string]string{"url": "https://hooks.acmecorp.example/T000/SECRETPATH"})

@@ -4,6 +4,8 @@ import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { absTime } from "../format";
 import { ErrorBox, Loading, Notice } from "../components/ui";
+import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
+import { passwordOK } from "../passwordStrength";
 import { ROLE_HELP } from "../components/Invite";
 import { accessLines, permissionLabel } from "../roles";
 import { LoginPage } from "./Login";
@@ -46,7 +48,7 @@ export function AcceptInvitePage() {
     e?.preventDefault();
     setLocalErr(null);
     if (pv && !pv.invitation.account_exists) {
-      if (password.length < 12) return setLocalErr("Use at least 12 characters for your password.");
+      if (!passwordOK(password)) return setLocalErr("Your password does not meet the rules below it yet.");
       if (password !== confirm) return setLocalErr("The passwords do not match.");
     }
     const r = await act.run(() =>
@@ -190,14 +192,25 @@ export function AcceptInvitePage() {
             </div>
             <div className="field">
               <label htmlFor="ai-pass">Password</label>
-              <input id="ai-pass" type="password" required minLength={12} autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
-              <p className="hint">At least 12 characters.</p>
+              <input
+                id="ai-pass"
+                type="password"
+                required
+                minLength={12}
+                maxLength={256}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                aria-describedby="ai-pass-hint"
+              />
+              <PasswordChecklist id="ai-pass-hint" password={password} context={[inv.email, name, inv.workspace]} />
             </div>
             <div className="field">
               <label htmlFor="ai-confirm">Password again</label>
               <input id="ai-confirm" type="password" required autoComplete="new-password" value={confirm} onChange={(e) => setConfirm(e.target.value)} />
+              <PasswordMatch password={password} confirm={confirm} />
             </div>
-            <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
+            <button type="submit" className="btn btn-primary btn-block" disabled={act.pending || !passwordOK(password)}>
               {act.pending ? "Creating your account…" : "Create account and join"}
             </button>
           </form>

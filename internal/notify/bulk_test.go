@@ -94,7 +94,7 @@ func bulkUsers(t *testing.T, st *store.Store, emails ...string) []store.BulkReci
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	var out []store.BulkRecipient
 	for _, e := range emails {
-		u, err := st.CreateUser(ctx, e, "", auth.RoleViewer, "correct horse battery")
+		u, err := st.CreateUser(ctx, e, "", auth.RoleViewer, "Correct horse battery 1!")
 		if err != nil {
 			t.Fatal(err)
 		}

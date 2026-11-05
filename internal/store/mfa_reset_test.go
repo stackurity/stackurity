@@ -22,7 +22,7 @@ import (
 func TestMarkedPasskeyIsNotAUsableFactor(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -71,11 +71,11 @@ func TestMarkedPasskeyIsNotAUsableFactor(t *testing.T) {
 func TestResetAccountMFA(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Ann@X.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Ann@X.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	ws, _, err := s.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "boss@acme.io", "Boss", "correct horse battery")
+	ws, _, err := s.CreateWorkspace(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "Acme", "acme", "boss@acme.io", "Boss", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +135,7 @@ var cli = store.Actor{Type: "system", Name: "cli"}
 func TestRecoveryCodeBacksUpAMarkedPasskey(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleViewer, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,7 +183,7 @@ func refuseMFAResetAudit(t *testing.T, s *store.Store) {
 func TestResetAccountMFAFailsClosed(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +212,7 @@ func TestResetAccountMFAFailsClosed(t *testing.T) {
 func TestResetAccountMFAKeepsTheAuditChain(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +246,7 @@ func TestResetAccountMFAKeepsTheAuditChain(t *testing.T) {
 func TestResetAccountMFAEndsEverySession(t *testing.T) {
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "correct horse battery")
+	u, err := s.CreateUser(tenant.WithWorkspace(bg, tenant.DefaultWorkspace), "ann@x.io", "", auth.RoleAdmin, "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -25,16 +25,16 @@ func newAskFixture(t *testing.T) askFixture {
 	t.Helper()
 	s := store.New(testdb.New(t))
 	bg := context.Background()
-	w1, a, err := s.CreateWorkspace(bg, "One", "one", "alice@example.com", "Alice", "pw-alice-123456")
+	w1, a, err := s.CreateWorkspace(bg, "One", "one", "alice@example.com", "Alice", "Pw-alice-123456")
 	if err != nil {
 		t.Fatal(err)
 	}
-	w2, c, err := s.CreateWorkspace(bg, "Two", "two", "carol@example.com", "Carol", "pw-carol-123456")
+	w2, c, err := s.CreateWorkspace(bg, "Two", "two", "carol@example.com", "Carol", "Pw-carol-123456")
 	if err != nil {
 		t.Fatal(err)
 	}
 	ws1 := tenant.WithWorkspace(bg, w1.ID)
-	if _, err := s.AddMember(ws1, "bob@example.com", "Bob", auth.RoleViewer, "pw-bob-1234567"); err != nil {
+	if _, err := s.AddMember(ws1, "bob@example.com", "Bob", auth.RoleViewer, "Pw-bob-1234567"); err != nil {
 		t.Fatal(err)
 	}
 	var bob int64

@@ -5,6 +5,8 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { PasswordChecklist } from "../../components/PasswordStrength";
+import { passwordOK } from "../../passwordStrength";
 import { RequireMfaCard } from "../TwoFactor";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { PermissionsDisclosure } from "../../components/Permissions";
@@ -304,11 +306,22 @@ function ResetPassword({ user, onDone, onCancel }: { user: User; onDone: () => v
       <ErrorBox error={act.error} title="Reset failed" />
       <div className="field">
         <label htmlFor={`pw-${user.id}`}>New password for {user.email}</label>
-        <input id={`pw-${user.id}`} type="password" autoComplete="new-password" minLength={12} required value={pw} onChange={(e) => setPw(e.target.value)} />
-        <p className="hint">At least 12 characters. It is temporary: {user.email} chooses their own at their next sign-in, and their sessions end now.</p>
+        <input
+          id={`pw-${user.id}`}
+          type="password"
+          autoComplete="new-password"
+          minLength={12}
+          maxLength={256}
+          required
+          value={pw}
+          onChange={(e) => setPw(e.target.value)}
+          aria-describedby={`pw-${user.id}-rules`}
+        />
+        <PasswordChecklist id={`pw-${user.id}-rules`} password={pw} context={[user.email, user.name]} />
+        <p className="hint">It is temporary: {user.email} chooses their own at their next sign-in, and their sessions end now.</p>
       </div>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || pw.length < 12}>
+        <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || !passwordOK(pw)}>
           Set password
         </button>
         <button type="button" className="btn btn-sm" onClick={onCancel}>
@@ -398,8 +411,10 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
           </div>
           <div className="field">
             <label htmlFor="nu-pw">Initial password</label>
-            <input id="nu-pw" type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
-            <p className="hint">At least 12 characters. Leave empty if they already have an account; they join this workspace with it.</p>
+            <input id="nu-pw" type="password" minLength={12} maxLength={256} autoComplete="new-password" value={f.password} aria-describedby="nu-pw-rules"
+              onChange={(e) => dispatch({ type: "field", field: "password", value: e.target.value })} />
+            <p className="hint">Leave empty if they already have an account; they join this workspace with it.</p>
+            {f.password && <PasswordChecklist id="nu-pw-rules" password={f.password} context={[f.email, f.name]} />}
           </div>
         </div>
 
@@ -419,7 +434,7 @@ function CreateUser({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
         )}
         {summary && <p className="hint" aria-live="polite">They will see: {summary}</p>}
         <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={act.pending || (tried && missing.length > 0)} aria-describedby={tried && missing.length ? "nu-problems" : undefined}>
+          <button type="submit" className="btn btn-primary" disabled={act.pending || (tried && missing.length > 0) || (f.password !== "" && !passwordOK(f.password))} aria-describedby={tried && missing.length ? "nu-problems" : undefined}>
             Add user
           </button>
           <button type="button" className="btn" onClick={onCancel}>

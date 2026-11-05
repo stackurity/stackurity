@@ -36,10 +36,10 @@ func TestBreachCheckSendsOnlyThePrefix(t *testing.T) {
 	}
 	// A long password not in the list passes; one in it is refused with a
 	// 400-class error.
-	if err := CheckNewPassword(context.Background(), c, "a long password nobody has", nil); err != nil {
+	if err := CheckNewPassword(context.Background(), c, "A long password, nobody has 1", nil); err != nil {
 		t.Fatalf("unbreached: %v", err)
 	}
-	long := "correct horse battery staple"
+	long := "Correct horse battery staple 9!"
 	srv2 := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// Answer every prefix with the suffix of the request's password.
 		_, _ = w.Write([]byte(strings.ToUpper(sha1Suffix(long)) + ":42\n"))
@@ -56,7 +56,7 @@ func TestBreachCheckFailsOpen(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.WriteHeader(503) }))
 	srv.Close() // unreachable
 	var logged error
-	err := CheckNewPassword(context.Background(), &BreachChecker{URL: srv.URL + "/"}, "a long password nobody has", func(e error) { logged = e })
+	err := CheckNewPassword(context.Background(), &BreachChecker{URL: srv.URL + "/"}, "A long password, nobody has 1", func(e error) { logged = e })
 	if err != nil || logged == nil {
 		t.Fatalf("unreachable service: err %v, logged %v", err, logged)
 	}

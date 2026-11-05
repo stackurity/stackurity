@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.16.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.16.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.16.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.17.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.17.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.17.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist. The dashboard then asks for the server's [free key](#the-free-key): click **Get a free key** (with `STACKURITY_BASE_URL` set), or get one at https://app.stackurity.dev/self-hosted-key from any computer and paste it in. Agents and scans can send data before the key is entered.
 
@@ -49,7 +49,7 @@ Behind a proxy every connection comes from the proxy, so with `STACKURITY_TRUST_
 Alternatively, create the first admin from the command line:
 
 ```sh
-docker compose exec -e STACKURITY_PASSWORD='a long passphrase' stackurity \
+docker compose exec -e STACKURITY_PASSWORD='Velvet otter lamp 82!' stackurity \
   stackurity admin create-user --email you@example.com --role admin
 ```
 
@@ -291,7 +291,11 @@ It removes every passkey, authenticator app, email code and recovery code of tha
 
 ### Passwords
 
-Passwords are 12 to 256 characters, stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
+A new password must be 12 to 256 characters and contain at least one lowercase letter, one uppercase letter, one digit and one symbol. Letters of any script count by their case (é is lowercase, É uppercase); a letter without case, as in Chinese, counts as a letter but not as either case. A symbol is any other character that is not a digit or a space (punctuation, `€`, an emoji); spaces are allowed, so a passphrase such as `Velvet otter lamp 82!` works. The rules apply wherever a password is set: setup, **Your account → Password**, a reset link, accepting an invitation, a password an administrator sets or gives a new account, `stackurity admin create-user`, and sign-up on Stackurity Cloud. A password that breaks them is refused with `400 password_too_weak` and a message that says what is missing, such as "Add an uppercase letter and a symbol." ([api.md](api.md#conventions)). Passwords set before these rules keep working; the rules apply the next time one is set or changed.
+
+Each of those forms lists the rules under the field and ticks each as it is met, shows a strength meter (Weak, Fair or Strong, written out and announced to screen readers, not only coloured), and keeps its button disabled until every rule is met. The strength is estimated in the browser and never sent: length and variety, less repeated characters, runs such as `abc` or `123`, common words such as `password`, `qwerty` or `stackurity`, and the person's own email, name or organisation. Strong needs every rule and at least 16 characters that are not such a pattern (or an equally high estimate); the server enforces the rules, not the meter.
+
+Passwords are stored with argon2id. A new password is also checked against known data breaches (Have I Been Pwned's Pwned Passwords, with only five characters of its SHA-1 sent: see [network.md](network.md#breached-password-check)) and refused if found; if the check cannot be reached the password is accepted and a warning logged. `STACKURITY_BREACHED_PASSWORD_CHECK=off` turns the check off.
 
 ### Sessions
 
@@ -1275,7 +1279,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.16.0 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.17.0 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -1296,7 +1300,7 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.16.0 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.17.0 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
@@ -1304,7 +1308,7 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.1
 
 To give the server its [free key](#the-free-key) from a Secret rather than in the dashboard, `kubectl create secret generic stackurity-license --from-literal=key=<the key>` and add `--set license.existingSecret=stackurity-license`.
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.16.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.17.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 

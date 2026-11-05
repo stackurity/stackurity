@@ -13,7 +13,7 @@ import { chromium } from "playwright";
 import { fileURLToPath } from "node:url";
 import { appRoutes, EXTRA_CHECKS, fillParams, WIDTHS } from "./routes.mjs";
 
-const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "ui-test-password-1"] = process.argv.slice(2);
+const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "UI-test-password-1."] = process.argv.slice(2);
 const app = fileURLToPath(new URL("../../web/src/App.tsx", import.meta.url));
 const MAX_GAP = 24;
 

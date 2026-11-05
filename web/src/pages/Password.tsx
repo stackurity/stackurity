@@ -4,6 +4,8 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Card, ErrorBox, Loading, Notice } from "../components/ui";
+import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
+import { passwordOK } from "../passwordStrength";
 
 /** Shown under the sign-in form: email a reset link, or ask an administrator. */
 export function ForgotPasswordLink() {
@@ -113,7 +115,7 @@ export function ResetPasswordPage() {
                 {localErr}
               </div>
             )}
-            <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} />
+            <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} context={[preview.email]} />
             {preview.tokens > 0 && (
               <label className="check">
                 <input type="checkbox" checked={f.revokeTokens} onChange={(e) => setF({ ...f, revokeTokens: e.target.checked })} /> Also revoke my{" "}
@@ -121,7 +123,7 @@ export function ResetPasswordPage() {
               </label>
             )}
             <p className="hint">Every session ends{preview.assistants > 0 ? ", and your connected AI assistants are disconnected" : ""}.</p>
-            <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
+            <button type="submit" className="btn btn-primary btn-block" disabled={act.pending || !passwordOK(f.password)}>
               Change password
             </button>
           </>
@@ -136,7 +138,15 @@ export function ResetPasswordPage() {
   );
 }
 
-function NewPasswordFields({ value, onChange }: { value: { password: string; confirm: string }; onChange: (v: { password?: string; confirm?: string }) => void }) {
+function NewPasswordFields({
+  value,
+  onChange,
+  context,
+}: {
+  value: { password: string; confirm: string };
+  onChange: (v: { password?: string; confirm?: string }) => void;
+  context?: (string | undefined)[];
+}) {
   return (
     <>
       <div className="field">
@@ -152,13 +162,13 @@ function NewPasswordFields({ value, onChange }: { value: { password: string; con
           onChange={(e) => onChange({ password: e.target.value })}
           aria-describedby="new-password-hint"
         />
-        <p className="hint" id="new-password-hint">
-          At least 12 characters. A passphrase of a few words is easy to remember and hard to guess. Passwords found in known data breaches are refused.
-        </p>
+        <PasswordChecklist id="new-password-hint" password={value.password} context={context} />
+        <p className="hint">A passphrase of a few words with a digit and a symbol is easy to remember and hard to guess. Passwords found in known data breaches are refused.</p>
       </div>
       <div className="field">
         <label htmlFor="new-password-confirm">Confirm new password</label>
         <input id="new-password-confirm" type="password" required autoComplete="new-password" value={value.confirm} onChange={(e) => onChange({ confirm: e.target.value })} />
+        <PasswordMatch password={value.password} confirm={value.confirm} />
       </div>
     </>
   );
@@ -173,6 +183,7 @@ interface ChangeResult {
 export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | undefined) => void }) {
   const [f, setF] = useState({ current: "", password: "", confirm: "" });
   const [revoke, setRevoke] = useState({ assistants: true, tokens: false });
+  const user = useAuth().me?.user;
   const [localErr, setLocalErr] = useState<string | null>(null);
   const [msg, setMsg] = useState<ReactNode>(null);
   const act = useAction();
@@ -222,7 +233,7 @@ export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | und
         <label htmlFor="current-password">Current password</label>
         <input id="current-password" type="password" required autoComplete="current-password" value={f.current} onChange={(e) => setF({ ...f, current: e.target.value })} />
       </div>
-      <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} />
+      <NewPasswordFields value={f} onChange={(v) => setF({ ...f, ...v })} context={[user?.email, user?.name]} />
       <p className="hint">Your other sessions are signed out.</p>
       <label className="check">
         <input type="checkbox" checked={revoke.assistants} onChange={(e) => setRevoke({ ...revoke, assistants: e.target.checked })} /> Also disconnect my AI
@@ -232,7 +243,7 @@ export function ChangePasswordForm({ onDone }: { onDone?: (r: ChangeResult | und
         <input type="checkbox" checked={revoke.tokens} onChange={(e) => setRevoke({ ...revoke, tokens: e.target.checked })} /> Also revoke my API tokens
       </label>
       <div className="form-actions">
-        <button type="submit" className="btn btn-primary" disabled={act.pending}>
+        <button type="submit" className="btn btn-primary" disabled={act.pending || !passwordOK(f.password)}>
           Change password
         </button>
       </div>

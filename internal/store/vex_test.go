@@ -374,7 +374,7 @@ func TestVEXDeclined(t *testing.T) {
 // row-level security hides everything else.
 func TestVEXStaysInItsWorkspace(t *testing.T) {
 	ctx, s := loopStore(t)
-	wsB, _, err := s.CreateWorkspace(context.Background(), "Beta", "", "beta@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(context.Background(), "Beta", "", "beta@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

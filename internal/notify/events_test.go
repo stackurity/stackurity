@@ -246,7 +246,7 @@ func TestPlatformEmail(t *testing.T) {
 	f := &fixture{t: t, st: st, d: d, hook: &hook{}, inv: map[string]int64{}, asset: map[string]int64{}}
 	team, _ := st.CreateTeam(ctx, "payments", "")
 	f.team = team.ID
-	u, err := st.CreateUser(ctx, "member@example.com", "Member", auth.RoleAdmin, "correct horse battery staple")
+	u, err := st.CreateUser(ctx, "member@example.com", "Member", auth.RoleAdmin, "Correct horse battery staple 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -5,6 +5,8 @@ import { api, ApiError, type SignupMeta, type SocialMeta } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { ErrorBox, Loading, Notice } from "../components/ui";
+import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
+import { passwordOK } from "../passwordStrength";
 import { SocialButtons } from "./Social";
 
 // The sign-up challenge widget, loaded only on the sign-up page.
@@ -107,7 +109,7 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setLocalErr(null);
-    if (f.password.length < 12) return setLocalErr("Use at least 12 characters for your password.");
+    if (!passwordOK(f.password)) return setLocalErr("Your password does not meet the rules below it yet.");
     if (f.password !== f.confirm) return setLocalErr("The passwords do not match.");
     if (!accept) return setLocalErr("Please agree to the Terms of Service and the Privacy Policy.");
     if (!token) return setLocalErr("Please complete the check above the button first.");
@@ -137,7 +139,7 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
   if (sentTo) {
     return (
       <div className="center-screen">
-        <div className="auth-card auth-card-wide">
+        <div className="auth-card auth-card-wide auth-card-message">
           <h1 className="auth-title">Check your email</h1>
           <p>
             We sent a link to <strong className="break">{sentTo}</strong>. It works once, for 24 hours. Open it to finish creating your account.
@@ -223,18 +225,18 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
             type="password"
             required
             minLength={12}
+            maxLength={256}
             autoComplete="new-password"
             value={f.password}
             onChange={set("password")}
             aria-describedby="su-password-hint"
           />
-          <p className="hint" id="su-password-hint">
-            At least 12 characters.
-          </p>
+          <PasswordChecklist id="su-password-hint" password={f.password} context={[f.email, f.name, f.organisation]} />
         </div>
         <div className="field">
           <label htmlFor="su-confirm">Confirm password</label>
           <input id="su-confirm" type="password" required autoComplete="new-password" value={f.confirm} onChange={set("confirm")} />
+          <PasswordMatch password={f.password} confirm={f.confirm} />
         </div>
         <label className="check-row">
           <input type="checkbox" checked={accept} onChange={(e) => setAccept(e.target.checked)} required />
@@ -256,7 +258,7 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
           </p>
         )}
         <Challenge siteKey={signup.turnstile_site_key} onToken={setToken} resetKey={resetKey} />
-        <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={act.pending || !passwordOK(f.password)}>
           {act.pending ? "Creating…" : "Create account"}
         </button>
         <p className="small" style={{ textAlign: "center" }}>

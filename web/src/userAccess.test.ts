@@ -30,7 +30,7 @@ test("name, email, phone and password fields", () => {
   let s = run(EMPTY, { type: "field", field: "email", value: "nope" }, { type: "scope", scope: "all" }, { type: "allRole", role: "viewer" });
   assert.deepEqual(problems(s), ["Enter a valid email."]);
   s = run(s, { type: "field", field: "email", value: "a@b.io" }, { type: "field", field: "password", value: "short" });
-  assert.deepEqual(problems(s), ["The initial password needs at least 12 characters."]);
+  assert.deepEqual(problems(s), ["The initial password does not meet the rules under it yet."]);
   s = run(s, { type: "field", field: "password", value: "" }, { type: "field", field: "phone", value: "call me" });
   assert.equal(problems(s).length, 1);
   assert.match(problems(s)[0], /Phone may contain digits/);

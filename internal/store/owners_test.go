@@ -37,11 +37,11 @@ func TestOwnerRules(t *testing.T) {
 	syncOpen(t, s, ctx, shop, map[string]string{"CVE-OS": "openssl", "CVE-LIB": "lodash"})
 	syncOpen(t, s, ctx, blog, map[string]string{"CVE-LIB": "lodash", "CVE-HAND": "lodash"})
 
-	ravi, err := s.CreateUser(ctx, "ravi@example.com", "Ravi", "engineer", "correct horse battery")
+	ravi, err := s.CreateUser(ctx, "ravi@example.com", "Ravi", "engineer", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
-	anita, err := s.CreateUser(ctx, "anita@example.com", "Anita", "engineer", "correct horse battery")
+	anita, err := s.CreateUser(ctx, "anita@example.com", "Anita", "engineer", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

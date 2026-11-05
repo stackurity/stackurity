@@ -3,6 +3,8 @@ import { api } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { Code, ErrorBox } from "../components/ui";
+import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
+import { passwordOK } from "../passwordStrength";
 import type { MfaSignInMethod } from "../api";
 import { MfaLoginStep, PasskeySignInButton } from "./TwoFactor";
 import { mfaFromQuery } from "../mfa";
@@ -171,7 +173,7 @@ export function SetupPage() {
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setLocalErr(null);
-    if (f.password.length < 12) return setLocalErr("Password must be at least 12 characters.");
+    if (!passwordOK(f.password)) return setLocalErr("The password does not meet the rules below it yet.");
     if (f.password !== f.confirm) return setLocalErr("Passwords do not match.");
     const ok = await act.run(() =>
       api.setup({ setup_token: f.setup_token.trim(), email: f.email.trim(), name: f.name.trim(), password: f.password }),
@@ -217,20 +219,20 @@ export function SetupPage() {
             type="password"
             required
             minLength={12}
+            maxLength={256}
             autoComplete="new-password"
             value={f.password}
             onChange={set("password")}
             aria-describedby="setup-password-hint"
           />
-          <p className="hint" id="setup-password-hint">
-            At least 12 characters.
-          </p>
+          <PasswordChecklist id="setup-password-hint" password={f.password} context={[f.email, f.name]} />
         </div>
         <div className="field">
           <label htmlFor="setup-confirm">Confirm password</label>
           <input id="setup-confirm" type="password" required autoComplete="new-password" value={f.confirm} onChange={set("confirm")} />
+          <PasswordMatch password={f.password} confirm={f.confirm} />
         </div>
-        <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
+        <button type="submit" className="btn btn-primary btn-block" disabled={act.pending || !passwordOK(f.password)}>
           {act.pending ? "Creating…" : "Create administrator"}
         </button>
       </form>

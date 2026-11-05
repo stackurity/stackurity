@@ -589,7 +589,7 @@ func init() {
 	}
 	tools["snooze"] = tool{
 		description: "Snooze issues until a date, or until a free fix exists (until_fix): they leave the to-do lists and come " +
-			"back by themselves. Needs the security role; others can use ignore, which asks for approval. Without confirm it only previews.",
+			"back by themselves. Needs the security role. Without confirm it only previews.",
 		schema: obj(with(issueTarget, map[string]any{
 			"until":     str("Snooze until this date (2026-12-31), at most the organisation's exception limit ahead"),
 			"until_fix": map[string]any{"type": "boolean", "description": "Snooze until a free fixed version exists instead of a date"},

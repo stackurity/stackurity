@@ -35,7 +35,7 @@ func TestPreviewRiskPolicy(t *testing.T) {
 		t.Fatal(err)
 	}
 	// Another workspace with the same findings must not show up.
-	wsB, _, err := s.CreateWorkspace(context.Background(), "B", "", "b@x.io", "", "correct horse battery")
+	wsB, _, err := s.CreateWorkspace(context.Background(), "B", "", "b@x.io", "", "Correct horse battery 1!")
 	if err != nil {
 		t.Fatal(err)
 	}

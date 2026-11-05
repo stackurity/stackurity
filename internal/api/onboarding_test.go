@@ -354,6 +354,9 @@ func TestInvitationSecurity(t *testing.T) {
 	if code := anonFrom().do("POST", "/api/v1/invitations/accept", map[string]any{"token": tok, "password": "short"}, nil); code != 400 {
 		t.Errorf("weak password: %d", code)
 	}
+	expectWeak(t, "accepting an invitation", func(p string, out any) int {
+		return anonFrom().do("POST", "/api/v1/invitations/accept", map[string]any{"token": tok, "password": p}, out)
+	})
 
 	// Accepting creates the account and the grant, and signs in.
 	nia := anonFrom()
@@ -458,7 +461,7 @@ func TestInvitationExistingAccount(t *testing.T) {
 		t.Errorf("preview: %+v", pv)
 	}
 	var er struct{ Error struct{ Code string } }
-	if code := e.anon().do("POST", "/api/v1/invitations/accept", map[string]any{"token": tok, "password": "whatever-they-like-1"}, &er); code != 409 || er.Error.Code != "sign_in_required" {
+	if code := e.anon().do("POST", "/api/v1/invitations/accept", map[string]any{"token": tok, "password": "Whatever-they-like-1"}, &er); code != 409 || er.Error.Code != "sign_in_required" {
 		t.Errorf("not signed in: %d %+v", code, er)
 	}
 	if code := e.login("someone@x.io").do("POST", "/api/v1/invitations/accept", map[string]any{"token": tok}, &er); code != 409 || er.Error.Code != "wrong_account" {

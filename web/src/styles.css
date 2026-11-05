@@ -6822,3 +6822,99 @@ a.cov-chip:hover {
     border-radius: var(--radius) var(--radius) 0 0;
   }
 }
+
+/* Password rules and strength meter (components/PasswordStrength.tsx). The
+   strength is also written out, so colour is never the only signal. */
+.pw-strength {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pw-rules {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 2px var(--s3);
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.pw-rule {
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.pw-rule-mark {
+  flex: none;
+  width: 1em;
+  text-align: center;
+}
+.pw-rule-met {
+  color: var(--good-fg);
+}
+.pw-meter {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--muted-bg);
+  overflow: hidden;
+}
+.pw-meter-bar {
+  display: block;
+  height: 100%;
+  width: 0;
+  border-radius: 3px;
+  transition: width 0.2s ease;
+}
+.pw-meter[data-strength="weak"] .pw-meter-bar {
+  width: 33%;
+  background: var(--bad-dot);
+}
+.pw-meter[data-strength="fair"] .pw-meter-bar {
+  width: 66%;
+  background: var(--warn-dot);
+}
+.pw-meter[data-strength="strong"] .pw-meter-bar {
+  width: 100%;
+  background: var(--good-dot);
+}
+.auth-card p.pw-meter-label,
+.pw-meter-label {
+  margin: 0;
+  min-height: 1.4em;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+.pw-match,
+.auth-card p.pw-match {
+  color: var(--good-fg);
+}
+.auth-card p.hint-error {
+  color: var(--danger);
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-meter-bar {
+    transition: none;
+  }
+}
+
+/* A card that only says something ("Check your email"): room under the
+   heading, between the paragraphs and around the text. */
+.auth-card-message {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  padding: var(--s6) 40px;
+  line-height: 1.6;
+}
+.auth-card-message .auth-title {
+  margin: 0 0 var(--s1);
+}
+.auth-card-message p.small {
+  margin-top: var(--s1);
+}
+@media (max-width: 400px) {
+  .auth-card-message {
+    padding: var(--s5) 20px;
+  }
+}

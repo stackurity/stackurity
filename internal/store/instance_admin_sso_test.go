@@ -20,7 +20,7 @@ func TestInstanceAdminNotSSOLinked(t *testing.T) {
 	bg := context.Background()
 	ws1 := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
 	for _, email := range []string{"linked@acme.io", "plain@acme.io"} {
-		if _, err := s.CreateUser(ws1, email, "", auth.RoleAdmin, "correct horse battery"); err != nil {
+		if _, err := s.CreateUser(ws1, email, "", auth.RoleAdmin, "Correct horse battery 1!"); err != nil {
 			t.Fatal(err)
 		}
 	}

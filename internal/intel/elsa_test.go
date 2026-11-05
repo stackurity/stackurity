@@ -611,7 +611,7 @@ func TestOracleLinuxReleasesOfEveryWorkspace(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	st, sy, _, up := setup(t)
 	olHost(t, st, "ol9", "ol-9.4", "glibc@0:2.34-60.0.2.el9")
-	ws2, _, err := st.CreateWorkspace(tenant.System(context.Background()), "Other", "other", "other@example.com", "Other", "correct horse battery staple")
+	ws2, _, err := st.CreateWorkspace(tenant.System(context.Background()), "Other", "other", "other@example.com", "Other", "Correct horse battery staple 1!")
 	if err != nil {
 		t.Fatal(err)
 	}
