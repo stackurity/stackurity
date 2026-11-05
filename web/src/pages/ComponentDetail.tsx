@@ -85,14 +85,14 @@ export function ComponentDetailPage() {
         <Link to="/components">Components</Link> <span aria-hidden="true">/</span> <span>{componentName(c.namespace, c.name)}</span>
       </nav>
       <PageHeader help="components" title={componentName(c.namespace, c.name)} sub={<span className="mono break">{c.type === "generic" ? displayPurl(c.purl_key) : c.purl_key}</span>} />
-      <Card>
+      <Card title="About this component" description="A package, library or runtime Stackurity found on your assets, and the versions in use.">
         <KeyValues
           entries={[
-            ["type", c.type],
+            ["package type", c.type],
             ["namespace", c.namespace || "—"],
             ["name", c.name],
-            ["assets", c.asset_count.toLocaleString()],
-            ["versions", <VersionChips versions={c.versions} />],
+            ["used on", `${c.asset_count.toLocaleString()} ${c.asset_count === 1 ? "asset" : "assets"}`],
+            ["versions in use", <VersionChips versions={c.versions} />],
             ["first recorded", <RelativeTime iso={c.created_at} />],
           ]}
         />
@@ -117,6 +117,7 @@ export function ComponentDetailPage() {
       <ComponentUpgrades componentId={c.id} />
       <ComponentFindings componentId={c.id} />
       <h2 className="section-title">Where it is used</h2>
+      <p className="hint section-hint">Every asset this component is installed on, with its version. Select a row to see where it was found.</p>
       <div className="filters">
         <label className="check">
           <input
@@ -158,7 +159,7 @@ function ReleaseCard({ intel }: { intel: ComponentIntel }) {
   const src = safeHttpUrl(r.source_url);
   const withdrawn = versions.filter((v) => r.yanked && v in r.yanked);
   return (
-    <Card title="Releases">
+    <Card title="Releases" description="The newest version its registry lists, and whether a version you use was withdrawn or the project deprecated.">
       {r.deprecated && (
         <Notice kind="warn">
           {r.source === "releases:wordpress.org" ? (
@@ -309,6 +310,9 @@ function LifecycleCard({ intel }: { intel: ComponentIntel }) {
       <h2 className="section-title" id="lc-title">
         Lifecycle: {label} <span className="muted small">(endoflife.date product “{lc.product}”)</span>
       </h2>
+      <p className="hint section-hint">
+        Each release line of {label} and when it stops getting security fixes. Lines you use say <strong>In use</strong>.
+      </p>
       {eolInUse.length > 0 && distroPackage && (
         <Notice kind="info">
           <strong>Upstream end of life:</strong> {eolInUse.join(", ")}. These are distribution packages: the distribution keeps patching its own
@@ -377,9 +381,9 @@ function ComponentUpgrades({ componentId }: { componentId: number }) {
       <h2 className="section-title" id="cu-title">
         Upgrade recommendations{res.data ? ` (${res.data.total})` : ""}
       </h2>
-      <p className="hint">
-        One row per installed version with open findings. Recommended: the newest stable release in the same major line at or above the
-        minimum fixed version, from registry release data; without it, the minimum fixed version. Select a row for the reasons.
+      <p className="hint section-hint">
+        Which version to move to so the open findings close, one row per installed version. Recommended is the newest stable release in the
+        same major line that fixes them (from registry release data; without it, the minimum fixed version). Select a row for the reasons.
       </p>
       <ErrorBox error={res.error} title="Could not load recommendations" />
       {!res.data && !res.error && <Loading />}
@@ -410,6 +414,7 @@ function ComponentFindings({ componentId }: { componentId: number }) {
       <h2 className="section-title" id="cf-title">
         Open findings{res.data ? ` (${res.data.total})` : ""}
       </h2>
+      <p className="hint section-hint">Vulnerabilities and end-of-life findings in this component, on every asset it is used on.</p>
       <ErrorBox error={res.error} title="Could not load findings" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <p className="muted">No open findings for this component. Where it was not checked, its row on each asset's Inventory tab says why and who acts.</p>}

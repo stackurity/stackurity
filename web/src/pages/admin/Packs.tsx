@@ -145,14 +145,14 @@ export function PacksPage() {
       {!data && !res.error && <Loading />}
       {data && (
         <>
-          <Card title="Installed">
+          <Card title="Installed" description="Packs this server uses now, in every workspace.">
             {data.installed.length === 0 ? (
               <EmptyState title="No packs installed">The core reads Linux packages, npm, Composer, Python, Go, Ruby, NuGet and Dart. Install packs below for more.</EmptyState>
             ) : (
               <Table caption="Installed packs" columns={columns} rows={data.installed} rowKey={(p) => p.id} />
             )}
           </Card>
-          <Card title="Available">
+          <Card title="Available" description="Official packs you can install with one click.">
             <div className="pack-grid">
               {data.catalog.map((c) => {
                 const n = suggested.get(c.manifest.id);
@@ -197,10 +197,10 @@ export function PacksPage() {
               })}
             </div>
           </Card>
-          <Card title="Install a pack file">
-            <p className="small muted">
-              Packs from other publishers are accepted only if their signing key is trusted on this server (STACKURITY_PACK_TRUSTED_KEYS).
-            </p>
+          <Card
+            title="Install a pack file"
+            description="For a pack you received as a file. Packs from other publishers are accepted only if their signing key is trusted on this server (STACKURITY_PACK_TRUSTED_KEYS)."
+          >
             <input
               ref={file}
               type="file"

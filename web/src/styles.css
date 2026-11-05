@@ -6975,6 +6975,9 @@ a.cov-chip:hover {
   margin: 0;
   padding: var(--s4) 0 0;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
 }
 .field-group + .field-group {
   margin-top: var(--s3);
@@ -6987,7 +6990,7 @@ a.cov-chip:hover {
   color: var(--text);
 }
 .field-group-desc {
-  margin: 2px 0 var(--s3);
+  margin: 2px 0 0;
   color: var(--muted);
   font-size: 12.5px;
 }
@@ -7127,4 +7130,60 @@ a.cov-chip:hover {
     gap: var(--s3);
     padding: var(--s4) 0;
   }
+}
+/* Intro lines under a section heading or at the top of a tab. */
+.section-hint {
+  margin: calc(-1 * var(--s2)) 0 var(--s3);
+  max-width: 80ch;
+}
+.tab-intro {
+  margin: 0 0 var(--s3);
+  max-width: 80ch;
+}
+.asset-health-help {
+  margin: var(--s2) 0 0;
+}
+/* The flex summary hides the disclosure marker; put one back so it looks clickable. */
+.asset-details > summary::before {
+  content: "▸";
+  color: var(--muted);
+}
+.asset-details[open] > summary::before {
+  content: "▾";
+}
+.good-to-know {
+  margin-bottom: var(--s3);
+}
+/* A lone button in a setting's control column keeps its own width. */
+.setting-row-control > .btn {
+  align-self: flex-start;
+}
+/* Number inputs side by side inside a setting row (RiskPolicy). */
+.form-grid-tight {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: var(--s3);
+}
+/* "How a priority is worked out" steps. */
+.steps-list {
+  margin: 0;
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--text-2);
+}
+/* The plain-words sentence under an SOS rule's name. */
+.rule-summary {
+  margin: 6px 0 10px;
+  color: var(--text-2);
+}
+.field-group-title {
+  margin-bottom: 0;
+}
+.field-group-desc {
+  margin-top: 0;
+}
+/* An option card that holds other controls, so it is a div, not a label. */
+.choice-card-static {
+  cursor: default;
 }

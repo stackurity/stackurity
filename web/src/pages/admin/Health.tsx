@@ -157,6 +157,7 @@ export function HealthPage() {
                 Status <Badge status={d.status} tone={STATUS_TONE[d.status]} label={STATUS_LABEL[d.status]} />
               </>
             }
+            description="Anything on this installation that has stopped working or fallen behind, with what to do about it."
           >
             {d.problems.length === 0 ? (
               <p className="muted">No problems found. Checked <RelativeTime iso={d.checked_at} />.</p>
@@ -177,7 +178,7 @@ export function HealthPage() {
               attempt), {deliveries("failed")} failed in the last 24 hours.
             </p>
           </Card>
-          <Card title="Background tasks">
+          <Card title="Background tasks" description="Work the server repeats on a schedule (feed updates, re-checks, summaries), and when each last ran.">
             {d.tasks.length === 0 ? (
               <EmptyState title="No background tasks are registered">Start a server: its worker registers them.</EmptyState>
             ) : (
@@ -185,7 +186,7 @@ export function HealthPage() {
             )}
           </Card>
           {d.recent_failures.length > 0 && (
-            <Card title="Jobs that failed in the last 24 hours">
+            <Card title="Jobs that failed in the last 24 hours" description="One-off background work that gave up after its retries. The error says why.">
               <Table columns={failureColumns} rows={d.recent_failures} rowKey={(j) => j.id} caption="Failed jobs" />
             </Card>
           )}

@@ -3,7 +3,7 @@ import { Link } from "react-router";
 import { api, type Conflict, type List } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { humanize } from "../../format";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime, CardFooter } from "../../components/ui";
 import { confirmAction } from "../../components/ConfirmDialog";
 
 export function ConflictsPage() {
@@ -74,6 +74,7 @@ function ConflictCard({ conflict, onResolved }: { conflict: Conflict; onResolved
           Conflict #{conflict.id} <span className="muted small">detected <RelativeTime iso={conflict.detected_at} /></span>
         </>
       }
+      description="These assets look like the same machine or app reported twice (they share an identifier). Pick the one to keep; the others are merged into it, with their history, projects and access."
     >
       {conflict.identifiers && conflict.identifiers.length > 0 && (
         <p className="small">
@@ -123,11 +124,11 @@ function ConflictCard({ conflict, onResolved }: { conflict: Conflict; onResolved
         </fieldset>
       )}
       <ErrorBox error={act.error} title="Could not resolve" />
-      <div className="form-actions">
+      <CardFooter status="Merging can't be undone. You'll be asked to type the kept asset's name to confirm.">
         <button type="button" className="btn btn-primary" disabled={target === null || act.pending} onClick={resolve}>
           Merge into selected asset
         </button>
-      </div>
+      </CardFooter>
     </Card>
   );
 }

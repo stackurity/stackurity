@@ -2,7 +2,7 @@ import { useState, type FormEvent } from "react";
 import { api, type CITrust, type CITrustList, type List, type Project } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { confirmAction } from "../../components/ConfirmDialog";
-import { CodeBlock, ErrorBox, Notice, RelativeTime } from "../../components/ui";
+import { CodeBlock, ErrorBox, FieldGroup, Notice, RelativeTime } from "../../components/ui";
 
 /*
  * Keyless CI scans (Integrations → CI pipeline): CI trusts, and
@@ -192,6 +192,7 @@ function TrustForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
   return (
     <form className="form card" onSubmit={submit} aria-label="Trust a repository">
       <ErrorBox error={act.error} title="Could not add the trust" />
+      <FieldGroup title="Which pipeline" description="The CI system and the repository allowed to send scans. It proves who it is with a short-lived token from the CI system, so no secret is stored.">
       <div className="form-grid">
         <div className="field">
           <label htmlFor="ci-provider">CI provider</label>
@@ -222,6 +223,10 @@ function TrustForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
           </label>
           {wildcard && <p className="hint">Any repository under the {owner} can then scan, each as its own asset. Prefer one trust per repository.</p>}
         </div>
+      </div>
+      </FieldGroup>
+      <FieldGroup title="Narrow it down (optional)" description="Accept scans only from a branch, deployment environment or workflow. Empty fields accept any.">
+      <div className="form-grid">
         <div className="field">
           <label htmlFor="ci-ref">Branch or ref (optional)</label>
           <input id="ci-ref" autoComplete="off" placeholder="main" value={ref} onChange={(e) => setRef(e.target.value)} />
@@ -241,6 +246,10 @@ function TrustForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
             onChange={(e) => setWorkflowRef(e.target.value)}
           />
         </div>
+      </div>
+      </FieldGroup>
+      <FieldGroup title="Where results go" description="Optional. Put the repository these scans create into a project.">
+      <div className="form-grid">
         <div className="field">
           <label htmlFor="ci-project">Project (optional)</label>
           <select id="ci-project" value={project} onChange={(e) => setProject(Number(e.target.value))}>
@@ -254,6 +263,7 @@ function TrustForm({ onCancel, onSaved }: { onCancel: () => void; onSaved: () =>
           <p className="hint">A repository these scans create is added to it.</p>
         </div>
       </div>
+      </FieldGroup>
       <div className="form-actions">
         <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || !repoOk}>
           Trust

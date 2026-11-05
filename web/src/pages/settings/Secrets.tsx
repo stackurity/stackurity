@@ -164,5 +164,11 @@ function SecretForm({ name, onCancel, onSaved }: { name?: string; onCancel: () =
       </div>
     </form>
   );
-  return name ? body : <Card title="Add secret">{body}</Card>;
+  return name ? (
+    body
+  ) : (
+    <Card title="Add secret" description="Save a token, password or webhook address once, then use it in integrations as secret:NAME. Nobody can read the value back.">
+      {body}
+    </Card>
+  );
 }

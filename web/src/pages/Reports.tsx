@@ -10,7 +10,7 @@ import { absTime, assetKindLabel, durationDays, humanize, plural } from "../form
 import { NOT_REMEDIATION_KINDS, RESOLUTION_KIND_LABEL } from "../resolution";
 import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { Card, ErrorBox, KeyValues, Loading, PageHeader } from "../components/ui";
+import { Card, ErrorBox, GoodToKnow, KeyValues, Loading, PageHeader } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
 
 function isoDate(d: Date): string {
@@ -130,11 +130,18 @@ function EvidenceReportPage() {
         </div>
         <p className="hint">The period can be one day to one year. Dates are UTC days.</p>
       </form>
-      <p className="hint">
-        Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated. “Remediated” counts
-        findings fixed in the period on the asset: an upgrade, a verified remediation, or removal of the component. Findings that closed with
-        nothing changed on the asset, such as an advisory withdrawn by its source, are listed apart and are not counted.
-      </p>
+      <GoodToKnow title="How this report is counted">
+        <ul>
+          <li>Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated.</li>
+          <li>
+            “Remediated” counts findings fixed in the period on the asset: an upgrade, a verified remediation, or removal of the component.
+          </li>
+          <li>
+            Findings that closed with nothing changed on the asset, such as an advisory withdrawn by its source, are listed apart and are not
+            counted.
+          </li>
+        </ul>
+      </GoodToKnow>
 
       <ErrorBox error={res.error} title="Could not build the report" />
       <TrialBanner trial={r?.trial} />
@@ -212,7 +219,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
   return (
     <>
       <div className="grid-2 report-grid">
-        <Card title="Coverage">
+        <Card title="Coverage" description="What was inventoried and how much of it could be checked, when the report was generated.">
           <KeyValues
             entries={[
               ["assets", n(r.assets.total)],
@@ -229,7 +236,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
             fully checked.
           </p>
         </Card>
-        <Card title="Open findings">
+        <Card title="Open findings" description="Issues still open when the report was generated.">
           <KeyValues
             entries={[
               ["open", n(r.open.total)],
@@ -241,7 +248,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
             ]}
           />
         </Card>
-        <Card title="Remediation">
+        <Card title="Remediation" description="Issues fixed during the period, and how fast.">
           <KeyValues
             entries={[
               ["remediated in period", n(r.resolved.total)],
@@ -296,7 +303,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
             )}
           </p>
         </Card>
-        <Card title="By priority">
+        <Card title="By priority" description="Open and overdue issues, and time to fix, for each priority from P1 (most urgent) to P4.">
           <div className="table-wrap">
             <table className="table">
               <caption className="sr-only">Open, overdue and time to resolve by priority</caption>
@@ -333,7 +340,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
 
       <section className="report-section">
         <h2 className="section-title">Active exceptions ({(exceptions.length + (r.trial?.omitted?.exceptions ?? 0)).toLocaleString()})</h2>
-        <p className="hint">Suppressed and risk-accepted findings, with the recorded reason, mitigation and expiry.</p>
+        <p className="hint section-hint">Suppressed and risk-accepted findings, with the recorded reason, mitigation and expiry.</p>
         {exceptions.length === 0 ? (
           <p className="muted">No active exceptions.</p>
         ) : (
@@ -344,8 +351,8 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
 
       <section className="report-section">
         <h2 className="section-title">Replica drift ({(drift.length + (r.trial?.omitted?.drift ?? 0)).toLocaleString()})</h2>
-        <p className="hint">
-          Version differences for each asset marked as a <span className="mono">replica_of</span> another. Behind and only on primary mean
+        <p className="hint section-hint">
+          Version differences for each asset marked as a copy (<span className="mono">replica_of</span>) of another. Behind and only on primary mean
           an update has not reached the replica.
         </p>
         {drift.length === 0 ? (

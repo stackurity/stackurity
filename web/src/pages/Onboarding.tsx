@@ -18,7 +18,7 @@ import { useAction, useLoad } from "../hooks";
 import { plural } from "../format";
 import { CheckApps, CheckDocker, InstallCommandTabs, installCommand, type ServerOS } from "./AddServer";
 import { InviteForm } from "../components/Invite";
-import { CodeBlock, ErrorBox, Loading, Notice } from "../components/ui";
+import { CardFooter, ChoiceCards, CodeBlock, ErrorBox, Loading, Notice, SettingRow } from "../components/ui";
 import { FirstCheckDone, FirstCheckProgress } from "../components/FirstCheck";
 import { countFixes, firstCheckNumbers, firstCheckPhase, SETUP_STEPS, type FirstCheckNumbers, type FirstCheckPhase, type SetupStep, type Source } from "../firstCheck";
 import {
@@ -859,73 +859,74 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
             Slack is connected. Choose what to send below, or later under <Link to={`/settings/integrations/channels/${backChannel}`}>Integrations</Link>.
           </Notice>
         )}
-        <fieldset className="field">
-          <legend>Where</legend>
-          <div className="onboard-toggle">
-            <label className="choice">
-              <input type="radio" name="ob-kind" checked={kind === "slack"} onChange={() => setKind("slack")} /> <span>Slack</span>
-            </label>
-            <label className="choice">
-              <input type="radio" name="ob-kind" checked={kind === "email"} onChange={() => setKind("email")} /> <span>Email</span>
-            </label>
-          </div>
-        </fieldset>
-        {kind === "slack" && useApp && (
-          <p className="hint">Slack asks you to pick a channel, then brings you back here. Buttons in the messages (Assign to me, Snooze) work inside Slack.</p>
-        )}
-        {kind === "slack" && !useApp && (
-          <div className="field">
-            <label htmlFor="ob-webhook">Slack incoming webhook URL</label>
-            <input id="ob-webhook" type="url" required pattern="https://.*" value={webhook} onChange={(e) => setWebhook(e.target.value)} placeholder="https://hooks.slack.com/services/..." autoComplete="off" />
-            <p className="hint">
-              In Slack: Apps, Incoming Webhooks, Add to Slack, pick the channel. It is stored encrypted, as a secret.
+        <SettingRow title="Where" description="Pick one place now. You can add more, such as Teams, Jira or a webhook, later under Integrations.">
+          <ChoiceCards
+            name="ob-kind"
+            legend="Where"
+            columns={2}
+            value={kind}
+            onChange={setKind}
+            options={[
+              { value: "slack", label: "Slack", description: "Messages in a Slack channel, with Assign to me and Snooze buttons." },
+              { value: "email", label: "Email", description: "Emails to the people or addresses you choose." },
+            ]}
+          />
+          {kind === "slack" && useApp && (
+            <p className="hint">Slack asks you to pick a channel, then brings you back here. Buttons in the messages (Assign to me, Snooze) work inside Slack.</p>
+          )}
+          {kind === "slack" && !useApp && (
+            <div className="field">
+              <label htmlFor="ob-webhook">Slack incoming webhook URL</label>
+              <input id="ob-webhook" type="url" required pattern="https://.*" value={webhook} onChange={(e) => setWebhook(e.target.value)} placeholder="https://hooks.slack.com/services/..." autoComplete="off" />
+              <p className="hint">
+                In Slack: Apps, Incoming Webhooks, Add to Slack, pick the channel. It is stored encrypted, as a secret.
+              </p>
+            </div>
+          )}
+          {kind === "slack" && opts.slack_app && (
+            <p className="small">
+              <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
+                {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
+              </button>
             </p>
-          </div>
-        )}
-        {kind === "slack" && opts.slack_app && (
-          <p className="small">
-            <button type="button" className="btn btn-link btn-inline" onClick={() => setSlackWebhook(!slackWebhook)} aria-expanded={slackWebhook}>
-              {slackWebhook ? "Use Add to Slack instead" : "Advanced: use a webhook"}
-            </button>
-          </p>
-        )}
-        {kind === "email" && platformEmail && (
-          <div className="form-grid">
-            <ErrorBox error={members.error} title="Could not load members" />
-            <StackurityEmailFields
-              idp="ob"
-              options={opts}
-              members={members.data?.items}
-              userIds={ids}
-              setUserIds={setUserIds}
-              others={others}
-              setOthers={setOthers}
-            />
-          </div>
-        )}
-        {kind === "email" && !platformEmail && smtpFields}
-        {kind === "email" && opts.platform_email.enabled && (
-          <p className="small">
-            <button type="button" className="btn btn-link btn-inline" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
-              {ownSmtp ? "Let Stackurity send the email" : "Advanced: use your own mail server"}
-            </button>
-          </p>
-        )}
-        <RouteQuestions
-          idp="ob"
-          now={now}
-          summary={summary}
-          onChange={(a, b) => {
-            setNow(a);
-            setSummary(b);
-          }}
-          time={NOTIFY_TIME}
-          day={NOTIFY_DAY}
-          timezone={tz}
-        />
-        <p className="small muted">
-          You can fine-tune this in <Link to="/integrations">Integrations</Link>.
-        </p>
+          )}
+          {kind === "email" && platformEmail && (
+            <div className="form-grid">
+              <ErrorBox error={members.error} title="Could not load members" />
+              <StackurityEmailFields
+                idp="ob"
+                options={opts}
+                members={members.data?.items}
+                userIds={ids}
+                setUserIds={setUserIds}
+                others={others}
+                setOthers={setOthers}
+              />
+            </div>
+          )}
+          {kind === "email" && !platformEmail && smtpFields}
+          {kind === "email" && opts.platform_email.enabled && (
+            <p className="small">
+              <button type="button" className="btn btn-link btn-inline" onClick={() => setOwnSmtp(!ownSmtp)} aria-expanded={ownSmtp}>
+                {ownSmtp ? "Let Stackurity send the email" : "Advanced: use your own mail server"}
+              </button>
+            </p>
+          )}
+        </SettingRow>
+        <SettingRow title="What to send" description="Alerts as new issues appear, and a regular summary of what is open. Most teams start with urgent issues only.">
+          <RouteQuestions
+            idp="ob"
+            now={now}
+            summary={summary}
+            onChange={(a, b) => {
+              setNow(a);
+              setSummary(b);
+            }}
+            time={NOTIFY_TIME}
+            day={NOTIFY_DAY}
+            timezone={tz}
+          />
+        </SettingRow>
         {needsSecret && !opts.secrets && !noKey && (
           <Notice kind="warn">
             This server may not be able to store secrets (STACKURITY_SECRET_KEY is not set). If saving fails, ask whoever runs it to set it.
@@ -939,7 +940,16 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
         ) : (
           <ErrorBox error={act.error} title="Could not turn on notifications" />
         )}
-        <div className="form-actions">
+        <CardFooter
+          status={
+            <>
+              You can fine-tune this in <Link to="/integrations">Integrations</Link>.
+            </>
+          }
+        >
+          <button type="button" className="btn" onClick={onNext}>
+            Not now
+          </button>
           {useApp ? (
             <AddToSlackButton returnTo="/get-started?step=notify" beforeRedirect={rememberForSlack} disabled={!choice} />
           ) : (
@@ -947,10 +957,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
               Turn on
             </button>
           )}
-          <button type="button" className="btn" onClick={onNext}>
-            Not now
-          </button>
-        </div>
+        </CardFooter>
       </form>
     </StepCard>
   );
@@ -961,7 +968,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
 function InviteStep({ project, onFinish, pending }: { project: Project; onFinish: () => void; pending: boolean }) {
   return (
     <StepCard>
-      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or Settings, Users.</p>
+      <p>People you invite see {project.name} with the permission you choose, unless you give them more. You can invite more people later from the project's page or People, Users.</p>
       <InviteForm projectId={project.id} projectName={project.name} />
       <div className="form-actions onboard-finish">
         <button type="button" className="btn btn-primary" onClick={onFinish} disabled={pending}>

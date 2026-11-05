@@ -84,7 +84,7 @@ function DecisionPanel({
 
   if (plan.status === "proposed") {
     return (
-      <Card title="Approval">
+      <Card title="Approval" description="Nothing changes on your assets until someone approves this plan.">
         <form className="form form-compact" onSubmit={submit}>
           <p className="hint">
             Approving releases this change to {assets.length} asset{assets.length === 1 ? "" : "s"} ({envs.join(", ")}) within the policy
@@ -120,7 +120,7 @@ function DecisionPanel({
   }
   if (plan.status === "approved" || plan.status === "in_progress") {
     return (
-      <Card title="Stop this plan">
+      <Card title="Stop this plan" description="Cancelling stops the rollout: nothing more is sent. Changes already on a host finish and are verified.">
         <form className="form form-compact" onSubmit={submit}>
           <div className="field">
             <label htmlFor="dec-note">Reason</label>
@@ -269,12 +269,12 @@ export function PlanDetailPage() {
         <Notice kind="warn">This is a major upgrade: it can break compatibility and needs an administrator's approval.</Notice>
       )}
       <div className="grid-2">
-        <Card title="Plan">
+        <Card title="Plan" description="The upgrade this plan makes, where, and under which policy.">
           <KeyValues entries={entries} />
         </Card>
         <div>
           {can("security") && <DecisionPanel data={res.data} policy={policy} onDone={res.reload} />}
-          <Card title={`Findings fixed (${keys.length})`}>
+          <Card title={`Findings fixed (${keys.length})`} description="The issues that close once this upgrade is applied and a new report confirms it.">
             {keys.length === 0 ? (
               <p className="muted">No findings listed.</p>
             ) : (
@@ -293,6 +293,7 @@ export function PlanDetailPage() {
       </div>
       {plan.target === "repository" && <RenovateHelp plan={plan} assetId={actions[0]?.asset_id} />}
       <h2 className="section-title">Actions ({actions.length})</h2>
+      <p className="hint section-hint">Each change on an asset, in rollout order, with its result.</p>
       {actions.length === 0 ? <p className="muted">No actions.</p> : <ActionsTable actions={actions} />}
     </>
   );

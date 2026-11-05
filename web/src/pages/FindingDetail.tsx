@@ -296,7 +296,7 @@ export function FindingDetailPage() {
       <Provenance f={f} matched={matched} />
 
       <div className="grid-2">
-        <Card title="Affected">
+        <Card title="Affected" description="Where this issue was found, the version installed there and the version that fixes it.">
           <KeyValues
             entries={[
               ["component", <Link to={`/components/${f.component_id}`}>{f.component_name}</Link>],
@@ -314,8 +314,7 @@ export function FindingDetailPage() {
             ]}
           />
         </Card>
-        <Card title="Evidence">
-          <p className="hint">Why Stackurity believes this component is affected.</p>
+        <Card title="Evidence" description="Why Stackurity believes this component is affected.">
           <KeyValues entries={evidenceEntries(ev)} />
         </Card>
       </div>

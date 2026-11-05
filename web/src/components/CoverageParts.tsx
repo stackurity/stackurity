@@ -98,10 +98,12 @@ export function KindIcon({ kind }: { kind: string }) {
 }
 
 /** A section with an icon, a heading and optional actions on the right. */
-export function Section({ id, icon, title, aside, children, className }: {
+export function Section({ id, icon, title, description, aside, children, className }: {
   id: string;
   icon: ReactNode;
   title: string;
+  /** What this section shows and what to do with it, under the title. */
+  description?: ReactNode;
   aside?: ReactNode;
   children: ReactNode;
   className?: string;
@@ -115,6 +117,7 @@ export function Section({ id, icon, title, aside, children, className }: {
         <h2 id={id}>{title}</h2>
         {aside && <div className="cov-section-aside">{aside}</div>}
       </div>
+      {description && <p className="hint section-hint">{description}</p>}
       {children}
     </section>
   );

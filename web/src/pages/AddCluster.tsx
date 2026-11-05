@@ -3,7 +3,20 @@ import { Link } from "react-router";
 import { api, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
-import { Card, Code, CodeBlock, ErrorBox, KeyValues, Notice, PageHeader, RelativeTime, Tabs } from "../components/ui";
+import {
+  Card,
+  CardFooter,
+  ChoiceCards,
+  Code,
+  CodeBlock,
+  ErrorBox,
+  KeyValues,
+  Notice,
+  PageHeader,
+  RelativeTime,
+  SettingRow,
+  Tabs,
+} from "../components/ui";
 import { clusterCommands, parseNamespaces, validClusterName } from "../kubernetesInstall";
 
 /**
@@ -57,7 +70,7 @@ function ClusterCommands({
   });
   const e = enrollment.enrollment;
   return (
-    <Card title="Install command">
+    <Card title="Install command" description="Run one of these where you have kubectl access to the cluster.">
       <div className="form">
         <Notice kind="warn">
           <strong>Copy a command now.</strong> The code in it is shown only once and can be used once. If it is lost, revoke it under{" "}
@@ -161,13 +174,15 @@ function CreateClusterCode({ onCreated }: { onCreated: (e: EnrollmentCreated, cl
   };
 
   return (
-    <Card title="New cluster">
+    <Card title="New cluster" description="Name the cluster and choose what the reporter may read. You get the install command on the next step.">
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create the install command" />
         {problem && <Notice kind="warn">{problem}</Notice>}
-        <div className="form-grid">
+        <SettingRow title="Cluster name" description="How the cluster appears under Assets. Its workloads are named after it, for example prod-eu/shop/web.">
           <div className="field">
-            <label htmlFor="k8s-name">Cluster name</label>
+            <label className="sr-only" htmlFor="k8s-name">
+              Cluster name
+            </label>
             <input
               id="k8s-name"
               required
@@ -178,10 +193,13 @@ function CreateClusterCode({ onCreated }: { onCreated: (e: EnrollmentCreated, cl
               value={cluster}
               onChange={(e) => setCluster(e.target.value)}
             />
-            <p className="hint">The cluster asset's name, and the prefix of its workloads' names.</p>
           </div>
+        </SettingRow>
+        <SettingRow title="Environment" description="Optional. Issues in production are ranked higher, so name it production if it is.">
           <div className="field">
-            <label htmlFor="k8s-env">Environment</label>
+            <label className="sr-only" htmlFor="k8s-env">
+              Environment
+            </label>
             <input
               id="k8s-env"
               maxLength={64}
@@ -191,34 +209,40 @@ function CreateClusterCode({ onCreated }: { onCreated: (e: EnrollmentCreated, cl
               value={environment}
               onChange={(e) => setEnvironment(e.target.value)}
             />
-            <p className="hint">Optional. Production counts towards priority.</p>
           </div>
-          <fieldset className="field field-span">
-            <legend>Read</legend>
-            <label className="check">
-              <input type="radio" name="k8s-scope" checked={scope === "all"} onChange={() => setScope("all")} /> The whole cluster (read-only)
-            </label>
-            <label className="check">
-              <input type="radio" name="k8s-scope" checked={scope === "some"} onChange={() => setScope("some")} /> Only some namespaces
-            </label>
-            {scope === "some" && (
-              <>
-                <label htmlFor="k8s-ns" className="sr-only">
-                  Namespaces
-                </label>
-                <input id="k8s-ns" className="mono" placeholder="shop, payments" value={nsText} onChange={(e) => setNsText(e.target.value)} />
-                <p className="hint">
-                  For teams that cannot grant cluster-wide read. Nodes and other namespaces are then shown as not assessed.
-                </p>
-              </>
-            )}
-          </fieldset>
-        </div>
-        <div className="form-actions">
+        </SettingRow>
+        <SettingRow title="Read" description="What the reporter is allowed to read. It never reads Secrets or ConfigMaps, and never changes anything.">
+          <ChoiceCards
+            name="k8s-scope"
+            legend="Read"
+            value={scope}
+            onChange={setScope}
+            options={[
+              {
+                value: "all",
+                label: "The whole cluster (read-only)",
+                description: "Every namespace and the nodes. Needs permission to grant cluster-wide read.",
+              },
+              {
+                value: "some",
+                label: "Only some namespaces",
+                description: "For teams that cannot grant cluster-wide read. Nodes and other namespaces are then shown as not assessed.",
+              },
+            ]}
+          />
+          {scope === "some" && (
+            <div className="field">
+              <label htmlFor="k8s-ns">Namespaces</label>
+              <input id="k8s-ns" className="mono" placeholder="shop, payments" value={nsText} onChange={(e) => setNsText(e.target.value)} />
+              <p className="hint">Separated by commas or spaces.</p>
+            </div>
+          )}
+        </SettingRow>
+        <CardFooter status="The code in the command can be used once, within 24 hours.">
           <button type="submit" className="btn btn-primary" disabled={act.pending}>
             Create install command
           </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

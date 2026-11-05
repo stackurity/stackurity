@@ -6,7 +6,7 @@ import { plural } from "../../format";
 import { AssetSelect } from "../../components/AssetPicker";
 import { stackLayerLabel } from "../../components/Stack";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, EmptyState, ErrorBox, GoodToKnow, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { OWNER_RULES_EMPTY } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { NoTeamsHint } from "../../components/Teams";
@@ -92,7 +92,7 @@ export function OwnersPage() {
       <PageHeader
         help="owner-rules"
         title="Owner rules"
-        sub="Who new issues are assigned to. The most specific rule that matches an issue assigns it: an asset's stack, then the asset, a project's stack, the project, a part of every stack, then the organisation default. Issues a person assigned are never changed."
+        sub="Who new issues are assigned to, so each one lands with the person or team that can fix it. Issues a person assigned by hand are never changed."
         actions={
           <>
             <button type="button" className="btn" onClick={() => void preview()} disabled={act.pending}>
@@ -116,8 +116,7 @@ export function OwnersPage() {
         />
       )}
       {plan && (
-        <Card>
-          <h2 className="card-title">Apply the rules to open issues</h2>
+        <Card title="Apply the rules to open issues" description="A preview: nothing moves until you confirm.">
           {plan.total === 0 ? (
             <p>Every open issue is already with the owner the rules name. Nothing to move.</p>
           ) : (
@@ -143,16 +142,16 @@ export function OwnersPage() {
               </ul>
             </>
           )}
-          <div className="row-actions">
+          <CardFooter>
+            <button type="button" className="btn" onClick={() => setPlan(null)}>
+              Close
+            </button>
             {plan.total > 0 && (
               <button type="button" className="btn btn-primary" onClick={() => void apply()} disabled={act.pending}>
                 Move {plural(plan.total, "issue")}
               </button>
             )}
-            <button type="button" className="btn btn-link" onClick={() => setPlan(null)}>
-              Close
-            </button>
-          </div>
+          </CardFooter>
         </Card>
       )}
       <ErrorBox error={rules.error} title="Could not load owner rules" />
@@ -182,6 +181,14 @@ export function OwnersPage() {
             />
           )}
         />
+      )}
+      {rules.data && rules.data.items.length > 0 && (
+        <GoodToKnow title="Which rule wins">
+          <p>
+            When several rules match an issue, the most specific one assigns it: a rule for part of an asset&apos;s stack, then the asset, part of a
+            project&apos;s stack, the project, part of every stack, and last the organisation default (the Level column).
+          </p>
+        </GoodToKnow>
       )}
     </>
   );
@@ -223,106 +230,116 @@ function RuleForm({ rule, onSaved, onCancel }: { rule?: OwnerRule; onSaved: () =
   const people = (users.data?.items ?? []).filter((u) => u.role || u.access === "projects");
 
   return (
-    <Card>
+    <Card
+      title={rule ? "Edit owner rule" : "New owner rule"}
+      description="Which issues this rule covers, and who gets them. New issues get their owner within a minute."
+    >
       <form className="form" onSubmit={(e) => void submit(e)}>
-        <h2 className="card-title">{rule ? "Edit owner rule" : "New owner rule"}</h2>
         <ErrorBox error={act.error} title="Could not save the rule" />
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor={`${p}-scope`}>Where</label>
-            <select id={`${p}-scope`} value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
-              <option value="organisation">Every asset</option>
-              <option value="project">One project</option>
-              <option value="asset">One asset</option>
-            </select>
-          </div>
-          {scope === "project" && (
+        <SettingRow title="Where" description="Every asset, the assets of one project, or a single asset.">
+          <div className="form-grid">
             <div className="field">
-              <label htmlFor={`${p}-project`}>Project</label>
-              <select id={`${p}-project`} value={projectId} onChange={(e) => setProjectId(e.target.value)} required>
-                <option value="">Choose a project</option>
-                {projects.data?.items.map((x) => (
-                  <option key={x.id} value={String(x.id)}>
-                    {x.name}
+              <label htmlFor={`${p}-scope`}>Where</label>
+              <select id={`${p}-scope`} value={scope} onChange={(e) => setScope(e.target.value as Scope)}>
+                <option value="organisation">Every asset</option>
+                <option value="project">One project</option>
+                <option value="asset">One asset</option>
+              </select>
+            </div>
+            {scope === "project" && (
+              <div className="field">
+                <label htmlFor={`${p}-project`}>Project</label>
+                <select id={`${p}-project`} value={projectId} onChange={(e) => setProjectId(e.target.value)} required>
+                  <option value="">Choose a project</option>
+                  {projects.data?.items.map((x) => (
+                    <option key={x.id} value={String(x.id)}>
+                      {x.name}
+                    </option>
+                  ))}
+                </select>
+                {projects.data && projects.data.items.length === 0 && (
+                  <p className="hint">
+                    No projects yet. <Link to="/projects">Create one</Link>.
+                  </p>
+                )}
+              </div>
+            )}
+            {scope === "asset" && (
+              <div className="field">
+                <label htmlFor={`${p}-asset`}>Asset</label>
+                <AssetSelect id={`${p}-asset`} value={assetId} onChange={setAssetId} assets={assets.data?.items} allLabel="Choose an asset" />
+              </div>
+            )}
+          </div>
+        </SettingRow>
+        <SettingRow
+          title="Which part of the stack (optional)"
+          description="Narrow the rule to one layer, such as the operating system or the web server, or to packages by name. Leave both empty for everything."
+        >
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor={`${p}-layer`}>Part of the stack</label>
+              <select id={`${p}-layer`} value={layer} onChange={(e) => setLayer(e.target.value)}>
+                <option value="">Any layer</option>
+                {STACK_LAYERS.map((l) => (
+                  <option key={l} value={l}>
+                    {stackLayerLabel(l)}
                   </option>
                 ))}
               </select>
-              {projects.data && projects.data.items.length === 0 && (
-                <p className="hint">
-                  No projects yet. <Link to="/projects">Create one</Link>.
-                </p>
-              )}
             </div>
-          )}
-          {scope === "asset" && (
             <div className="field">
-              <label htmlFor={`${p}-asset`}>Asset</label>
-              <AssetSelect id={`${p}-asset`} value={assetId} onChange={setAssetId} assets={assets.data?.items} allLabel="Choose an asset" />
+              <label htmlFor={`${p}-component`}>Package name</label>
+              <input
+                id={`${p}-component`}
+                maxLength={200}
+                value={component}
+                onChange={(e) => setComponent(e.target.value)}
+                placeholder="Any package, or e.g. openssl, linux*, wordpress"
+              />
             </div>
-          )}
-          <div className="field">
-            <label htmlFor={`${p}-layer`}>Part of the stack</label>
-            <select id={`${p}-layer`} value={layer} onChange={(e) => setLayer(e.target.value)}>
-              <option value="">Any layer</option>
-              {STACK_LAYERS.map((l) => (
-                <option key={l} value={l}>
-                  {stackLayerLabel(l)}
-                </option>
-              ))}
-            </select>
           </div>
-          <div className="field">
-            <label htmlFor={`${p}-component`}>Package name</label>
-            <input
-              id={`${p}-component`}
-              maxLength={200}
-              value={component}
-              onChange={(e) => setComponent(e.target.value)}
-              placeholder="Any package, or e.g. openssl, linux*, wordpress"
-            />
+          <p className="hint">Package names match the whole name, ignoring case; * matches anything.</p>
+        </SettingRow>
+        <SettingRow title="Who" description="The person, the team, or both, that matching issues are assigned to. Choose at least one.">
+          <div className="form-grid">
+            <div className="field">
+              <label htmlFor={`${p}-user`}>Person</label>
+              <select id={`${p}-user`} value={userId} onChange={(e) => setUserId(e.target.value)}>
+                <option value="">No one in particular</option>
+                {people.map((u) => (
+                  <option key={u.id} value={String(u.id)}>
+                    {u.name ? `${u.name} (${u.email})` : u.email}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor={`${p}-team`}>Team</label>
+              <select id={`${p}-team`} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
+                <option value="">No team</option>
+                {teams.data?.items.map((t) => (
+                  <option key={t.id} value={String(t.id)}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              {teams.data && teams.data.items.length === 0 && <NoTeamsHint what="assign issues to a team" />}
+            </div>
+            <div className="field">
+              <label htmlFor={`${p}-note`}>Note (optional)</label>
+              <input id={`${p}-note`} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why this owner" />
+            </div>
           </div>
-        </div>
-        <div className="form-grid">
-          <div className="field">
-            <label htmlFor={`${p}-user`}>Person</label>
-            <select id={`${p}-user`} value={userId} onChange={(e) => setUserId(e.target.value)}>
-              <option value="">No one in particular</option>
-              {people.map((u) => (
-                <option key={u.id} value={String(u.id)}>
-                  {u.name ? `${u.name} (${u.email})` : u.email}
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="field">
-            <label htmlFor={`${p}-team`}>Team</label>
-            <select id={`${p}-team`} value={teamId} onChange={(e) => setTeamId(e.target.value)}>
-              <option value="">No team</option>
-              {teams.data?.items.map((t) => (
-                <option key={t.id} value={String(t.id)}>
-                  {t.name}
-                </option>
-              ))}
-            </select>
-            {teams.data && teams.data.items.length === 0 && <NoTeamsHint what="assign issues to a team" />}
-          </div>
-          <div className="field">
-            <label htmlFor={`${p}-note`}>Note (optional)</label>
-            <input id={`${p}-note`} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Why this owner" />
-          </div>
-        </div>
-        <p className="hint">
-          Package names match the whole name, ignoring case; * matches anything. New issues get their owner within a minute. Issues a rule already assigned move only when you
-          apply the rules.
-        </p>
-        <div className="row-actions">
+        </SettingRow>
+        <CardFooter status="Issues a rule already assigned move only when you apply the rules (Apply to open issues).">
+          <button type="button" className="btn" onClick={onCancel}>
+            Cancel
+          </button>
           <button type="submit" className="btn btn-primary" disabled={act.pending || missingScope || (!userId && !teamId)}>
             {rule ? "Save rule" : "Add rule"}
           </button>
-          <button type="button" className="btn btn-link" onClick={onCancel}>
-            Cancel
-          </button>
-        </div>
+        </CardFooter>
       </form>
     </Card>
   );

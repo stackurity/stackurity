@@ -79,7 +79,7 @@ export function ClientErrorsCard() {
   const res = useLoad(() => api.get<ClientErrors>("/admin/client-errors"), []);
   const d = res.data;
   return (
-    <Card title="Errors people hit">
+    <Card title="Errors people hit" description="Error messages the dashboard showed people, grouped by page and cause, so you can spot what is broken for them. Only the page, the request and the error code are kept, never the data on screen.">
       <ErrorBox error={res.error} title="Could not load error reports" />
       {!d && !res.error && <Loading />}
       {d && !d.enabled && (

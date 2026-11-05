@@ -42,45 +42,39 @@ export function AccessPicker({
       {!specificOnly && (
         <fieldset className="field access-scope">
           <legend>What can they see? (required)</legend>
-          <ul className="choice-list">
-            <li>
-              <label className="choice">
-                <input type="radio" name={`${idp}-scope`} value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
-                <span>
-                  <strong>All projects and assets</strong>
-                  <span className="hint"> Everything in this workspace, including what is added later, with one permission.</span>
-                </span>
-              </label>
-            </li>
-            <li>
-              <label className="choice">
-                <input type="radio" name={`${idp}-scope`} value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
-                <span>
-                  <strong>Specific projects or assets</strong>
-                  <span className="hint"> Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
-                </span>
-              </label>
-            </li>
-          </ul>
+          <div className="choice-cards choice-cards-2">
+            <label className="choice-card">
+              <input type="radio" name={`${idp}-scope`} value="all" checked={f.scope === "all"} onChange={() => dispatch({ type: "scope", scope: "all" })} />
+              <span className="choice-card-text">
+                <span className="choice-card-label">All projects and assets</span>
+                <span className="choice-card-desc">Everything in this workspace, including what is added later, with one permission.</span>
+              </span>
+            </label>
+            <label className="choice-card">
+              <input type="radio" name={`${idp}-scope`} value="specific" checked={f.scope === "specific"} onChange={() => dispatch({ type: "scope", scope: "specific" })} />
+              <span className="choice-card-text">
+                <span className="choice-card-label">Specific projects or assets</span>
+                <span className="choice-card-desc">Only what you choose below. Workspace pages (users, integrations, notifications) are not shown to them.</span>
+              </span>
+            </label>
+          </div>
         </fieldset>
       )}
 
       {f.scope === "all" && !specificOnly && (
         <fieldset className="field">
           <legend>Permission on all projects and assets</legend>
-          <ul className="choice-list">
+          <div className="choice-cards">
             {PERMISSIONS.map((p) => (
-              <li key={p.role}>
-                <label className="choice">
-                  <input type="radio" name={`${idp}-all-role`} value={p.role} checked={f.allRole === p.role} onChange={() => dispatch({ type: "allRole", role: p.role })} />
-                  <span>
-                    <strong>{p.label}</strong>
-                    <span className="hint"> {p.short}</span>
-                  </span>
-                </label>
-              </li>
+              <label key={p.role} className="choice-card">
+                <input type="radio" name={`${idp}-all-role`} value={p.role} checked={f.allRole === p.role} onChange={() => dispatch({ type: "allRole", role: p.role })} />
+                <span className="choice-card-text">
+                  <span className="choice-card-label">{p.label}</span>
+                  <span className="choice-card-desc">{p.short}</span>
+                </span>
+              </label>
             ))}
-          </ul>
+          </div>
         </fieldset>
       )}
 
@@ -125,23 +119,21 @@ function TeamPicker({ idp, f, dispatch, teams }: { idp: string; f: AddUserState;
     <fieldset className="field access-teams">
       <legend>Add to teams (optional)</legend>
       <p className="hint">Members see what the team can see, for as long as they are in it. The team that owns an asset gets its alerts; owning gives no access.</p>
-      <ul className="choice-list">
+      <div className="choice-cards">
         {list.map((t) => {
           const sees = accessLines(t.access);
           return (
-            <li key={t.id}>
-              <label className="choice" htmlFor={`${idp}-team-${t.id}`}>
-                <input id={`${idp}-team-${t.id}`} type="checkbox" checked={f.teams.includes(t.id)}
-                  onChange={(e) => dispatch({ type: "toggleTeam", teamId: t.id, checked: e.target.checked })} />
-                <span>
-                  <strong>{t.name}</strong>
-                  <span className="hint"> {sees.length ? `Can see: ${sees.join("; ")}` : "Can see nothing yet (give it access under People, Teams)."}</span>
-                </span>
-              </label>
-            </li>
+            <label key={t.id} className="choice-card" htmlFor={`${idp}-team-${t.id}`}>
+              <input id={`${idp}-team-${t.id}`} type="checkbox" checked={f.teams.includes(t.id)}
+                onChange={(e) => dispatch({ type: "toggleTeam", teamId: t.id, checked: e.target.checked })} />
+              <span className="choice-card-text">
+                <span className="choice-card-label">{t.name}</span>
+                <span className="choice-card-desc">{sees.length ? `Can see: ${sees.join("; ")}` : "Can see nothing yet (give it access under People, Teams)."}</span>
+              </span>
+            </label>
           );
         })}
-      </ul>
+      </div>
     </fieldset>
   );
 }
@@ -171,26 +163,22 @@ function ProjectAccess({ idp, pick, name, dispatch }: { idp: string; pick: Proje
   return (
     <fieldset className="access-project">
       <legend>{name}</legend>
-      <ul className="choice-list">
-        <li>
-          <label className="choice">
-            <input type="radio" name={`${idp}-mode-${id}`} value="project" checked={pick.mode === "project"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "project" })} />
-            <span>
-              <strong>All assets in this project</strong>
-              <span className="hint"> One permission, which also covers assets added to the project later.</span>
-            </span>
-          </label>
-        </li>
-        <li>
-          <label className="choice">
-            <input type="radio" name={`${idp}-mode-${id}`} value="assets" checked={pick.mode === "assets"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "assets" })} />
-            <span>
-              <strong>Chosen assets</strong>
-              <span className="hint"> Tick each asset and give it its own permission. Assets added later are not included.</span>
-            </span>
-          </label>
-        </li>
-      </ul>
+      <div className="choice-cards choice-cards-2">
+        <label className="choice-card">
+          <input type="radio" name={`${idp}-mode-${id}`} value="project" checked={pick.mode === "project"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "project" })} />
+          <span className="choice-card-text">
+            <span className="choice-card-label">All assets in this project</span>
+            <span className="choice-card-desc">One permission, which also covers assets added to the project later.</span>
+          </span>
+        </label>
+        <label className="choice-card">
+          <input type="radio" name={`${idp}-mode-${id}`} value="assets" checked={pick.mode === "assets"} onChange={() => dispatch({ type: "projectMode", projectId: id, mode: "assets" })} />
+          <span className="choice-card-text">
+            <span className="choice-card-label">Chosen assets</span>
+            <span className="choice-card-desc">Tick each asset and give it its own permission. Assets added later are not included.</span>
+          </span>
+        </label>
+      </div>
       {pick.mode === "project" && (
         <div className="field">
           <RoleSelect id={`${idp}-prole-${id}`} label={`Permission on ${name}`} value={pick.role} onChange={(role) => dispatch({ type: "projectRole", projectId: id, role })} />

@@ -69,7 +69,7 @@ function SystemDetail({ inc }: { inc: Incident }) {
     });
   const assetId = typeof d.asset_id === "number" ? d.asset_id : null;
   return (
-    <Card title="Problem">
+    <Card title="Problem" description="What Stackurity itself could not do, and how to put it right.">
       <KeyValues entries={entries} />
       <p>
         {inc.kind === "feed" && (
@@ -134,6 +134,7 @@ function Deliveries({ items, onRetried }: { items: Delivery[]; onRetried: () => 
       <h2 className="section-title" id="dl-title">
         Notifications sent
       </h2>
+      <p className="hint section-hint">Who was told about this incident, through which integration, and whether it arrived.</p>
       <ErrorBox error={act.error} title="Retry failed" />
       {items.length === 0 ? (
         <p className="muted">
@@ -210,7 +211,7 @@ export function IncidentDetailPage() {
       )}
 
       <div className="grid-2">
-        <Card title="Summary">
+        <Card title="Summary" description="Who owns this incident, when it opened and what it covers.">
           <KeyValues
             entries={[
               ["owner team", inc.owner_team || <span className="muted">unowned (no team on the assets)</span>],
@@ -245,7 +246,10 @@ export function IncidentDetailPage() {
           <div>
             {inc.status === "open" && <Recommended inc={inc} />}
             {canAct("engineer") && openFindings.length > 0 && (
-              <Card title={`Act on all ${openFindings.length} open finding${openFindings.length === 1 ? "" : "s"}`}>
+              <Card
+                title={`Act on all ${openFindings.length} open finding${openFindings.length === 1 ? "" : "s"}`}
+                description="Assign, comment on, snooze or ignore every open finding in this incident at once."
+              >
                 <FindingActions target={{ type: "incident", id: inc.id }} onDone={res.reload} />
               </Card>
             )}
@@ -258,6 +262,7 @@ export function IncidentDetailPage() {
           <h2 className="section-title" id="if-title">
             Findings ({findings.length})
           </h2>
+          <p className="hint section-hint">The issues grouped into this incident: the same vulnerability on assets owned by the same team.</p>
           {findings.length > 0 && <OwnerSplit owners={countOwners(findings)} />}
           {findings.length === 0 ? <p className="muted">No findings are linked to this incident.</p> : <FindingsTable rows={findings} />}
         </section>

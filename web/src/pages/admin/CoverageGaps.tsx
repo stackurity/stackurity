@@ -69,8 +69,7 @@ function GapCard({
   components?: boolean;
 }) {
   return (
-    <Card title={title}>
-      <p className="small muted">{about}</p>
+    <Card title={title} description={about}>
       {rows.length === 0 ? (
         <EmptyState title={empty} />
       ) : (
@@ -134,10 +133,10 @@ export function CoverageGapsPage() {
               What is and is not covered
             </a>
           </p>
-          <Card title="Support requested">
-            <p className="small muted">
-              Ecosystems workspaces asked Stackurity to support from their Coverage page, counted in workspaces: a roadmap signal.
-            </p>
+          <Card
+            title="Support requested"
+            description="Ecosystems workspaces asked Stackurity to support from their Coverage page, counted in workspaces: a roadmap signal."
+          >
             {(d.support_requests ?? []).length === 0 ? (
               <EmptyState title="No requests yet" />
             ) : (

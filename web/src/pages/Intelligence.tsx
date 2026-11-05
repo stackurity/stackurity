@@ -7,7 +7,7 @@ import { displayPurl, minutesLabel } from "../format";
 import { Badge, type Tone } from "../components/Badge";
 import { ROW_COVERAGE_LABELS } from "../components/Coverage";
 import { Table, type Column } from "../components/Table";
-import { Card, EmptyState, ErrorBox, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, GoodToKnow, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 
 function feedStatus(f: Feed): { label: string; tone: Tone; title: string } {
@@ -158,6 +158,10 @@ export function IntelligencePage() {
       <ErrorBox error={toggle.error} title="Could not update feed" />
 
       <h2 className="section-title">Feeds</h2>
+      <p className="hint section-hint">
+        Where Stackurity learns about vulnerabilities, new releases and end-of-life dates. A feed that is off or failing means issues can be
+        missed.
+      </p>
       {problemFeeds > 0 && (
         <div className="alert alert-warn" role="alert">
           {problemFeeds} enabled feed{problemFeeds === 1 ? " is" : "s are"} not healthy. Findings that depend on {problemFeeds === 1 ? "it" : "them"}{" "}
@@ -181,14 +185,21 @@ export function IntelligencePage() {
         <h2 className="section-title" id="gaps-title">
           Evaluation gaps
         </h2>
-        <Card>
-          <p className="hint">
-            These components were <strong>not</strong> checked for vulnerabilities. <em>Unsupported</em>: no source exists for their
-            ecosystem, distribution or install method. <em>Not checked</em>: a source exists but could not be used (the feed has not
-            synced, the release has no advisories, the version could not be read). They may be vulnerable even though they have no
-            findings. Each asset's Inventory tab marks them too.
-          </p>
-        </Card>
+        <p className="hint section-hint">
+          Components that were <strong>not</strong> checked for vulnerabilities. They may be vulnerable even though they have no findings.
+          Each asset&apos;s Inventory tab marks them too.
+        </p>
+        <GoodToKnow title="What the coverage words mean">
+          <ul>
+            <li>
+              <strong>Unsupported</strong>: no source exists for their ecosystem, distribution or install method.
+            </li>
+            <li>
+              <strong>Not checked</strong>: a source exists but could not be used (the feed has not synced, the release has no advisories,
+              or the version could not be read).
+            </li>
+          </ul>
+        </GoodToKnow>
         <ErrorBox error={gaps.error} title="Could not load evaluation gaps" />
         {!gaps.data && !gaps.error && <Loading />}
         {gaps.data && gaps.data.items.length === 0 && (

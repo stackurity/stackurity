@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 import { safeReturn } from "../returnTo";
-import { MFA_METHODS, PASSKEY_COPIED_FIX, mustSetUpOwnFirst } from "../mfa";
+import { PASSKEY_COPIED_FIX, mustSetUpOwnFirst } from "../mfa";
 import { api, type MfaMethod, type MfaSignInMethod } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
@@ -80,6 +80,11 @@ const METHOD_NAMES: Record<MfaMethod, string> = { passkey: "a passkey", totp: "a
 export function methodList(ms: MfaMethod[] | null | undefined): string {
   if (!ms || ms.length === 0) return "a second factor";
   return ms.map((m) => METHOD_NAMES[m]).join(" or ");
+}
+
+/** "On" / "Not set up" beside a method's name on Your account. */
+function MethodState({ on, label }: { on: boolean; label?: string }) {
+  return <OptionBadge tone={on ? "good" : "muted"}>{on ? (label ?? "On") : "Not set up"}</OptionBadge>;
 }
 
 // --- signing in
@@ -240,14 +245,20 @@ export function PasskeySignInButton({ onDone, primary }: { onDone: () => Promise
 export function TwoFactorCard() {
   const res = useLoad(() => api.get<MfaStatus>("/auth/mfa"), []);
   return (
-    <section id="mfa" className="card">
-      <header className="card-head">
-        <h2>Two-factor methods</h2>
-      </header>
+    <Card
+      id="mfa"
+      title="Two-factor methods"
+      description={
+        <>
+          A second step after your password, so someone who learns your password still cannot sign in as you. Set up at least one; passkeys are the
+          strongest. <Link to="/help/two-factor">How two-factor sign-in works</Link>
+        </>
+      }
+    >
       <ErrorBox error={res.error} title="Could not load two-factor sign-in" />
       {!res.data && !res.error && <Loading />}
       {res.data && <TwoFactorBody st={res.data} reload={res.reload} />}
-    </section>
+    </Card>
   );
 }
 
@@ -274,10 +285,6 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
     );
   return (
     <>
-      <p>
-        A second factor means a stolen password alone is not enough to sign in. Passkeys are the strongest: they cannot be phished, and on most devices they
-        sign you in without a password. Methods: {MFA_METHODS}. <Link to="/help/two-factor">How two-factor sign-in works</Link>
-      </p>
       {back && !st.enabled && <Notice kind="info">Once it is set up, you go back to where you were.</Notice>}
       {st.required_by.length > 0 && (
         <Notice kind="info">
@@ -287,11 +294,10 @@ function TwoFactorBody({ st, reload }: { st: MfaStatus; reload: () => void }) {
       )}
       {st.required && !st.enabled && <Notice kind="warn">Your organisation requires {methodList(st.accepted)}. Set one up below.</Notice>}
       {st.confirm_first && (
-        <section className="mfa-method" aria-labelledby="mfa-confirm-first">
-          <h3 id="mfa-confirm-first">Confirm it is you</h3>
+        <SettingRow id="mfa-confirm-first" title="Confirm it is you" description="Needed before you can add, rename or remove a method in this session.">
           <Notice kind="warn">{st.confirm_first.charAt(0).toUpperCase() + st.confirm_first.slice(1)}.</Notice>
           <ConfirmFactor methods={st.methods} recovery onDone={reload} />
-        </section>
+        </SettingRow>
       )}
       <PasskeysSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
       <AppSection st={st} reload={reload} onAdded={added} onCodes={setCodes} />
@@ -318,8 +324,12 @@ function PasskeysSection({
   const [removing, setRemoving] = useState<number | null>(null);
   const { refresh } = useAuth();
   return (
-    <section className="mfa-method" aria-labelledby="mfa-passkeys">
-      <h3 id="mfa-passkeys">Passkeys and security keys</h3>
+    <SettingRow
+      id="mfa-passkeys"
+      title="Passkeys and security keys"
+      badge={<MethodState on={st.passkeys.length > 0} label={st.passkeys.length > 1 ? `${st.passkeys.length} added` : undefined} />}
+      description="Your fingerprint, face or device PIN, or a USB security key. The strongest method: a fake sign-in page cannot steal it, and on most devices it signs you in without a password."
+    >
       {!st.passkeys_available ? (
         <p className="hint">{st.passkeys_unavailable ?? "Passkeys are not available on this server."}</p>
       ) : !passkeysSupported() ? (
@@ -381,12 +391,14 @@ function PasskeysSection({
             }}
           />
         ) : (
-          <button type="button" className={st.passkeys.length === 0 ? "btn btn-primary" : "btn"} onClick={() => setAdding(true)}>
-            Add a passkey or security key
-          </button>
+          <div className="form-actions">
+            <button type="button" className={st.passkeys.length === 0 ? "btn btn-primary" : "btn"} onClick={() => setAdding(true)}>
+              Add a passkey or security key
+            </button>
+          </div>
         ))}
       {st.rp_id && st.passkeys.length > 0 && <p className="hint">Your passkeys work on {st.rp_id}.</p>}
-    </section>
+    </SettingRow>
   );
 }
 
@@ -468,8 +480,12 @@ function AppSection({ st, reload, onAdded, onCodes }: { st: MfaStatus; reload: (
   const [mode, setMode] = useState<"idle" | "enrol" | "off">("idle");
   const { refresh } = useAuth();
   return (
-    <section className="mfa-method" aria-labelledby="mfa-app">
-      <h3 id="mfa-app">Authenticator app</h3>
+    <SettingRow
+      id="mfa-app"
+      title="Authenticator app"
+      badge={<MethodState on={st.totp} />}
+      description="A six-digit code from an app such as 1Password, Google Authenticator or Microsoft Authenticator, typed after your password."
+    >
       {mode === "enrol" ? (
         <Enrol
           onCancel={() => setMode("idle")}
@@ -489,33 +505,26 @@ function AppSection({ st, reload, onAdded, onCodes }: { st: MfaStatus; reload: (
           onCancel={() => setMode("idle")}
         />
       ) : st.totp ? (
-        <>
-          <p>
-            <strong>On</strong>
-            {st.enabled_at && (
-              <span className="muted small">
-                {" "}
-                · set up <RelativeTime iso={st.enabled_at} />
-              </span>
-            )}
-          </p>
+        <div className="form-actions">
+          {st.enabled_at && (
+            <span className="muted small">
+              Set up <RelativeTime iso={st.enabled_at} />
+            </span>
+          )}
           <button type="button" className="btn btn-sm btn-link-danger" onClick={() => setMode("off")}>
             Remove
           </button>
-        </>
+        </div>
+      ) : !st.available ? (
+        <Notice kind="warn">This server cannot store authenticator-app secrets yet: an administrator must set STACKURITY_SECRET_KEY.</Notice>
       ) : (
-        <>
-          <p className="hint">A six-digit code from an app such as 1Password, Google Authenticator or Microsoft Authenticator, after your password.</p>
-          {!st.available ? (
-            <Notice kind="warn">This server cannot store authenticator-app secrets yet: an administrator must set STACKURITY_SECRET_KEY.</Notice>
-          ) : (
-            <button type="button" className={st.enabled ? "btn" : "btn btn-primary"} onClick={() => setMode("enrol")}>
-              Set up an authenticator app
-            </button>
-          )}
-        </>
+        <div className="form-actions">
+          <button type="button" className={st.enabled ? "btn" : "btn btn-primary"} onClick={() => setMode("enrol")}>
+            Set up an authenticator app
+          </button>
+        </div>
       )}
-    </section>
+    </SettingRow>
   );
 }
 
@@ -524,8 +533,12 @@ function EmailSection({ st, reload, onAdded }: { st: MfaStatus; reload: () => vo
   const [mode, setMode] = useState<"idle" | "on" | "off">("idle");
   const { refresh } = useAuth();
   return (
-    <section className="mfa-method" aria-labelledby="mfa-email">
-      <h3 id="mfa-email">Email codes (fallback)</h3>
+    <SettingRow
+      id="mfa-email"
+      title="Email codes (fallback)"
+      badge={<MethodState on={st.email} />}
+      description="A six-digit code emailed to you after your password. Only for when you cannot use a passkey or an app: anyone who can read your email could then sign in with your password."
+    >
       {mode === "on" ? (
         <EmailEnrol onCancel={() => setMode("idle")} onDone={() => (setMode("idle"), void refresh(), onAdded())} />
       ) : mode === "off" ? (
@@ -539,26 +552,21 @@ function EmailSection({ st, reload, onAdded }: { st: MfaStatus; reload: () => vo
         />
       ) : st.email ? (
         <>
-          <p>
-            <strong>On</strong>. A six-digit code is emailed to you after your password. A passkey or an authenticator app is stronger; setting one up turns
-            email codes off.
-          </p>
-          <button type="button" className="btn btn-sm btn-link-danger" onClick={() => setMode("off")}>
-            Turn off
-          </button>
+          <p className="hint">A passkey or an authenticator app is stronger; setting one up turns email codes off.</p>
+          <div className="form-actions">
+            <button type="button" className="btn btn-sm btn-link-danger" onClick={() => setMode("off")}>
+              Turn off
+            </button>
+          </div>
         </>
       ) : (
-        <>
-          <p className="hint">
-            If you cannot use a passkey or an authenticator app, a six-digit code can be emailed to you after your password instead. Anyone who can read your
-            email can then sign in with your password, so use it only as a fallback.
-          </p>
+        <div className="form-actions">
           <button type="button" className="btn" onClick={() => setMode("on")}>
             Use email codes
           </button>
-        </>
+        </div>
       )}
-    </section>
+    </SettingRow>
   );
 }
 
@@ -616,10 +624,13 @@ function EmailEnrol({ onCancel, onDone }: { onCancel: () => void; onDone: () => 
 function RecoveryCodesSection({ st, onCodes }: { st: MfaStatus; onCodes: (c: string[]) => void }) {
   const [making, setMaking] = useState(false);
   return (
-    <section className="mfa-method" aria-labelledby="mfa-recovery">
-      <h3 id="mfa-recovery">Recovery codes</h3>
+    <SettingRow
+      id="mfa-recovery"
+      title="Recovery codes"
+      description="Ten one-time codes for when you lose your passkeys and phone. Keep them in your password manager."
+    >
       <p>
-        {st.recovery_codes_left} of 10 left. Each signs you in once if you lose your passkeys and phone.
+        <strong>{st.recovery_codes_left} of 10 left.</strong>
         {st.recovery_codes_left <= 3 && " Make new ones before you run out."}
       </p>
       {making ? (
@@ -631,18 +642,24 @@ function RecoveryCodesSection({ st, onCodes }: { st: MfaStatus; onCodes: (c: str
           onCancel={() => setMaking(false)}
         />
       ) : (
-        <button type="button" className="btn btn-sm" onClick={() => setMaking(true)}>
-          New recovery codes
-        </button>
+        <div className="form-actions">
+          <button type="button" className="btn btn-sm" onClick={() => setMaking(true)}>
+            New recovery codes
+          </button>
+        </div>
       )}
-    </section>
+    </SettingRow>
   );
 }
 
 /** API tokens and assistants are not asked for a second factor (as on GitHub). */
 function BypassNote({ st }: { st: MfaStatus }) {
   if (st.tokens === 0 && st.assistants === 0) {
-    return <p className="hint">API tokens and connected AI assistants are not asked for a second factor: treat them like passwords.</p>;
+    return (
+      <GoodToKnow>
+        <p>API tokens and connected AI assistants are not asked for a second factor: treat them like passwords.</p>
+      </GoodToKnow>
+    );
   }
   return (
     <Notice kind="info">

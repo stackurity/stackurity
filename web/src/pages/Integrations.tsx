@@ -26,7 +26,21 @@ import { useAction, useJobRunner, useLoad } from "../hooks";
 import { minutesLabel } from "../format";
 import { Badge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { Card, Code, EmptyState, ErrorBox, JobStatus, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
+import {
+  Card,
+  CardFooter,
+  ChoiceCards,
+  Code,
+  EmptyState,
+  ErrorBox,
+  FieldGroup,
+  JobStatus,
+  Loading,
+  Notice,
+  PageHeader,
+  RelativeTime,
+  type ChoiceOption,
+} from "../components/ui";
 import { sourcesEmpty } from "../emptyCopy";
 import { confirmAction } from "../components/ConfirmDialog";
 
@@ -263,7 +277,7 @@ function KindChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => voi
     { kind: "plugin", title: "Plugin", text: "Run an installed plugin, e.g. AWS managed services (RDS, EKS, Lambda, …)." },
   ];
   return (
-    <Card title="Add integration">
+    <Card title="Add integration" description="Pick what Stackurity should read on a schedule. You fill in the details on the next step.">
       <div className="kind-choices" role="group" aria-label="Integration kind">
         {kinds.map((k) => (
           <button key={k.kind} type="button" className="kind-choice" onClick={() => onPick(k.kind)}>
@@ -283,7 +297,7 @@ function KindChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => voi
 
 function ContainerChooser({ onPick, onCancel }: { onPick: (k: IntegrationKind) => void; onCancel: () => void }) {
   return (
-    <Card title="Container images">
+    <Card title="Container images" description="Scan a whole registry, or just one image you name.">
       <div className="kind-choices" role="group" aria-label="How to add container images">
         <button type="button" className="kind-choice" onClick={() => onPick("container_registry")}>
           <strong>Connect a registry</strong>
@@ -317,29 +331,45 @@ function CommonFields({
   set,
   secretHelp,
   defaultScheduleHint,
+  accessTitle = "Access",
+  accessDescription,
+  accessExtra,
 }: {
   idp: string;
   v: CommonState;
   set: (v: CommonState) => void;
   secretHelp: ReactNode;
   defaultScheduleHint?: string;
+  accessTitle?: string;
+  accessDescription?: ReactNode;
+  /** Fields shown before the secret reference, in the same group (a user name). */
+  accessExtra?: ReactNode;
 }) {
   return (
     <>
-      <div className="field">
-        <label htmlFor={`${idp}-name`}>Name (optional)</label>
-        <input id={`${idp}-name`} value={v.name} onChange={(e) => set({ ...v, name: e.target.value })} placeholder="derived from the target" />
-      </div>
-      <div className="field">
-        <label htmlFor={`${idp}-sched`}>Run every (minutes)</label>
-        <input id={`${idp}-sched`} type="number" min={15} max={10080} step={1} required value={v.schedule} onChange={(e) => set({ ...v, schedule: e.target.value })} />
-        <p className="hint">15 to 10080 (one week).{defaultScheduleHint ? ` ${defaultScheduleHint}` : ""}</p>
-      </div>
-      <div className="field field-span">
-        <label htmlFor={`${idp}-secret`}>Secret reference (optional)</label>
-        <input id={`${idp}-secret`} className="mono" value={v.secret_ref} onChange={(e) => set({ ...v, secret_ref: e.target.value })} placeholder="env:STACKURITY_SECRET_… or file:/run/secrets/…" />
-        <p className="hint">{secretHelp}</p>
-      </div>
+      <FieldGroup title={accessTitle} description={accessDescription}>
+        <div className="form-grid">
+          {accessExtra}
+          <div className="field field-span">
+            <label htmlFor={`${idp}-secret`}>Secret reference (optional)</label>
+            <input id={`${idp}-secret`} className="mono" value={v.secret_ref} onChange={(e) => set({ ...v, secret_ref: e.target.value })} placeholder="env:STACKURITY_SECRET_… or file:/run/secrets/…" />
+            <p className="hint">{secretHelp}</p>
+          </div>
+        </div>
+      </FieldGroup>
+      <FieldGroup title="Name and schedule" description="How it is listed, and how often Stackurity reads it again to find changes.">
+        <div className="form-grid">
+          <div className="field">
+            <label htmlFor={`${idp}-name`}>Name (optional)</label>
+            <input id={`${idp}-name`} value={v.name} onChange={(e) => set({ ...v, name: e.target.value })} placeholder="derived from the target" />
+          </div>
+          <div className="field">
+            <label htmlFor={`${idp}-sched`}>Run every (minutes)</label>
+            <input id={`${idp}-sched`} type="number" min={15} max={10080} step={1} required value={v.schedule} onChange={(e) => set({ ...v, schedule: e.target.value })} />
+            <p className="hint">15 to 10080 (one week).{defaultScheduleHint ? ` ${defaultScheduleHint}` : ""}</p>
+          </div>
+        </div>
+      </FieldGroup>
     </>
   );
 }
@@ -369,6 +399,7 @@ function problemsOf(err: ApiError | null): string[] {
 
 function FormShell({
   title,
+  description,
   onSubmit,
   onCancel,
   pending,
@@ -379,6 +410,7 @@ function FormShell({
   plugin,
 }: {
   title: string;
+  description?: ReactNode;
   onSubmit: (e: FormEvent) => void;
   onCancel: () => void;
   pending: boolean;
@@ -390,7 +422,7 @@ function FormShell({
 }) {
   const problems = plugin ? problemsOf(error) : [];
   return (
-    <Card title={title}>
+    <Card title={title} description={description}>
       <form className="form" onSubmit={onSubmit}>
         {problems.length > 0 ? (
           <div className="alert alert-error" role="alert">
@@ -410,14 +442,14 @@ function FormShell({
           </div>
         )}
         {children}
-        <div className="form-actions">
-          <button type="submit" className="btn btn-primary" disabled={pending}>
-            {pending ? "Checking…" : submit}
-          </button>
+        <CardFooter>
           <button type="button" className="btn" onClick={onCancel}>
             Cancel
           </button>
-        </div>
+          <button type="submit" className="btn btn-primary" disabled={pending}>
+            {pending ? "Checking…" : submit}
+          </button>
+        </CardFooter>
       </form>
     </Card>
   );
@@ -444,7 +476,10 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
   const gh = useLoad(() => api.get<GitHubAppStatus>("/integrations/github").catch(() => NO_GITHUB_APP), []).data ?? NO_GITHUB_APP;
   const gl = useLoad(() => api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB), []).data ?? NO_GITLAB;
   return (
-    <FormShell title="Add Git repository" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
+    <FormShell
+      title="Add Git repository"
+      description="Stackurity clones the repository read-only on a schedule and reads its lockfiles to list the libraries it uses. Nothing is written to it."
+      onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
       {(gh.configured || gl.configured) && (
         <Notice kind="info">
           <p>
@@ -457,6 +492,7 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
           </div>
         </Notice>
       )}
+      <FieldGroup title="Repository" description="Where the code is, and which branch to read.">
       <div className="form-grid">
         <div className="field field-span">
           <label htmlFor="gi-url">Repository URL</label>
@@ -470,24 +506,29 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
         <div className="field">
           <label htmlFor="gi-env">Environment (optional)</label>
           <input id="gi-env" placeholder="e.g. production" value={f.environment} onChange={(e) => setF({ ...f, environment: e.target.value })} />
+          <p className="hint">Issues in production are ranked higher.</p>
         </div>
-        <div className="field">
-          <label htmlFor="gi-user">Username (optional)</label>
-          <input id="gi-user" placeholder="x-access-token" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
-          <p className="hint">GitHub: x-access-token, GitLab: oauth2, Bitbucket: x-token-auth.</p>
-        </div>
-        <CommonFields
-          idp="gi"
-          v={c}
-          set={setC}
-          secretHelp={
-            <>
-              For private repositories: a reference to the access token on the server, never the token itself, e.g.{" "}
-              <Code>env:STACKURITY_SECRET_GITHUB</Code>.
-            </>
-          }
-        />
       </div>
+      </FieldGroup>
+      <CommonFields
+        idp="gi"
+        v={c}
+        set={setC}
+        accessDescription="Only for private repositories. Public ones need nothing here."
+        accessExtra={
+          <div className="field">
+            <label htmlFor="gi-user">Username (optional)</label>
+            <input id="gi-user" placeholder="x-access-token" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
+            <p className="hint">GitHub: x-access-token, GitLab: oauth2, Bitbucket: x-token-auth.</p>
+          </div>
+        }
+        secretHelp={
+          <>
+            For private repositories: a reference to the access token on the server, never the token itself, e.g.{" "}
+            <Code>env:STACKURITY_SECRET_GITHUB</Code>.
+          </>
+        }
+      />
     </FormShell>
   );
 }
@@ -513,7 +554,11 @@ function ImageForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (
     if (ok) onCreated();
   };
   return (
-    <FormShell title="Add container image" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
+    <FormShell
+      title="Add container image"
+      description="Stackurity pulls the image on a schedule and lists the operating system packages and libraries inside it."
+      onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Create integration">
+      <FieldGroup title="Image" description="Which image to read.">
       <div className="form-grid">
         <div className="field field-span">
           <label htmlFor="im-image">Image reference</label>
@@ -528,24 +573,29 @@ function ImageForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (
         <div className="field">
           <label htmlFor="im-env">Environment (optional)</label>
           <input id="im-env" placeholder="e.g. production" value={f.environment} onChange={(e) => setF({ ...f, environment: e.target.value })} />
+          <p className="hint">Issues in production are ranked higher.</p>
         </div>
-        <div className="field">
-          <label htmlFor="im-user">Registry username (optional)</label>
-          <input id="im-user" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
-          <p className="hint">Needed when the secret is a password or token for a named user.</p>
-        </div>
-        <CommonFields
-          idp="im"
-          v={c}
-          set={setC}
-          secretHelp={
-            <>
-              For private registries: a reference to the registry password or token on the server, e.g. <Code>env:STACKURITY_SECRET_GHCR</Code>.
-              Public images need none.
-            </>
-          }
-        />
       </div>
+      </FieldGroup>
+      <CommonFields
+        idp="im"
+        v={c}
+        set={setC}
+        accessDescription="Only for private registries. Public images need nothing here."
+        accessExtra={
+          <div className="field">
+            <label htmlFor="im-user">Registry username (optional)</label>
+            <input id="im-user" value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} />
+            <p className="hint">Needed when the secret is a password or token for a named user.</p>
+          </div>
+        }
+        secretHelp={
+          <>
+            For private registries: a reference to the registry password or token on the server, e.g. <Code>env:STACKURITY_SECRET_GHCR</Code>.
+            Public images need none.
+          </>
+        }
+      />
     </FormShell>
   );
 }
@@ -703,7 +753,10 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     );
 
   return (
-    <FormShell title="Add plugin integration" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Validate and create" plugin>
+    <FormShell
+      title="Add plugin integration"
+      description="Runs a plugin installed on this server on a schedule, for example to list AWS managed services and their versions."
+      onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Validate and create" plugin>
       <ErrorBox error={plugins.error} title="Could not load plugins" />
       <div className="form-grid">
         <div className="field">
@@ -781,9 +834,10 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
               </p>
             </div>
           )}
-          <div className="form-grid">
-            <CommonFields
+          <CommonFields
               idp="pl"
+              accessTitle="Credentials"
+              accessDescription="What the plugin signs in with, if it needs to."
               v={c}
               set={setC}
               defaultScheduleHint={selected.metadata?.default_frequency ? `Plugin suggests every ${selected.metadata.default_frequency}.` : undefined}
@@ -800,7 +854,6 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
                 </>
               }
             />
-          </div>
         </>
       )}
     </FormShell>
@@ -939,23 +992,31 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
     setPicked(next);
   };
 
-  const credChoice = (value: Cred, label: string) => (
-    <label className="check">
-      <input
-        type="radio"
-        name="rg-cred"
-        checked={cred === value}
-        onChange={() => {
-          setCred(value);
-          setFound(null);
-        }}
-      />{" "}
-      {label}
-    </label>
-  );
+  const credOptions: ChoiceOption<Cred>[] = [
+    provider === "ecr"
+      ? { value: "paste", label: "Access keys", description: "An AWS access key id and secret access key, stored encrypted as a workspace secret." }
+      : { value: "paste", label: "Paste a token or password", description: "Stored encrypted as a workspace secret and sent only to this registry." },
+    ...(provider === "ecr" && awsIntegrations.length > 0
+      ? [{ value: "aws" as Cred, label: "Those of an AWS integration", description: "Reuse the keys of an AWS integration you already added." }]
+      : []),
+    { value: "ref", label: "A stored secret", description: "A secret you already saved under Integrations → Secrets." },
+    ...(provider === "dockerhub" || provider === "oci"
+      ? [{ value: "none" as Cred, label: "None (public)", description: "For public images that anyone can pull." }]
+      : []),
+  ];
 
   return (
-    <FormShell title="Connect a container registry" onSubmit={submit} onCancel={onCancel} pending={act.pending} localErr={localErr} error={act.error} submit="Connect registry">
+    <FormShell
+      title="Connect a container registry"
+      description="Stackurity lists the registry's repositories on a schedule and scans their newest images. It only reads."
+      onSubmit={submit}
+      onCancel={onCancel}
+      pending={act.pending}
+      localErr={localErr}
+      error={act.error}
+      submit="Connect registry"
+    >
+      <FieldGroup title="Registry" description="Which registry, and whose images in it.">
       <div className="form-grid">
         <div className="field">
           <label htmlFor="rg-provider">Registry</label>
@@ -1015,14 +1076,27 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
             </div>
           </>
         )}
-        <fieldset className="field field-span">
-          <legend>Credentials</legend>
-          <div className="multi">
-            {provider === "ecr" ? credChoice("paste", "Access keys") : credChoice("paste", "Paste a token or password")}
-            {provider === "ecr" && awsIntegrations.length > 0 && credChoice("aws", "Those of an AWS integration")}
-            {credChoice("ref", "A stored secret")}
-            {(provider === "dockerhub" || provider === "oci") && credChoice("none", "None (public)")}
+        {provider === "oci" && (
+          <div className="field">
+            <label htmlFor="rg-auth">Token service host (optional)</label>
+            <input id="rg-auth" className="mono" placeholder="gitlab.com" value={f.auth_host} onChange={(e) => set("auth_host", e.target.value)} />
+            <p className="hint">Only when the registry signs in on another host (GitLab). Credentials go to no other host.</p>
           </div>
+        )}
+      </div>
+      </FieldGroup>
+      <FieldGroup title="Credentials" description="How Stackurity signs in to the registry. Use a read-only token.">
+          <ChoiceCards
+            name="rg-cred"
+            legend="Credentials"
+            options={credOptions}
+            value={cred}
+            onChange={(v) => {
+              setCred(v);
+              setFound(null);
+            }}
+            columns={2}
+          />
           {cred === "paste" && provider !== "ecr" && (
             <div className="form-grid">
               <div className="field">
@@ -1111,26 +1185,20 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
               )}
             </div>
           )}
-        </fieldset>
-        {provider === "oci" && (
-          <div className="field">
-            <label htmlFor="rg-auth">Token service host (optional)</label>
-            <input id="rg-auth" className="mono" placeholder="gitlab.com" value={f.auth_host} onChange={(e) => set("auth_host", e.target.value)} />
-            <p className="hint">Only when the registry signs in on another host (GitLab). Credentials go to no other host.</p>
-          </div>
-        )}
-      </div>
+      </FieldGroup>
 
-      <fieldset className="field field-span">
-        <legend>Repositories</legend>
-        <div className="multi">
-          <label className="check">
-            <input type="radio" name="rg-all" checked={all} onChange={() => setAll(true)} /> All repositories, including new ones
-          </label>
-          <label className="check">
-            <input type="radio" name="rg-all" checked={!all} onChange={() => setAll(false)} /> Only the ones I tick
-          </label>
-        </div>
+      <FieldGroup title="Repositories" description="Which repositories in the registry to scan.">
+        <ChoiceCards
+          name="rg-all"
+          legend="Repositories"
+          value={all ? "all" : "some"}
+          onChange={(v) => setAll(v === "all")}
+          columns={2}
+          options={[
+            { value: "all", label: "All repositories, including new ones", description: "Every repository the patterns below allow. New ones are picked up on each run." },
+            { value: "some", label: "Only the ones I tick", description: "List the repositories, then tick the ones to scan. New repositories are not added." },
+          ]}
+        />
         <div className="form-grid">
           <div className="field">
             <label htmlFor="rg-inc">Include (optional)</label>
@@ -1169,8 +1237,9 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
             </ul>
           </div>
         )}
-      </fieldset>
+      </FieldGroup>
 
+      <FieldGroup title="What to scan" description="Which images in each repository are read, and how many per run.">
       <div className="form-grid">
         <div className="field">
           <label htmlFor="rg-recent">Newest images per repository</label>
@@ -1198,7 +1267,12 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
         <div className="field">
           <label htmlFor="rg-platform">Platform (optional)</label>
           <input id="rg-platform" className="mono" placeholder="linux/amd64" value={f.platform} onChange={(e) => set("platform", e.target.value)} />
+          <p className="hint">For multi-architecture images.</p>
         </div>
+      </div>
+      </FieldGroup>
+      <FieldGroup title="Name and schedule" description="How it is listed, and how often Stackurity looks for new repositories and tags.">
+      <div className="form-grid">
         <div className="field">
           <label htmlFor="rg-name">Name (optional)</label>
           <input id="rg-name" value={c.name} onChange={(e) => setC({ ...c, name: e.target.value })} placeholder="derived from the registry" />
@@ -1209,6 +1283,7 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
           <p className="hint">New repositories and tags are found on each run.</p>
         </div>
       </div>
+      </FieldGroup>
     </FormShell>
   );
 }

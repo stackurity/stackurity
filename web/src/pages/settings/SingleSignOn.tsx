@@ -3,7 +3,7 @@ import { useSearchParams } from "react-router";
 import { api, type OrgSSO, type OrgSSOChange, type UserRole } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
-import { Card, CopyBox, ErrorBox, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, CheckCard, ChoiceCards, CopyBox, ErrorBox, GoodToKnow, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { chooseAction, confirmAction } from "../../components/ConfirmDialog";
 import { requiredNotice, requireSSOChoice, type ExistingTokens } from "../../ssoTokens";
 
@@ -180,32 +180,54 @@ export function SingleSignOnPage() {
       {data && (
         <>
           {cfg && data.service_provider && (
-            <Card title="1. Give these to your identity provider">
-              <p className="label">Entity ID (Audience URI, Identifier)</p>
-              <CopyBox label="Entity ID" value={data.service_provider.entity_id} />
-              <p className="label">ACS URL (Single sign-on URL, Reply URL)</p>
-              <CopyBox label="ACS URL" value={data.service_provider.acs_url} />
-              <p className="label">Service provider metadata, for providers that import it</p>
-              <CopyBox label="Service provider metadata" value={data.service_provider.metadata_url} />
-              <p className="hint">Name ID format: email address. Send the attributes email, firstName and lastName, and groups if you map groups to roles.</p>
+            <Card
+              title="1. Give these to your identity provider"
+              description="Copy these into the Stackurity app you create in Okta, Entra ID, Google Workspace or another SAML provider. Each provider names the fields differently; the other names are in brackets."
+            >
+              <SettingRow title="Entity ID" description="Also called Audience URI or Identifier.">
+                <CopyBox label="Entity ID" value={data.service_provider.entity_id} />
+              </SettingRow>
+              <SettingRow title="ACS URL" description="Also called Single sign-on URL or Reply URL.">
+                <CopyBox label="ACS URL" value={data.service_provider.acs_url} />
+              </SettingRow>
+              <SettingRow title="Service provider metadata" description="For providers that can import everything from one link instead.">
+                <CopyBox label="Service provider metadata" value={data.service_provider.metadata_url} />
+              </SettingRow>
+              <GoodToKnow>
+                Name ID format: email address. Send the attributes email, firstName and lastName, and groups if you map groups to roles.
+              </GoodToKnow>
             </Card>
           )}
-          <Card title={cfg ? "2. Your identity provider" : "1. Your identity provider"}>
+          <Card
+            title={cfg ? "2. Your identity provider" : "1. Your identity provider"}
+            description="Tell Stackurity where your identity provider is, so it can trust the sign-ins it sends."
+          >
             {!cfg && <p>Save your identity provider's metadata first; the addresses to give it appear here afterwards.</p>}
             <form className="form" onSubmit={save}>
-              <fieldset disabled={!admin || !data.available || act.pending}>
-                <div className="field">
-                  <label htmlFor="sso-label">Button label</label>
-                  <input id="sso-label" maxLength={60} value={form.label} onChange={set("label")} placeholder="Okta" />
-                </div>
-                <div className="field">
-                  <span className="label">Identity provider metadata</span>
-                  <label className="choice">
-                    <input type="radio" checked={source === "url"} onChange={() => setSource("url")} /> Metadata URL
-                  </label>
-                  <label className="choice">
-                    <input type="radio" checked={source === "file"} onChange={() => setSource("file")} /> Upload the metadata file
-                  </label>
+              <fieldset className="choice-cards-set" disabled={!admin || !data.available || act.pending}>
+                <SettingRow title="Button label" description="The text on the sign-in button, e.g. the provider's name. People see “Sign in with …”.">
+                  <div className="field">
+                    <label className="sr-only" htmlFor="sso-label">
+                      Button label
+                    </label>
+                    <input id="sso-label" maxLength={60} value={form.label} onChange={set("label")} placeholder="Okta" />
+                  </div>
+                </SettingRow>
+                <SettingRow
+                  title="Identity provider metadata"
+                  description="A small XML file from your provider describing it. Most providers show a metadata URL in the app's SAML settings; otherwise download the file."
+                >
+                  <ChoiceCards
+                    name="sso-metadata-source"
+                    legend="Identity provider metadata"
+                    value={source}
+                    onChange={setSource}
+                    columns={2}
+                    options={[
+                      { value: "url", label: "Metadata URL", description: "Stackurity fetches it and stays up to date when the provider changes its certificate." },
+                      { value: "file", label: "Upload the metadata file", description: "For providers with no public URL. Upload a new file when the certificate changes." },
+                    ]}
+                  />
                   {source === "url" ? (
                     <input
                       aria-label="Metadata URL"
@@ -219,7 +241,7 @@ export function SingleSignOnPage() {
                     <input aria-label="Metadata file" type="file" accept=".xml,application/xml,text/xml" onChange={(e) => void upload(e)} />
                   )}
                   {cfg?.idp_entity_id && <p className="hint">Current provider: {cfg.idp_entity_id}</p>}
-                </div>
+                </SettingRow>
                 <details>
                   <summary>Attributes and roles</summary>
                   <div className="field">
@@ -256,23 +278,29 @@ export function SingleSignOnPage() {
                       <option value="">nobody: refuse them</option>
                     </select>
                   </div>
-                  <label className="choice">
+                  <label className="choice-card">
                     <input type="checkbox" checked={form.link_existing} onChange={set("link_existing")} />
-                    <span>
-                      Link existing members by email
-                      <span className="hint"> An account that is already a member here can sign in with single sign-on. Accounts outside this organisation and instance administrators are never linked.</span>
+                    <span className="choice-card-text">
+                      <span className="choice-card-label">Link existing members by email</span>
+                      <span className="choice-card-desc">
+                        An account that is already a member here can sign in with single sign-on. Accounts outside this organisation and instance
+                        administrators are never linked.
+                      </span>
                     </span>
                   </label>
                 </details>
-                <button type="submit" className="btn btn-primary">
-                  {act.pending ? "Saving…" : cfg ? "Save changes" : "Save"}
-                </button>
-                {cfg?.enabled && <p className="hint">Saving a change switches single sign-on off until you test it again.</p>}
+                <CardFooter status={cfg?.enabled ? "Saving a change switches single sign-on off until you test it again." : undefined}>
+                  <button type="submit" className="btn btn-primary">
+                    {act.pending ? "Saving…" : cfg ? "Save changes" : "Save"}
+                  </button>
+                </CardFooter>
               </fieldset>
             </form>
           </Card>
-          <Card title={cfg ? "3. Email domains" : "2. Email domains"}>
-            <p>People sign in with single sign-on only with addresses in domains you have proven you own. Add a domain, publish the TXT record at your DNS provider, then check it.</p>
+          <Card
+            title={cfg ? "3. Email domains" : "2. Email domains"}
+            description="People sign in with single sign-on only with addresses in domains you have proven you own. Add a domain, publish the TXT record at your DNS provider, then check it."
+          >
             {data.domains.length > 0 && (
               <table className="table">
                 <thead>
@@ -327,11 +355,11 @@ export function SingleSignOnPage() {
             )}
           </Card>
           {cfg && (
-            <Card title="4. Test and switch on">
-              <p>
-                A test signs you in at your identity provider and shows what it sent; it signs nobody in here. Single sign-on can be switched on after a test of the
-                current settings passes and a domain is verified.
-              </p>
+            <Card
+              title="4. Test and switch on"
+              description="Try a sign-in first, then turn it on for everyone. Single sign-on can be switched on after a test of the current settings passes and a domain is verified."
+            >
+              <SettingRow title="Test the connection" description="Signs you in at your identity provider and shows what it sent back. It signs nobody in here.">
               {cfg.test_result && (
                 <dl className="kv">
                   <dt>Last test</dt>
@@ -356,49 +384,47 @@ export function SingleSignOnPage() {
                   </a>
                 </p>
               )}
-              <fieldset disabled={!admin || act.pending}>
-                <label className="choice">
-                  <input
-                    type="checkbox"
+              </SettingRow>
+              <SettingRow title="Who uses it" description="Turn it on to offer the sign-in button; require it to make it the only way in.">
+                <fieldset className="choice-cards-set choice-cards" disabled={!admin || act.pending}>
+                  <legend className="sr-only">Who uses single sign-on</legend>
+                  <CheckCard
                     checked={cfg.enabled}
                     disabled={!cfg.enabled && (!tested || !verified || !data.available)}
-                    onChange={(e) => void setState(e.target.checked, false)}
+                    onChange={(on) => void setState(on, false)}
+                    label="Single sign-on is on"
+                    description={
+                      !cfg.enabled && (!tested || !verified)
+                        ? "Test the connection and verify a domain first."
+                        : "People with an address in a verified domain can sign in with your identity provider."
+                    }
                   />
-                  <span>
-                    Single sign-on is on
-                    {!cfg.enabled && (!tested || !verified) && <span className="hint"> Test the connection and verify a domain first.</span>}
-                  </span>
-                </label>
-                <label className="choice">
-                  <input
-                    type="checkbox"
+                  <CheckCard
                     checked={cfg.require_sso}
                     disabled={!cfg.enabled}
-                    onChange={(e) => void (e.target.checked ? requireSSO() : setState(true, false))}
+                    onChange={(on) => void (on ? requireSSO() : setState(true, false))}
+                    label="Require single sign-on for members"
+                    description={
+                      <>
+                        Members can then work here only after signing in with single sign-on. The organisation&apos;s owner can always sign in with their
+                        password, as a way back in if the identity provider is down{isOwner ? " (that is you)" : ""}. Switching it on asks whether to keep or
+                        revoke the API tokens and AI assistant connections made before.
+                      </>
+                    }
                   />
-                  <span>
-                    Require single sign-on for members
-                    <span className="hint">
-                      {" "}
-                      Members can then work here only after signing in with single sign-on. The organisation's owner can always sign in with their password, as a
-                      way back in if the identity provider is down{isOwner ? " (that is you)" : ""}. Switching it on asks whether to keep or revoke the API
-                      tokens and AI assistant connections made before.
-                    </span>
-                  </span>
-                </label>
-              </fieldset>
+                </fieldset>
+              </SettingRow>
               {data.service_provider && (
-                <>
-                  <p className="hint">People can also start at your organisation's sign-in link:</p>
+                <SettingRow title="Sign-in link" description="People can also start at your organisation's own sign-in link, e.g. from a bookmark or your intranet.">
                   <CopyBox label="Sign-in link" value={data.service_provider.login_url} />
-                </>
+                </SettingRow>
               )}
               {admin && (
-                <p>
-                  <button type="button" className="btn btn-link" onClick={() => void remove()} disabled={act.pending}>
+                <CardFooter>
+                  <button type="button" className="btn btn-link-danger" onClick={() => void remove()} disabled={act.pending}>
                     Remove single sign-on
                   </button>
-                </p>
+                </CardFooter>
               )}
             </Card>
           )}

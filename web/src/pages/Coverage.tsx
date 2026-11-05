@@ -14,6 +14,7 @@ import {
   type SecondCheckSummary,
 } from "../api";
 import { useAuth } from "../auth";
+import { useProject } from "../project";
 import { useLoad } from "../hooks";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table } from "../components/Table";
@@ -45,6 +46,7 @@ const ROWS = 200;
  */
 export function CoveragePage() {
   const { can } = useAuth();
+  const { projects } = useProject();
   const [params, setParams] = useSearchParams();
   const groupParam = (params.get("group") ?? "") as AssetCoverageGroup | "";
   const offset = Number(params.get("offset") ?? 0) || 0;
@@ -104,9 +106,11 @@ export function CoveragePage() {
   return (
     <div className="cov-page">
       <PageHeader help="coverage-intelligence" title="Coverage" />
-      <div className="filters">
-        <ProjectFilter id="cov-project" />
-      </div>
+      {projects.length > 0 && (
+        <div className="filters">
+          <ProjectFilter id="cov-project" />
+        </div>
+      )}
       <ErrorBox error={ov.error} title="Could not load coverage" />
       {!ov.data && !ov.error && <Loading />}
       {ov.data && (
@@ -118,12 +122,14 @@ export function CoveragePage() {
       )}
 
       <Section id="needs-you" className="cov-actions-section" icon={SECTION_ICONS.actions} title="Fix these to see everything"
+        description="Things only you can sort out (an unreadable version, a folder the agent cannot open) that stop Stackurity checking some components."
         aside={cards.length > 0 ? <span className="cov-count">{cards.length}</span> : undefined}>
         <ErrorBox error={unchecked.error ?? needRows.error ?? fileScopes.error} title="Could not load what needs you" />
         {!cardsReady && !unchecked.error ? <Loading /> : <ActionCards cards={cards} />}
       </Section>
 
-      <Section id="cov-ecosystems" className="cov-eco-section" icon={SECTION_ICONS.ecosystems} title="What Stackurity checks on your estate">
+      <Section id="cov-ecosystems" className="cov-eco-section" icon={SECTION_ICONS.ecosystems} title="What Stackurity checks on your estate"
+        description="Each kind of software found on your assets, and how much of it Stackurity can check for vulnerabilities.">
         {ov.data && <EcosystemGrid ecosystems={ov.data.ecosystems} onRequest={request} pending={pending} />}
         {requestError != null && <p className="small text-bad" role="alert">Could not send the request. Try again.</p>}
       </Section>
@@ -133,6 +139,7 @@ export function CoveragePage() {
         className="cov-assets-section"
         icon={SECTION_ICONS.assets}
         title="Coverage by asset"
+        description="How much of each asset was checked, worst first. Open a row to see what could not be read."
         aside={
           can("admin") ? (
             <Link to={showScopes ? "/coverage" : "/coverage?scopes=all#cov-scopes"} className="small">
