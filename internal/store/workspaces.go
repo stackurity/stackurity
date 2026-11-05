@@ -36,6 +36,8 @@ type Workspace struct {
 	ReadOnlyAt     *time.Time `json:"read_only_at"`
 	ReadOnlyReason string     `json:"read_only_reason"`
 	ReportMode     string     `json:"report_mode"`
+	// PlanLimits are its plan limits (plan_limits.go); empty for none.
+	PlanLimits PlanLimits `json:"plan_limits"`
 }
 
 // Membership is one workspace a user belongs to, with their role there.
@@ -151,7 +153,7 @@ const workspaceSelect = `SELECT w.id, w.name, w.slug, w.created_at, w.disabled_a
 	(SELECT count(*) FROM assets a WHERE a.workspace_id = w.id AND a.merged_into IS NULL AND a.kind <> 'workload'),
 	w.asset_limit,
 	(SELECT count(*) FROM projects p WHERE p.workspace_id = w.id AND p.archived_at IS NULL),
-	w.project_limit, w.read_only_at, w.read_only_reason, w.report_mode
+	w.project_limit, w.read_only_at, w.read_only_reason, w.report_mode, w.plan_limits
 	FROM workspaces w`
 
 // ListWorkspaces lists every workspace. Instance administration only.
@@ -219,6 +221,8 @@ type WorkspaceUpdate struct {
 	ReadOnlyReason *string `json:"read_only_reason"`
 	// ReportMode is full or trial.
 	ReportMode *string `json:"report_mode"`
+	// PlanLimits replaces the plan limits; {} removes them.
+	PlanLimits *PlanLimits `json:"plan_limits"`
 }
 
 func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate) error {
@@ -252,6 +256,14 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate
 		}
 		u.ReadOnlyReason = &r
 	}
+	if u.PlanLimits != nil {
+		if err := u.PlanLimits.validate(); err != nil {
+			return err
+		}
+		if u.PlanLimits.Empty() {
+			u.PlanLimits = &PlanLimits{}
+		}
+	}
 	if u.Disabled != nil && *u.Disabled && id == tenant.DefaultWorkspace {
 		return fmt.Errorf("the default workspace cannot be disabled: %w", ErrConflict)
 	}
@@ -262,8 +274,9 @@ func (s *Store) UpdateWorkspace(ctx context.Context, id int64, u WorkspaceUpdate
 		project_limit = CASE WHEN $6::bigint IS NULL THEN project_limit WHEN $6 < 0 THEN NULL ELSE $6 END,
 		read_only_at = CASE WHEN $7::boolean IS NULL THEN read_only_at WHEN $7 THEN COALESCE(read_only_at, now()) ELSE NULL END,
 		read_only_reason = CASE WHEN $7::boolean IS NOT NULL AND NOT $7 THEN '' ELSE COALESCE($8, read_only_reason) END,
-		report_mode = COALESCE($9, report_mode)
-		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan, u.AssetLimit, u.ProjectLimit, u.ReadOnly, u.ReadOnlyReason, u.ReportMode)
+		report_mode = COALESCE($9, report_mode),
+		plan_limits = COALESCE($10, plan_limits)
+		WHERE id = $1`, id, u.Name, u.Disabled, u.Plan, u.AssetLimit, u.ProjectLimit, u.ReadOnly, u.ReadOnlyReason, u.ReportMode, u.PlanLimits)
 	if err == nil && tag.RowsAffected() == 0 {
 		return ErrNotFound
 	}

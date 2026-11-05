@@ -705,6 +705,8 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 402, "project_limit", err.Error())
 	case errors.Is(err, store.ErrReadOnly):
 		writeError(w, 402, "read_only", err.Error())
+	case planLimit(err) != nil:
+		writeError(w, 402, "plan_limit", planLimit(err).Error())
 	case errors.Is(err, errForbidden):
 		writeError(w, 403, "forbidden", err.Error())
 	case errors.As(err, &ve):
@@ -828,4 +830,12 @@ func (s *Server) openAIAppsChallenge(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 	w.Header().Set("Cache-Control", "no-store")
 	_, _ = io.WriteString(w, s.OpenAIAppsChallenge)
+}
+
+// planLimit is the plan limit err ran into (store.AsPlanLimit), or nil.
+func planLimit(err error) *store.PlanLimitError {
+	if pl, ok := store.AsPlanLimit(err); ok {
+		return pl
+	}
+	return nil
 }

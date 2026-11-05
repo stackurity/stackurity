@@ -218,6 +218,8 @@ type AssetUsage struct {
 	// ReportMode is full, or trial: reports and exports are shortened and
 	// watermarked.
 	ReportMode string `json:"report_mode"`
+	// Plan is the plan limits and their use; nil when there are none.
+	Plan *PlanUsage `json:"plan"`
 }
 
 // AssetUsage reports the current workspace's monitored assets and limit.
@@ -293,6 +295,9 @@ func (s *Store) WorkspaceAssetUsage(ctx context.Context, ws int64) (*AssetUsage,
 		return nil, err
 	}
 	u.ReadOnly, u.ReportMode = state.ReadOnly, state.ReportMode
+	if u.Plan, err = s.planUsage(ctx, ws); err != nil {
+		return nil, err
+	}
 	return u, nil
 }
 

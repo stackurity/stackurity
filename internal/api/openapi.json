@@ -1112,7 +1112,7 @@
    "patch": {
     "operationId": "patch_admin_workspaces_id",
     "summary": "Rename, disable or set the plan, limits, read-only state and report mode of a workspace",
-    "description": "Workspaces with `member_count`, `asset_count`, `monitored` and `asset_limit` (null: none). `PATCH` takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, and `report_mode` (`full` or `trial`); see asset-limits.md\n\nRole: instance admin",
+    "description": "Workspaces with `member_count`, `asset_count`, `monitored` and `asset_limit` (null: none). `PATCH` takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, `report_mode` (`full` or `trial`) and `plan_limits` (replaces them; `{}` removes them); see asset-limits.md\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
@@ -9067,7 +9067,7 @@
    "get": {
     "operationId": "get_usage",
     "summary": "Monitored assets against the organisation's limit",
-    "description": "Monitored assets against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days). Also `projects`, `project_limit`, `projects_at_limit`, `read_only` (`since`, `reason`) and `report_mode` (`full`, `trial`). At the limit, requests that would create an asset answer `402` with code `asset_limit`, a new project `402 project_limit`; while read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`\n\nRole: viewer (organisation-wide)",
+    "description": "Monitored assets against the organisation's limit: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` (the most recent new assets refused at the limit) and `refused_recently` (last 7 days). Also `projects`, `project_limit`, `projects_at_limit`, `read_only` (`since`, `reason`), `report_mode` (`full`, `trial`) and `plan` (the plan limits and their use, or null). At the limit, requests that would create an asset answer `402` with code `asset_limit`, a new project `402 project_limit`, a new rule, channel, team, API token or member past the plan's limits `402 plan_limit`; while read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`\n\nRole: viewer (organisation-wide)",
     "tags": [
      "Reports"
     ],

@@ -11,6 +11,7 @@ import { OWNER_RULES_EMPTY } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { NoTeamsHint } from "../../components/Teams";
 import { ownerLabel } from "../../components/Owners";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 const LEVEL_LABEL: Record<number, string> = {
   6: "Asset, part of its stack",
@@ -104,6 +105,7 @@ export function OwnersPage() {
           </>
         }
       />
+      <PlanLimitNote kind="owner_rules" />
       <ErrorBox error={act.error} title="Could not save" />
       {done && <Notice kind="success">{done}</Notice>}
       {editing === "new" && (

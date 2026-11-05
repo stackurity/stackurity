@@ -21,6 +21,7 @@ import {
 } from "../../components/ui";
 import { tokensEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 function tokenState(t: Token): string {
   if (t.revoked_at) return "revoked";
@@ -92,6 +93,7 @@ export function TokensPage() {
             : "Personal tokens for scripts and CI. A token can never have more rights than you."
         }
       />
+      <PlanLimitNote kind="api_tokens" />
       {created && (
         <div className="alert alert-warn secret-reveal" role="alert">
           <p>

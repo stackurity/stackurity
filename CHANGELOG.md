@@ -6,6 +6,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Plan limits for hosted plans.** An instance administrator (or a hosted service's billing) can now cap, per organisation, how many alert rules, notification channels, owner rules, CI trusts, VEX sources, API tokens and teams it has, how many members (pending invitations count too), which kinds of notification channel it may add, and whether projects over its project limit become read-only (`plan_limits`, `PATCH /admin/workspaces/{id}`). Unset means no limit, so self-hosted installations are unchanged. At a limit only new ones are refused, with `402 plan_limit` naming the plan to upgrade to; existing ones keep working and can be changed or deleted. Every path that adds one is held to it, including Add to Slack and Add to Teams, accepting invitations and a project's edited copy of an inherited rule; turning an inherited rule off does not count. **Settings → Usage** shows each limit and its use, and each settings page shows "2 of 3 used" where its kind is added. See [Plan limits](docs/asset-limits.md#plan-limits).
+
+### Upgrading
+
+- Migration 0097 adds `workspaces.plan_limits` (empty: no limits) and a trigger on routes, channels, owner rules, CI trusts, VEX sources, API tokens, teams, members and invitations that enforces it.
+
 ## 0.18.1
 
 ### Changed

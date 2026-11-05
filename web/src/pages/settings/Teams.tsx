@@ -12,6 +12,7 @@ import { AccessPicker } from "../../components/AccessPicker";
 import { PERMISSIONS, SPECIFIC_ROLES, accessLines, permissionLabel } from "../../roles";
 import { EMPTY, preview, problems, reduce, toRequest, type GrantBody } from "../../userAccess";
 import { TEAMS_EXPLAINED, mergeTeamAccess, ownsChange } from "../../teamAccess";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 const LABELS: Record<string, string> = Object.fromEntries(PERMISSIONS.map((p) => [p.role, p.label]));
 
@@ -116,6 +117,7 @@ export function TeamsPage() {
           )
         }
       />
+      <PlanLimitNote kind="teams" />
       {atFreeLimit && <ProNotice feature="teams">Community includes one team. </ProNotice>}
       <ErrorBox error={act.error} title="Action failed" />
       <ErrorBox error={users.error} title="Could not load users" />
