@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { Link, Navigate, useNavigate, useSearchParams } from "react-router";
+import { useEffect, type ReactNode } from "react";
+import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
 import { api, loadNotificationOptions, NO_GITHUB_APP, NO_GITLAB, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type GitLabStatus, type Integration, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
@@ -144,22 +144,22 @@ interface AddCard {
   text: string;
   to: string;
   admin?: boolean;
-  /** Short instructions shown on this page instead of a link. */
-  panel?: Panel;
   /** Shown instead of the card's link (admins). */
   button?: ReactNode;
 }
 
-type Panel = "ci" | "sbom" | "gcp" | "azure";
+type Steps = "ci" | "sbom" | "gcp" | "azure";
 
 /** The card's button word: Add for something new, Connect for an account elsewhere, Show steps for instructions. */
-function actionLabel(c: AddCard, open: boolean): string {
-  if (c.panel) return open ? "Close" : c.panel === "ci" || c.panel === "sbom" ? "Show steps" : "Connect";
+function actionLabel(c: AddCard): string {
+  if (c.to === "/integrations/setup/ci" || c.to === "/integrations/setup/sbom") return "Show steps";
   if (c.to === "/integrations/plugins") return "Open";
   return c.to.startsWith("/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" ? "Add" : "Connect";
 }
 
-const PANEL_TITLE: Record<Panel, string> = {
+const STEPS_HELP: Record<Steps, string> = { ci: "ci-keyless", sbom: "sbom", gcp: "google-cloud", azure: "azure" };
+
+const STEPS_TITLE: Record<Steps, string> = {
   ci: "Scan in a CI pipeline",
   sbom: "Upload an SBOM",
   gcp: "Connect Google Cloud",
@@ -267,7 +267,6 @@ export function IntegrationsHubPage() {
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
-  const [panel, setPanel] = useState<Panel | null>(null);
   const optionsRes = useLoad(loadNotificationOptions, []);
   const gitlab = useLoad(() => (engineer ? api.get<GitLabStatus>("/integrations/gitlab").catch(() => NO_GITLAB) : Promise.resolve(NO_GITLAB)), [engineer]);
   const gl = gitlab.data ?? NO_GITLAB;
@@ -282,14 +281,6 @@ export function IntegrationsHubPage() {
   useEffect(() => {
     if (back) navigate(`/integrations/channels/${back}?added=1`, { replace: true });
   }, [back, navigate]);
-
-  // The steps open below every card: bring them into view and put the cursor in the first field.
-  useEffect(() => {
-    if (!panel) return;
-    const el = document.getElementById(`int-panel-${panel}`);
-    el?.scrollIntoView({ behavior: "smooth", block: "start" });
-    el?.querySelector<HTMLInputElement>("input")?.focus({ preventScroll: true });
-  }, [panel]);
 
   const rows: Active[] = [
     ...serverRows(hosts.data),
@@ -374,16 +365,16 @@ export function IntegrationsHubPage() {
         kind: "git",
         title: gh.configured || gl.configured ? "Other Git host" : "Git repository",
         text: "Clone any Git host over HTTPS with a read-only token, and read lockfiles on a schedule.",
-        to: "/integrations/sources",
+        to: "/integrations/sources?add=git",
         admin: true,
       },
-      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "", panel: "ci" },
+      { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "/integrations/setup/ci" },
       { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations/sources?add=container", admin: true },
       { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
       { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/integrations/aws", admin: true },
-      { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "", panel: "gcp" },
-      { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "", panel: "azure" },
-      { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "", panel: "sbom" },
+      { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "/integrations/setup/gcp", admin: true },
+      { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "/integrations/setup/azure", admin: true },
+      { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "/integrations/setup/sbom" },
       { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/integrations/plugins", admin: true },
     ],
   });
@@ -419,54 +410,45 @@ export function IntegrationsHubPage() {
           <h3 className="int-group">{g.title}</h3>
           <ul className="int-cards">
             {g.cards.map((c) => (
-              <li key={c.title} className={`int-card${c.panel && panel === c.panel ? " is-open" : ""}`}>
+              <li key={c.title} className="int-card">
                 <div className="int-card-head">
                   <IntegrationIcon kind={c.kind} />
                   <strong>{c.title}</strong>
                 </div>
                 <p className="small muted">{c.text}</p>
-                {c.panel ? (
-                  <button
-                    type="button"
-                    className="btn btn-sm"
-                    aria-expanded={panel === c.panel}
-                    aria-controls={`int-panel-${c.panel}`}
-                    onClick={() => setPanel(panel === c.panel ? null : c.panel!)}
-                  >
-                    {actionLabel(c, panel === c.panel)}
-                  </button>
-                ) : (
-                  (!c.admin || admin) &&
+                {(!c.admin || admin) &&
                   (c.button ? (
                     <div className="form-actions">{c.button}</div>
                   ) : (
                     <Link className="btn btn-sm" to={c.to}>
-                      {actionLabel(c, false)}
+                      {actionLabel(c)}
                     </Link>
-                  ))
-                )}
+                  ))}
               </li>
             ))}
           </ul>
-          {g.title === "Sources" && panel && (
-            <section className="card" id={`int-panel-${panel}`} aria-label={PANEL_TITLE[panel]}>
-              <div className="card-head">
-                <h2>{PANEL_TITLE[panel]}</h2>
-                <button type="button" className="btn btn-link" onClick={() => setPanel(null)}>
-                  Close
-                </button>
-              </div>
-              {panel === "ci" ? (
-                <CiPanel admin={admin} />
-              ) : panel === "sbom" ? (
-                <SbomPanel admin={admin} />
-              ) : (
-                <CloudConnectPanel key={panel} provider={panel} admin={admin} />
-              )}
-            </section>
-          )}
         </section>
       ))}
+    </>
+  );
+}
+
+/** Integrations, set-up steps for a source that has no form of its own (CI, SBOM, Google Cloud, Azure). */
+export function IntegrationStepsPage() {
+  const { can } = useAuth();
+  const admin = can("admin");
+  const { steps } = useParams();
+  if (!steps || !(steps in STEPS_TITLE)) return <Navigate replace to="/integrations" />;
+  const s = steps as Steps;
+  return (
+    <>
+      <p className="small">
+        <Link to="/integrations">← Integrations</Link>
+      </p>
+      <PageHeader help={STEPS_HELP[s]} title={STEPS_TITLE[s]} />
+      <section className="card">
+        {s === "ci" ? <CiPanel admin={admin} /> : s === "sbom" ? <SbomPanel admin={admin} /> : <CloudConnectPanel provider={s} admin={admin} />}
+      </section>
     </>
   );
 }

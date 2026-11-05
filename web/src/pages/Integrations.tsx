@@ -97,10 +97,11 @@ export function IntegrationsPage() {
   const act = useAction();
   const [msg, setMsg] = useState<string | null>(null);
   const [params] = useSearchParams();
-  // Integrations → Container image / registry opens the choice.
-  const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() =>
-    params.get("add") === "container" && admin ? "container" : null,
-  );
+  // Integrations → Container image / registry opens the choice; Other Git host opens the Git form.
+  const [creating, setCreating] = useState<IntegrationKind | "choose" | "container" | null>(() => {
+    const add = params.get("add");
+    return !admin ? null : add === "container" ? "container" : add === "git" ? "git_repository" : null;
+  });
   const [imagesOf, setImagesOf] = useState<Integration | null>(null);
 
   const job = useJobRunner(res.reload);
