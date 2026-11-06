@@ -1046,7 +1046,16 @@ stackurity.exe agent --interval 6h`,
     where: ["Fixes"],
     keywords: "fix group actions action plan security updates release upgrade kernels needs you hidden snooze",
     body: [
-      { p: "**Fixes** answers “what should we do?”. Each card is one change on one asset, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
+      { p: "**Fixes** answers “what should we do?”. Each fix is one change, such as an upgrade, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
+      { h: "The action centre" },
+      {
+        list: [
+          "**At a glance**: open fixes by priority (P1 to P4), fixes **Overdue** (an issue past the risk policy's fix deadline), the issues the fixes clear, and the issues a newer scan showed fixed in the last 30 days (from [Outcomes](help:outcomes)). Click a priority or Overdue to show only those fixes; click it again to show all.",
+          "**The table** lists every fix in one row: priority, the fix and its kind, where it is needed, the issues it clears, known exploited or SOS, effort, owner (who its issues are assigned to), the earliest due date, and its status: **Open**, **In progress** (someone started, or said they applied it), **Waiting for check** or **Regressed** (fixed before and back). Click a column heading to sort by it; click a row to open the fix. **Detailed** shows the same fixes as cards, with the command and the packages.",
+          "**Views**: built-in ones (My fixes, P1 & P2, Overdue, Exploited) and your own. Set the filters, give them a name and **Save**; only you see your views.",
+          "**Select** fixes (engineer role or higher) to **Assign owner** (and snooze or ignore, with the same rules as on a fix's page) or **Check again**, which asks every place that can report on demand for a fresh report.",
+        ],
+      },
       {
         table: [
           ["Kind", "What it means", "Typical fix"],
