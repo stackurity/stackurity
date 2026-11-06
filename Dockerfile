@@ -66,7 +66,10 @@ RUN go mod init syft-build \
 
 FROM alpine:3.24
 # git: shallow clones for repository scanning (data only, never executed).
-RUN apk add --no-cache ca-certificates git tzdata \
+# apk upgrade: take Alpine's security fixes (zlib, musl, ...) that the base
+# image snapshot does not have yet, so every build ships patched OS packages.
+RUN apk upgrade --no-cache \
+ && apk add --no-cache ca-certificates git tzdata \
  && adduser -D -H -u 10001 stackurity \
  && mkdir -p /var/lib/stackurity && chown stackurity /var/lib/stackurity
 COPY --from=build /out/stackurity /usr/local/bin/stackurity
