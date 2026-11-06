@@ -53,6 +53,12 @@ func renderEmail(from string, to []string, m Message, br EmailBrand, now time.Ti
 	}
 	hdr("From", headerAddress(from))
 	hdr("To", strings.Join(to, ", "))
+	if cc := headerAddresses(m.Cc); cc != "" {
+		hdr("Cc", cc)
+	}
+	if rt := headerAddresses([]string{m.ReplyTo}); rt != "" {
+		hdr("Reply-To", rt)
+	}
 	hdr("Subject", mime.QEncoding.Encode("utf-8", shorten(m.Subject(), emailSubjectMax)))
 	hdr("Date", now.Format(time.RFC1123Z))
 	hdr("Message-ID", messageID(from))
@@ -112,6 +118,19 @@ func headerAddress(from string) string {
 		return a.Address
 	}
 	return a.String()
+}
+
+// headerAddresses is a Cc or Reply-To value: the addresses that parse,
+// display names kept (encoded when not ASCII), others left out (sending
+// refuses them first: emailExtras).
+func headerAddresses(list []string) string {
+	var out []string
+	for _, a := range list {
+		if _, err := mail.ParseAddress(a); err == nil && !strings.ContainsAny(a, "\r\n") {
+			out = append(out, headerAddress(a))
+		}
+	}
+	return strings.Join(out, ", ")
 }
 
 // messageID is a new Message-ID on the sender's domain.

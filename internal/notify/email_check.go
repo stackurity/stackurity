@@ -130,6 +130,21 @@ func CheckEmail(raw []byte, m Message, c EmailCheck) []string {
 	} else if c.FromName != "" && from.Name != c.FromName {
 		bad("From %q: display name %q, want %q", h.Get("From"), from.Name, c.FromName)
 	}
+	// Reply-To and Cc: exactly the message's, each a valid address.
+	if m.ReplyTo != "" {
+		if a, err := mail.ParseAddress(h.Get("Reply-To")); err != nil || !strings.EqualFold(a.Address, envelopeAddress(m.ReplyTo)) {
+			bad("Reply-To %q, want %q", h.Get("Reply-To"), m.ReplyTo)
+		}
+	} else if h.Get("Reply-To") != "" {
+		bad("Reply-To %q on an email without one", h.Get("Reply-To"))
+	}
+	if len(m.Cc) > 0 {
+		if list, err := mail.ParseAddressList(h.Get("Cc")); err != nil || len(list) != len(m.Cc) {
+			bad("Cc %q, want %q", h.Get("Cc"), m.Cc)
+		}
+	} else if h.Get("Cc") != "" {
+		bad("Cc %q on an email without one", h.Get("Cc"))
+	}
 	if c.Notification {
 		if lu := h.Get("List-Unsubscribe"); !strings.HasPrefix(lu, "<https://") || !strings.HasSuffix(lu, ">") {
 			bad("List-Unsubscribe %q, want <https://…>", lu)

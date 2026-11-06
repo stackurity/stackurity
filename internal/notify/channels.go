@@ -67,6 +67,14 @@ type Message struct {
 	// Code is a one-time code an email shows on its own, large, after the
 	// first Summary line (email sign-in codes). Never sent to webhooks.
 	Code string `json:"-"`
+	// ReplyTo is the address replies to an email go to (the Reply-To
+	// header); empty: replies go to From. Cc are addresses that get a copy
+	// (the Cc header, and the envelope). Email only: never sent to
+	// webhooks. They are checked when the email is sent: an address that
+	// does not parse fails the send (a PermanentError), and Cc counts
+	// towards MaxEmailRecipients.
+	ReplyTo string   `json:"-"`
+	Cc      []string `json:"-"`
 
 	// Email sent by Stackurity, per recipient: the page that stops these
 	// emails, and its one-click address for the List-Unsubscribe header.
@@ -128,6 +136,9 @@ var accountEvents = map[string]bool{
 	"mfa_email_code": true, "mfa_email_sign_in": true, "mfa_changed": true, "ask_spend": true, "inactive_pause": true,
 	// Stackurity Cloud (the pro repository).
 	"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true,
+	// A hosted service's billing and plan emails to an organisation's
+	// administrators, and its sales alerts to the operator.
+	"billing": true, "sales_alert": true,
 }
 
 // Subject is the message's subject line: the title, with a tag in front
@@ -614,7 +625,53 @@ func envelopeAddress(from string) string {
 	return from
 }
 
+// MaxEmailRecipients is the most addresses one email is sent to: its To
+// and Cc together.
+const MaxEmailRecipients = 50
+
+// emailExtras checks an email's Reply-To and Cc addresses and answers the
+// Cc addresses for the envelope (bare, without any already in to). An
+// address that does not parse, or one with a line break (header
+// injection), fails the send for good, as does going over
+// MaxEmailRecipients.
+func emailExtras(to []string, m Message) ([]string, error) {
+	bad := func(what, a string) error {
+		return &PermanentError{Err: fmt.Errorf("email %s %q is not a valid address", what, a)}
+	}
+	if m.ReplyTo != "" {
+		if strings.ContainsAny(m.ReplyTo, "\r\n") {
+			return nil, bad("Reply-To", m.ReplyTo)
+		}
+		if _, err := mail.ParseAddress(m.ReplyTo); err != nil {
+			return nil, bad("Reply-To", m.ReplyTo)
+		}
+	}
+	seen := map[string]bool{}
+	for _, t := range to {
+		seen[strings.ToLower(envelopeAddress(t))] = true
+	}
+	var cc []string
+	for _, a := range m.Cc {
+		p, err := mail.ParseAddress(a)
+		if err != nil || strings.ContainsAny(a, "\r\n") {
+			return nil, bad("Cc", a)
+		}
+		if k := strings.ToLower(p.Address); !seen[k] {
+			seen[k] = true
+			cc = append(cc, p.Address)
+		}
+	}
+	if n := len(to) + len(cc); n > MaxEmailRecipients {
+		return nil, &PermanentError{Err: fmt.Errorf("an email goes to at most %d addresses (To and Cc), not %d", MaxEmailRecipients, n)}
+	}
+	return cc, nil
+}
+
 func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string, m Message) error {
+	cc, err := emailExtras(c.To, m)
+	if err != nil {
+		return err
+	}
 	addr := net.JoinHostPort(c.Host, strconv.Itoa(c.Port))
 	dial := s.Dial
 	if dial == nil {
@@ -655,7 +712,7 @@ func (s *Sender) sendEmail(ctx context.Context, c ChannelConfig, password string
 	if err := cl.Mail(envelopeAddress(c.From)); err != nil {
 		return err
 	}
-	for _, to := range c.To {
+	for _, to := range append(append([]string(nil), c.To...), cc...) {
 		if err := cl.Rcpt(to); err != nil {
 			return err
 		}
