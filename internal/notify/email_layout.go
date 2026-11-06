@@ -124,7 +124,7 @@ func emailWhy(m Message, host string) string {
 // listStyle: the Summary lines are facts to list (alerts, digests,
 // figures), not paragraphs to read.
 func (m Message) listStyle() bool {
-	return m.IncidentID > 0 || m.Kind != "" || m.Event == EventDigest || m.Event == "trial_summary"
+	return m.IncidentID > 0 || m.Kind != "" || m.Event == EventDigest || m.Event == "trial_summary" || m.Event == "sales_alert"
 }
 
 // linkLabel is the label of the email's button.
