@@ -327,6 +327,10 @@ func (s *Server) Handler() http.Handler {
 			}
 			r.Post("/feedback", s.sendFeedback)
 			r.Get("/feedback/mine", s.myFeedback)
+			// The caller's saved views on dashboard pages (saved_views.go).
+			r.Get("/saved-views", s.listSavedViews)
+			r.Post("/saved-views", s.saveView)
+			r.Delete("/saved-views/{id}", s.deleteSavedView)
 			s.feedbackOperatorRoutes(r)
 			// Linking the caller's Slack account (slack.go).
 			r.Get("/slack/links", s.listSlackLinks)
@@ -416,6 +420,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/findings/verify", s.verifySince)
 				r.Get("/fix-groups", s.listFixGroups)
 				r.Get("/fix-groups/summary", s.fixPlanSummary)
+				r.Get("/fix-groups/work", s.fixGroupWork)
 				r.Get("/fix-groups/{id}", s.getFixGroup)
 				r.Get("/findings/{id}", s.getFinding)
 				r.Get("/advisories/{key}", s.getAdvisory)

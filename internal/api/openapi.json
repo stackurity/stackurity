@@ -4502,6 +4502,124 @@
     }
    }
   },
+  "/saved-views": {
+   "get": {
+    "operationId": "get_saved_views",
+    "summary": "The caller's saved views on a dashboard page",
+    "description": "`page` (default and only value for now: `fixes`). Items by name: `id`, `page`, `name`, `query` (the page's query string), `created_at`, `updated_at`\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "parameters": [
+     {
+      "name": "page",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "fixes"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_saved_views",
+    "summary": "Save a view for the caller",
+    "description": "`{\"page\", \"name\", \"query\"}`: saves the page's query string under a name (1 to 60 characters); the same name replaces its query. At most 50 views per page\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/saved-views/{id}": {
+   "delete": {
+    "operationId": "delete_saved_views_id",
+    "summary": "Delete one of the caller's saved views",
+    "description": "Another person's view is not found (404)\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/feedback-queue/intake": {
    "post": {
     "operationId": "post_feedback_queue_intake",
@@ -5357,7 +5475,7 @@
    "get": {
     "operationId": "get_fix_groups",
     "summary": "Fixes (fix groups), most urgent first",
-    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer A `no_fix` group with application packages carries `no_fix_advice`: `sections` (`renamed`, `unmaintained`, `no_fix_yet`, each with `title`, `issues`, `items` and, for `unmaintained`, the risk policy's `unmaintained_months` when it applied) and `bundled` (the application the packages come with, and `commands` that show what pulls each in).",
+    "description": "Fixes (fix groups), most urgent first. `bucket` is `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`; every group is in exactly one, checked in that order. `priority`, `overdue`, `exploited` and `assignee=me` narrow the list. `group_by` is `fix` (the same change in several places is one entry with `places`: group, asset, app directory and finding count per place; counts are added up, `unique_issues` is not) or `asset` (one entry per asset); the default is the workspace's setting (`/settings/fix-grouping`)\n\nRole: viewer A `no_fix` group with application packages carries `no_fix_advice`: `sections` (`renamed`, `unmaintained`, `no_fix_yet`, each with `title`, `issues`, `items` and, for `unmaintained`, the risk policy's `unmaintained_months` when it applied) and `bundled` (the application the packages come with, and `commands` that show what pulls each in).",
     "tags": [
      "Findings and fixes"
     ],
@@ -5401,6 +5519,45 @@
       "required": false,
       "schema": {
        "type": "string"
+      }
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "description": "Most urgent issue: P1, P2, P3 or P4, several separated by commas",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "overdue",
+      "in": "query",
+      "required": false,
+      "description": "true: fixes with an active issue past its fix deadline",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "exploited",
+      "in": "query",
+      "required": false,
+      "description": "true: fixes with a known exploited issue",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee",
+      "in": "query",
+      "required": false,
+      "description": "me: fixes with an open issue assigned to the caller",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "me"
+       ]
       }
      },
      {
@@ -5458,7 +5615,7 @@
    "get": {
     "operationId": "get_fix_groups_summary",
     "summary": "Fix groups and findings per kind and bucket",
-    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. Counts follow `group_by` as `GET /fix-groups` does: grouped by fix, the same fix in several places counts once\n\nRole: viewer",
+    "description": "Groups and findings per kind, plus `focus`: the number of focus groups and their findings, groups and findings per other bucket (`hidden`), and the assets with focus groups. `by_priority` counts fixes by their most urgent issue, `overdue` those with an active issue past its fix deadline, `exploited` those with a known exploited issue. Counts follow `group_by` as `GET /fix-groups` does: grouped by fix, the same fix in several places counts once\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -5482,6 +5639,46 @@
         "fix",
         "asset"
        ]
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/fix-groups/work": {
+   "get": {
+    "operationId": "get_fix_groups_work",
+    "summary": "Where the work on each listed fix stands",
+    "description": "`ids`: up to 500 fix group ids, separated by commas. One item per group with open issues the caller can see: `group_id`, `active`, `due` (earliest fix deadline of an active issue), `overdue`, `in_progress`, `regressed`, `owners` (assignee emails or team names, most issues first, at most five), `unassigned` and `mine` (assigned to the caller)\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "ids",
+      "in": "query",
+      "required": false,
+      "description": "Fix group ids, separated by commas",
+      "schema": {
+       "type": "string"
       }
      }
     ],

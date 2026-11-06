@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -18,6 +19,30 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	f := store.FixGroupFilter{AssetID: qInt(r, "asset_id"), Kind: q.Get("kind"), Environment: q.Get("environment"),
 		Search: q.Get("q"), Bucket: q.Get("bucket"), Page: page(r)}
+	if v := q.Get("priority"); v != "" {
+		for _, p := range strings.Split(v, ",") {
+			if !slices.Contains([]string{"P1", "P2", "P3", "P4"}, p) {
+				s.fail(w, r, badRequest("priority must be P1, P2, P3 or P4 (several separated by commas)"))
+				return
+			}
+			f.Priorities = append(f.Priorities, p)
+		}
+	}
+	f.Overdue = qBool(r, "overdue") != nil && *qBool(r, "overdue")
+	f.Exploited = qBool(r, "exploited") != nil && *qBool(r, "exploited")
+	switch q.Get("assignee") {
+	case "":
+	case "me":
+		p := principal(r)
+		if p == nil || p.User == nil {
+			s.fail(w, r, badRequest("assignee=me needs a signed-in user"))
+			return
+		}
+		f.AssigneeUser = p.User.ID
+	default:
+		s.fail(w, r, badRequest("assignee must be me"))
+		return
+	}
 	if f.Bucket != "" {
 		if !slices.Contains(store.FixBuckets, f.Bucket) {
 			s.fail(w, r, badRequest("bucket must be one of "+strings.Join(store.FixBuckets, ", ")))
@@ -41,6 +66,32 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, paged(items, total, f.Page))
+}
+
+// fixGroupWork returns where the work on each listed fix group stands
+// (store.FixWork): ?ids= takes up to store.FixWorkMax group ids, separated
+// by commas. Groups with no open issue the caller can see are left out.
+func (s *Server) fixGroupWork(w http.ResponseWriter, r *http.Request) {
+	var ids []string
+	for _, id := range strings.Split(r.URL.Query().Get("ids"), ",") {
+		if id = strings.TrimSpace(id); id != "" && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > store.FixWorkMax {
+		s.fail(w, r, badRequest(fmt.Sprintf("at most %d ids", store.FixWorkMax)))
+		return
+	}
+	var userID int64
+	if p := principal(r); p != nil && p.User != nil {
+		userID = p.User.ID
+	}
+	work, err := s.Store.FixGroupWork(r.Context(), ids, userID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, all(work))
 }
 
 // groupByFix reads group_by (fix or asset; the workspace's setting when

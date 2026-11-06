@@ -44,13 +44,17 @@ var projectScopeNames = map[projectScope]string{
 
 var projectRoutes = map[string]projectScope{
 	// The caller's own account.
-	"GET /api/v1/auth/me":                   accountScope,
-	"POST /api/v1/auth/password":            accountScope,
-	"GET /api/v1/auth/email-preferences":    accountScope,
-	"PUT /api/v1/auth/email-preferences":    accountScope,
-	"PUT /api/v1/auth/default-project":      accountScope,
-	"POST /api/v1/feedback":                 accountScope,
-	"GET /api/v1/feedback/mine":             accountScope,
+	"GET /api/v1/auth/me":                accountScope,
+	"POST /api/v1/auth/password":         accountScope,
+	"GET /api/v1/auth/email-preferences": accountScope,
+	"PUT /api/v1/auth/email-preferences": accountScope,
+	"PUT /api/v1/auth/default-project":   accountScope,
+	"POST /api/v1/feedback":              accountScope,
+	"GET /api/v1/feedback/mine":          accountScope,
+	// The caller's own saved views on dashboard pages.
+	"GET /api/v1/saved-views":               accountScope,
+	"POST /api/v1/saved-views":              accountScope,
+	"DELETE /api/v1/saved-views/{id}":       accountScope,
 	"GET /api/v1/workspaces":                accountScope,
 	"POST /api/v1/workspaces/{id}/activate": accountScope,
 	"GET /api/v1/tokens":                    accountScope,
@@ -121,6 +125,7 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/findings/{id}/explain":        scopedRead,
 	"GET /api/v1/fix-groups":                   scopedRead,
 	"GET /api/v1/fix-groups/summary":           scopedRead,
+	"GET /api/v1/fix-groups/work":              scopedRead,
 	"GET /api/v1/fix-groups/{id}":              scopedRead,
 	"GET /api/v1/evaluation-gaps":              scopedRead,
 	"GET /api/v1/reports/outcomes":             scopedRead,

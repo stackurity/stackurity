@@ -355,17 +355,6 @@ export function AskPanel({
           </span>
         </span>
         <span className="ask-head-actions">
-          {s?.notice_accepted && (
-            <>
-              <AskFeedbackButton conv={conv} />
-              <button type="button" className="btn btn-sm btn-link" onClick={() => setHistory((h) => !h)} aria-expanded={history}>
-                History
-              </button>
-              <button type="button" className="btn btn-sm btn-link" onClick={fresh}>
-                New
-              </button>
-            </>
-          )}
           <button type="button" className="btn btn-sm btn-link" onClick={() => hide(true)} aria-label="Minimise" title="Minimise: keeps this conversation">
             –
           </button>
@@ -374,6 +363,18 @@ export function AskPanel({
           </button>
         </span>
       </header>
+      {/* The conversation's actions get a row of their own, so the name is never cut short. */}
+      {s?.notice_accepted && (
+        <div className="ask-toolbar" role="toolbar" aria-label="Conversation">
+          <button type="button" className="btn btn-sm btn-link" onClick={fresh}>
+            New
+          </button>
+          <button type="button" className="btn btn-sm btn-link" onClick={() => setHistory((h) => !h)} aria-expanded={history}>
+            History
+          </button>
+          <AskFeedbackButton conv={conv} />
+        </div>
+      )}
       <ErrorBox error={error} title="Ask Stackurity" />
       {!s ? (
         <p className="muted ask-body">Loading…</p>

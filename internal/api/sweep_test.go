@@ -216,6 +216,10 @@ var routeRules = map[string]routeRule{
 	// The caller's own linked Slack accounts. A's link token must not
 	// preview or link for B, and A's link must not be removed.
 	"GET /api/v1/slack/links": {class: "list"},
+	// The caller's own saved views (saved_views.go); A's cannot be deleted.
+	"GET /api/v1/saved-views":         {class: "list"},
+	"POST /api/v1/saved-views":        {class: "create", body: func(*tenantFx) any { return map[string]string{"page": "fixes", "name": "Mine", "query": "assignee=me"} }},
+	"DELETE /api/v1/saved-views/{id}": {class: "object", obj: id("savedview")},
 	// Ask Stackurity: the caller's own conversations; another person's,
 	// in any organisation, is 404 to read, delete or ask in.
 	"GET /api/v1/ask/status":                       {class: "account"},
@@ -354,6 +358,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/findings/verify":        {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
 	"GET /api/v1/fix-groups":             {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/fix-groups/summary":     {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/fix-groups/work":        {class: "list", query: "?ids={fixgroup}"},
 	"GET /api/v1/evaluation-gaps":        {class: "list"},
 	"GET /api/v1/second-checks":          {class: "list"},
 	"GET /api/v1/reports/outcomes":       {class: "list"},
@@ -1027,6 +1032,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s assistants: %d %+v", tag, code, conns)
 	}
 	set("assistant", conns.Items[0].ID)
+	var view struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/saved-views", map[string]string{"page": "fixes", "name": "P1 " + tag, "query": "priority=P1"}, &view); code != 200 {
+		t.Fatalf("%s saved view: %d", tag, code)
+	}
+	set("savedview", view.ID)
 	glc, err := e.st.BindGitLabGroup(ctx, 800000+ws, "gl-"+tag, "GitLab "+tag, me.User.ID)
 	if err != nil {
 		t.Fatalf("%s gitlab connection: %v", tag, err)
@@ -1431,7 +1441,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 		"/api/v1/checks?asset_id={asset}", "/api/v1/checks/{check}", "/api/v1/ignore-rules?status=all", "/api/v1/ignore-requests?status=all",
 		"/api/v1/second-checks", "/api/v1/vex/documents", "/api/v1/vex/sources", "/api/v1/vex/documents/{vexdoc}/statements",
 		"/api/v1/projects/{project}", "/api/v1/access-grants", "/api/v1/assets?project_id={project}",
-		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/integrations/jira/connections",
+		"/api/v1/invitations", "/api/v1/onboarding", "/api/v1/usage", "/api/v1/slack/links", "/api/v1/saved-views", "/api/v1/integrations/jira/connections",
 		"/api/v1/ask/conversations", "/api/v1/ask/conversations/{askconv}", "/api/v1/ask/usage/calls",
 	}, editionSnapshotPaths...) {
 		resp := a.sess["admin"].req("GET", fill(p, a.ids), nil, nil)

@@ -176,6 +176,9 @@ var projectScopes = map[string]string{
 	"DELETE /api/v1/assistants/{id}":               "account",
 	"PATCH /api/v1/assistants/{id}":                "account",
 	"GET /api/v1/feedback/mine":                    "account",
+	"GET /api/v1/saved-views":                      "account",
+	"POST /api/v1/saved-views":                     "account",
+	"DELETE /api/v1/saved-views/{id}":              "account",
 
 	"GET /api/v1/packs":              "global",
 	"GET /api/v1/packs/{id}/archive": "global",
@@ -235,6 +238,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/findings/{id}/explain":                            "scoped",
 	"GET /api/v1/fix-groups":                                       "scoped",
 	"GET /api/v1/fix-groups/summary":                               "scoped",
+	"GET /api/v1/fix-groups/work":                                  "scoped",
 	"GET /api/v1/fix-groups/{id}":                                  "scoped",
 	"GET /api/v1/evaluation-gaps":                                  "scoped",
 	"GET /api/v1/second-checks":                                    "scoped",

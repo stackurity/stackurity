@@ -437,6 +437,28 @@ Sends feedback to the Stackurity team: `kind` (`issue`, `feature`, `question`; `
 
 What the caller sent from this installation, newest first: `ref`, `kind`, `summary` (the first line), `attachments`, `status` (`received`, `reviewing`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note` (the team's note, e.g. why it won't be changed), `fixed_in`, `status_at`, `created_at`. Statuses of open items older than five minutes are asked again from the feedback service, sending only each item's reference and status token; `check_failed` is true when that did not work.
 
+## Saved views
+
+A person's own named filters on a dashboard page (the Fixes page's **Views** menu). A view is the page's query string, as the page puts it in its address; nobody else lists or deletes it.
+
+### `GET /saved-views`
+
+**Who:** any signed-in user
+
+The caller's views on `page` (default `fixes`, the only page with views for now), by name: `id`, `page`, `name`, `query`, `created_at`, `updated_at`.
+
+### `POST /saved-views`
+
+**Who:** any signed-in user
+
+`{"page", "name", "query"}`: saves the query string under a name (1 to 60 characters, query at most 2,000). Saving a name again replaces its query. At most 50 views per page; `400` past that.
+
+### `DELETE /saved-views/{id}`
+
+**Who:** any signed-in user
+
+Deletes one of the caller's views. `404` for another person's.
+
 ## Feedback queue
 
 Only on the server that runs the Stackurity team's queue (`STACKURITY_FEEDBACK_QUEUE_DIR`); everywhere else these answer 404 or 403. See [feedback-queue.md](feedback-queue.md).
@@ -1167,9 +1189,11 @@ Ask for the leak's asset to be scanned again, as [`POST /assets/{id}/check`](#po
 
 **Who:** viewer
 
-Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `environment`, `q`, `bucket`, `group_by`. Package upgrades carry `target_version`, the version the title names ([Upgrade recommendations](#upgrade-recommendations)).
+Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `environment`, `q`, `bucket`, `group_by`, `priority`, `overdue`, `exploited`, `assignee`. Package upgrades carry `target_version`, the version the title names ([Upgrade recommendations](#upgrade-recommendations)).
 
 - `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
+- `priority`: `P1` to `P4`, several separated by commas: the fix's most urgent issue.
+- `overdue=true`: fixes with an active issue past its fix deadline (the risk policy's SLA or patch calendar). `exploited=true`: fixes with a known exploited issue. `assignee=me`: fixes with an open issue assigned to the caller.
 - `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
 
 A `no_fix` group with application packages (npm, PyPI, Composer and the like; not operating system packages) carries `no_fix_advice`: what can be done about each package without a fixed version, from stored data only. Its `action` says the same in one paragraph.
@@ -1185,7 +1209,13 @@ A `no_fix` group with application packages (npm, PyPI, Composer and the like; no
 
 **Who:** viewer
 
-Groups and findings per kind, plus `focus` (focus groups, their findings and assets) and `hidden` (groups and findings per other bucket). Query: `asset_id`, `group_by` as for `GET /fix-groups`: grouped by fix, a fix needed in several places counts once.
+Groups and findings per kind, plus `focus` (focus groups, their findings and assets) and `hidden` (groups and findings per other bucket). Query: `asset_id`, `group_by` as for `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. `by_priority` counts fixes by their most urgent issue (a fix in several places counts once, at its most urgent place), `overdue` the fixes with an active issue past its fix deadline, and `exploited` those with a known exploited issue.
+
+### `GET /fix-groups/work`
+
+**Who:** viewer
+
+Where the work on each listed fix stands, for the Fixes table. `ids`: up to 500 fix group ids (a fix in several places has one per place), separated by commas. One item per group with open issues the caller can see: `group_id`, `active` (open and not snoozed or accepted), `due` (the earliest fix deadline of an active issue, or null), `overdue`, `in_progress` ("applied, waiting for a check" or being worked on), `regressed`, `owners` (who open issues are assigned to: a user's email or a team's name, most issues first, at most five), `unassigned` and `mine` (assigned to the caller).
 
 ### `GET /fix-groups/{id}`
 

@@ -133,7 +133,7 @@ export function AssetsPage() {
     { key: "count", header: "Components", numeric: true, cell: (a) => a.component_count.toLocaleString() },
     {
       key: "status",
-      header: "Status",
+      header: "Reporting",
       cell: (a) => (
         <Badge status={a.collection_status} label={ASSET_STATUS_LABEL[a.collection_status]} title={ASSET_STATUS_HELP[a.collection_status]} />
       ),
@@ -192,9 +192,9 @@ export function AssetsPage() {
           </select>
         </div>
         <div className="field">
-          <label htmlFor="f-status">Status</label>
+          <label htmlFor="f-status">Reporting</label>
           <select id="f-status" value={status} onChange={(e) => update({ status: e.target.value })}>
-            <option value="">Any status</option>
+            <option value="">Any</option>
             {ASSET_STATUSES.map((s) => (
               <option key={s} value={s}>
                 {ASSET_STATUS_LABEL[s] ?? s}
