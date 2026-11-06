@@ -201,6 +201,11 @@ var distroLabels = map[string]string{
 	"azurelinux": "Azure Linux",
 }
 
+// DistroLabel names an os-release ID (a deb, rpm or apk package's purl
+// namespace) for people: "debian" is "Debian". Empty when it is not one
+// Stackurity knows.
+func DistroLabel(id string) string { return distroLabels[strings.ToLower(id)] }
+
 // EcosystemLabel names an ecosystem key for people: "npm", "PyPI",
 // "Ubuntu 24.04", "Windows".
 func EcosystemLabel(key string) string {

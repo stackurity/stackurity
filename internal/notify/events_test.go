@@ -370,6 +370,8 @@ func TestUpgradeAction(t *testing.T) {
 		{[]store.UpgradeTarget{{Target: "4.17.21", Minimum: "4.17.21"}}, "Upgrade to 4.17.21 or later"},
 		{[]store.UpgradeTarget{{Target: "10.7.5", Minimum: "10.1.0"}}, "Upgrade to 10.7.5 (fixes from 10.1.0)"},
 		{[]store.UpgradeTarget{{Target: "2.0.1", Minimum: "2.0.1"}, {Target: "1.9.9", Minimum: "1.9.4"}}, "Upgrade to 2.0.1 or later / 1.9.9 (fixes from 1.9.4)"},
+		{[]store.UpgradeTarget{{Component: "lodash", Target: "4.17.21", Minimum: "4.17.21"}, {Component: "minimist", Target: "1.2.8", Minimum: "1.2.6"}},
+			"Upgrade lodash to 4.17.21 or later / minimist to 1.2.8 (fixes from 1.2.6)"},
 	} {
 		if got := upgradeAction(c.in); got != c.want {
 			t.Errorf("%v = %q, want %q", c.in, got, c.want)

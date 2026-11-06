@@ -781,22 +781,33 @@ func (s *Store) narrowIncidents(ctx context.Context, list []Incident) error {
 	// The caller already read each incident's status: joining incidents
 	// again would repeat its row-level security check, which reads the
 	// findings of every visible asset.
-	rows, err := s.Pool.Query(ctx, `SELECT f.incident_id,
-		  count(*)::int, count(DISTINCT f.asset_id)::int,
-		  (array_agg(f.title ORDER BY f.priority_score DESC))[1], min(f.priority), bool_or(f.sos), max(f.escalation_level),
-		  CASE WHEN bool_or(f.state = 'new') THEN 'new' WHEN bool_or(f.state = 'acknowledged') THEN 'acknowledged' ELSE 'in_progress' END,
+	rows, err := s.Pool.Query(ctx, `WITH comp AS (
+		  SELECT f.incident_id, `+componentFixCols+`
+		  FROM findings f JOIN components c ON c.id = f.component_id
+		  WHERE f.incident_id = ANY($1)
+		    AND (f.incident_id <> ALL($2) OR (`+activeFinding+`))
+		  GROUP BY f.incident_id, c.type, 3),
+		cf AS (`+componentFixesAgg("incident_id", "comp")+`)
+		SELECT m.incident_id, m.findings, m.assets, m.title, m.priority, m.sos, m.escalation, m.state,
+		  m.detail || COALESCE(cf.detail, '{}'::jsonb)
+		FROM (SELECT f.incident_id,
+		  count(*)::int AS findings, count(DISTINCT f.asset_id)::int AS assets,
+		  (array_agg(f.title ORDER BY f.priority_score DESC))[1] AS title, min(f.priority) AS priority, bool_or(f.sos) AS sos,
+		  max(f.escalation_level) AS escalation,
+		  CASE WHEN bool_or(f.state = 'new') THEN 'new' WHEN bool_or(f.state = 'acknowledged') THEN 'acknowledged' ELSE 'in_progress' END AS state,
 		  jsonb_build_object(
 		    'assets', (array_agg(DISTINCT a.name))[1:10],
 		    'environments', COALESCE(array_agg(DISTINCT a.environment) FILTER (WHERE a.environment <> ''), '{}'),
 		    'components', (array_agg(DISTINCT CASE WHEN c.namespace = '' THEN c.name ELSE c.namespace || '/' || c.name END))[1:10],
 		    'fixed_versions', COALESCE(array_agg(DISTINCT f.fixed_version) FILTER (WHERE f.fixed_version <> ''), '{}'),
 		    'known_exploited', bool_or(COALESCE((f.evidence->>'known_exploited')::boolean, false)),
-		    'severity', (array_agg(f.severity ORDER BY f.priority_score DESC))[1])
+		    'severity', (array_agg(f.severity ORDER BY f.priority_score DESC))[1]) AS detail
 		FROM findings f
 		JOIN assets a ON a.id = f.asset_id JOIN components c ON c.id = f.component_id
 		WHERE f.incident_id = ANY($1)
 		  AND (f.incident_id <> ALL($2) OR (`+activeFinding+`))
-		GROUP BY f.incident_id`, ids, open)
+		GROUP BY f.incident_id) m
+		LEFT JOIN cf ON cf.incident_id = m.incident_id`, ids, open)
 	if err != nil {
 		return err
 	}

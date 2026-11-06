@@ -66,7 +66,9 @@ func EmailSamples(base string) []EmailSample {
 	vuln := store.Incident{Kind: "vulnerability", Key: "CVE-2026-31337", Title: "CVE-2026-31337 in openssl 3.0.13 (remote code execution)",
 		Priority: "P1", Status: "open", OwnerTeam: "Platform", FindingCount: 4, AssetCount: 3,
 		Detail: detail(map[string]any{"assets": []string{"web-1", "web-2", "api-gateway"}, "components": []string{"openssl 3.0.13"},
-			"environments": []string{"production"}, "known_exploited": true, "fixed_versions": []string{"3.0.15"}})}
+			"environments": []string{"production"}, "known_exploited": true, "fixed_versions": []string{"3.0.15"},
+			"component_fixes": []map[string]any{{"component": "openssl", "type": "generic", "fixed_versions": []string{"3.0.15"}, "assets": 3, "unfixed": 0}},
+			"component_count": 1})}
 	sos := vuln
 	sos.SOS = true
 	escalated := vuln
