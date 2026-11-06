@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.1
+
 ### Changed
 
 - **Dashboard look and navigation.** A calmer colour system: neutral grey surfaces and sidebar instead of blue ones, one indigo-blue accent for primary buttons, the focus ring and the active tab, links in dark slate-blue (underlined on hover), and red, amber and green kept for meaning. P1 to P4 badges have their own colours. The icons are now [Lucide](https://lucide.dev) icons (ISC licence, see NOTICE), inlined as before. **Data sources** (`/intelligence`) moved from Integrations to Assets, after Coverage, and the Integrations tab **Secrets** is now **Stored credentials**, so it is not confused with leaked keys. Both keep their URLs.
