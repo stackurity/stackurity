@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Fixed
+
+- **An incident's recommended action no longer offers one distribution's fix for another.** An incident groups one advisory across every asset, so it can hold `ubuntu/curl` (fixed in `7.81.0-1ubuntu1.29`) next to `debian/curl` (no fix yet). The incident page, Slack, Teams, email, webhooks and Jira said "upgrade debian/curl, ubuntu/curl, ubuntu/libcurl4 to 7.81.0-1ubuntu1.29 or later". They now say what to do per component: the upgrade for the components with a fix, "no fixed version is published yet for Debian, watch the advisory and consider mitigations" for those without, "the version for each asset's release" when one component has several fixed versions, and how many assets each line is about. The summary's "fixed versions" row is grouped the same way. A Jira issue's action plan target ("Upgrade to 4.17.23") is used only when it covers every component. The incident detail gains `component_fixes` (per component: `component`, `type`, `fixed_versions`, `assets`, `unfixed`; at most 20) and `component_count`; `components` and `fixed_versions` stay for older clients. Existing incidents get them at the next correlation (part of every notification cycle); until then they show the old text.
+
 ## 0.19.1
 
 ### Changed
@@ -30,7 +34,6 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Fixed
 
-- **An incident's recommended action no longer offers one distribution's fix for another.** An incident groups one advisory across every asset, so it can hold `ubuntu/curl` (fixed in `7.81.0-1ubuntu1.29`) next to `debian/curl` (no fix yet). The incident page, Slack, Teams, email, webhooks and Jira said "upgrade debian/curl, ubuntu/curl, ubuntu/libcurl4 to 7.81.0-1ubuntu1.29 or later". They now say what to do per component: the upgrade for the components with a fix, "no fixed version is published yet for Debian, watch the advisory and consider mitigations" for those without, "the version for each asset's release" when one component has several fixed versions, and how many assets each line is about. The summary's "fixed versions" row is grouped the same way. A Jira issue's action plan target ("Upgrade to 4.17.23") is used only when it covers every component. The incident detail gains `component_fixes` (per component: `component`, `type`, `fixed_versions`, `assets`, `unfixed`; at most 20) and `component_count`; `components` and `fixed_versions` stay for older clients. Existing incidents get them at the next correlation (part of every notification cycle); until then they show the old text.
 - **Settings → Single sign-on on a self-hosted server** no longer shows "Could not load single sign-on: No such endpoint." It says that single sign-on (OpenID Connect or SAML) is set in the server's settings, shows the providers set up now and whether the workspace's licence includes it, lists the redirect, ACS and entity ID addresses to register, and links to the install guide. The entry is now in Settings on every edition. **Plan and billing** on a self-hosted server says that plans and billing are part of Stackurity Cloud instead of loading. Any other path a server does not serve now reads "This is not available on this server" rather than "No such endpoint".
 
 ### Upgrading
