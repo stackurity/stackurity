@@ -12,6 +12,8 @@ import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { INCIDENT_KIND_LABEL } from "./Incidents";
+import { fixedVersionRows, fixLines, lineComponents } from "../incidentFix";
+import { plural } from "../format";
 
 function chips(xs: string[] | undefined, mono = false): ReactNode {
   if (!xs || xs.length === 0) return <span className="muted">—</span>;
@@ -24,7 +26,7 @@ function chips(xs: string[] | undefined, mono = false): ReactNode {
   );
 }
 
-function Recommended({ inc }: { inc: Incident }) {
+export function Recommended({ inc }: { inc: Incident }) {
   const d = inc.detail ?? {};
   const comps = d.components ?? [];
   const fixes = d.fixed_versions ?? [];
@@ -36,6 +38,26 @@ function Recommended({ inc }: { inc: Incident }) {
         </p>
       </div>
     );
+  const lines = fixLines(d.component_fixes);
+  if (lines) {
+    const more = (d.component_count ?? 0) - (d.component_fixes?.length ?? 0);
+    const anyFix = lines.some((l) => l.kind !== "none");
+    return (
+      <div className={anyFix ? "action-box" : "action-box action-none"}>
+        <p>
+          <strong>Recommended action</strong>, for each component:
+        </p>
+        <ul className="fix-lines">
+          {lines.map((l) => (
+            <li key={l.components.map((c) => c.name).join(",")}>
+              <span className="mono">{lineComponents(l)}</span>: {l.text}
+            </li>
+          ))}
+          {more > 0 && <li>{plural(more, "more component")}: see the findings below.</li>}
+        </ul>
+      </div>
+    );
+  }
   if (fixes.length === 0)
     return (
       <div className="action-box action-none">
@@ -51,6 +73,22 @@ function Recommended({ inc }: { inc: Incident }) {
         <span className="mono">{fixes.join(" / ")}</span> or later on every affected asset.
       </p>
     </div>
+  );
+}
+
+/** The summary's "fixed versions" row, per component when the detail says. */
+export function FixedVersions({ inc }: { inc: Incident }) {
+  const d = inc.detail ?? {};
+  const lines = fixLines(d.component_fixes);
+  if (!lines) return <>{chips(d.fixed_versions, true)}</>;
+  return (
+    <span className="fixed-rows">
+      {fixedVersionRows(lines).map((r) => (
+        <span key={r.components} className="fixed-row">
+          <span className="mono">{r.components}</span>: <span className="mono">{r.versions}</span>
+        </span>
+      ))}
+    </span>
   );
 }
 
@@ -234,7 +272,7 @@ export function IncidentDetailPage() {
                     ["assets", chips(d.assets)],
                     ["environments", chips(d.environments)],
                     ["components", chips(d.components, true)],
-                    ["fixed versions", chips(d.fixed_versions, true)],
+                    ["fixed versions", <FixedVersions inc={inc} />],
                   ] as [string, ReactNode][])
                 : []),
             ]}

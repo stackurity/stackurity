@@ -1,6 +1,10 @@
 // Typed client for the Stackurity REST API (/api/v1). Types mirror the Go
 // structs in internal/store/*.go and the handlers in internal/api/.
 
+import type { ComponentFix } from "./incidentFix.ts";
+
+export type { ComponentFix };
+
 export type Role = "viewer" | "engineer" | "security" | "admin" | "collector";
 export type UserRole = Exclude<Role, "collector">;
 
@@ -2436,7 +2440,11 @@ export interface IncidentDetailInfo {
   assets?: string[];
   environments?: string[];
   components?: string[];
+  /** Flat across every component: use component_fixes when present. */
   fixed_versions?: string[];
+  /** Per component (at most 20; component_count is the total). */
+  component_fixes?: ComponentFix[];
+  component_count?: number;
   known_exploited?: boolean;
   severity?: string;
   // system incidents

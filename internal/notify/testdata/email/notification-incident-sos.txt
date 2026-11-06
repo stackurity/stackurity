@@ -5,7 +5,7 @@ Subject: [SOS] [P1] CVE-2026-31337 in openssl 3.0.13 (remote code execution)
 - Environments: production
 - Known exploited in the wild (CISA KEV)
 
-Recommended action: Upgrade to 3.0.15 or later
+Recommended action: Upgrade openssl to 3.0.15 or later (3 assets)
 Owner: Platform
 
 Open in Stackurity:

@@ -1599,6 +1599,21 @@ details.json pre {
 .action-box p {
   margin: 0;
 }
+.action-box .fix-lines {
+  margin: 6px 0 0;
+  padding-left: 20px;
+}
+.action-box .fix-lines li + li {
+  margin-top: 4px;
+}
+.fixed-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.fixed-row {
+  overflow-wrap: anywhere;
+}
 .advisory {
   margin-bottom: 12px;
 }
