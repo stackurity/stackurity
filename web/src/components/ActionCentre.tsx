@@ -378,7 +378,7 @@ export function ActionSummary({
         active={overdue}
         label="Overdue"
         value={s.overdue === undefined ? <span className="ac-muted">—</span> : s.overdue.toLocaleString()}
-        sub={s.overdue === undefined ? "not measured" : "past the risk policy's deadline"}
+        sub={s.overdue === undefined ? "not measured" : "past the fix deadline"}
         tone={s.overdue ? "bad" : undefined}
       />
       <Tile to={issuesLink} label="Issues these clear" value={s.findings.toLocaleString()} sub={s.unique_issues !== undefined ? plural(s.unique_issues, "distinct vulnerability", "distinct vulnerabilities") : undefined} />
@@ -386,7 +386,7 @@ export function ActionSummary({
         to="/outcomes?days=30"
         label="Verified fixed, 30 days"
         value={verified === null ? <span className="ac-muted">—</span> : verified.toLocaleString()}
-        sub={verified === null ? "not measured" : "issues a newer scan showed gone"}
+        sub={verified === null ? "not measured" : "issues proven by a newer scan"}
         tone={verified ? "good" : undefined}
       />
     </section>
