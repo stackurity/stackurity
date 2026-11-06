@@ -2,6 +2,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -87,6 +88,32 @@ func TestServerErrorsRecorded(t *testing.T) {
 		if err := st.Pool.QueryRow(sys, `SELECT sample->>'message' FROM client_errors WHERE name = 'panic'`).Scan(&msg); err != nil || msg != "nil map in asset 4711" {
 			// Four digits are kept; five or more are scrubbed.
 			t.Errorf("panic message %q (%v)", msg, err)
+		}
+	}
+}
+
+// A request the browser cancelled (a reload, a closed tab) is answered 499
+// and noted nowhere; a cancellation while the request still lives is a 500.
+func TestFailClientCancelled(t *testing.T) {
+	s := &Server{Log: slog.New(slog.NewTextHandler(io.Discard, nil))}
+	for _, tc := range []struct {
+		gone bool
+		want int
+	}{{true, 499}, {false, 500}} {
+		ctx, cancel := context.WithCancel(context.Background())
+		if tc.gone {
+			cancel()
+		}
+		note := &serverErrorNote{}
+		r := httptest.NewRequest("GET", "/api/v1/meta", nil).WithContext(context.WithValue(ctx, serverErrorNoteKey{}, note))
+		w := httptest.NewRecorder()
+		s.fail(w, r, fmt.Errorf("load meta: %w", context.Canceled))
+		cancel()
+		if w.Code != tc.want {
+			t.Errorf("gone=%v: status %d, want %d", tc.gone, w.Code, tc.want)
+		}
+		if noted := note.name != ""; noted != (tc.want == 500) {
+			t.Errorf("gone=%v: noted %q", tc.gone, note.name)
 		}
 	}
 }

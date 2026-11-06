@@ -734,6 +734,11 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 		writeError(w, 400, "password_too_weak", err.Error(), weak.Missing...)
 	case errors.Is(err, auth.ErrBadPassword):
 		writeError(w, 400, "bad_request", err.Error())
+	case errors.Is(err, context.Canceled) && r.Context().Err() != nil:
+		// The browser went away (a reload, a closed tab) before the answer:
+		// nothing failed here, so it is no server error to log or report.
+		// 499 is nginx's "client closed request".
+		writeError(w, 499, "client_closed", "request cancelled")
 	default:
 		s.Log.Error("request failed", "path", r.URL.Path, "err", err, "request_id", middleware.GetReqID(r.Context()))
 		noteError(r, "error", err.Error(), "")
