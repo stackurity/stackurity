@@ -2,11 +2,13 @@ package store_test
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/testdb"
@@ -133,7 +135,9 @@ func TestLeakStoresNoValue(t *testing.T) {
 		cols = append(cols, c)
 	}
 	want := "id workspace_id asset_id collector_id fingerprint path line rule title name preview severity exposure status resolution " +
-		"resolution_note resolved_by first_seen last_seen resolved_at last_collection_id"
+		"resolution_note resolved_by first_seen last_seen resolved_at last_collection_id " +
+		// 0101: the rotation workflow. Its only text is a person's note.
+		"assignee_user_id assignee_team_id due_at rotated_at rotated_by rotation_note"
 	if strings.Join(cols, " ") != want {
 		t.Errorf("leaks has columns %v; a new one must not hold the value", cols)
 	}
@@ -299,5 +303,159 @@ func TestLeakWhy(t *testing.T) {
 		if p.Kind == "leak" && p.Detail["why"] != ls[0].Why {
 			t.Errorf("incident why: %v", p.Detail["why"])
 		}
+	}
+}
+
+// The rotation workflow: a leak needs rotation, is assigned, marked
+// rotated, still found by a scan that sees it, and verified gone by a
+// complete scan that no longer does.
+func TestLeakWorkflow(t *testing.T) {
+	bg := context.Background()
+	ctx := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	ravi, err := s.CreateUser(ctx, "ravi@example.com", "Ravi", "engineer", "Correct horse battery 1!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	web, err := s.CreateTeam(ctx, "Web", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Seen three days ago: the critical one (1 day) is overdue, the high one
+	// (7 days) is not, the low one has no deadline.
+	b := leakBatch("web-1", mid, true, leak("a", "/srv/app/deploy.js", "critical"), leak("b", "/srv/app/db.js", "high"),
+		leak("c", "/srv/app/.env", "low"))
+	b.ObservedAt = time.Now().UTC().Add(-72 * time.Hour)
+	r, err := s.Ingest(ctx, b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	byPath := func() map[string]store.Leak {
+		t.Helper()
+		ls, _, err := s.ListLeaks(ctx, store.LeakFilter{AssetID: r.AssetID, Status: "all"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		m := map[string]store.Leak{}
+		for _, l := range ls {
+			m[l.Path] = l
+		}
+		return m
+	}
+	ls := byPath()
+	crit, high, low := ls["/srv/app/deploy.js"], ls["/srv/app/db.js"], ls["/srv/app/.env"]
+	if crit.DueAt == nil || crit.DueAt.Sub(b.ObservedAt).Round(time.Hour) != 24*time.Hour || !crit.Overdue || crit.State != store.LeakNeedsRotation {
+		t.Errorf("critical: due %v overdue %v state %s", crit.DueAt, crit.Overdue, crit.State)
+	}
+	if high.DueAt == nil || high.DueAt.Sub(b.ObservedAt).Round(time.Hour) != 7*24*time.Hour || high.Overdue {
+		t.Errorf("high: due %v overdue %v", high.DueAt, high.Overdue)
+	}
+	if low.DueAt != nil || low.Overdue {
+		t.Errorf("low: due %v overdue %v", low.DueAt, low.Overdue)
+	}
+	if got, _, err := s.ListLeaks(ctx, store.LeakFilter{State: "overdue"}); err != nil || len(got) != 1 || got[0].ID != crit.ID {
+		t.Errorf("overdue filter: %+v %v", got, err)
+	}
+	if _, _, err := s.ListLeaks(ctx, store.LeakFilter{State: "urgent"}); err == nil {
+		t.Error("unknown state accepted")
+	}
+
+	// Assign: a person and a team; 0 clears; unknown ids are refused.
+	uid, tid, zero := ravi.ID, web.ID, int64(0)
+	l, err := s.AssignLeak(ctx, crit.ID, &uid, &tid)
+	if err != nil || l.AssigneeEmail != "ravi@example.com" || l.AssigneeTeam != "Web" {
+		t.Fatalf("assign: %+v %v", l, err)
+	}
+	if got, _, _ := s.ListLeaks(ctx, store.LeakFilter{AssigneeUser: uid}); len(got) != 1 || got[0].ID != crit.ID {
+		t.Errorf("owner filter: %+v", got)
+	}
+	if l, err = s.AssignLeak(ctx, crit.ID, nil, &zero); err != nil || l.AssigneeTeamID != nil || l.AssigneeUserID == nil {
+		t.Errorf("clear team: %+v %v", l, err)
+	}
+	bad := int64(999999)
+	if _, err := s.AssignLeak(ctx, crit.ID, &bad, nil); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("unknown user: %v", err)
+	}
+	if _, err := s.AssignLeak(ctx, crit.ID, nil, nil); !errors.Is(err, store.ErrInvalid) {
+		t.Errorf("nobody: %v", err)
+	}
+
+	// Rotated: waiting for a check, no longer overdue.
+	if l, err = s.MarkLeakRotated(ctx, crit.ID, &uid, "revoked in GitHub, new token in the vault"); err != nil ||
+		l.State != store.LeakWaitingCheck || l.Overdue || l.RotatedByName != "Ravi" || l.Status != "open" {
+		t.Fatalf("rotated: %+v %v", l, err)
+	}
+	sum, err := s.SummariseLeaks(ctx, store.LeakFilter{Severity: "critical,high"})
+	if err != nil || sum.NeedsRotation != 1 || sum.WaitingCheck != 1 || sum.Overdue != 0 || sum.StillFound != 0 || sum.Unassigned != 1 {
+		t.Errorf("summary after rotation: %+v %v", sum, err)
+	}
+
+	// A scan after the rotation that still sees the key: still found, and
+	// overdue again.
+	if _, err := s.Ingest(ctx, leakBatch("web-1", mid, false, leak("a", "/srv/app/deploy.js", "critical")), 0); err != nil {
+		t.Fatal(err)
+	}
+	if l := byPath()["/srv/app/deploy.js"]; l.State != store.LeakStillFound || !l.Overdue {
+		t.Errorf("seen after rotation: %s overdue %v", l.State, l.Overdue)
+	}
+	if sum, _ = s.SummariseLeaks(ctx, store.LeakFilter{}); sum.StillFound != 1 {
+		t.Errorf("summary still found: %+v", sum)
+	}
+
+	// Rotated again, then a complete scan without it: verified gone.
+	if _, err := s.MarkLeakRotated(ctx, crit.ID, &uid, "removed from the file too"); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(10 * time.Millisecond)
+	if _, err := s.Ingest(ctx, leakBatch("web-1", mid, true, leak("b", "/srv/app/db.js", "high"), leak("c", "/srv/app/.env", "low")), 0); err != nil {
+		t.Fatal(err)
+	}
+	gone := byPath()["/srv/app/deploy.js"]
+	l = &gone
+	if l.State != store.LeakVerifiedGone || l.Overdue || l.RotationNote != "removed from the file too" {
+		t.Errorf("after a complete scan: %+v", l)
+	}
+	if sum, _ = s.SummariseLeaks(ctx, store.LeakFilter{}); sum.VerifiedGone30 != 1 || sum.NeedsRotation != 2 {
+		t.Errorf("summary verified gone: %+v", sum)
+	}
+	if _, err := s.MarkLeakRotated(ctx, crit.ID, &uid, ""); !errors.Is(err, store.ErrConflict) {
+		t.Errorf("rotated a resolved leak: %v", err)
+	}
+	if _, err := s.MarkLeakRotated(ctx, 999999, &uid, ""); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("rotated an unknown leak: %v", err)
+	}
+
+	// Another organisation can neither assign nor rotate it.
+	wsB, _, err := s.CreateWorkspace(bg, "B", "", "b@x.io", "", "Correct horse battery 1!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := tenant.WithWorkspace(bg, wsB.ID)
+	if _, err := s.AssignLeak(other, high.ID, nil, &zero); err == nil {
+		t.Error("B assigned A's leak")
+	}
+	if _, err := s.MarkLeakRotated(other, high.ID, nil, ""); err == nil {
+		t.Error("B rotated A's leak")
+	}
+	// And A cannot assign A's leak to B's people.
+	bUser, err := s.CreateUser(other, "b-eng@x.io", "", "engineer", "Correct horse battery 1!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.AssignLeak(ctx, high.ID, &bUser.ID, nil); err == nil {
+		t.Error("A assigned a leak to B's user")
+	}
+}
+
+func TestLeakDueDays(t *testing.T) {
+	def := risk.DefaultPolicy()
+	if got := store.LeakDueDays(def); got["critical"] != 1 || got["high"] != 7 || got["medium"] != 30 || got["low"] != 0 {
+		t.Errorf("defaults: %v", got)
+	}
+	p := risk.DefaultPolicy()
+	p.SLA = map[string]risk.SLA{"P1": {FixDays: 2}, "P2": {FixDays: 10}, "P3": {FixDays: 40}, "P4": {FixDays: 90}}
+	if got := store.LeakDueDays(p); got["critical"] != 2 || got["high"] != 10 || got["medium"] != 40 || got["low"] != 0 {
+		t.Errorf("custom: %v", got)
 	}
 }

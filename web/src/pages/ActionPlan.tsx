@@ -36,6 +36,7 @@ import {
   urgencyOf,
   versionsText,
 } from "../components/FixGroups";
+import { LeakFixesCard } from "../components/Leaks";
 import { Badge } from "../components/Badge";
 import { NoFixAdviceView } from "../components/NoFixAdvice";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
@@ -199,7 +200,7 @@ export function FixesPage() {
           issuesLink={assetId ? `/fixes/issues?asset_id=${assetId}` : "/fixes/issues"}
         />
       )}
-      {/* Other kinds of fixes that are not fix groups (the leaked keys card) go here, between the tiles and the tabs. */}
+      <LeakFixesCard assetId={assetId ? Number(assetId) : undefined} />
       <PresetChips
         label="Show"
         chips={[

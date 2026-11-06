@@ -2369,6 +2369,32 @@ export interface Leak {
   resolved_at: string | null;
   /** One line: why it has its severity and what to do. */
   why: string;
+  /** Who rotates it; asset_owner_team when nobody is assigned. */
+  assignee_user_id: number | null;
+  assignee_email: string;
+  assignee_team_id: number | null;
+  assignee_team: string;
+  asset_owner_team: string;
+  /** When it should be rotated by; null for low leaks. */
+  due_at: string | null;
+  overdue: boolean;
+  rotated_at: string | null;
+  rotated_by: number | null;
+  rotated_by_name: string;
+  rotation_note: string;
+  state: LeakState;
+}
+
+export type LeakState = "needs_rotation" | "waiting_check" | "still_found" | "verified_gone" | "dismissed";
+
+/** GET /leaks/summary: counts for the summary strip, Fixes and the dashboard. */
+export interface LeakSummary {
+  needs_rotation: number;
+  still_found: number;
+  overdue: number;
+  waiting_check: number;
+  verified_gone_30d: number;
+  unassigned: number;
 }
 
 /** The last key scan of an asset by one collector. */
