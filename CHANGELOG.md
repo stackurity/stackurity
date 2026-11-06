@@ -6,6 +6,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Fixed
+
+- **A channel says whether it ever delivered a real message, and where its secret is.** `GET /channels` adds `last_delivery_at` (the last real notification delivered, from the delivery log; tests never set it) and `secret_source` (`stored`, `missing` for a `secret:NAME` that is not stored, `server` for `env:`/`file:`, which **Secrets** never lists, or empty). `last_ok_at` is unchanged and now documented as the last time anything worked, tests and connection checks included, so a channel that was only ever tested no longer has to look as though it delivered.
+
+### Upgrading
+
+- Migration `0102_deliveries_channel_sent` adds a partial index on the delivery log (`deliveries (channel_id, sent_at) WHERE status = 'sent'`) for `last_delivery_at`.
+
 ## 0.19.2
 
 ### Fixed
@@ -39,13 +47,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 - **Settings → Single sign-on on a self-hosted server** no longer shows "Could not load single sign-on: No such endpoint." It says that single sign-on (OpenID Connect or SAML) is set in the server's settings, shows the providers set up now and whether the workspace's licence includes it, lists the redirect, ACS and entity ID addresses to register, and links to the install guide. The entry is now in Settings on every edition. **Plan and billing** on a self-hosted server says that plans and billing are part of Stackurity Cloud instead of loading. Any other path a server does not serve now reads "This is not available on this server" rather than "No such endpoint".
 
-- **A channel says whether it ever delivered a real message, and where its secret is.** `GET /channels` adds `last_delivery_at` (the last real notification delivered, from the delivery log; tests never set it) and `secret_source` (`stored`, `missing` for a `secret:NAME` that is not stored, `server` for `env:`/`file:`, which **Secrets** never lists, or empty). `last_ok_at` is unchanged and now documented as the last time anything worked, tests and connection checks included, so a channel that was only ever tested no longer has to look as though it delivered.
-
 ### Upgrading
 
 - Migration `0101_saved_views` adds `saved_views`, each person's saved filters on a dashboard page (row-level security as for other per-person tables).
 - Migration `0100_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
-- Migration `0102_deliveries_channel_sent` adds a partial index on the delivery log (`deliveries (channel_id, sent_at) WHERE status = 'sent'`) for `last_delivery_at`.
 
 ## 0.19.0
 
