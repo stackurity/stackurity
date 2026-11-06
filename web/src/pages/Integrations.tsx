@@ -999,7 +999,7 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
     ...(provider === "ecr" && awsIntegrations.length > 0
       ? [{ value: "aws" as Cred, label: "Those of an AWS integration", description: "Reuse the keys of an AWS integration you already added." }]
       : []),
-    { value: "ref", label: "A stored secret", description: "A secret you already saved under Integrations → Secrets." },
+    { value: "ref", label: "A stored secret", description: "A secret you already saved under Integrations → Stored credentials." },
     ...(provider === "dockerhub" || provider === "oci"
       ? [{ value: "none" as Cred, label: "None (public)", description: "For public images that anyone can pull." }]
       : []),
@@ -1173,7 +1173,7 @@ function RegistryForm({ integrations, onCancel, onCreated }: { integrations: Int
                 <label htmlFor="rg-ref">Secret reference</label>
                 <input id="rg-ref" className="mono" placeholder="secret:NAME" value={c.secret_ref} onChange={(e) => setC({ ...c, secret_ref: e.target.value })} />
                 <p className="hint">
-                  From <Link to="/integrations/secrets">Integrations → Secrets</Link>.
+                  From <Link to="/integrations/secrets">Integrations → Stored credentials</Link>.
                   {provider === "ecr" ? <> It holds <Code>{'{"aws_access_key_id": "…", "aws_secret_access_key": "…"}'}</Code>.</> : null}
                 </p>
               </div>
