@@ -72,6 +72,8 @@ function fromChannel(c: Channel, routes: Route[] | null, projects: { id: number;
     targetMono: !(c.kind === "slack" && c.config?.slack_app) && !(c.kind === "teams" && c.config?.teams_app) && c.kind !== "stackurity_email",
     enabled: c.enabled,
     ok: c.last_ok_at,
+    delivered: c.last_delivery_at,
+    secretSource: c.secret_source,
     error: c.last_error,
     to: `/integrations/channels/${c.id}`,
     scope: scopeOf(c, projects),

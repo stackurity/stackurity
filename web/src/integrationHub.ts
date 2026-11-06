@@ -28,7 +28,8 @@ export const GROUP_TITLE: Record<HubGroup, string> = {
 
 /** The label of the card's "last time it worked" line. */
 export const LAST_OK_LABEL: Record<HubGroup, string> = {
-  alerts: "Last successful delivery",
+  /* last_ok_at is set by tests and connection checks too, not only real messages. */
+  alerts: "Last test or delivery OK",
   sources: "Last successful run",
   servers: "Last report",
 };
@@ -50,6 +51,13 @@ export interface HubItem {
   targetMono?: boolean;
   enabled: boolean;
   ok: string | null;
+  /**
+   * Alert channels: the last real message delivered (the delivery log;
+   * tests never set it). Undefined when the server does not send it yet.
+   */
+  delivered?: string | null;
+  /** Alert channels: where its credential reference points (absent from older servers). */
+  secretSource?: "stored" | "missing" | "server" | "";
   error: string;
   /** Where Open goes. */
   to: string;
@@ -92,9 +100,21 @@ export interface HubSummary {
   alerts: number;
   sources: number;
   servers: number;
-  /** The newest successful delivery of any alert channel. */
+  /** The newest real message of any alert channel (its last success when the server does not report deliveries). */
   lastDelivery: string | null;
   lastDeliveryBy: string;
+}
+
+/** A channel's last real message; its last success when the server does not report deliveries. */
+export function lastDeliveryOf(i: Pick<HubItem, "ok" | "delivered">): string | null {
+  return i.delivered !== undefined ? i.delivered : i.ok;
+}
+
+/** A warning or note about where the channel's credential comes from, or null. */
+export function credentialNote(source: HubItem["secretSource"]): { tone: "warn" | "muted"; text: string } | null {
+  if (source === "missing") return { tone: "warn", text: "Points at a stored credential that doesn't exist. Add it under Stored credentials, or open the integration and pick another." };
+  if (source === "server") return { tone: "muted", text: "Uses a credential set on the server, not listed under Stored credentials." };
+  return null;
 }
 
 export function summarise(items: HubItem[]): HubSummary {
@@ -102,8 +122,9 @@ export function summarise(items: HubItem[]): HubSummary {
   for (const i of items) {
     s[statusOf(i)]++;
     s[i.group]++;
-    if (i.group === "alerts" && i.ok && (!s.lastDelivery || Date.parse(i.ok) > Date.parse(s.lastDelivery))) {
-      s.lastDelivery = i.ok;
+    const d = i.group === "alerts" ? lastDeliveryOf(i) : null;
+    if (d && (!s.lastDelivery || Date.parse(d) > Date.parse(s.lastDelivery))) {
+      s.lastDelivery = d;
       s.lastDeliveryBy = i.name;
     }
   }

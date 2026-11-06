@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { RelativeTime } from "./ui";
-import { GROUP_TITLE, LAST_OK_LABEL, STATUS_TONE, STATUS_WORD, statusOf, type HubItem, type HubStatus, type HubSummary, type StatusFilter } from "../integrationHub";
+import { credentialNote, GROUP_TITLE, LAST_OK_LABEL, STATUS_TONE, STATUS_WORD, statusOf, type HubItem, type HubStatus, type HubSummary, type StatusFilter } from "../integrationHub";
 import "../styles/integrations.css";
 
 /*
@@ -161,6 +161,7 @@ export function IntegrationCard({ item, actions }: { item: HubItem; actions: Car
   const canTest = item.group === "alerts" && admin && actions.onTest;
   const canToggle = (item.group === "alerts" || item.group === "sources") && admin && actions.onToggle;
   const canRun = item.group === "sources" && actions.onRun;
+  const cred = item.group === "alerts" ? credentialNote(item.secretSource) : null;
   return (
     <li className={`ix-card ix-card-${status}`}>
       <div className="ix-card-head">
@@ -185,6 +186,14 @@ export function IntegrationCard({ item, actions }: { item: HubItem; actions: Car
             <RelativeTime iso={item.ok} />
           </dd>
         </div>
+        {item.group === "alerts" && item.delivered !== undefined && (
+          <div>
+            <dt>Last message delivered</dt>
+            <dd>
+              <RelativeTime iso={item.delivered} />
+            </dd>
+          </div>
+        )}
         {item.group === "alerts" && (
           <div>
             <dt>Scope</dt>
@@ -200,6 +209,11 @@ export function IntegrationCard({ item, actions }: { item: HubItem; actions: Car
           </div>
         )}
       </dl>
+      {cred && (
+        <p className={`ix-cred ix-cred-${cred.tone}`} role={cred.tone === "warn" ? "alert" : undefined}>
+          {cred.text}
+        </p>
+      )}
       {item.error && status === "failing" && (
         <details className="ix-error">
           <summary title={item.error}>

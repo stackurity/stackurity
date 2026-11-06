@@ -349,3 +349,19 @@ a.ix-card-name:hover {
     margin-top: 4px;
   }
 }
+
+/* --- credential note */
+
+.ix-cred {
+  margin: 0;
+  font-size: 13px;
+}
+.ix-cred-warn {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.ix-cred-muted {
+  color: var(--muted);
+}

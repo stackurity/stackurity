@@ -2,6 +2,8 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   connectedCounts,
+  credentialNote,
+  lastDeliveryOf,
   filterItems,
   parseFilter,
   priorityRange,
@@ -159,4 +161,23 @@ test("sourceCatalogueKey and connectedCounts", () => {
   assert.equal(sourceCatalogueKey(src("plugin", "something")), "plugin");
   const n = connectedCounts([{ kind: "slack" }, { kind: "slack" }, { kind: "jira" }], [src("container_image"), src("container_registry")], { linux: 4, windows: 0 });
   assert.deepEqual(n, { slack: 2, jira: 1, container: 2, server: 4 });
+});
+
+test("the last delivery uses last_delivery_at when the server sends it, not tests", () => {
+  assert.equal(lastDeliveryOf({ ok: "2026-11-06T09:00:00Z" }), "2026-11-06T09:00:00Z");
+  assert.equal(lastDeliveryOf({ ok: "2026-11-06T09:00:00Z", delivered: null }), null);
+  assert.equal(lastDeliveryOf({ ok: "2026-11-06T09:00:00Z", delivered: "2026-11-01T00:00:00Z" }), "2026-11-01T00:00:00Z");
+  // Only tested: no delivery yet, though the test makes it healthy.
+  const s = summarise([item({ name: "a", ok: "2026-11-06T09:00:00Z", delivered: null }), item({ name: "b", ok: "2026-11-05T00:00:00Z", delivered: "2026-11-04T00:00:00Z" })]);
+  assert.equal(s.lastDelivery, "2026-11-04T00:00:00Z");
+  assert.equal(s.lastDeliveryBy, "b");
+  assert.equal(s.healthy, 2);
+});
+
+test("credentialNote", () => {
+  assert.equal(credentialNote("missing")?.tone, "warn");
+  assert.equal(credentialNote("server")?.tone, "muted");
+  assert.equal(credentialNote("stored"), null);
+  assert.equal(credentialNote(""), null);
+  assert.equal(credentialNote(undefined), null);
 });

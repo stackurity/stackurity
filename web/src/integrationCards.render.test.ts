@@ -77,7 +77,9 @@ test("a healthy alert card: status word, last delivery, scope, what it receives,
   const html = render("IntegrationCard", { item: slack, actions: { admin: true, busy: false, onTest: noop, onToggle: noop } });
   const t = text(html);
   assert.match(t, /#security Slack \(Stackurity app\) Healthy/);
-  assert.match(t, /Last successful delivery 2 hours ago/);
+  assert.match(t, /Last test or delivery OK 2 hours ago/);
+  // An older server sends no last_delivery_at: no line for it.
+  assert.doesNotMatch(t, /Last message delivered/);
   assert.match(t, /Scope Project Shop/);
   assert.match(html, /href="\/projects\/3"/);
   assert.match(t, /Receives Urgent P1–P2 · SOS only/);
@@ -147,4 +149,21 @@ test("the catalogue says how many are connected and hides buttons from non-admin
   const viewer = text(render("Catalogue", { groups, counts: {}, admin: false }));
   assert.doesNotMatch(viewer, /Connected|Add/);
   assert.match(viewer, /Show steps/);
+});
+
+test("a channel with delivery-log data shows the last real message apart from tests", () => {
+  const t = text(render("IntegrationCard", { item: { ...slack, delivered: null }, actions: { admin: false, busy: false } }));
+  assert.match(t, /Last test or delivery OK 2 hours ago Last message delivered never/);
+  const t2 = text(render("IntegrationCard", { item: { ...slack, delivered: ago(5) }, actions: { admin: false, busy: false } }));
+  assert.match(t2, /Last message delivered 5 hours ago/);
+});
+
+test("credential notes: missing warns, server explains, stored says nothing", () => {
+  const missing = render("IntegrationCard", { item: { ...slack, secretSource: "missing" }, actions: { admin: false, busy: false } });
+  assert.match(missing, /class="ix-cred ix-cred-warn" role="alert"/);
+  assert.match(text(missing), /points at a stored credential that doesn(&#x27;|')t exist/i);
+  const server = text(render("IntegrationCard", { item: { ...slack, secretSource: "server" }, actions: { admin: false, busy: false } }));
+  assert.match(server, /Uses a credential set on the server, not listed under Stored credentials/);
+  const stored = render("IntegrationCard", { item: { ...slack, secretSource: "stored" }, actions: { admin: false, busy: false } });
+  assert.doesNotMatch(stored, /ix-cred/);
 });
