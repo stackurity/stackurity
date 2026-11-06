@@ -7,3 +7,14 @@ ignoreUntil = 2027-01-31
 reason = """golang.org/x/crypto/openpgp is deprecated and unsafe by design. Stackurity never imports
 openpgp (govulncheck, which checks reachability, reports nothing), and the advisory has no fixed
 module version. Re-check when x/crypto releases a fix or before the expiry."""
+
+[[IgnoredVulns]]
+id = "GO-2026-6909"
+ignoreUntil = 2027-01-31
+reason = """github.com/crewjam/saml through 0.5.1 (used by SAML sign-in in the licensed edition), no fixed
+version. (1) Nil-pointer panic on a signed assertion without Issuer: only with ExpectedIDPEntityID set,
+which Stackurity never sets, and sso.SAMLProvider.Parse recovers from panics and rejects. (2) Subject.NameID
+read by local name, so a NameID in a foreign namespace could stand in for saml:NameID: Parse refuses any
+Subject with a NameID outside the SAML assertion namespace (stackurity-pro, TestSAMLXMLAttacks), and it
+needed a signature by the organisation's own identity provider anyway. Re-check when crewjam/saml releases
+a fix or before the expiry."""
