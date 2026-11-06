@@ -28,6 +28,9 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 			{"id":"3:no_fix","kind":"no_fix","asset_id":3,"finding_count":1,"top_priority":"P2","no_fix_advice":{"sections":[{"kind":"renamed",
 			"title":"Fixed under another name","issues":1,"items":[{"component":"babel-traverse","version":"6.26.0","issues":["CVE-2023-45133"],
 			"text":"Fixed in @babel/traverse 7.23.2","move_to":"@babel/traverse","fixed_version":"7.23.2"}]}]}}],"total":2}`
+	case strings.HasPrefix(path, "/api/v1/leaks?"):
+		body = `{"items":[{"id":4,"title":"GitHub token","severity":"critical","state":"still_found","assignee_email":"ravi@x.io",
+			"due_at":"2026-11-07T10:00:00Z","overdue":true,"rotated_at":"2026-11-06T09:00:00Z"}],"total":1}`
 	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
 		body = `{"ok":true}`
 	default:
@@ -448,5 +451,23 @@ func TestInviteNeverReturnsTheLink(t *testing.T) {
 	}
 	if out := callTool(t, s, "create_enrollment", map[string]any{"valid_hours": 48.0}); !strings.Contains(fmt.Sprint(out["error"]), "1 to 24") {
 		t.Errorf("48 hours: %v", out)
+	}
+}
+
+// list_leaks passes the state filter and returns each leak's workflow:
+// state, owner, deadline and rotation.
+func TestListLeaksWorkflow(t *testing.T) {
+	api := &fakeAPI{}
+	out := callTool(t, &Server{API: api, Version: "t"}, "list_leaks", map[string]any{"state": "still_found", "severity": "critical,high"})
+	if len(api.paths) != 1 || api.paths[0] != "GET /api/v1/leaks?limit=50&severity=critical%2Chigh&state=still_found" {
+		t.Errorf("requests = %v", api.paths)
+	}
+	leaks, _ := out["leaks"].([]any)
+	if len(leaks) != 1 {
+		t.Fatalf("leaks: %v", out)
+	}
+	l := leaks[0].(map[string]any)
+	if l["state"] != "still_found" || l["assignee_email"] != "ravi@x.io" || l["overdue"] != true || l["due_at"] == nil || l["rotated_at"] == nil {
+		t.Errorf("leak: %v", l)
 	}
 }

@@ -90,16 +90,39 @@ The message names the kind of key, the file and line, and one line saying why it
 
 The fix for a leaked key is always to rotate it: revoke it and issue a new one. Removing it from the file does not undo the leak. The value is never sent to the server, stored or shown: a leak holds the file, the line, the setting's name, a fingerprint (a slow salted hash, so the same key in two places is recognised) and a masked preview such as `sk_live_…4f2a`.
 
+## Rotating a leak
+
+Each leak that needs action is tracked like an issue, on **Fixes → Leaked keys** and the asset's **Leaked keys** tab:
+
+- **Owner.** Assign it to a person and/or a team (engineer role, on the asset with a project grant). Unassigned leaks show the asset's owner team.
+- **Due.** A leak has to be rotated within 1 day when critical, 7 days when high and 30 days when medium, counted from when it was first seen at that severity. When the organisation has changed its [risk policy](risk.md)'s fix deadlines, critical, high and medium follow P1, P2 and P3 instead. Low leaks (keys kept in a configuration file) have no deadline. A leak past its date and not rotated is overdue.
+- **Mark as rotated.** Once the old key is revoked where it was issued, a new one is in use, and the old one is out of the file (and the repository's history, if it was committed), say so, with a note. The leak then waits for a check: it is not resolved by saying so.
+- **Check again.** Asks the asset's collector to scan again, like an asset's Check again: an agent reports within a minute or two, a repository connected through an integration is scanned again, and anything else at its next upload.
+
+What each state means:
+
+| State | Meaning |
+|---|---|
+| Needs rotation | Open and not marked rotated. |
+| Rotated, waiting for check | Marked rotated; no scan has seen the key since. |
+| Still found after rotation | A scan after it was marked rotated still found the key in the file. Remove it from the file and check again. |
+| Verified gone | A complete scan no longer finds the key. |
+| Dismissed | Kept on purpose (see below). |
+
+Open critical and high leaks are also listed at the top of **Fixes**, and the dashboard counts those that need rotation and those overdue. Assigning, marking rotated and checking again are recorded in the activity log.
+
 ## Dismissing a leak
 
-People with the security role (on the asset, with a project grant) can dismiss a leak: a test key kept on purpose, or one already rotated. Add a note saying which. A dismissed leak stays dismissed whatever later scans see, and can be opened again. Dismissing and opening again are recorded in the activity log.
+People with the security role (on the asset, with a project grant) can dismiss a leak: a test key kept on purpose. For a real key, mark it rotated instead, so a scan confirms it. Add a note saying which. A dismissed leak stays dismissed whatever later scans see, and can be opened again. Dismissing and opening again are recorded in the activity log.
 
 A leak a complete scan no longer sees is resolved as gone, and opens again if a later scan sees it. A scan that could not read everything (the scan's limits, unreadable files) resolves nothing; the asset's **Leaked keys** tab says the scan was incomplete and why. An asset never scanned for keys says so, rather than showing no leaks. So does the **Leaked keys** page when no asset you can see has been scanned yet.
 
 ## API and MCP
 
-- [`GET /leaks`](api.md#get-leaks): leaked keys across the organisation, filterable by `status`, `severity` (comma-separated, e.g. `critical,high`) and `asset_id`.
+- [`GET /leaks`](api.md#get-leaks): leaked keys across the organisation, filterable by `status`, `state`, `severity` (comma-separated, e.g. `critical,high`), owner and `asset_id`.
 - [`GET /assets/{id}/leaks`](api.md#get-assetsidleaks): one asset's, with its last key scans.
+- [`GET /leaks/summary`](api.md#get-leakssummary): how many need rotation, are overdue, wait for a check and were verified gone in the last 30 days.
+- [`POST /leaks/{id}/assign`](api.md#post-leaksidassign), [`POST /leaks/{id}/rotated`](api.md#post-leaksidrotated) and [`POST /leaks/{id}/check-again`](api.md#post-leaksidcheck-again).
 - [`POST /leaks/{id}/dismiss`](api.md#post-leaksiddismiss) and [`POST /leaks/{id}/undismiss`](api.md#post-leaksidundismiss).
 - `list_leaks` for AI assistants ([AI assistants](ai-assistants.md)), read-only.
 
