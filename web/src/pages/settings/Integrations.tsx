@@ -1,11 +1,25 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useState } from "react";
 import { Link, Navigate, useNavigate, useParams, useSearchParams } from "react-router";
-import { api, loadNotificationOptions, NO_GITHUB_APP, NO_GITLAB, NO_NOTIFICATION_OPTIONS, type Asset, type Channel, type GitHubAppStatus, type GitLabStatus, type Integration, type List } from "../../api";
+import {
+  api,
+  loadNotificationOptions,
+  NO_GITHUB_APP,
+  NO_GITLAB,
+  NO_NOTIFICATION_OPTIONS,
+  type Asset,
+  type Channel,
+  type GitHubAppStatus,
+  type GitLabStatus,
+  type Integration,
+  type List,
+  type Queued,
+  type Route,
+} from "../../api";
 import { useAuth } from "../../auth";
-import { useLoad } from "../../hooks";
-import { Badge } from "../../components/Badge";
-import { Table, type Column } from "../../components/Table";
-import { CodeBlock, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { useProject } from "../../project";
+import { useAction, useJobRunner, useLoad } from "../../hooks";
+import { CodeBlock, ErrorBox, JobStatus, Loading, PageHeader } from "../../components/ui";
+import { confirmAction } from "../../components/ConfirmDialog";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
 import { CloudConnectPanel } from "./CloudConnect";
 import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
@@ -13,93 +27,30 @@ import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 import { ProjectChatAppsCard } from "../../components/ScopeNotifications";
 import { PlanLimitNote } from "../../components/PlanLimit";
+import { Catalogue, HealthSummary, IntegrationGrid, IntegrationIcon, StatusFilterBar, type CatalogueEntry } from "../../components/IntegrationCards";
+import {
+  connectedCounts,
+  filterItems,
+  parseFilter,
+  receivesOf,
+  scopeOf,
+  sortItems,
+  summarise,
+  type HubItem,
+  type StatusFilter,
+} from "../../integrationHub";
 
 /*
- * Integrations: everything Stackurity connects to. Notification
- * integrations (channels, with their trigger settings) open their own page;
- * sources and AI assistants link to their existing screens. The delivery
- * log is its own tab of the Integrations section.
+ * Integrations: everything Stackurity connects to. A health summary, then a
+ * card per connected integration (alert channels, data sources, servers with
+ * the agent), then the catalogue to add more. Notification integrations
+ * (channels, with their trigger settings) open their own page; sources and
+ * AI assistants link to their existing screens. The delivery log is its own
+ * tab of the Integrations section.
  */
 
-/** Small line icons for integration kinds. */
-export function IntegrationIcon({ kind }: { kind: string }) {
-  const paths: Record<string, ReactNode> = {
-    email: (
-      <>
-        <rect x="3" y="5" width="18" height="14" rx="2" />
-        <path d="m3 7 9 6 9-6" />
-      </>
-    ),
-    slack: <path d="M9 3 7 21M17 3l-2 18M4 9h17M3 15h17" />,
-    teams: (
-      <>
-        <circle cx="9" cy="8" r="3" />
-        <circle cx="17" cy="9" r="2" />
-        <path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6M15 14.5c.6-.3 1.3-.5 2-.5 2.2 0 4 1.8 4 4" />
-      </>
-    ),
-    webhook: <path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1" />,
-    jira: <path d="M12 3 21 12l-9 9-9-9zM12 8l4 4-4 4-4-4z" />,
-    pagerduty: <path d="M6 21V3h7a5 5 0 0 1 0 10H6" />,
-    servicenow: (
-      <>
-        <circle cx="12" cy="12" r="9" />
-        <circle cx="12" cy="13" r="3.5" />
-      </>
-    ),
-    git: (
-      <>
-        <circle cx="6" cy="5" r="2" />
-        <circle cx="6" cy="19" r="2" />
-        <circle cx="18" cy="8" r="2" />
-        <path d="M6 7v10M18 10c0 4-6 3-11.5 7.5" />
-      </>
-    ),
-    container: <path d="M12 3 20 7.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9" />,
-    cloud: <path d="M7 18h10a4 4 0 0 0 .5-8A6 6 0 0 0 6 9a4.5 4.5 0 0 0 1 9z" />,
-    kubernetes: (
-      <>
-        <path d="M12 2.5 20.5 7v10L12 21.5 3.5 17V7z" />
-        <circle cx="12" cy="12" r="3" />
-        <path d="M12 5.5V9M12 15v3.5M6.3 8.7 9.4 10.5M14.6 13.5l3.1 1.8M6.3 15.3l3.1-1.8M14.6 10.5l3.1-1.8" />
-      </>
-    ),
-    plugin: <path d="M9 3v4M15 3v4M6 7h12v4a6 6 0 0 1-12 0zM12 17v4" />,
-    server: (
-      <>
-        <rect x="3" y="4" width="18" height="7" rx="1.5" />
-        <rect x="3" y="13" width="18" height="7" rx="1.5" />
-        <path d="M7 7.5h.01M7 16.5h.01" />
-      </>
-    ),
-    windows: <path d="M3 5.5 10.5 4.5v7H3zM12.5 4.2 21 3v8.5h-8.5zM3 12.5h7.5v7L3 18.5zM12.5 12.5H21V21l-8.5-1.2z" />,
-    ci: <path d="M4 12a8 8 0 0 1 13.7-5.6L20 9M20 4v5h-5M20 12a8 8 0 0 1-13.7 5.6L4 15M4 20v-5h5" />,
-    sbom: <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 12h6M10 15.5h6M10 19h3" />,
-    ai: <path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z" />,
-  };
-  const key = kind === "stackurity_email" ? "email" : kind === "git_repository" || kind === "github_app" || kind === "gitlab" ? "git" : kind === "container_image" || kind === "container_registry" ? "container" : kind;
-  return (
-    <span className="int-icon" aria-hidden="true">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round">
-        {paths[key] ?? paths.plugin}
-      </svg>
-    </span>
-  );
-}
-
-interface Active {
-  key: string;
-  kind: string;
-  name: string;
-  kindLabel: string;
-  target: string;
-  /** The target is an address or reference (monospace), not words. */
-  targetMono?: boolean;
-  enabled: boolean;
-  ok: string | null;
-  error: string;
-  to: string;
-}
+/** Kept here for older imports; the marks live in components/IntegrationCards.tsx. */
+export { IntegrationIcon };
 
 const SOURCE_LABEL: Record<string, string> = {
   git_repository: "Git repository",
@@ -110,9 +61,10 @@ const SOURCE_LABEL: Record<string, string> = {
   plugin: "Plugin",
 };
 
-function fromChannel(c: Channel): Active {
+function fromChannel(c: Channel, routes: Route[] | null, projects: { id: number; name: string }[]): HubItem {
   return {
     key: `ch${c.id}`,
+    group: "alerts",
     kind: c.kind,
     name: c.name,
     kindLabel: kindLabel(c),
@@ -120,15 +72,21 @@ function fromChannel(c: Channel): Active {
     targetMono: !(c.kind === "slack" && c.config?.slack_app) && !(c.kind === "teams" && c.config?.teams_app) && c.kind !== "stackurity_email",
     enabled: c.enabled,
     ok: c.last_ok_at,
+    delivered: c.last_delivery_at,
+    secretSource: c.secret_source,
     error: c.last_error,
     to: `/integrations/channels/${c.id}`,
+    scope: scopeOf(c, projects),
+    receives: routes ? receivesOf(c.id, routes) : undefined,
+    channelId: c.id,
   };
 }
 
-function fromSource(i: Integration): Active {
+function fromSource(i: Integration): HubItem {
   const plugin = i.kind === "plugin" ? String(i.config?.plugin ?? "") : "";
   return {
     key: `in${i.id}`,
+    group: "sources",
     kind: plugin.startsWith("aws") || plugin.startsWith("gcp") || plugin.startsWith("azure") ? "cloud" : plugin.includes("kube") ? "kubernetes" : i.kind,
     name: i.name,
     kindLabel: plugin ? `Plugin: ${plugin}` : SOURCE_LABEL[i.kind] ?? i.kind,
@@ -137,27 +95,12 @@ function fromSource(i: Integration): Active {
     ok: i.last_success,
     error: i.last_error,
     to: "/integrations/sources",
+    scope: { label: "Organisation" },
+    sourceId: i.id,
   };
 }
 
-interface AddCard {
-  kind: string;
-  title: string;
-  text: string;
-  to: string;
-  admin?: boolean;
-  /** Shown instead of the card's link (admins). */
-  button?: ReactNode;
-}
-
 type Steps = "ci" | "sbom" | "gcp" | "azure";
-
-/** The card's button word: Add for something new, Connect for an account elsewhere, Show steps for instructions. */
-function actionLabel(c: AddCard): string {
-  if (c.to === "/integrations/setup/ci" || c.to === "/integrations/setup/sbom") return "Show steps";
-  if (c.to === "/integrations/plugins") return "Open";
-  return c.to.startsWith("/integrations/new/") || c.to === "/assets/add" || c.to === "/integrations/kubernetes/add" ? "Add" : "Connect";
-}
 
 const STEPS_HELP: Record<Steps, string> = { ci: "ci-keyless", sbom: "sbom", gcp: "google-cloud", azure: "azure" };
 
@@ -170,12 +113,13 @@ const STEPS_TITLE: Record<Steps, string> = {
 
 const HOST_PAGE = 500;
 
-/** "Servers with the agent" rows from GET /assets?kind=host; Windows apart when every host was read. */
-function serverRows(res: List<Asset> | null | undefined): Active[] {
-  if (!res || res.total === 0) return [];
+/** "Servers with the agent" cards from GET /assets?kind=host; Windows apart when every host was read. */
+function serverRows(res: List<Asset> | null | undefined): { items: HubItem[]; linux: number; windows: number } {
+  if (!res || res.total === 0) return { items: [], linux: 0, windows: 0 };
   const newest = (xs: Asset[]) => xs.reduce<string | null>((m, a) => (a.last_seen && (!m || a.last_seen > m) ? a.last_seen : m), null);
-  const row = (key: string, kind: string, name: string, n: number, xs: Asset[]): Active => ({
+  const row = (key: string, kind: string, name: string, n: number, xs: Asset[]): HubItem => ({
     key,
+    group: "servers",
     kind,
     name,
     kindLabel: `${n} ${n === 1 ? "server" : "servers"}`,
@@ -184,15 +128,16 @@ function serverRows(res: List<Asset> | null | undefined): Active[] {
     ok: newest(xs),
     error: "",
     to: "/assets?kind=host",
+    scope: { label: "Organisation" },
   });
   const all = res.items;
-  if (res.total > all.length) return [row("hosts", "server", "Servers with the agent", res.total, all)];
+  if (res.total > all.length) return { items: [row("hosts", "server", "Servers with the agent", res.total, all)], linux: res.total, windows: 0 };
   const win = all.filter((a) => a.attributes?.os === "windows");
   const other = all.filter((a) => a.attributes?.os !== "windows");
-  const rows: Active[] = [];
-  if (other.length) rows.push(row("hosts", "server", win.length ? "Linux servers with the agent" : "Servers with the agent", other.length, other));
-  if (win.length) rows.push(row("hosts-win", "windows", "Windows servers with the agent", win.length, win));
-  return rows;
+  const items: HubItem[] = [];
+  if (other.length) items.push(row("hosts", "server", win.length ? "Linux servers with the agent" : "Servers with the agent", other.length, other));
+  if (win.length) items.push(row("hosts-win", "windows", "Windows servers with the agent", win.length, win));
+  return { items, linux: other.length, windows: win.length };
 }
 
 function CiPanel({ admin }: { admin: boolean }) {
@@ -263,10 +208,13 @@ export function IntegrationsHubPage() {
   const admin = can("admin");
   const security = can("security");
   const engineer = can("engineer");
+  const { projects } = useProject();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const back = Number(params.get("channel")) || 0;
+  const filter = parseFilter(params.get("status"));
   const channels = useLoad(() => (security ? api.get<List<Channel>>("/channels") : Promise.resolve(null)), [security]);
+  const routes = useLoad(() => (security ? api.get<List<Route>>("/routes").catch(() => null) : Promise.resolve(null)), [security]);
   const sources = useLoad(() => (engineer ? api.get<List<Integration>>("/integrations") : Promise.resolve(null)), [engineer]);
   const hosts = useLoad(() => api.get<List<Asset>>("/assets", { kind: "host", limit: HOST_PAGE }), []);
   const optionsRes = useLoad(loadNotificationOptions, []);
@@ -278,61 +226,64 @@ export function IntegrationsHubPage() {
   );
   const gh = github.data ?? NO_GITHUB_APP;
   const options = optionsRes.data ?? NO_NOTIFICATION_OPTIONS;
+  const act = useAction();
+  const job = useJobRunner(sources.reload);
+  const [tests, setTests] = useState<Record<string, { ok: boolean; error?: string } | null>>({});
 
   // Back from "Add to Slack": open the new integration.
   useEffect(() => {
     if (back) navigate(`/integrations/channels/${back}?added=1`, { replace: true });
   }, [back, navigate]);
 
-  const rows: Active[] = [
-    ...serverRows(hosts.data),
+  const servers = serverRows(hosts.data);
+  const items: HubItem[] = sortItems([
+    ...(channels.data?.items ?? []).map((c) => fromChannel(c, routes.data?.items ?? null, projects)),
     ...(sources.data?.items ?? []).map(fromSource),
-    ...(channels.data?.items ?? []).map(fromChannel),
-  ];
-  const cols: Column<Active>[] = [
-    {
-      key: "name",
-      header: "Integration",
-      cell: (a) => (
-        <div className="int-name">
-          <IntegrationIcon kind={a.kind} />
-          <div>
-            <Link to={a.to}>
-              <strong>{a.name}</strong>
-            </Link>
-            <div className="muted small">{a.kindLabel}</div>
-            {a.target && <div className={`${a.targetMono ? "mono " : ""}small muted break`}>{a.target}</div>}
-          </div>
-        </div>
-      ),
-    },
-    {
-      key: "status",
-      header: "Status",
-      cell: (a) =>
-        !a.enabled ? (
-          <Badge status="disabled" />
-        ) : a.error ? (
-          <Badge status="failed" label="error" />
-        ) : a.ok ? (
-          <Badge status="ok" />
-        ) : (
-          <Badge status="untested" tone="warn" label="not used yet" />
-        ),
-    },
-    { key: "ok", header: "Last success / report", cell: (a) => <RelativeTime iso={a.ok} /> },
-    { key: "err", header: "Last error", cell: (a) => (a.error ? <span className="text-bad small break">{a.error}</span> : <span className="muted">—</span>) },
-  ];
+    ...servers.items,
+  ]);
+  const summary = summarise(items);
+  const shown = filterItems(items, filter);
+  const counts = connectedCounts(channels.data?.items ?? [], sources.data?.items ?? [], servers);
+  const hrefFor = (f: StatusFilter) => (f === "all" ? "/integrations#active" : `/integrations?status=${f}#active`);
 
-  const groups: { title: string; cards: AddCard[] }[] = [];
+  const sendTest = async (i: HubItem) => {
+    if (!i.channelId) return;
+    setTests((t) => ({ ...t, [i.key]: null }));
+    const r = await act.run(() => api.post<{ ok: boolean; error?: string }>(`/channels/${i.channelId}/test`));
+    if (r) {
+      setTests((t) => ({ ...t, [i.key]: r }));
+      channels.reload();
+    }
+  };
+  const toggle = async (i: HubItem) => {
+    const channel = i.group === "alerts";
+    if (
+      i.enabled &&
+      !(await confirmAction({
+        title: `Pause ${i.name}?`,
+        consequence: channel ? "It stops sending until you resume it. Its rules are kept." : "It stops collecting until you resume it. Its assets are kept.",
+        action: "Pause",
+      }))
+    )
+      return;
+    const path = channel ? `/channels/${i.channelId}` : `/integrations/${i.sourceId}`;
+    const ok = await act.run(() => api.patch(path, { enabled: !i.enabled }).then(() => true));
+    if (ok) (channel ? channels : sources).reload();
+  };
+  const runNow = (i: HubItem) => {
+    if (i.sourceId) void job.start(`Run ${i.name}`, () => api.post<Queued>(`/integrations/${i.sourceId}/run`));
+  };
+
+  const groups: { title: string; description: string; cards: CatalogueEntry[] }[] = [];
   if (security) {
-    const n: AddCard[] = [];
+    const n: CatalogueEntry[] = [];
     if (options.platform_email.enabled)
-      n.push({ kind: "stackurity_email", title: "Email (sent by Stackurity)", text: "Email to members and other addresses. Nothing to set up.", to: "/integrations/new/stackurity_email", admin: true });
+      n.push({ kind: "stackurity_email", countKey: "stackurity_email", title: "Email (sent by Stackurity)", text: "Email to members and other addresses. Nothing to set up.", to: "/integrations/new/stackurity_email", admin: true });
     n.push(
-      { kind: "email", title: "Email (your mail server)", text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.", to: "/integrations/new/email", admin: true },
+      { kind: "email", countKey: "email", title: "Email (your mail server)", text: "Send through your own SMTP server: SES, SendGrid, Postmark, Gmail and more.", to: "/integrations/new/email", admin: true },
       {
         kind: "slack",
+        countKey: "slack",
         title: "Slack",
         text: options.slack_app ? "Add to Slack in two clicks. Assign and snooze from inside Slack." : "Post to a Slack channel through an incoming webhook.",
         to: "/integrations/new/slack",
@@ -340,48 +291,52 @@ export function IntegrationsHubPage() {
       },
       {
         kind: "teams",
+        countKey: "teams",
         title: "Microsoft Teams",
         text: options.teams_app ? "Add to Teams: add the app to a team and send it a code. No webhook." : "Post to a Teams channel through a Workflows webhook.",
         to: "/integrations/new/teams",
         admin: true,
       },
-      { kind: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/integrations/new/jira", admin: true },
-      { kind: "pagerduty", title: "PagerDuty", text: options.pagerduty_app ? "Connect PagerDuty in one click and pick the service. One alert per incident, acknowledged and resolved with it." : "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/integrations/new/pagerduty", admin: true },
-      { kind: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/integrations/new/servicenow", admin: true },
-      { kind: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/integrations/new/webhook", admin: true },
+      { kind: "jira", countKey: "jira", title: "Jira", text: options.jira_app ? "Connect Jira in one click. One issue per incident, updated until it is fixed." : "Keep one Jira issue per incident, updated until it is fixed.", to: "/integrations/new/jira", admin: true },
+      { kind: "pagerduty", countKey: "pagerduty", title: "PagerDuty", text: options.pagerduty_app ? "Connect PagerDuty in one click and pick the service. One alert per incident, acknowledged and resolved with it." : "Page on-call: one alert per incident, acknowledged and resolved with it.", to: "/integrations/new/pagerduty", admin: true },
+      { kind: "servicenow", countKey: "servicenow", title: "ServiceNow", text: "Keep one ServiceNow incident per incident, with your field mapping.", to: "/integrations/new/servicenow", admin: true },
+      { kind: "webhook", countKey: "webhook", title: "Webhook", text: "Send each message as JSON to your own HTTPS endpoint.", to: "/integrations/new/webhook", admin: true },
     );
-    groups.push({ title: "Notifications", cards: n });
+    groups.push({ title: "Alerts and tickets", description: "Where Stackurity sends alerts, summaries and tickets. You choose what each one receives after connecting it.", cards: n });
   }
   groups.push({
-    title: "Sources",
+    title: "Data sources",
+    description: "What Stackurity reads to list your software: servers, code, images, clusters and cloud accounts. All read-only.",
     cards: [
-      { kind: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
-      { kind: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
+      { kind: "server", countKey: "server", title: "Linux server", text: "A small read-only agent, installed with one command. First results in about 2 minutes.", to: "/assets/add", admin: true },
+      { kind: "windows", countKey: "windows", title: "Windows server", text: "The same agent on Windows, run as a scheduled task. Reads installed programs.", to: "/assets/add", admin: true },
       ...(gh.configured
-        ? [{ kind: "git", title: "GitHub", text: "Install the Stackurity app and pick repositories. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <InstallOnGitHubButton /> }]
+        ? [{ kind: "git", countKey: "github", title: "GitHub", text: "Install the Stackurity app and pick repositories. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <InstallOnGitHubButton /> }]
         : []),
       ...(gl.configured
-        ? [{ kind: "git", title: "GitLab", text: "Pick a group: every project in it, subgroups included. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <ConnectGitLabButton /> }]
+        ? [{ kind: "git", countKey: "gitlab", title: "GitLab", text: "Pick a group: every project in it, subgroups included. No token to paste; rescanned when a lockfile changes.", to: "", admin: true, button: <ConnectGitLabButton /> }]
         : []),
       {
         kind: "git",
+        countKey: "git",
         title: gh.configured || gl.configured ? "Other Git host" : "Git repository",
         text: "Clone any Git host over HTTPS with a read-only token, and read lockfiles on a schedule.",
         to: "/integrations/sources?add=git",
         admin: true,
       },
       { kind: "ci", title: "CI pipeline", text: "Run stackurity scan or the GitHub Action in CI, without a stored secret, and fail the build on findings.", to: "/integrations/setup/ci" },
-      { kind: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations/sources?add=container", admin: true },
-      { kind: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
-      { kind: "cloud", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/integrations/aws", admin: true },
-      { kind: "cloud", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "/integrations/setup/gcp", admin: true },
-      { kind: "cloud", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "/integrations/setup/azure", admin: true },
+      { kind: "container", countKey: "container", title: "Container image / registry", text: "Connect a registry and scan its newest tags, or add one image.", to: "/integrations/sources?add=container", admin: true },
+      { kind: "kubernetes", countKey: "kubernetes", title: "Kubernetes cluster", text: "Workloads, the images they run and their exposure. One command installs a read-only reporter in the cluster.", to: "/integrations/kubernetes/add", admin: true },
+      { kind: "cloud", countKey: "aws", title: "AWS", text: "Launch one CloudFormation stack: RDS, EKS, Lambda and more, and the agent on EC2 through SSM.", to: "/integrations/aws", admin: true },
+      { kind: "cloud", countKey: "gcp", title: "Google Cloud", text: "Cloud SQL, Memorystore, GKE, Cloud Run and App Engine versions. Keyless: one gcloud block, no service account key.", to: "/integrations/setup/gcp", admin: true },
+      { kind: "cloud", countKey: "azure", title: "Azure", text: "Azure Database, Cache for Redis, AKS, App Service and Functions versions. One consent and one az block, no secret in your tenant.", to: "/integrations/setup/azure", admin: true },
       { kind: "sbom", title: "SBOM upload", text: "Upload a CycloneDX or SPDX file from your build tool.", to: "/integrations/setup/sbom" },
-      { kind: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/integrations/plugins", admin: true },
+      { kind: "plugin", countKey: "plugin", title: "Other plugins", text: "Collectors installed on this server.", to: "/integrations/plugins", admin: true },
     ],
   });
   groups.push({
     title: "AI assistants",
+    description: "Ask about your issues and fixes from the assistant you already use.",
     cards: [{ kind: "ai", title: "AI assistants", text: "Ask about your issues and fixes from Claude, ChatGPT or your IDE.", to: "/integrations/ai-assistants" }],
   });
 
@@ -390,53 +345,56 @@ export function IntegrationsHubPage() {
   if (params.get("tab") === "deliveries") return <Navigate replace to="/integrations/deliveries" />;
   if (params.get("add")) return <Navigate replace to={`/integrations/sources?${params}`} />;
 
+  const loading = (channels.loading || sources.loading) && items.length === 0;
   return (
     <>
-      <PageHeader help="notifications" title="Integrations" sub="Everything Stackurity connects to: where messages go, what it collects from, and AI assistants." />
+      <PageHeader
+        help="notifications"
+        title="Integrations"
+        sub="Everything Stackurity connects to: where alerts and tickets go, what it collects from, and AI assistants."
+        actions={
+          admin && (
+            <a className="btn" href="#add">
+              Add an integration
+            </a>
+          )
+        }
+      />
       <PlanLimitNote kind="channels" />
       <PlanLimitNote kind="alert_rules" />
-      <h2 className="h-sm">Active integrations</h2>
       <ErrorBox error={channels.error} title="Could not load notification integrations" />
       <ErrorBox error={sources.error} title="Could not load sources" />
       <ErrorBox error={hosts.error} title="Could not load servers" />
-      {(channels.loading || sources.loading) && rows.length === 0 ? (
+      <ErrorBox error={act.error} title="Action failed" />
+      <ErrorBox error={job.error} title="Could not start run" />
+      <JobStatus state={job.state} onDismiss={job.reset} />
+      {!loading && items.length > 0 && <HealthSummary summary={summary} failingTo={hrefFor("failing")} />}
+      <div className="ix-head" id="active">
+        <h2 className="h-sm">Active integrations</h2>
+        {items.length > 0 && <StatusFilterBar summary={summary} value={filter} hrefFor={hrefFor} />}
+      </div>
+      {loading ? (
         <Loading />
-      ) : rows.length === 0 ? (
+      ) : items.length === 0 ? (
         <p className="muted">Nothing connected yet. Add an integration below.</p>
+      ) : shown.length === 0 ? (
+        <p className="muted">
+          None of them is in this state. <Link to={hrefFor("all")}>Show all</Link>
+        </p>
       ) : (
-        <Table caption="Active integrations" columns={cols} rows={rows} rowKey={(a) => a.key} rowClassName={(a) => (!a.enabled ? "row-removed" : a.error ? "row-stale" : undefined)} />
+        <IntegrationGrid items={shown} actions={{ admin, busy: act.pending || job.busy, onTest: sendTest, onToggle: toggle, onRun: runNow }} testOf={(i) => tests[i.key]} />
       )}
       {security && <ProjectChatAppsCard admin={admin} />}
       <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
       <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
-      <h2 className="h-sm">Add an integration</h2>
-      {groups.map((g) => (
-        <section key={g.title} aria-label={g.title}>
-          <h3 className="int-group">{g.title}</h3>
-          <ul className="int-cards">
-            {g.cards.map((c) => (
-              <li key={c.title} className="int-card">
-                <div className="int-card-head">
-                  <IntegrationIcon kind={c.kind} />
-                  <strong>{c.title}</strong>
-                </div>
-                <p className="small muted">{c.text}</p>
-                {(!c.admin || admin) &&
-                  (c.button ? (
-                    <div className="form-actions">{c.button}</div>
-                  ) : (
-                    <Link className="btn btn-sm" to={c.to}>
-                      {actionLabel(c)}
-                    </Link>
-                  ))}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ))}
+      <h2 className="h-sm" id="add">
+        Add an integration
+      </h2>
+      <Catalogue groups={groups} counts={counts} admin={admin} />
     </>
   );
 }
+
 
 /** Integrations, set-up steps for a source that has no form of its own (CI, SBOM, Google Cloud, Azure). */
 export function IntegrationStepsPage() {
