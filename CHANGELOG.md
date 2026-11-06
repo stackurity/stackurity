@@ -6,6 +6,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Added
+
+- **Feedback queue: sender email, on-demand virus scan, re-encoded images, storage warning** (the Stackurity team's server only). One short email to the sender when an item is released or will not be fixed (`STACKURITY_FEEDBACK_EMAILS=on`, off by default; it quotes nothing the sender wrote, and operators can preview it at `GET /admin/feedback/email-templates`). An on-demand ClamAV scan holds new attachments until they are scanned clean (`STACKURITY_FEEDBACK_SCAN=required`, with `deploy/feedback-scan` and a `scanner` token scope that reaches only the scan routes); an infected file is deleted and its item moved to `needs_owner`. Images are decoded and encoded again so only their pixels are kept (WebP becomes PNG; over 40 megapixels is refused). Above 80% of `STACKURITY_FEEDBACK_STORAGE_MAX_MB` the intake reply carries `storage_warning` and an error is logged. See [feedback-queue.md](docs/feedback-queue.md).
+
+### Upgrading
+
+- Migration `0100_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
+
 ## 0.19.0
 
 ### Added

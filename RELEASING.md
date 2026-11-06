@@ -56,6 +56,16 @@ adds it to the upgrade matrix and opens a small pull request, so every later rel
 
 Once the release is deployed to Stackurity Cloud, run `/feedback release v0.15.0` (the project skill in `.claude/skills/feedback`). It moves feedback items marked `fixed` whose pull request is in the tag to `released` with `fixed_in`, so the people who sent them see it under **My feedback** ([feedback-queue.md](docs/feedback-queue.md)).
 
+## Host locks
+
+On the Stackurity team's server, jobs that need a lot of memory or CPU take turns through one convention (stackurity-pro `ops/release-lock.sh`):
+
+- **Release:** `release-lock.sh begin` / `end` / `status`. While a release runs, `/run/stackurity-release.flag` holds its start time (epoch, first field); a flag over six hours old is stale. Background jobs skip while it is fresh.
+- **Builds and other heavy jobs:** `flock` on `/run/lock/stackurity-build.lock` (staging builds, release image builds via `release-lock.sh build -- …`, the feedback virus scan and signature update in `deploy/feedback-scan`). Whoever holds it writes one line to `/run/lock/stackurity-build.holder` saying what it is and since when, and removes it when done. Background jobs use `flock -n` and try again later; `release-lock.sh begin` waits up to five minutes for it.
+- **Backups:** `backup.sh` holds `/run/stackurity-backup.lock`; heavy jobs skip while it is held.
+
+Do not add another lock file for a new job: take the build lock.
+
 ## Gates that stay
 
 Nothing here skips a check; it only stops people from doing by hand what a command does:

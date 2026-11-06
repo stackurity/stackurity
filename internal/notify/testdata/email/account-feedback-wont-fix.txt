@@ -1,0 +1,20 @@
+Subject: About your Stackurity feedback FB-124
+
+Hello,
+
+Thank you for your feedback FB-124.
+
+We looked at it carefully and decided not to make this change for now:
+
+Stackurity reads installed packages only, so it will not scan container layers it cannot see.
+
+If something about it is different from what we understood, send new feedback from Stackurity or write to info@stackurity.ai, and we will look again.
+
+The Stackurity team
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you left this address when you sent feedback to the Stackurity team.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

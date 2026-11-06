@@ -105,6 +105,13 @@ func FactorChangeEmail(base, to, change, admin, ip, device string, at time.Time)
 	return m
 }
 
+// FeedbackUpdateEmail is the one email the feedback queue sends to the
+// person who sent an item (internal/feedback.RenderEmail writes subject and
+// body), one paragraph per summary line.
+func FeedbackUpdateEmail(subject, body string, at time.Time) Message {
+	return Message{Event: "feedback_update", Title: subject, At: at, Summary: strings.Split(strings.TrimSpace(body), "\n\n")}
+}
+
 // AskSpendEmail tells an organisation's administrators that Ask
 // Stackurity used level percent (80 or 100) of the month's budget.
 func AskSpendEmail(level int, at time.Time) Message {

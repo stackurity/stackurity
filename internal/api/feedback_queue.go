@@ -17,6 +17,7 @@ package api
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"crypto/hmac"
 	"crypto/rand"
 	"crypto/sha256"
@@ -42,6 +43,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/feedback"
+	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -59,6 +61,15 @@ type FeedbackQueue struct {
 	// website relay never holds it. Empty uses a random key per process,
 	// so links work only on the replica that made them.
 	LinkKey string
+	// ScanRequired holds new attachments as pending until the on-demand
+	// virus scanner (deploy/feedback-scan) reports them clean
+	// (STACKURITY_FEEDBACK_SCAN=required); until then operators and the
+	// triage agent do not see them.
+	ScanRequired bool
+	// Emails sends the sender one short email when their item is released
+	// or will not be fixed (STACKURITY_FEEDBACK_EMAILS=on); off by default
+	// until the owner approves the wording.
+	Emails bool
 
 	once     sync.Once
 	linkKey  []byte
@@ -134,13 +145,14 @@ func (s *Server) feedbackQueueRoutes(r chi.Router) {
 // feedbackOperatorRoutes are inside /api/v1 (authenticated).
 func (s *Server) feedbackOperatorRoutes(r chi.Router) {
 	r.Route("/admin/feedback", func(r chi.Router) {
-		r.Use(requireFeedbackOperator)
-		r.Get("/", s.listFeedbackQueue)
-		r.Get("/{id}", s.getFeedbackQueueItem)
-		r.Patch("/{id}", s.updateFeedbackQueueItem)
-		r.Post("/{id}/attachments/{aid}/link", s.feedbackAttachmentLink)
-		// Deleting (spam, abuse) is for instance administrators only.
-		r.With(requireInstanceAdmin).Delete("/{id}", s.deleteFeedbackQueueItem)
+		// The on-demand virus scanner (deploy/feedback-scan): its own token
+		// scope, which reaches these two routes only.
+		r.With(requireFeedbackScanner).Get("/scan/pending", s.feedbackScanPending)
+		r.With(requireFeedbackScanner).Post("/scan/{aid}", s.feedbackScanResult)
+		r.Group(func(r chi.Router) {
+			r.Use(requireFeedbackOperator)
+			s.feedbackTriageRoutes(r)
+		})
 	})
 	r.Route("/admin/feedback-tokens", func(r chi.Router) {
 		r.Use(requireInstanceAdmin)
@@ -150,17 +162,48 @@ func (s *Server) feedbackOperatorRoutes(r chi.Router) {
 	})
 }
 
-// requireFeedbackOperator allows instance administrators and triage tokens.
-func requireFeedbackOperator(next http.Handler) http.Handler {
-	admin := requireInstanceAdmin(next)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if p := principal(r); p != nil && p.FeedbackAgent != nil {
-			next.ServeHTTP(w, r)
-			return
-		}
-		admin.ServeHTTP(w, r)
-	})
+// feedbackTriageRoutes are for instance administrators and triage tokens.
+func (s *Server) feedbackTriageRoutes(r chi.Router) {
+	r.Get("/", s.listFeedbackQueue)
+	r.Get("/email-templates", s.feedbackEmailTemplates)
+	r.Get("/{id}", s.getFeedbackQueueItem)
+	r.Patch("/{id}", s.updateFeedbackQueueItem)
+	r.Post("/{id}/attachments/{aid}/link", s.feedbackAttachmentLink)
+	// Deleting (spam, abuse) is for instance administrators only.
+	r.With(requireInstanceAdmin).Delete("/{id}", s.deleteFeedbackQueueItem)
 }
+
+// Feedback token scopes.
+const (
+	feedbackScopeTriage  = "triage"
+	feedbackScopeScanner = "scanner"
+)
+
+// requireFeedbackScope allows instance administrators and feedback tokens
+// of one scope; a token of the other scope gets 403.
+func requireFeedbackScope(scope string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		admin := requireInstanceAdmin(next)
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if p := principal(r); p != nil && p.FeedbackAgent != nil {
+				if p.FeedbackAgent.Scope != scope {
+					writeError(w, 403, "forbidden", "this feedback token's scope does not allow it")
+					return
+				}
+				next.ServeHTTP(w, r)
+				return
+			}
+			admin.ServeHTTP(w, r)
+		})
+	}
+}
+
+var (
+	// requireFeedbackOperator: instance administrators and triage tokens.
+	requireFeedbackOperator = requireFeedbackScope(feedbackScopeTriage)
+	// requireFeedbackScanner: instance administrators and scanner tokens.
+	requireFeedbackScanner = requireFeedbackScope(feedbackScopeScanner)
+)
 
 func (s *Server) queueOn(w http.ResponseWriter) bool {
 	if s.FeedbackQueue == nil {
@@ -337,6 +380,8 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 			writeError(w, 507, "storage_full", err.Error())
 		case errors.Is(err, feedback.ErrUnsupported), errors.Is(err, feedback.ErrBadImage):
 			writeError(w, 415, "unsupported", err.Error())
+		case errors.Is(err, feedback.ErrTooManyPixels):
+			writeError(w, 413, "too_large", err.Error())
 		default:
 			s.fail(w, r, err)
 		}
@@ -411,10 +456,17 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("feedback received", "ref", store.FeedbackRef(id), "kind", item.Kind, "source", item.Source, "attachments", len(item.Attachments))
-	writeJSON(w, 201, map[string]any{
+	reply := map[string]any{
 		"ref": store.FeedbackRef(id), "token": secret, "kind": item.Kind, "source": item.Source,
 		"version": item.Version, "edition": item.Edition, "attachments": len(item.Attachments),
-	})
+	}
+	if len(item.Attachments) > 0 {
+		if warn := s.feedbackStorageWarning(r.Context()); warn != "" {
+			// The relay posts it to the team's Slack with the item.
+			reply["storage_warning"] = warn
+		}
+	}
+	writeJSON(w, 201, reply)
 }
 
 var errFeedbackStorageFull = errors.New("attachments cannot be stored right now; send the feedback without them")
@@ -455,8 +507,12 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 			b, err = feedback.StripImage(k, b)
 		}
 		if err == nil {
+			// Decoded and encoded again: only the pixels are kept.
+			b, k, err = feedback.Reencode(k, b)
+		}
+		if err == nil {
 			h.Write(b)
-			key, n, err = q.Disk.Write(bytes.NewReader(b), k, limit)
+			key, n, err = q.Disk.Write(bytes.NewReader(b), k, int64(len(b)))
 		}
 		if err != nil {
 			return nil, err
@@ -473,6 +529,9 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 	}
 	a := &store.FeedbackAttachment{Name: feedback.SafeName(name, k), ContentType: k.ContentType(), Size: n,
 		SHA256: h.Sum(nil), StorageKey: key, Scan: "checked"}
+	if q.ScanRequired {
+		a.Scan = "pending"
+	}
 	// Counts this request's earlier files and other intakes in flight.
 	q.inflight.Add(n)
 	*reserved += n
@@ -480,6 +539,24 @@ func (q *FeedbackQueue) storeAttachment(r *http.Request, s *Server, part io.Read
 		return a, errFeedbackStorageFull
 	}
 	return a, nil
+}
+
+// FeedbackStorageAlertPercent is the share of the attachment cap above
+// which the team is warned.
+const FeedbackStorageAlertPercent = 80
+
+// feedbackStorageWarning says when attachment storage is above the alert
+// share, and logs it as an error (the logs are watched).
+func (s *Server) feedbackStorageWarning(ctx context.Context) string {
+	q := s.FeedbackQueue
+	used, err := s.Store.FeedbackStorageBytes(ctx)
+	if err != nil || q.StorageMax <= 0 || used*100 < q.StorageMax*FeedbackStorageAlertPercent {
+		return ""
+	}
+	msg := fmt.Sprintf("feedback attachment storage is at %d%% of %d MB; raise STACKURITY_FEEDBACK_STORAGE_MAX_MB or delete old items",
+		used*100/q.StorageMax, q.StorageMax>>20)
+	s.Log.Error(msg, "used_bytes", used, "max_bytes", q.StorageMax)
+	return msg
 }
 
 // feedbackQueueStatus answers the sender's installation: the public status
@@ -665,12 +742,71 @@ func (s *Server) updateFeedbackQueueItem(w http.ResponseWriter, r *http.Request)
 		s.fail(w, r, err)
 		return
 	}
-	_, after, err := s.Store.UpdateFeedbackItem(r.Context(), id, p, feedbackActor(r))
+	before, after, err := s.Store.UpdateFeedbackItem(r.Context(), id, p, feedbackActor(r))
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	if before.Status != after.Status && (after.Status == store.FeedbackReleased || after.Status == store.FeedbackWontFix) {
+		s.emailFeedbackSender(r.Context(), after)
+	}
 	writeJSON(w, 200, after)
+}
+
+// emailFeedbackSender sends the one email for a released or won't-fix
+// item, when the sender left an address and emails are on. Off, it only
+// logs that no email went.
+func (s *Server) emailFeedbackSender(ctx context.Context, it *store.FeedbackItem) {
+	if it.ContactEmail == "" || it.NotifiedAt != nil {
+		return
+	}
+	tmpl := "released"
+	if it.Status == store.FeedbackWontFix {
+		tmpl = "wont_fix"
+	}
+	if !s.FeedbackQueue.Emails || s.AccountMail == nil {
+		s.Log.Info("feedback sender not emailed: STACKURITY_FEEDBACK_EMAILS is off or no mail is configured", "ref", it.Ref, "template", tmpl)
+		return
+	}
+	m, err := feedback.RenderEmail(tmpl, feedback.EmailData{Ref: it.Ref, Summary: it.Description, Resolution: it.Resolution, Version: it.FixedIn})
+	if err != nil {
+		s.Log.Error("feedback email", "err", err)
+		return
+	}
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	msg := notify.FeedbackUpdateEmail(m.Subject, m.Body, time.Now().UTC())
+	if err := s.AccountMail.SendMail(ctx, []string{it.ContactEmail}, msg); err != nil {
+		s.Log.Error("feedback email not sent", "ref", it.Ref, "err", err)
+		return
+	}
+	if err := s.Store.MarkFeedbackNotified(ctx, it.ID, tmpl); err != nil {
+		s.Log.Error("feedback email sent but not recorded", "ref", it.Ref, "err", err)
+	}
+}
+
+// feedbackEmailTemplates renders the emails with sample text, for the
+// owner to approve before STACKURITY_FEEDBACK_EMAILS is turned on.
+func (s *Server) feedbackEmailTemplates(w http.ResponseWriter, r *http.Request) {
+	if !s.queueOn(w) {
+		return
+	}
+	sample := feedback.EmailData{Ref: "FB-123", Summary: "The Fixes page loses the asset filter after I open a fix and go back",
+		Resolution: "The filter is now kept when you go back.", Version: "0.15.0"}
+	var out []map[string]string
+	for _, name := range feedback.EmailTemplates() {
+		d := sample
+		if name == "wont_fix" {
+			d.Resolution = "Exports stay in the API (GET /fixes?format=csv) so they follow your project access; the dashboard will not get a separate button."
+		}
+		m, err := feedback.RenderEmail(name, d)
+		if err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		out = append(out, map[string]string{"name": name, "subject": m.Subject, "body": m.Body})
+	}
+	writeJSON(w, 200, map[string]any{"enabled": s.FeedbackQueue.Emails && s.AccountMail != nil, "templates": out})
 }
 
 func (s *Server) deleteFeedbackQueueItem(w http.ResponseWriter, r *http.Request) {
@@ -715,8 +851,13 @@ func (s *Server) feedbackAttachmentLink(w http.ResponseWriter, r *http.Request) 
 		writeError(w, 404, "not_found", "not found")
 		return
 	}
-	if a.PurgedAt != nil {
-		writeError(w, 410, "gone", "this attachment was deleted by the retention rules")
+	switch {
+	case a.Scan == "pending":
+		// Not scanned yet: as if it did not exist.
+		writeError(w, 404, "not_found", "not found")
+		return
+	case a.PurgedAt != nil:
+		writeError(w, 410, "gone", "this attachment was deleted (retention rules, or the virus scanner flagged it)")
 		return
 	}
 	exp := time.Now().Add(feedbackLinkTTL).Unix()
@@ -749,7 +890,7 @@ func (s *Server) feedbackDownload(w http.ResponseWriter, r *http.Request) {
 		denied()
 		return
 	}
-	if a.PurgedAt != nil {
+	if !store.FeedbackAttachmentVisible(a) {
 		writeError(w, 404, "not_found", "not found")
 		return
 	}
@@ -774,6 +915,68 @@ func (s *Server) feedbackDownload(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", a.CreatedAt, f)
 }
 
+// feedbackScanPending lists attachments waiting for the virus scan: id,
+// storage key (the file name in the queue's directory) and size.
+func (s *Server) feedbackScanPending(w http.ResponseWriter, r *http.Request) {
+	if !s.queueOn(w) {
+		return
+	}
+	list, err := s.Store.FeedbackScanQueue(r.Context(), 100)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out := make([]map[string]any, 0, len(list))
+	for _, a := range list {
+		out = append(out, map[string]any{"id": a.ID, "storage_key": a.StorageKey, "size": a.Size, "sha256": hex.EncodeToString(a.SHA256)})
+	}
+	writeJSON(w, 200, map[string]any{"attachments": out, "required": s.FeedbackQueue.ScanRequired})
+}
+
+var feedbackSignature = regexp.MustCompile(`^[A-Za-z0-9._:/+-]{1,200}$`)
+
+// feedbackScanResult records a verdict: {"result":"clean"} or
+// {"result":"infected","signature":"Eicar-Test-Signature"}. An infected
+// file is deleted at once and its item flagged for the owner.
+func (s *Server) feedbackScanResult(w http.ResponseWriter, r *http.Request) {
+	if !s.queueOn(w) {
+		return
+	}
+	aid, err := idParam(r, "aid")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var req struct {
+		Result    string `json:"result"`
+		Signature string `json:"signature"`
+	}
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.Result != "clean" && req.Result != "infected" {
+		writeError(w, 400, "bad_request", "result must be clean or infected")
+		return
+	}
+	if req.Result == "infected" && !feedbackSignature.MatchString(req.Signature) {
+		writeError(w, 400, "bad_request", "an infected result needs the scanner's signature name")
+		return
+	}
+	key, err := s.Store.RecordFeedbackScan(r.Context(), aid, req.Result == "clean", req.Signature, feedbackActor(r))
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if key != "" {
+		if err := s.FeedbackQueue.Disk.Remove(key); err != nil {
+			s.Log.Error("infected feedback attachment not deleted; the orphan sweep will retry", "attachment", aid, "err", err)
+		}
+		s.Log.Warn("feedback attachment flagged by the virus scanner and deleted", "attachment", aid, "signature", req.Signature)
+	}
+	w.WriteHeader(204)
+}
+
 func (s *Server) listFeedbackTokens(w http.ResponseWriter, r *http.Request) {
 	list, err := s.Store.ListFeedbackAgentTokens(r.Context())
 	if err != nil {
@@ -785,8 +988,9 @@ func (s *Server) listFeedbackTokens(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) createFeedbackToken(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Name string `json:"name"`
-		Days int    `json:"days"`
+		Name  string `json:"name"`
+		Days  int    `json:"days"`
+		Scope string `json:"scope"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -800,6 +1004,13 @@ func (s *Server) createFeedbackToken(w http.ResponseWriter, r *http.Request) {
 	if req.Days == 0 {
 		req.Days = 30
 	}
+	if req.Scope == "" {
+		req.Scope = feedbackScopeTriage
+	}
+	if req.Scope != feedbackScopeTriage && req.Scope != feedbackScopeScanner {
+		writeError(w, 400, "bad_request", "scope must be triage or scanner")
+		return
+	}
 	if req.Days < 1 || req.Days > 90 {
 		writeError(w, 400, "bad_request", "days must be 1 to 90")
 		return
@@ -809,7 +1020,7 @@ func (s *Server) createFeedbackToken(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	t, err := s.Store.CreateFeedbackAgentToken(r.Context(), req.Name, prefix, auth.HashToken(secret), principal(r).User.ID,
+	t, err := s.Store.CreateFeedbackAgentToken(r.Context(), req.Name, req.Scope, prefix, auth.HashToken(secret), principal(r).User.ID,
 		time.Now().Add(time.Duration(req.Days)*24*time.Hour))
 	if err != nil {
 		s.fail(w, r, err)

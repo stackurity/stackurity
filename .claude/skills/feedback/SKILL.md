@@ -109,4 +109,4 @@ This is part of the release flow (`RELEASING.md`), run after the tag is pushed.
 3. If both hold, PATCH `status: released`, `fixed_in: X.Y.Z`. Add a `resolution` with one plain line of what changed if there isn't one.
 4. Leave the others as `fixed`, and list them.
 
-Released and won't-fix items show in the sender's **My feedback**. Email to senders is not sent by this version.
+Released and won't-fix items show in the sender's **My feedback**; when `STACKURITY_FEEDBACK_EMAILS=on` on the server (the owner turns it on after approving the templates), the sender also gets one short email.

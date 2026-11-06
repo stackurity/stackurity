@@ -87,7 +87,7 @@ func TestEmailSamplesPassChecks(t *testing.T) {
 				if s.Notification != (s.Message.oneClick != "") {
 					t.Errorf("notification %v, but one-click unsubscribe %q", s.Notification, s.Message.oneClick)
 				}
-				if in.name == "self-hosted" {
+				if in.name == "self-hosted" && !s.Team {
 					// The installation's own address, never the hosted service's.
 					for _, other := range []string{"app.stackurity.dev", "stackurity.ai/privacy", "info@stackurity.ai"} {
 						if bytes.Contains(raw, []byte(other)) {
