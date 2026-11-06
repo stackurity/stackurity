@@ -55,8 +55,8 @@ FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS syft
 # modules whose fixes Syft has not picked up yet; drop an entry once Syft's
 # go.mod has it. Modules come from the Go proxy and are verified against the
 # checksum database. The image scan in CI fails on anything fixable left.
-ARG SYFT_VERSION=1.55.0
-ARG SYFT_DEPS="github.com/go-jose/go-jose/v4@v4.1.6 golang.org/x/net@v0.62.0"
+ARG SYFT_VERSION=1.57.0
+ARG SYFT_DEPS="golang.org/x/net@v0.62.0 github.com/andybalholm/brotli@v1.2.8 golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2"
 ARG TARGETARCH
 WORKDIR /syft
 RUN go mod init syft-build \
