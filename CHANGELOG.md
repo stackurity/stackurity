@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Fixed
+
+- **The Fixes table shows fix names at every width.** At 1200 px the fix column was squeezed to nothing (its heading read "FI") and the summary tiles' labels were cut off ("Issues these cle…"). The fix column now keeps at least 220 px and cuts long names with an ellipsis, column headings wrap onto two lines, and below 1440 px the seven tiles sit in two rows with labels that wrap.
+
 ## 0.19.2
 
 ### Fixed
