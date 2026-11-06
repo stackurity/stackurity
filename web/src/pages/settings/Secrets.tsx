@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from "react";
+import { Link } from "react-router";
 import { api, type SecretInfo } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
@@ -62,18 +63,19 @@ export function SecretsPage() {
   return (
     <>
       <PageHeader
-        title="Secrets"
+        title="Stored credentials"
         sub={
           <>
-            Tokens, passwords and webhook URLs for this workspace&apos;s integrations and channels. Use them as <Code>secret:NAME</Code>.
-            Values are encrypted and can be replaced, but never shown again.
+            Tokens, passwords and webhook URLs that Stackurity itself uses to reach this workspace&apos;s integrations and channels. Use
+            them as <Code>secret:NAME</Code>. Values are encrypted and can be replaced, but never shown again. Keys found written in your
+            code or on your servers are under <Link to="/fixes/leaks">Fixes → Leaked keys</Link>.
           </>
         }
         actions={
           res.data?.enabled &&
           editing !== "" && (
             <button type="button" className="btn btn-primary" onClick={() => setEditing("")}>
-              Add secret
+              Add credential
             </button>
           )
         }
@@ -98,12 +100,12 @@ export function SecretsPage() {
       {res.data && res.data.items.length === 0 && editing !== "" && (
         <EmptyState
           {...secretsEmpty(res.data.enabled)}
-          action={res.data.enabled ? { label: "Add secret", permitted: true, onClick: () => setEditing("") } : undefined}
+          action={res.data.enabled ? { label: "Add credential", permitted: true, onClick: () => setEditing("") } : undefined}
         />
       )}
       {res.data && res.data.items.length > 0 && (
         <Table
-          caption="Secrets"
+          caption="Stored credentials"
           columns={columns}
           rows={res.data.items}
           rowKey={(s) => s.name}
@@ -167,7 +169,7 @@ function SecretForm({ name, onCancel, onSaved }: { name?: string; onCancel: () =
   return name ? (
     body
   ) : (
-    <Card title="Add secret" description="Save a token, password or webhook address once, then use it in integrations as secret:NAME. Nobody can read the value back.">
+    <Card title="Add credential" description="Save a token, password or webhook address once, then use it in integrations as secret:NAME. Nobody can read the value back.">
       {body}
     </Card>
   );

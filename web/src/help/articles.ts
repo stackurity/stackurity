@@ -965,7 +965,7 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       { p: "The role has exactly the list permissions the plugin uses; the page shows them. Nothing secret leaves Google Cloud: on each run Stackurity signs a short token naming your workspace and exchanges it for a one-hour token of the service account." },
-      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Settings ▸ Secrets**)." },
+      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Integrations ▸ Stored credentials**)." },
       { p: "Services the role cannot read, or whose API is not enabled, appear in the project's coverage as failed or skipped with the reason, never as zero. GKE end-of-life dates come from endoflife.date; Memorystore for Redis has no lifecycle data there and is shown as not assessed." },
     ],
   },
@@ -1028,7 +1028,7 @@ stackurity.exe agent --interval 6h`,
       {
         steps: [
           "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Integrations ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Integrations ▸ Stored credentials**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
           "Go to **Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
           "Set the secret reference and click **Validate and create**, then **Run now**.",
         ],
@@ -1461,7 +1461,7 @@ jobs:
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
-    where: ["Integrations", "Data sources"],
+    where: ["Assets", "Data sources"],
     keywords: "feeds osv kev endoflife stale evaluation gap coverage state checked request support ecosystem not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
@@ -1474,7 +1474,7 @@ jobs:
         p: "Components that were not checked are split by who acts, on Findings, each asset's page and Coverage: **needs you** first (a version that could not be read, with the fix for each, or application files the agent may not read), then what **Stackurity doesn't support yet**, then what **resolves on its own** once vulnerability data syncs. The banner is a warning only when something needs you, or when vulnerability data is past its staleness window. A release with **no published advisories** is noted on its row and not counted.",
       },
       {
-        p: "**Integrations ▸ Data sources** lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
+        p: "**Assets ▸ Data sources** lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
       },
       {
         list: [
@@ -1907,7 +1907,7 @@ jobs:
           "**Incoming Webhooks**: turn it on, **Add New Webhook to Workspace**, pick the channel, and copy the webhook URL. No other scopes or OAuth settings are needed.",
           "**Interactivity & Shortcuts**: turn it on and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. Save.",
           "**Basic Information**, **App Credentials**: copy the **Signing Secret**.",
-          "In [Integrations, Secrets](/integrations/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
+          "In [Integrations, Stored credentials](/integrations/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
           "In [Integrations](/integrations), add (or edit) a Slack integration with **Advanced: use a webhook**: webhook URL reference `secret:SLACK_WEBHOOK`, signing secret reference `secret:SLACK_SIGNING`. Use **Send test**.",
         ],
       },
@@ -1938,7 +1938,7 @@ jobs:
         p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
       },
       {
-        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Integrations, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Integrations, Stored credentials. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {

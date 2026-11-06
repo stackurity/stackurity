@@ -532,7 +532,7 @@ function CredentialsBlock() {
       icon={<IconKey />}
       title="Secrets and credentials"
       badge={groups.length > 0 ? plural(groups.reduce((n, x) => n + x.g.total, 0), "thing") : undefined}
-      link={{ to: "/integrations/secrets", label: "Secrets" }}
+      link={{ to: "/integrations/secrets", label: "Stored credentials" }}
     >
       {groups.length === 0 ? (
         <p className="small">
