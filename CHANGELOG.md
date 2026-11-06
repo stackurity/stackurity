@@ -8,7 +8,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Security
 
-- **Image: Syft 1.57.0 with patched compression and crypto modules.** The image's Syft (container image SBOMs) moves from 1.55.0 to 1.57.0, which brings `github.com/klauspost/compress` 1.20.3 (CVE-2026-116591, zstd panic on two-block frames, high). It is built with `github.com/andybalholm/brotli` 1.2.8 (CVE-2026-111497, which scanners map to it) and `golang.org/x/crypto` at the commit that splits out `openpgp` (GO-2026-5932). The server and agent take the same `x/crypto` commit. Stackurity never imported `openpgp`. The base image's musl (CVE-2026-107891) is fixed when Alpine 3.24 publishes the patched package. GO-2026-6905 (`blakesmith/ar` in Syft) has no fix yet.
+- **Image: Syft 1.57.0 with patched compression and crypto modules.** The image's Syft (container image SBOMs) moves from 1.55.0 to 1.57.0, which brings `github.com/klauspost/compress` 1.20.3 (CVE-2026-116591, zstd panic on two-block frames, high). It is built with `github.com/andybalholm/brotli` 1.2.8 (CVE-2026-111497, which scanners map to it) and `golang.org/x/crypto` at the commit that splits out `openpgp` (GO-2026-5932). The server and agent take the same `x/crypto` commit. Stackurity never imported `openpgp`. The image now runs `apk upgrade` when it is built, so it ships Alpine's patched zlib 1.4-r0 (CVE-2026-4738, critical) and musl 1.2.6-r6 (CVE-2026-107891, high) without waiting for a new base image. GO-2026-6905 (`blakesmith/ar`) and CVE-2025-15558 (`docker/cli`), both in Syft, have no fix yet.
 
 ### Added
 
