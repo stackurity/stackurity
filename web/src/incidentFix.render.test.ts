@@ -29,7 +29,13 @@ after(async () => {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function render(name: string, inc: any): string {
   const html = renderToStaticMarkup(h(MemoryRouter, null, h(P[name], { inc })));
-  return html.replace(/<[^>]+>/g, "").replace(/&#x27;/g, "'");
+  // Strip tags until none are left (a single pass can leave one behind).
+  let text = html;
+  for (let prev = ""; prev !== text; ) {
+    prev = text;
+    text = text.replace(/<[^>]*>/g, "");
+  }
+  return text.replace(/&#x27;/g, "'");
 }
 
 const flat = {
