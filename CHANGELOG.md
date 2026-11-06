@@ -6,6 +6,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.2
+
 ### Fixed
 
 - **A request the browser cancelled is no longer a server error.** When a page was reloaded or closed while a request was still being answered, the API logged it as `request failed`, answered 500 and recorded it, so Platform health raised "New server error: 500 internal error on GET /api/v1/meta" when nothing had failed. Such a request is now answered 499 `client_closed` and is neither logged as an error nor recorded. A cancellation inside the server while the request is still open is still a 500.
