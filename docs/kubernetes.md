@@ -231,7 +231,7 @@ contexts: [{name: stackurity, context: {cluster: prod-eu, user: stackurity-reade
 EOF
 ```
 
-Store it as a workspace secret (**Integrations → Secrets**) whose value is the JSON object `{"kubeconfig": "<the file's contents>"}`, for example:
+Store it as a workspace secret (**Integrations → Stored credentials**) whose value is the JSON object `{"kubeconfig": "<the file's contents>"}`, for example:
 
 ```sh
 jq -n --rawfile k stackurity.kubeconfig '{value: ({kubeconfig: $k} | tojson)}' |

@@ -15,9 +15,9 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
 
 export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
 export const ASSET_STATUSES = ["ok", "partial", "stale", "removed"] as const;
-/** Plain words for collection_status. */
+/** Plain words for collection_status: reporting only, never security ("Reporting normally", not "Healthy"). */
 export const ASSET_STATUS_LABEL: Record<string, string> = {
-  ok: "Reporting",
+  ok: "Reporting normally",
   partial: "Last scan incomplete",
   stale: "Stopped reporting",
   removed: "Removed",
@@ -3487,6 +3487,35 @@ export interface FixGroupSummary {
   unique_issues?: number;
   /** What needs a person now, and why the other groups are left out of that view. */
   focus?: FixFocus;
+  /** Fixes by their most urgent issue (P1..P4). */
+  by_priority?: Record<string, number> | null;
+  /** Fixes with an active issue past its fix deadline. */
+  overdue?: number;
+  /** Fixes with a known exploited issue. */
+  exploited?: number;
+}
+
+/** GET /fix-groups/work: where the work on one fix group stands. */
+export interface FixWork {
+  group_id: string;
+  active: number;
+  due: string | null;
+  overdue: number;
+  in_progress: number;
+  regressed: number;
+  owners: string[] | null;
+  unassigned: number;
+  mine: number;
+}
+
+/** GET/POST /saved-views: a person's own named filter on a page. */
+export interface SavedView {
+  id: number;
+  page: string;
+  name: string;
+  query: string;
+  created_at: string;
+  updated_at: string;
 }
 
 /** Buckets of GET /fix-groups?bucket=, mirrors store.FixBuckets. */

@@ -15,6 +15,7 @@ import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
 import { stackEmpty } from "../emptyCopy";
 import { suggestionText } from "../linkSuggestions";
+import { stackTotalsText } from "../stackTotals";
 import { AssetKindBadge, Badge, KevBadge, PriorityBadge, SeverityBadge, SosBadge, FindingStateBadge } from "./Badge";
 import { Table, type Column } from "./Table";
 import { EmptyState, ErrorBox, Loading, Notice, Pager } from "./ui";
@@ -151,6 +152,18 @@ export function StackTab({ asset, editable = false, onLinked }: { asset: Asset; 
       ) : (
         <>
           <h3 className="section-title">Findings by layer</h3>
+          <p className="stack-totals">
+            <strong>
+              {stackTotalsText(
+                asset.kind,
+                findings.length,
+                findings.filter((f) => f.asset_id === res.data!.root).length,
+                res.data.truncated,
+                members.length,
+              )}
+            </strong>{" "}
+            {multi && <span className="muted">The asset's own Issues tab counts only its own.</span>}
+          </p>
           <p className="hint">Layers are listed most exposed first. Select a layer to show only its findings.</p>
           <LayersTable layers={layers} selected={layer} onSelect={(l) => setLayer(layer === l ? null : l)} />
 
