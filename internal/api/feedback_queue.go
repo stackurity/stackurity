@@ -773,10 +773,9 @@ func (s *Server) emailFeedbackSender(ctx context.Context, it *store.FeedbackItem
 		s.Log.Error("feedback email", "err", err)
 		return
 	}
-	lines := strings.Split(strings.TrimSpace(m.Body), "\n\n")
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	msg := notify.Message{Event: "feedback_update", Title: m.Subject, At: time.Now().UTC(), Summary: lines}
+	msg := notify.FeedbackUpdateEmail(m.Subject, m.Body, time.Now().UTC())
 	if err := s.AccountMail.SendMail(ctx, []string{it.ContactEmail}, msg); err != nil {
 		s.Log.Error("feedback email not sent", "ref", it.Ref, "err", err)
 		return

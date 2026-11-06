@@ -1,0 +1,22 @@
+Subject: Your Stackurity feedback FB-123 is fixed
+
+Hello,
+
+Thank you for your feedback FB-123.
+
+The change is in Stackurity 0.19.1.
+
+The filter is now kept when you go back.
+
+On Stackurity Cloud you have it already. If you run Stackurity yourself, it arrives when you upgrade; the changelog is at https://stackurity.ai/changelog.html.
+
+You can see this and anything else you sent under My feedback, in your account menu in Stackurity.
+
+The Stackurity team
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you left this address when you sent feedback to the Stackurity team.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

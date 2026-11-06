@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/feedback"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -23,6 +24,9 @@ type EmailSample struct {
 	// Secrets are the sample's tokens, codes and addresses, which must not
 	// be in the subject.
 	Secrets []string
+	// Team: sent only by the Stackurity team's own server (the feedback
+	// queue), so it may name the team's addresses.
+	Team bool
 }
 
 // EmailSampleTime is when the samples are sent.
@@ -103,6 +107,11 @@ func EmailSamples(base string) []EmailSample {
 		Summary: []string{"[P1] CVE-2026-31337 in openssl 3.0.13 (remote code execution)", "web-1: 3 new urgent issues", "billing-api: 2 new urgent issues"},
 		Link:    d.url("/integrations/deliveries", nil)}
 
+	released, _ := feedback.RenderEmail("released", feedback.EmailData{Ref: "FB-123", Version: "0.19.1",
+		Resolution: "The filter is now kept when you go back."})
+	wontFix, _ := feedback.RenderEmail("wont_fix", feedback.EmailData{Ref: "FB-124",
+		Resolution: "Stackurity reads installed packages only, so it will not scan container layers it cannot see."})
+
 	samples := []EmailSample{
 		{Name: "account-invitation", Message: InvitationEmail("Northwind Traders", "Priya Shah (priya@northwind-traders.com)",
 			"with Editor on all projects and assets", base+"/invite#"+invTok, at.Add(7*24*time.Hour), at), Secrets: []string{invTok}},
@@ -117,6 +126,8 @@ func EmailSamples(base string) []EmailSample {
 			"Priya Shah (priya@northwind-traders.com)", ip, "Firefox on Windows", at), Secrets: []string{ip}},
 		{Name: "account-ask-budget-80", Message: AskSpendEmail(80, at)},
 		{Name: "account-ask-budget-used-up", Message: AskSpendEmail(100, at)},
+		{Name: "account-feedback-released", Message: FeedbackUpdateEmail(released.Subject, released.Body, at), Team: true},
+		{Name: "account-feedback-wont-fix", Message: FeedbackUpdateEmail(wontFix.Subject, wontFix.Body, at), Team: true},
 		{Name: "account-inactive-pause-first", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(15*24*time.Hour), false, at)},
 		{Name: "account-inactive-pause-last", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(5*24*time.Hour), true, at)},
 		{Name: "alerts-confirm-address", Message: alertConfirmEmail("Northwind Traders", d.url("/email/confirm", nil)+"#"+confTok,
