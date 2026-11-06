@@ -1,0 +1,367 @@
+/*
+ * Integrations page (components/IntegrationCards.tsx). Every class starts
+ * with ix- so nothing here depends on, or overrides, styles.css by order.
+ * Colour is for status only: the cards, marks and catalogue are neutral.
+ */
+
+.int-icon.ix-mark {
+  width: 36px;
+  height: 36px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  border: 1px solid var(--border);
+}
+
+/* --- health summary */
+
+.ix-summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 170px), 1fr));
+  gap: 0;
+  margin: 0 0 var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+  overflow: hidden;
+}
+.ix-stat {
+  padding: var(--s3) var(--s4);
+  /* Dividers between tiles; the outer ones sit under the box's edge. */
+  border-left: 1px solid var(--border);
+  border-top: 1px solid var(--border);
+  margin: -1px 0 0 -1px;
+  min-width: 0;
+}
+.ix-stat-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ix-stat-value {
+  font-size: 26px;
+  font-weight: 650;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+.ix-stat-value a {
+  color: inherit;
+}
+.ix-stat-time {
+  font-size: 20px;
+  line-height: 1.56;
+}
+.ix-stat-sub {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ix-stat-bad .ix-stat-value {
+  color: var(--bad-fg);
+}
+
+/* --- filter */
+
+.ix-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s3);
+}
+.ix-head h2 {
+  margin: 0;
+}
+.ix-filter {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 2px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+.ix-filter-opt {
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: var(--text-2);
+  text-decoration: none;
+  white-space: nowrap;
+}
+.ix-filter-opt:hover {
+  color: var(--text);
+  text-decoration: none;
+}
+.ix-filter-opt.is-active {
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+}
+.ix-count {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* --- groups and grids */
+
+.ix-group {
+  margin: 0 0 var(--s4);
+}
+.ix-group-title {
+  margin: 0 0 var(--s2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-2);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.ix-group-desc {
+  margin: -4px 0 var(--s2);
+  font-size: 13px;
+  color: var(--muted);
+}
+.ix-grid {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr));
+  gap: var(--s3);
+  align-items: stretch;
+}
+.ix-grid-catalogue {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 240px), 1fr));
+}
+
+/* --- card */
+
+.ix-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
+}
+.ix-card-failing {
+  border-left: 3px solid var(--bad-dot);
+  padding-left: calc(var(--s4) - 2px);
+}
+.ix-card-paused .ix-card-head,
+.ix-card-paused .ix-meta {
+  opacity: 0.75;
+}
+.ix-card-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.ix-card-title {
+  flex: 1;
+  min-width: 0;
+}
+.ix-card-name {
+  display: block;
+  font-weight: 600;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+a.ix-card-name:hover {
+  color: var(--link);
+}
+.ix-card-kind,
+.ix-connected {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ix-connected {
+  color: var(--good-fg);
+  font-weight: 500;
+}
+.ix-card-target {
+  font-size: 12.5px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ix-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.ix-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.ix-status-good .ix-dot {
+  background: var(--good-dot);
+}
+.ix-status-bad {
+  color: var(--bad-fg);
+}
+.ix-status-bad .ix-dot {
+  background: var(--bad-dot);
+}
+.ix-status-warn .ix-dot {
+  background: var(--warn-dot);
+}
+.ix-status-muted {
+  color: var(--muted);
+}
+.ix-status-muted .ix-dot {
+  background: transparent;
+  border: 1.5px solid var(--muted);
+}
+
+.ix-meta {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding-top: 10px;
+  border-top: 1px solid var(--border);
+  font-size: 13px;
+}
+.ix-meta > div {
+  display: grid;
+  grid-template-columns: minmax(0, 11.5em) minmax(0, 1fr);
+  gap: var(--s2);
+}
+.ix-meta dt {
+  color: var(--muted);
+}
+.ix-meta dd {
+  margin: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ix-muted,
+.ix-meta dd.ix-muted {
+  color: var(--muted);
+}
+
+.ix-error {
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+  background: var(--bad-bg);
+  color: var(--bad-fg);
+}
+.ix-error summary {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  min-width: 0;
+}
+.ix-error-label {
+  flex: none;
+  font-weight: 600;
+}
+.ix-error-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ix-error[open] .ix-error-text {
+  display: none;
+}
+.ix-error p {
+  margin: 0;
+  padding: 0 10px 8px;
+}
+
+.ix-test {
+  margin: 0;
+  font-size: 13px;
+}
+.ix-test-ok {
+  color: var(--good-fg);
+}
+.ix-test-bad {
+  color: var(--bad-fg);
+}
+
+.ix-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 2px;
+}
+.ix-open {
+  margin-left: auto;
+}
+
+/* --- catalogue */
+
+.ix-cat-text {
+  margin: 0;
+  font-size: 13px;
+  color: var(--muted);
+}
+
+/* --- phones */
+
+@media (max-width: 640px) {
+  .ix-stat {
+    padding: var(--s2) var(--s3);
+  }
+  .ix-stat-value {
+    font-size: 22px;
+  }
+  .ix-meta > div {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+  .ix-meta > div + div {
+    margin-top: 4px;
+  }
+}
+
+/* --- credential note */
+
+.ix-cred {
+  margin: 0;
+  font-size: 13px;
+}
+.ix-cred-warn {
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.ix-cred-muted {
+  color: var(--muted);
+}

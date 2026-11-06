@@ -458,11 +458,15 @@ var tools = map[string]tool{
 			"it has its severity and what to do. Low and medium are mostly keys kept in configuration " +
 			"files, where they belong; severity critical,high returns what needs action. The value itself is never " +
 			"stored or shown. The fix is to rotate the key (revoke it and issue a new one), then remove it from the file. " +
+			"Each leak has its state (needs_rotation; waiting_check: marked rotated, waiting for a scan; still_found: a scan " +
+			"after the rotation still saw the key in the file; verified_gone; dismissed), owner (assignee_email, assignee_team), " +
+			"due_at and overdue. " +
 			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
 		schema: obj(map[string]any{
 			"asset_id": num("Limit to one asset"),
 			"severity": str("Comma-separated: critical, high, medium, low"),
 			"status":   str("open (the default), resolved (gone or dismissed) or all"),
+			"state":    str("needs_rotation, waiting_check, still_found, verified_gone, dismissed or overdue"),
 			"limit":    num("At most this many (default 50, max 200)"),
 		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
@@ -473,6 +477,7 @@ var tools = map[string]tool{
 			q := url.Values{"limit": {strconv.Itoa(limit)}}
 			set(q, "severity", a["severity"])
 			set(q, "status", a["status"])
+			set(q, "state", a["state"])
 			var res struct {
 				Items []map[string]any `json:"items"`
 				Total int64            `json:"total"`

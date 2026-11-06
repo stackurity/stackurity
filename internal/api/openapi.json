@@ -14807,7 +14807,7 @@
    "get": {
     "operationId": "get_leaks",
     "summary": "Leaked keys found in files, most severe first",
-    "description": "Keys, tokens and passwords collectors found written in assets' files: kind of key, file and line, setting name, fingerprint, masked preview, severity and exposure. The value is never stored\n\nRole: viewer",
+    "description": "Keys, tokens and passwords collectors found written in assets' files: kind of key, file and line, setting name, fingerprint, masked preview, severity and exposure. The value is never stored. Each has its state, owner, due date and rotation\n\nRole: viewer",
     "tags": [
      "Findings and fixes"
     ],
@@ -14841,6 +14841,42 @@
       }
      },
      {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "description": "needs_rotation, waiting_check, still_found, verified_gone, dismissed or overdue",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_user",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this user id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_team",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this team id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee",
+      "in": "query",
+      "required": false,
+      "description": "none: with no owner",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
       "name": "limit",
       "in": "query",
       "required": false,
@@ -14854,6 +14890,55 @@
       "in": "query",
       "required": false,
       "description": "Page start",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/leaks/summary": {
+   "get": {
+    "operationId": "get_leaks_summary",
+    "summary": "Counts of leaked keys by what needs doing",
+    "description": "How many leaked keys need rotation, are still found after rotation, are overdue, wait for a check, were verified gone in the last 30 days and have no owner\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium or low, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -15131,6 +15216,153 @@
      "Findings and fixes"
     ],
     "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/leaks/{id}/assign": {
+   "post": {
+    "operationId": "post_leaks_id_assign",
+    "summary": "Assign a leaked key",
+    "description": "Set who rotates a leaked key: user_id and/or team_id; 0 clears one, one left out stays\n\nRole: engineer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/leaks/{id}/rotated": {
+   "post": {
+    "operationId": "post_leaks_id_rotated",
+    "summary": "Mark a leaked key as rotated",
+    "description": "Record that the key was revoked and replaced, with an optional note; with check true, also ask for a check. It stays open until a complete scan no longer sees the key\n\nRole: engineer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "engineer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/leaks/{id}/check-again": {
+   "post": {
+    "operationId": "post_leaks_id_check_again",
+    "summary": "Check a leaked key again",
+    "description": "Ask for the leak's asset to be scanned again, as Check again does for an asset\n\nRole: engineer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "engineer",
     "parameters": [
      {
       "name": "id",

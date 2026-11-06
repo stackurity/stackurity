@@ -28,10 +28,11 @@ import {
 import { useAuth } from "../../auth";
 import { useAction, useFacets, useLoad } from "../../hooks";
 import { Badge, Chip } from "../../components/Badge";
-import { Card, CheckCard, ErrorBox, FieldGroup, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
+import { Card, CheckCard, ErrorBox, FieldGroup, Loading, Notice, PageHeader, RelativeTime, SettingRow } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton } from "../../components/NotifyChoices";
-import { IntegrationIcon } from "./Integrations";
+import { IntegrationIcon, StatusDot } from "../../components/IntegrationCards";
+import { credentialNote, scopeOf, statusOf } from "../../integrationHub";
 import {
   ChannelForm,
   channelTarget,
@@ -120,7 +121,7 @@ function newRule(channelId: number, name: string): Route {
     timezone: browserTimeZone(),
     max_per_hour: 20,
     mode: "custom",
-    events: ["urgent", "regressed", "connected", "problems", "daily_summary"],
+    events: ["urgent", "problems", "daily_summary"],
     event_channels: {},
     summary_time: "09:00",
     summary_day: "monday",
@@ -604,11 +605,24 @@ function useCtx(channels: Channel[] | undefined): Ctx {
   };
 }
 
-function statusBadge(c: Channel) {
-  if (!c.enabled) return <Badge status="disabled" />;
-  if (c.last_error) return <Badge status="failed" label="error" />;
-  if (c.last_ok_at) return <Badge status="ok" />;
-  return <Badge status="untested" tone="warn" label="not used yet" />;
+/** Status, last test or delivery, last real message and scope, as the Integrations cards show them. */
+function statusLine(c: Channel, projects: Pick<Project, "id" | "name">[]) {
+  const scope = scopeOf(c, projects);
+  return (
+    <>
+      <StatusDot status={statusOf({ enabled: c.enabled, ok: c.last_ok_at, error: c.last_error })} />
+      <span className="muted small">
+        Last test or delivery OK <RelativeTime iso={c.last_ok_at} />
+        {c.last_delivery_at !== undefined && (
+          <>
+            {" "}
+            · Last message delivered <RelativeTime iso={c.last_delivery_at} />
+          </>
+        )}{" "}
+        · {scope.to ? <Link to={scope.to}>{scope.label}</Link> : scope.label}
+      </span>
+    </>
+  );
 }
 
 /**
@@ -830,7 +844,7 @@ export function IntegrationChannelPage() {
         }
         sub={
           <span className="int-sub">
-            <Chip>{kindLabel(channel)}</Chip> {statusBadge(channel)}
+            <Chip>{kindLabel(channel)}</Chip> {statusLine(channel, ctx.projects)}
           </span>
         }
         actions={
@@ -871,6 +885,8 @@ export function IntegrationChannelPage() {
             <strong>Test failed:</strong> {test.error ?? "unknown error"}
           </div>
         ))}
+      {channel.secret_source === "missing" && <Notice kind="warn">{credentialNote("missing")!.text}</Notice>}
+      {channel.secret_source === "server" && <p className="small muted">{credentialNote("server")!.text}</p>}
       {channel.last_error && channel.enabled && (
         <div className="alert alert-error" role="alert">
           <strong>Last error:</strong> <span className="break">{channel.last_error}</span>

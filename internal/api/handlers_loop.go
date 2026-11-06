@@ -58,24 +58,33 @@ func (s *Server) agentCheck(w http.ResponseWriter, r *http.Request) {
 // server-side scan for an asset with an integration. Agents pick theirs
 // up on their next poll; uploads wait for the next one.
 func (s *Server) requestCheck(w http.ResponseWriter, r *http.Request, in store.CheckRequest) {
-	actor := principal(r).Actor(r)
-	c, created, err := s.Store.RequestCheck(r.Context(), in, actor)
+	c, created, err := s.startCheck(r, in)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	writeJSON(w, map[bool]int{true: 201, false: 200}[created], c)
+}
+
+// startCheck records a check (or finds the one already waiting), queues the
+// server-side scan for an integration, and audits a new one.
+func (s *Server) startCheck(r *http.Request, in store.CheckRequest) (*store.Check, bool, error) {
+	actor := principal(r).Actor(r)
+	c, created, err := s.Store.RequestCheck(r.Context(), in, actor)
+	if err != nil {
+		return nil, false, err
+	}
 	if created && c.Method == store.CheckIntegration && c.IntegrationID != nil {
 		key := "integration:" + itoa(*c.IntegrationID)
 		if _, err := s.Store.Enqueue(r.Context(), "integration.run", map[string]int64{"integration_id": *c.IntegrationID}, key, time.Time{}); err != nil {
-			s.fail(w, r, err)
-			return
+			return nil, false, err
 		}
 	}
 	if created {
 		_ = s.Store.Audit(r.Context(), actor, "check.request", "asset", itoa(c.AssetID),
 			map[string]any{"check_id": c.ID, "fix_group": c.FixGroup, "reason": c.Reason, "method": c.Method})
 	}
-	writeJSON(w, map[bool]int{true: 201, false: 200}[created], c)
+	return c, created, nil
 }
 
 func (s *Server) checkAsset(w http.ResponseWriter, r *http.Request) {

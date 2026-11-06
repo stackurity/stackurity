@@ -153,3 +153,143 @@ func TestLeaksAPI(t *testing.T) {
 		t.Errorf("audit: %+v %v", audit, err)
 	}
 }
+
+// The rotation workflow over the API: engineers assign, mark rotated and
+// ask for a check again, on the leak's asset when the role comes from a
+// project grant; viewers only read; each change is in the activity log.
+func TestLeakWorkflowAPI(t *testing.T) {
+	e := newEnv(t)
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	eng, err := e.st.CreateUser(ctx, "eng@x.io", "", auth.RoleEngineer, pw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	engineer := e.login("eng@x.io")
+	e.user("viewer@x.io", auth.RoleViewer)
+	viewer := e.login("viewer@x.io")
+
+	b := model.NewBatch(model.Collector{ID: "linux-agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: "web-1",
+		Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "web-1"}}})
+	b.Complete = true
+	b.Leaks = &model.LeakScan{Complete: true, Found: []model.Leak{{Rule: "github-token", Title: "GitHub token", Severity: "critical",
+		Path: "/srv/app/deploy.js", Line: 3, Fingerprint: strings.Repeat("3c", 16), Preview: "ghp_…Qx2e"}}}
+	b2 := model.NewBatch(model.Collector{ID: "linux-agent", Method: "agent"}, model.AssetRef{Kind: model.AssetHost, Name: "web-2",
+		Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "web-2"}}})
+	b2.Complete = true
+	b2.Leaks = &model.LeakScan{Complete: true, Found: []model.Leak{{Rule: "aws-secret-key", Title: "AWS secret access key", Severity: "critical",
+		Path: "/srv/api/settings.py", Line: 8, Fingerprint: strings.Repeat("4d", 16)}}}
+	r1, err := e.st.Ingest(ctx, b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r2, err := e.st.Ingest(ctx, b2, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var list struct {
+		Items []store.Leak
+		Total int64
+	}
+	if code := admin.do("GET", "/api/v1/leaks?state=needs_rotation", nil, &list); code != 200 || list.Total != 2 || list.Items[0].DueAt == nil {
+		t.Fatalf("needs rotation: %d %+v", code, list)
+	}
+	l1, l2 := int64(0), int64(0)
+	for _, l := range list.Items {
+		if l.AssetID == r1.AssetID {
+			l1 = l.ID
+		} else if l.AssetID == r2.AssetID {
+			l2 = l.ID
+		}
+	}
+	if code := admin.do("GET", "/api/v1/leaks?state=later", nil, nil); code != 400 {
+		t.Errorf("bad state: %d", code)
+	}
+
+	// Viewers read, never change.
+	for path, body := range map[string]any{"assign": map[string]any{"user_id": eng.ID}, "rotated": map[string]any{"note": "x"}, "check-again": nil} {
+		if code := viewer.do("POST", fmt.Sprintf("/api/v1/leaks/%d/%s", l1, path), body, nil); code != 403 {
+			t.Errorf("viewer %s: %d", path, code)
+		}
+	}
+
+	var got store.Leak
+	if code := engineer.do("POST", fmt.Sprintf("/api/v1/leaks/%d/assign", l1), map[string]any{"user_id": eng.ID}, &got); code != 200 ||
+		got.AssigneeEmail != "eng@x.io" {
+		t.Errorf("assign: %d %+v", code, got)
+	}
+	if code := engineer.do("POST", fmt.Sprintf("/api/v1/leaks/%d/assign", l1), map[string]any{}, nil); code != 400 {
+		t.Errorf("assign nobody: %d", code)
+	}
+	if code := engineer.do("GET", fmt.Sprintf("/api/v1/leaks?assignee_user=%d", eng.ID), nil, &list); code != 200 || list.Total != 1 {
+		t.Errorf("owner filter: %d %+v", code, list)
+	}
+	if code := engineer.do("GET", "/api/v1/leaks?assignee=none", nil, &list); code != 200 || list.Total != 1 || list.Items[0].ID != l2 {
+		t.Errorf("unassigned filter: %d %+v", code, list)
+	}
+
+	var rotated struct {
+		Leak  store.Leak  `json:"leak"`
+		Check store.Check `json:"check"`
+	}
+	if code := engineer.do("POST", fmt.Sprintf("/api/v1/leaks/%d/rotated", l1), map[string]any{"note": "revoked, new token in the vault", "check": true},
+		&rotated); code != 200 || rotated.Leak.State != store.LeakWaitingCheck || rotated.Leak.RotatedAt == nil || rotated.Check.ID == 0 ||
+		rotated.Check.AssetID != r1.AssetID {
+		t.Errorf("rotated: %d %+v", code, rotated)
+	}
+	// The check already waiting answers check again.
+	var c store.Check
+	if code := engineer.do("POST", fmt.Sprintf("/api/v1/leaks/%d/check-again", l1), nil, &c); code != 200 || c.ID != rotated.Check.ID {
+		t.Errorf("check again: %d %+v", code, c)
+	}
+	var sum store.LeakSummary
+	if code := viewer.do("GET", "/api/v1/leaks/summary?severity=critical,high", nil, &sum); code != 200 || sum.NeedsRotation != 1 ||
+		sum.WaitingCheck != 1 || sum.Unassigned != 1 {
+		t.Errorf("summary: %d %+v", code, sum)
+	}
+
+	// Engineer from a grant on web-2's project: web-2's leak only.
+	p, err := e.st.CreateProject(ctx, "API", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.AddProjectAssets(ctx, p.ID, []int64{r2.AssetID}); err != nil {
+		t.Fatal(err)
+	}
+	if code := admin.do("POST", "/api/v1/access-grants", map[string]any{"email": "proj-eng@x.io", "password": pw, "project_id": p.ID,
+		"role": auth.RoleEngineer}, nil); code != 201 {
+		t.Fatalf("grant: %d", code)
+	}
+	member := e.signIn("proj-eng@x.io")
+	for _, path := range []string{"assign", "rotated", "check-again"} {
+		if code := member.do("POST", fmt.Sprintf("/api/v1/leaks/%d/%s", l1, path), map[string]any{"team_id": 0}, nil); code != 404 {
+			t.Errorf("member %s on another project's leak: %d", path, code)
+		}
+	}
+	if code := member.do("POST", fmt.Sprintf("/api/v1/leaks/%d/rotated", l2), map[string]any{"note": "rotated in AWS"}, &rotated); code != 200 ||
+		rotated.Leak.State != store.LeakWaitingCheck {
+		t.Errorf("member rotated: %d %+v", code, rotated)
+	}
+	// A dismissed leak cannot be marked rotated.
+	if code := admin.do("POST", fmt.Sprintf("/api/v1/leaks/%d/dismiss", l2), nil, nil); code != 200 {
+		t.Fatalf("dismiss: %d", code)
+	}
+	if code := member.do("POST", fmt.Sprintf("/api/v1/leaks/%d/rotated", l2), nil, nil); code != 409 {
+		t.Errorf("rotated a dismissed leak: %d", code)
+	}
+
+	audit, _, err := e.st.ListAudit(ctx, "leak", fmt.Sprint(l1), store.Page{Limit: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	actions := map[string]bool{}
+	for _, a := range audit {
+		actions[a.Action] = true
+	}
+	for _, want := range []string{"leak.assign", "leak.rotated", "leak.check_again"} {
+		if !actions[want] {
+			t.Errorf("audit has no %s: %v", want, actions)
+		}
+	}
+}

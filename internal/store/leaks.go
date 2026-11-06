@@ -15,6 +15,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/risk"
 )
 
 // Leak is one leaked key as stored.
@@ -40,6 +41,27 @@ type Leak struct {
 	FirstSeen      time.Time  `json:"first_seen"`
 	LastSeen       time.Time  `json:"last_seen"`
 	ResolvedAt     *time.Time `json:"resolved_at"`
+	// Who owns the rotation: a person and/or a team (POST /leaks/{id}/assign),
+	// and, when nobody is assigned, the asset's owner team.
+	AssigneeUserID *int64 `json:"assignee_user_id"`
+	AssigneeEmail  string `json:"assignee_email"`
+	AssigneeTeamID *int64 `json:"assignee_team_id"`
+	AssigneeTeam   string `json:"assignee_team"`
+	AssetOwnerTeam string `json:"asset_owner_team"`
+	// DueAt is when the key should be rotated by (LeakDueDays), nil for low
+	// leaks; Overdue says it is past and the key is not rotated, or was
+	// found again after it was.
+	DueAt   *time.Time `json:"due_at"`
+	Overdue bool       `json:"overdue"`
+	// "I've rotated it": when, by whom and a note. The leak stays open until
+	// a complete scan no longer sees the key.
+	RotatedAt     *time.Time `json:"rotated_at"`
+	RotatedBy     *int64     `json:"rotated_by"`
+	RotatedByName string     `json:"rotated_by_name"`
+	RotationNote  string     `json:"rotation_note"`
+	// State is what people see (LeakState*): needs_rotation, waiting_check,
+	// still_found, verified_gone or dismissed.
+	State string `json:"state"`
 	// Why says in one line why the leak has its severity and what to do,
 	// from where the file is (LeakWhy).
 	Why string `json:"why" db:"-"`
@@ -89,8 +111,79 @@ func withWhy(ls []Leak) {
 	}
 }
 
+// The states a leak is shown in. A rotated leak waits for a scan: a
+// complete one that no longer sees the key verifies it gone; one that still
+// sees it after the rotation shows it still found (the file still has it).
+const (
+	LeakNeedsRotation = "needs_rotation"
+	LeakWaitingCheck  = "waiting_check"
+	LeakStillFound    = "still_found"
+	LeakVerifiedGone  = "verified_gone"
+	LeakDismissed     = "dismissed"
+)
+
+const leakStateSQL = `CASE WHEN l.resolution = 'dismissed' THEN 'dismissed' WHEN l.resolution = 'gone' THEN 'verified_gone'
+	WHEN l.rotated_at IS NULL THEN 'needs_rotation' WHEN l.last_seen > l.rotated_at THEN 'still_found' ELSE 'waiting_check' END`
+
+// leakOverdueSQL: open, past its deadline, and not rotated (or found again
+// after it was).
+const leakOverdueSQL = `(l.status = 'open' AND l.due_at < now() AND (l.rotated_at IS NULL OR l.last_seen > l.rotated_at))`
+
 const leakCols = `l.id, l.asset_id, a.name, a.kind, l.collector_id, l.fingerprint, l.path, l.line, l.rule, l.title, l.name,
-	l.preview, l.severity, l.exposure, l.status, l.resolution, l.resolution_note, l.resolved_by, l.first_seen, l.last_seen, l.resolved_at`
+	l.preview, l.severity, l.exposure, l.status, l.resolution, l.resolution_note, l.resolved_by, l.first_seen, l.last_seen, l.resolved_at,
+	l.assignee_user_id, COALESCE(au.email, ''), l.assignee_team_id, COALESCE(ateam.name, ''), COALESCE(ot.name, ''),
+	l.due_at, COALESCE(` + leakOverdueSQL + `, false), l.rotated_at, l.rotated_by, COALESCE(NULLIF(ru.name, ''), ru.email, ''), l.rotation_note,
+	` + leakStateSQL
+
+const leakFrom = ` FROM leaks l JOIN assets a ON a.id = l.asset_id
+	LEFT JOIN users au ON au.id = l.assignee_user_id LEFT JOIN teams ateam ON ateam.id = l.assignee_team_id
+	LEFT JOIN teams ot ON ot.id = a.owner_team_id LEFT JOIN users ru ON ru.id = l.rotated_by`
+
+// Default days to rotate a leaked key by severity, when the workspace has
+// not set its own fix deadlines. Low leaks (keys kept in a configuration
+// file, where they belong) have none.
+var defaultLeakDueDays = map[string]int{"critical": 1, "high": 7, "medium": 30}
+
+// LeakDueDays is how many days a leak of each severity has to be rotated:
+// the risk policy's fix deadlines (critical P1, high P2, medium P3) when the
+// workspace changed them from the defaults, otherwise 1, 7 and 30 days, as
+// a leaked key is more urgent than most vulnerabilities. Low has none.
+func LeakDueDays(p risk.Policy) map[string]int {
+	def := risk.DefaultPolicy().SLA
+	custom := false
+	for _, pri := range []string{"P1", "P2", "P3"} {
+		if p.SLA[pri].FixDays != def[pri].FixDays {
+			custom = true
+		}
+	}
+	if !custom {
+		return defaultLeakDueDays
+	}
+	out := map[string]int{}
+	for sev, pri := range map[string]string{"critical": "P1", "high": "P2", "medium": "P3"} {
+		if d := p.SLA[pri].FixDays; d > 0 {
+			out[sev] = d
+		}
+	}
+	return out
+}
+
+// leakDueDaysTx reads the workspace's policy in the ingest transaction.
+func leakDueDaysTx(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
+	var raw []byte
+	err := tx.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, riskPolicyKey).Scan(&raw)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return defaultLeakDueDays, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	p, err := decodeRiskPolicy(raw)
+	if err != nil {
+		return defaultLeakDueDays, nil
+	}
+	return LeakDueDays(p), nil
+}
 
 // writeLeaks stores a batch's key scan: found leaks are added or seen
 // again, and when the scan was complete the collector's open leaks on the
@@ -110,23 +203,33 @@ func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *
 		[]string{"fingerprint", "path", "line", "rule", "title", "name", "preview", "severity", "exposure"}, pgx.CopyFromRows(rows)); err != nil {
 		return 0, 0, err
 	}
+	due, err := leakDueDaysTx(ctx, tx)
+	if err != nil {
+		return 0, 0, err
+	}
 	// The same value twice in one file is one leak: the first line wins,
-	// and the most severe rule.
+	// and the most severe rule. Its deadline runs from when it was seen at
+	// its severity: a new leak, one back after it was gone, or one raised
+	// to a higher severity (the earlier deadline wins).
 	if _, err := tx.Exec(ctx, `INSERT INTO leaks AS l (asset_id, collector_id, fingerprint, path, line, rule, title, name, preview,
-			severity, exposure, first_seen, last_seen, last_collection_id)
-		SELECT DISTINCT ON (fingerprint, path) $1, $2, fingerprint, path, line, rule, title, name, preview, severity, exposure, $3, $3, $4
+			severity, exposure, first_seen, last_seen, last_collection_id, due_at)
+		SELECT DISTINCT ON (fingerprint, path) $1, $2, fingerprint, path, line, rule, title, name, preview, severity, exposure, $3, $3, $4,
+		  $3::timestamptz + make_interval(days => NULLIF(CASE severity WHEN 'critical' THEN $5::int WHEN 'high' THEN $6::int
+		    WHEN 'medium' THEN $7::int ELSE 0 END, 0))
 		FROM leaks_in
 		ORDER BY fingerprint, path, array_position(ARRAY['critical','high','medium','low'], severity), line
 		ON CONFLICT (asset_id, collector_id, fingerprint, path) DO UPDATE SET
 		  line = EXCLUDED.line, rule = EXCLUDED.rule, title = EXCLUDED.title, name = EXCLUDED.name, preview = EXCLUDED.preview,
 		  severity = EXCLUDED.severity, exposure = EXCLUDED.exposure,
+		  due_at = CASE WHEN l.resolution = 'dismissed' THEN l.due_at WHEN l.resolution = 'gone' THEN EXCLUDED.due_at
+		    ELSE LEAST(l.due_at, EXCLUDED.due_at) END,
 		  last_seen = GREATEST(l.last_seen, EXCLUDED.last_seen), last_collection_id = EXCLUDED.last_collection_id,
 		  status = CASE WHEN l.resolution = 'dismissed' THEN l.status ELSE 'open' END,
 		  resolution = CASE WHEN l.resolution = 'dismissed' THEN l.resolution ELSE '' END,
 		  resolution_note = CASE WHEN l.resolution = 'dismissed' THEN l.resolution_note ELSE '' END,
 		  resolved_by = CASE WHEN l.resolution = 'dismissed' THEN l.resolved_by END,
 		  resolved_at = CASE WHEN l.resolution = 'dismissed' THEN l.resolved_at END`,
-		assetID, b.Collector.ID, b.ObservedAt, collectionID); err != nil {
+		assetID, b.Collector.ID, b.ObservedAt, collectionID, due["critical"], due["high"], due["medium"]); err != nil {
 		return 0, 0, err
 	}
 	if _, err := tx.Exec(ctx, `INSERT INTO leak_scans (asset_id, collector_id, complete, reason, found, scanned_at)
@@ -149,25 +252,43 @@ func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *
 }
 
 // LeakFilter selects leaks. Status is open (the default), resolved or all;
-// Severity is one severity or several, comma-separated.
+// Severity is one severity or several, comma-separated. State is one of the
+// LeakState values, or overdue, and implies its status. AssigneeUser and
+// AssigneeTeam pick an owner; Unassigned leaks with neither.
 type LeakFilter struct {
-	AssetID  int64
-	Status   string
-	Severity string
+	AssetID      int64
+	Status       string
+	Severity     string
+	State        string
+	AssigneeUser int64
+	AssigneeTeam int64
+	Unassigned   bool
 	Page
 }
 
-// ListLeaks lists leaks, most severe first.
-func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, error) {
+func (f LeakFilter) where() (*where, error) {
 	w := &where{}
-	switch f.Status {
+	status := f.Status
+	if f.State != "" && status == "" {
+		status = "all"
+	}
+	switch status {
 	case "", "open":
 		w.add("l.status = ?", "open")
 	case "resolved":
 		w.add("l.status = ?", "resolved")
 	case "all":
 	default:
-		return nil, 0, fmt.Errorf("status must be open, resolved or all: %w", ErrInvalid)
+		return nil, fmt.Errorf("status must be open, resolved or all: %w", ErrInvalid)
+	}
+	switch f.State {
+	case "":
+	case "overdue":
+		w.conds = append(w.conds, leakOverdueSQL)
+	case LeakNeedsRotation, LeakWaitingCheck, LeakStillFound, LeakVerifiedGone, LeakDismissed:
+		w.add("("+leakStateSQL+") = ?", f.State)
+	default:
+		return nil, fmt.Errorf("state must be needs_rotation, waiting_check, still_found, verified_gone, dismissed or overdue: %w", ErrInvalid)
 	}
 	if f.Severity != "" {
 		w.add("l.severity = ANY(?)", strings.Split(f.Severity, ","))
@@ -175,8 +296,26 @@ func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, err
 	if f.AssetID > 0 {
 		w.add("l.asset_id = ?", f.AssetID)
 	}
+	if f.AssigneeUser > 0 {
+		w.add("l.assignee_user_id = ?", f.AssigneeUser)
+	}
+	if f.AssigneeTeam > 0 {
+		w.add("l.assignee_team_id = ?", f.AssigneeTeam)
+	}
+	if f.Unassigned {
+		w.conds = append(w.conds, "l.assignee_user_id IS NULL AND l.assignee_team_id IS NULL")
+	}
+	return w, nil
+}
+
+// ListLeaks lists leaks, most severe first.
+func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, error) {
+	w, err := f.where()
+	if err != nil {
+		return nil, 0, err
+	}
 	p := f.Page.norm()
-	rows, err := s.Pool.Query(ctx, `SELECT `+leakCols+`, count(*) OVER () FROM leaks l JOIN assets a ON a.id = l.asset_id`+w.sql()+
+	rows, err := s.Pool.Query(ctx, `SELECT `+leakCols+`, count(*) OVER ()`+leakFrom+w.sql()+
 		fmt.Sprintf(` ORDER BY l.status DESC, array_position(ARRAY['critical','high','medium','low'], l.severity), l.first_seen DESC, l.id
 		LIMIT %d OFFSET %d`, p.Limit, p.Offset), w.args...)
 	if err != nil {
@@ -201,7 +340,7 @@ func (s *Store) ListLeaks(ctx context.Context, f LeakFilter) ([]Leak, int64, err
 
 // GetLeak returns one leak.
 func (s *Store) GetLeak(ctx context.Context, id int64) (*Leak, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT `+leakCols+` FROM leaks l JOIN assets a ON a.id = l.asset_id WHERE l.id = $1`, id)
+	rows, err := s.Pool.Query(ctx, `SELECT `+leakCols+leakFrom+` WHERE l.id = $1`, id)
 	if err != nil {
 		return nil, err
 	}
@@ -211,6 +350,84 @@ func (s *Store) GetLeak(ctx context.Context, id int64) (*Leak, error) {
 	}
 	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity)
 	return &l, err
+}
+
+// LeakSummary counts leaks by what needs doing, for the summary strip,
+// the Fixes page and the dashboard. Severity, when set, limits every count
+// (critical,high for what needs action).
+type LeakSummary struct {
+	NeedsRotation  int64 `json:"needs_rotation"`
+	StillFound     int64 `json:"still_found"`
+	Overdue        int64 `json:"overdue"`
+	WaitingCheck   int64 `json:"waiting_check"`
+	VerifiedGone30 int64 `json:"verified_gone_30d"`
+	Unassigned     int64 `json:"unassigned"`
+}
+
+// SummariseLeaks counts the leaks a filter's asset and severity select.
+func (s *Store) SummariseLeaks(ctx context.Context, f LeakFilter) (LeakSummary, error) {
+	w, err := LeakFilter{Status: "all", AssetID: f.AssetID, Severity: f.Severity}.where()
+	if err != nil {
+		return LeakSummary{}, err
+	}
+	var out LeakSummary
+	err = s.Pool.QueryRow(ctx, `SELECT
+		  count(*) FILTER (WHERE l.status = 'open' AND l.rotated_at IS NULL),
+		  count(*) FILTER (WHERE l.status = 'open' AND l.last_seen > l.rotated_at),
+		  count(*) FILTER (WHERE `+leakOverdueSQL+`),
+		  count(*) FILTER (WHERE l.status = 'open' AND l.last_seen <= l.rotated_at),
+		  count(*) FILTER (WHERE l.resolution = 'gone' AND l.resolved_at > now() - interval '30 days'),
+		  count(*) FILTER (WHERE l.status = 'open' AND l.assignee_user_id IS NULL AND l.assignee_team_id IS NULL)
+		FROM leaks l JOIN assets a ON a.id = l.asset_id`+w.sql()+andMerged(w), w.args...).
+		Scan(&out.NeedsRotation, &out.StillFound, &out.Overdue, &out.WaitingCheck, &out.VerifiedGone30, &out.Unassigned)
+	return out, err
+}
+
+func andMerged(w *where) string {
+	if len(w.conds) == 0 {
+		return " WHERE a.merged_into IS NULL"
+	}
+	return " AND a.merged_into IS NULL"
+}
+
+// AssignLeak sets a leak's owner: a nil id leaves that part unchanged, 0
+// clears it (as POST /findings/{id}/actions assign does).
+func (s *Store) AssignLeak(ctx context.Context, id int64, user, team *int64) (*Leak, error) {
+	if user == nil && team == nil {
+		return nil, fmt.Errorf("user_id or team_id is required: %w", ErrInvalid)
+	}
+	tag, err := s.Pool.Exec(ctx, `UPDATE leaks SET
+		assignee_user_id = CASE WHEN $2::bigint IS NULL THEN assignee_user_id WHEN $2 = 0 THEN NULL ELSE $2 END,
+		assignee_team_id = CASE WHEN $3::bigint IS NULL THEN assignee_team_id WHEN $3 = 0 THEN NULL ELSE $3 END
+		WHERE id = $1`, id, user, team)
+	if err != nil {
+		if isForeignKey(err) {
+			return nil, fmt.Errorf("no such user or team: %w", ErrInvalid)
+		}
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		return nil, ErrNotFound
+	}
+	return s.GetLeak(ctx, id)
+}
+
+// MarkLeakRotated records "I've revoked it and issued a new one" on an open
+// leak. It stays open: a complete scan that no longer sees the key resolves
+// it as gone; one that still sees it shows it still found.
+func (s *Store) MarkLeakRotated(ctx context.Context, id int64, userID *int64, note string) (*Leak, error) {
+	tag, err := s.Pool.Exec(ctx, `UPDATE leaks SET rotated_at = now(), rotated_by = $2, rotation_note = $3
+		WHERE id = $1 AND status = 'open'`, id, userID, note)
+	if err != nil {
+		return nil, err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := s.GetLeak(ctx, id); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("only an open leak can be marked rotated: %w", ErrConflict)
+	}
+	return s.GetLeak(ctx, id)
 }
 
 // DismissLeak marks a leak dismissed (a test key kept on purpose, or one

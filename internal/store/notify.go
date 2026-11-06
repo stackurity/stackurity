@@ -17,15 +17,39 @@ type Channel struct {
 	SecretRef string          `json:"secret_ref"`
 	Enabled   bool            `json:"enabled"`
 	CreatedAt time.Time       `json:"created_at"`
-	LastOKAt  *time.Time      `json:"last_ok_at"`
-	LastError string          `json:"last_error"`
+	// LastOKAt is the last time anything through the channel worked: a
+	// test from the integration's page (or a Jira, tracker or PagerDuty
+	// connection check) as well as a real message. LastDeliveryAt says
+	// whether a real message was ever delivered.
+	LastOKAt  *time.Time `json:"last_ok_at"`
+	LastError string     `json:"last_error"`
 	// OwnerProjectID and OwnerAssetID: the project or asset the channel
 	// belongs to; both nil for the organisation's (migration 0096).
 	OwnerProjectID *int64 `json:"owner_project_id"`
 	OwnerAssetID   *int64 `json:"owner_asset_id"`
+	// LastDeliveryAt is when the channel last delivered a real
+	// notification (a delivery in the delivery log marked sent); tests
+	// are never in the log, so they never set it. Nil: none yet.
+	LastDeliveryAt *time.Time `json:"last_delivery_at"`
+	// SecretSource says where secret_ref points: "stored" (a secret in
+	// this organisation's stored credentials), "missing" (a secret:NAME
+	// that is not stored, so sending will fail), "server" (env: or file:,
+	// the server's own secrets, which the Secrets page never
+	// shows) or "" (no secret).
+	SecretSource string `json:"secret_source"`
 }
 
-const channelCols = `id, kind, name, config, secret_ref, enabled, created_at, last_ok_at, last_error, owner_project_id, owner_asset_id`
+// channelCols ends with two computed columns, LastDeliveryAt and
+// SecretSource. Every query selecting them reads FROM channels (no alias),
+// or is an INSERT INTO channels ... RETURNING.
+const channelCols = `id, kind, name, config, secret_ref, enabled, created_at, last_ok_at, last_error, owner_project_id, owner_asset_id,
+	(SELECT max(d.sent_at) FROM deliveries d WHERE d.channel_id = channels.id AND d.status = 'sent'),
+	CASE
+	  WHEN channels.secret_ref LIKE 'env:%' OR channels.secret_ref LIKE 'file:%' THEN 'server'
+	  WHEN channels.secret_ref LIKE 'secret:%' THEN
+	    CASE WHEN EXISTS (SELECT 1 FROM workspace_secrets ws WHERE ws.workspace_id = channels.workspace_id
+	      AND ws.name = substr(channels.secret_ref, 8)) THEN 'stored' ELSE 'missing' END
+	  ELSE '' END`
 
 func (s *Store) ListChannels(ctx context.Context) ([]Channel, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+channelCols+` FROM channels ORDER BY name`)
