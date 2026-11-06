@@ -194,7 +194,7 @@ export function IntegrationCard({ item, actions }: { item: HubItem; actions: Car
         {item.receives && (
           <div>
             <dt>Receives</dt>
-            <dd className={item.receives.none ? "ix-muted" : undefined} title={item.receives.rules.length > 1 ? item.receives.rules.join("\n") : undefined}>
+            <dd className={item.receives.none ? "ix-muted" : undefined} title={item.receives.rules.length > 1 ? item.receives.rules.join("\n") : item.receives.text}>
               {item.receives.text}
             </dd>
           </div>
