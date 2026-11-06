@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { humanize } from "../format";
 
-export type Tone = "good" | "warn" | "bad" | "muted" | "info" | "crit" | "orange";
+export type Tone = "good" | "warn" | "bad" | "muted" | "info" | "crit" | "orange" | "p1" | "p2" | "p3" | "p4";
 
 // Status words used across assets, coverage, inventory confidence and jobs.
 const TONES: Record<string, Tone> = {
@@ -112,7 +112,8 @@ export function UpdateBadge({ type }: { type: string | undefined }) {
 
 // --- Stage 3: priority, SOS, workflow state
 
-const PRIORITY_TONES: Record<string, Tone> = { P1: "crit", P2: "orange", P3: "warn", P4: "muted" };
+// Priority badges have their own colour tokens (--p1 … --p4 in styles.css).
+const PRIORITY_TONES: Record<string, Tone> = { P1: "p1", P2: "p2", P3: "p3", P4: "p4" };
 const PRIORITY_TITLES: Record<string, string> = {
   P1: "P1: act immediately",
   P2: "P2: high priority",
