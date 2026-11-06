@@ -4,6 +4,8 @@ import (
 	"os"
 	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 const doc = `# Changelog
@@ -70,6 +72,35 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+func TestUnreleased(t *testing.T) {
+	f, err := fragments.Parse("changelog.d/x.md", "### Security\n\n- **Patched.**\n\n### Added\n\n- Another thing.\n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Fragments and the entries written directly under Unreleased.
+	got, err := Unreleased(doc, []fragments.Fragment{f})
+	want := "### Security\n\n- **Patched.**\n\n### Added\n\n- Next thing.\n- Another thing.\n"
+	if err != nil || got != want {
+		t.Errorf("got:\n%s\nwant:\n%s (%v)", got, want, err)
+	}
+	// Without fragments: the Unreleased section as written.
+	if got, err := Unreleased(doc, nil); err != nil || got != "### Added\n\n- Next thing.\n" {
+		t.Errorf("no fragments: %q %v", got, err)
+	}
+	// An empty Unreleased with fragments, and with none.
+	empty := "## Unreleased\n\n## 0.4.0\n\n- x\n"
+	if got, err := Unreleased(empty, []fragments.Fragment{f}); err != nil || !strings.HasPrefix(got, "### Security\n") {
+		t.Errorf("fragments only: %q %v", got, err)
+	}
+	if got, err := Unreleased(empty, nil); err != nil || got != "" {
+		t.Errorf("nothing: %q %v", got, err)
+	}
+	// Fragments are not part of a released version's notes.
+	if got, err := Section(doc, "0.3.1"); err != nil || got != "### Fixed\n\n- A bug.\n" {
+		t.Errorf("0.3.1: %q %v", got, err)
+	}
+}
+
 // The repository's own changelog stays valid, and every released version
 // has notes the release workflow can publish.
 func TestRepositoryChangelog(t *testing.T) {
@@ -78,6 +109,9 @@ func TestRepositoryChangelog(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := Check(string(b)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fragments.Load("../../" + fragments.Dir); err != nil {
 		t.Fatal(err)
 	}
 	for _, s := range sections(string(b)) {

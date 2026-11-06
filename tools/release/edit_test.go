@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 const changelog = "# Changelog\n\nIntro naming `## Unreleased`.\n\n## Unreleased\n\n### Added\n\n- **New thing.** Detail.\n\n" +
@@ -13,7 +15,7 @@ const changelog = "# Changelog\n\nIntro naming `## Unreleased`.\n\n## Unreleased
 
 func TestReleaseChangelog(t *testing.T) {
 	v, _ := parseVersion("v0.15.0")
-	got, err := releaseChangelog(changelog, v)
+	got, err := releaseChangelog(changelog, v, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +25,7 @@ func TestReleaseChangelog(t *testing.T) {
 		t.Errorf("got:\n%s\nwant:\n%s", got, want)
 	}
 	// Releasing the result again: its Unreleased is empty.
-	if _, err := releaseChangelog(got, version{0, 16, 0}); err == nil || !strings.Contains(err.Error(), "empty") {
+	if _, err := releaseChangelog(got, version{0, 16, 0}, nil); err == nil || !strings.Contains(err.Error(), "empty") {
 		t.Errorf("empty Unreleased: %v", err)
 	}
 	if p, err := latestReleased(got); err != nil || p != v {
@@ -47,7 +49,7 @@ func TestReleaseChangelogRefuses(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := releaseChangelog(c.doc, v); err == nil || !strings.Contains(err.Error(), c.want) {
+		if _, err := releaseChangelog(c.doc, v, nil); err == nil || !strings.Contains(err.Error(), c.want) {
 			t.Errorf("%s: err %v, want it to mention %q", name, err, c.want)
 		}
 	}
@@ -183,6 +185,29 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	// The fragments, which prepare merges and deletes.
+	fragFiles, _ := filepath.Glob(filepath.Join(root, fragments.Dir, "*.md"))
+	for _, f := range fragFiles {
+		b, _ := os.ReadFile(f)
+		if err := os.MkdirAll(filepath.Join(dir, fragments.Dir), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, fragments.Dir, filepath.Base(f)), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// The fragments package the lint tests import.
+	pkg := filepath.Join("tools", "internal", "fragments")
+	srcs, _ := filepath.Glob(filepath.Join(root, pkg, "*.go"))
+	if err := os.MkdirAll(filepath.Join(dir, pkg), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range srcs {
+		b, _ := os.ReadFile(f)
+		if err := os.WriteFile(filepath.Join(dir, pkg, filepath.Base(f)), b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
 	// The lint test files themselves, run against the copy.
 	lint, _ := filepath.Glob(filepath.Join(root, "tools", "releaselint", "*_test.go"))
 	if err := os.MkdirAll(filepath.Join(dir, "tools", "releaselint"), 0o755); err != nil {
@@ -204,11 +229,15 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 	}
 	defer os.Chdir(wd)
 	r := &run{quiet: true}
+	frags, err := fragments.Load(fragments.Dir)
+	if err != nil {
+		t.Fatal(err)
+	}
 	edits := []struct {
 		path string
 		fn   func(string) (string, string, error)
 	}{
-		{changelogFile, func(s string) (string, string, error) { o, err := releaseChangelog(s, next); return o, "", err }},
+		{changelogFile, func(s string) (string, string, error) { o, err := releaseChangelog(s, next, frags); return o, "", err }},
 		{serverJSON, func(s string) (string, string, error) { o, err := setServerJSONVersion(s, next); return o, "", err }},
 		{matrixFile, func(s string) (string, string, error) { o, _, err := addUpgradeSource(s, prev); return o, "", err }},
 	}
@@ -229,6 +258,12 @@ func TestPrepareOnRepositoryCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	for _, f := range frags {
+		r.remove(f.Path, "")
+	}
+	if left, _ := fragments.Load(fragments.Dir); len(left) != 0 {
+		t.Errorf("%d fragments left after prepare", len(left))
+	}
 	cmd := exec.Command("go", "test", "-count=1", "./tools/releaselint")
 	cmd.Env = append(os.Environ(), "STACKURITY_RELEASE_TAG=v"+next.String())
 	if out, err := cmd.CombinedOutput(); err != nil {
@@ -243,4 +278,92 @@ func hasEntries(cl string) bool {
 	}
 	body, _, _ := strings.Cut(after, "\n## ")
 	return strings.TrimSpace(body) != ""
+}
+
+func TestReleaseChangelogWithFragments(t *testing.T) {
+	frag := func(path, content string) fragments.Fragment {
+		f, err := fragments.Parse(path, content)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return f
+	}
+	frags := []fragments.Fragment{
+		frag("changelog.d/a.md", "### Fixed\n\n- **Fix A.**\n\n### Security\n\n- **Sec A.**\n"),
+		frag("changelog.d/b.md", "### Added\n\n- **Feature B.**\n  Second line.\n"),
+		frag("changelog.d/c.md", "### Upgrading\n\n- Migration `0103_c`.\n"),
+	}
+	v := version{0, 15, 0}
+
+	// Fragments plus entries written directly under Unreleased.
+	direct := "# Changelog\n\nIntro naming `## Unreleased`.\n\n## Unreleased\n\n### Added\n\n- **New thing.** Detail.\n\n" +
+		"## 0.14.0\n\n### Fixed\n\n- **Old fix.**\n"
+	got, err := releaseChangelog(direct, v, frags)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := "# Changelog\n\nIntro naming `## Unreleased`.\n\n## Unreleased\n\n## 0.15.0\n\n" +
+		"### Security\n\n- **Sec A.**\n\n" +
+		"### Added\n\n- **New thing.** Detail.\n- **Feature B.**\n  Second line.\n\n" +
+		"### Fixed\n\n- **Fix A.**\n\n" +
+		"### Upgrading\n\n- Migration `0103_c`.\n\n" +
+		"## 0.14.0\n\n### Fixed\n\n- **Old fix.**\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+
+	// Only fragments: the Unreleased heading is there but empty.
+	empty := "# Changelog\n\n## Unreleased\n\n## 0.14.0\n\n- a\n"
+	got, err = releaseChangelog(empty, v, frags[1:2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "# Changelog\n\n## Unreleased\n\n## 0.15.0\n\n### Added\n\n- **Feature B.**\n  Second line.\n\n## 0.14.0\n\n- a\n"; got != want {
+		t.Errorf("fragments only, got:\n%s\nwant:\n%s", got, want)
+	}
+	// Neither: nothing to release.
+	if _, err := releaseChangelog(empty, v, nil); err == nil || !strings.Contains(err.Error(), "nothing to release") {
+		t.Errorf("empty, no fragments: %v", err)
+	}
+}
+
+// prepare reads changelog.d, merges it and deletes the fragments, README.md
+// excepted, and an empty or missing changelog.d is no fragments.
+func TestPrepareFragments(t *testing.T) {
+	dir := t.TempDir()
+	wd, _ := os.Getwd()
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chdir(wd)
+	if frags, err := fragments.Load(fragments.Dir); err != nil || len(frags) != 0 {
+		t.Fatalf("missing changelog.d: %v %v", frags, err)
+	}
+	os.Mkdir(fragments.Dir, 0o755)
+	os.WriteFile(filepath.Join(fragments.Dir, "README.md"), []byte("# Fragments\n\nNot one.\n"), 0o644)
+	if frags, err := fragments.Load(fragments.Dir); err != nil || len(frags) != 0 {
+		t.Fatalf("README only: %v %v", frags, err)
+	}
+	os.WriteFile(filepath.Join(fragments.Dir, "x.md"), []byte("### Changed\n\n- **X.**\n"), 0o644)
+	frags, err := fragments.Load(fragments.Dir)
+	if err != nil || len(frags) != 1 {
+		t.Fatalf("load: %v %v", frags, err)
+	}
+	got, err := releaseChangelog("## Unreleased\n\n## 0.14.0\n\n- a\n", version{0, 15, 0}, frags)
+	if err != nil || !strings.Contains(got, "## 0.15.0\n\n### Changed\n\n- **X.**\n\n## 0.14.0") {
+		t.Fatalf("got %q %v", got, err)
+	}
+	r := &run{quiet: true}
+	for _, f := range frags {
+		r.remove(f.Path, "")
+	}
+	if _, err := os.Stat(filepath.Join(fragments.Dir, "x.md")); !os.IsNotExist(err) {
+		t.Error("fragment not deleted")
+	}
+	if _, err := os.Stat(filepath.Join(fragments.Dir, "README.md")); err != nil {
+		t.Error("README.md deleted")
+	}
+	if len(r.changed) != 1 || r.changed[0] != filepath.Join(fragments.Dir, "x.md") {
+		t.Errorf("changed = %v, want the fragment staged", r.changed)
+	}
 }

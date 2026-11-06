@@ -24,7 +24,7 @@ go run ./tools/release prepare -no-pr v0.15.0     # commits on the branch; push 
 
 It does every file change a release needs, in one commit:
 
-- **CHANGELOG.md**: the `## Unreleased` section becomes `## 0.15.0`, and a fresh, empty `## Unreleased` goes above it so the next change has its heading (parallel pull requests then don't each add one). It refuses an empty or missing Unreleased section, two of them, or a version that is not newer than the last release.
+- **CHANGELOG.md**: the `## Unreleased` section becomes `## 0.15.0`, the entries of the fragments in `changelog.d/` are merged into it in the standard subsection order (after anything written directly under Unreleased), the fragment files are deleted, and a fresh, empty `## Unreleased` goes above it. It refuses a missing Unreleased section, nothing to release (an empty one and no fragments), two of them, a fragment it cannot parse, or a version that is not newer than the last release. `go run ./tools/changelog -unreleased` shows the notes beforehand.
 - **Charts**: `version` and `appVersion` in `deploy/helm/stackurity/Chart.yaml` and `deploy/helm/stackurity-reporter/Chart.yaml`.
 - **server.json** (the MCP Registry entry): `version`.
 - **Docs**: every image and chart reference that `tools/releaselint` checks in `README.md`, `docs/install.md` and `docs/kubernetes.md`.
@@ -50,7 +50,7 @@ Once the release is published:
 go run ./tools/release next v0.15.0
 ```
 
-adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. `releaselint` fails the first pull request that adds something under `## Unreleased` until this is merged.
+adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. `releaselint` fails the first pull request that adds something under `## Unreleased` or in `changelog.d/` until this is merged.
 
 ### 6. Feedback: `/feedback release`
 

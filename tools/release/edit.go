@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 // version is a release version without the "v": 0.15.0.
@@ -78,9 +80,12 @@ func latestReleased(changelog string) (version, error) {
 // releaseChangelog renames the single, non-empty "## Unreleased" section to
 // "## <v>" and puts a fresh, empty "## Unreleased" above it, so the next
 // change has its heading and parallel pull requests do not each add one.
-// It refuses a changelog with no Unreleased section, an empty one, two of
-// them, or a version that is not newer than the newest release.
-func releaseChangelog(changelog string, v version) (string, error) {
+// The entries of frags (changelog.d) are merged into the release section,
+// in the standard subsection order, after anything written directly under
+// Unreleased. It refuses a changelog with no Unreleased section, nothing to
+// release (an empty one and no fragments), two of them, or a version that
+// is not newer than the newest release.
+func releaseChangelog(changelog string, v version, frags []fragments.Fragment) (string, error) {
 	lines := strings.Split(changelog, "\n")
 	hs := changelogHeadings(lines)
 	unreleased := -1
@@ -116,13 +121,27 @@ func releaseChangelog(changelog string, v version) (string, error) {
 		}
 	}
 	start := hs[unreleased].line
-	if strings.TrimSpace(strings.Join(lines[start+1:end], "\n")) == "" {
-		return "", errors.New(`the "## Unreleased" section of CHANGELOG.md is empty: nothing to release`)
+	body := strings.Join(lines[start+1:end], "\n")
+	if strings.TrimSpace(body) == "" && len(frags) == 0 {
+		return "", errors.New(`the "## Unreleased" section of CHANGELOG.md is empty and changelog.d has no fragments: nothing to release`)
 	}
 	out := make([]string, 0, len(lines)+2)
 	out = append(out, lines[:start]...)
 	out = append(out, "## Unreleased", "", "## "+v.String())
-	out = append(out, lines[start+1:]...)
+	if len(frags) == 0 {
+		out = append(out, lines[start+1:]...)
+		return strings.Join(out, "\n"), nil
+	}
+	merged, err := fragments.Merge(body, frags)
+	if err != nil {
+		return "", err
+	}
+	out = append(out, "")
+	out = append(out, strings.Split(strings.TrimRight(merged, "\n"), "\n")...)
+	if end < len(lines) {
+		out = append(out, "")
+	}
+	out = append(out, lines[end:]...)
 	return strings.Join(out, "\n"), nil
 }
 

@@ -8,8 +8,9 @@
 // prepare, from a clean checkout:
 //
 //  1. fetches origin and creates the branch release-X.Y.Z from origin/main;
-//  2. renames CHANGELOG.md's "## Unreleased" to "## X.Y.Z" and puts a fresh,
-//     empty "## Unreleased" above it;
+//  2. renames CHANGELOG.md's "## Unreleased" to "## X.Y.Z", merges the
+//     entries of the changelog.d fragments into it (and deletes the files),
+//     and puts a fresh, empty "## Unreleased" above it;
 //  3. sets version and appVersion in both Helm charts, the version in
 //     server.json, and every image and chart reference in README.md,
 //     docs/install.md and docs/kubernetes.md;
@@ -33,6 +34,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 func usage() {
@@ -115,11 +118,22 @@ func (r *run) prepare(v version) error {
 	if !prev.less(v) {
 		return fmt.Errorf("%s is not newer than the newest release in CHANGELOG.md, %s", v, prev)
 	}
-	newCL, err := releaseChangelog(string(cl), v)
+	frags, err := fragments.Load(fragments.Dir)
 	if err != nil {
 		return err
 	}
-	r.write(changelogFile, newCL, fmt.Sprintf("Unreleased -> %s, fresh empty Unreleased above it", v))
+	newCL, err := releaseChangelog(string(cl), v, frags)
+	if err != nil {
+		return err
+	}
+	what := fmt.Sprintf("Unreleased -> %s, fresh empty Unreleased above it", v)
+	if len(frags) > 0 {
+		what = fmt.Sprintf("Unreleased + %d changelog.d fragments -> %s, fresh empty Unreleased above it", len(frags), v)
+	}
+	r.write(changelogFile, newCL, what)
+	for _, f := range frags {
+		r.remove(f.Path, "merged into CHANGELOG.md "+v.String())
+	}
 
 	for _, f := range chartFiles {
 		if err := r.edit(f, func(s string) (string, string, error) {
@@ -165,7 +179,7 @@ func (r *run) prepare(v version) error {
 	}
 	migrations, _ := output("git", "diff", "--name-only", "--diff-filter=A", "v"+prev.String()+"..HEAD", "--", "internal/db/migrations")
 	body := prBody(v, prev, notes, strings.Fields(migrations), r.changed)
-	msg := fmt.Sprintf("Release %s\n\nCHANGELOG Unreleased -> %s (fresh Unreleased above it); both charts,\nserver.json and the install docs name %s; upgrade matrix includes %s.\nMade with go run ./tools/release prepare v%s.\n", v, v, v, prev, v)
+	msg := fmt.Sprintf("Release %s\n\nCHANGELOG Unreleased and changelog.d -> %s (fresh Unreleased above it); both charts,\nserver.json and the install docs name %s; upgrade matrix includes %s.\nMade with go run ./tools/release prepare v%s.\n", v, v, v, prev, v)
 	return r.finish("Release "+v.String(), msg, body)
 }
 
@@ -261,6 +275,20 @@ func (r *run) write(path, content, what string) {
 		mode = info.Mode().Perm()
 	}
 	if err := os.WriteFile(path, []byte(content), mode); err != nil {
+		fail(err)
+	}
+	r.changed = append(r.changed, path)
+}
+
+// remove deletes a file; finish stages the deletion with the other changes.
+func (r *run) remove(path, what string) {
+	if !r.quiet {
+		fmt.Printf("%-45s deleted: %s\n", path, what)
+	}
+	if r.dry {
+		return
+	}
+	if err := os.Remove(path); err != nil {
 		fail(err)
 	}
 	r.changed = append(r.changed, path)
