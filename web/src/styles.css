@@ -29,6 +29,8 @@
   --accent: #2952cc;
   --accent-hover: #2145ad;
   --accent-soft: #eef1fa;
+  /* The accent as text or an icon on a surface (AA in both themes). */
+  --accent-strong: #2952cc;
   --accent-text: #ffffff;
   --loader-1: #111827;
   --loader-2: #2952cc;
@@ -100,6 +102,7 @@
     --accent: #3f63d4;
     --accent-hover: #4a6cd8;
     --accent-soft: #1c2338;
+    --accent-strong: #8aa4f0;
     --accent-text: #ffffff;
     --focus: #7d97ec;
     --loader-1: #3a404b;
@@ -977,7 +980,7 @@ h1 .badge {
   color: var(--text);
 }
 .tab-active {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 650;
   border-bottom-color: var(--accent);
 }
@@ -2112,7 +2115,7 @@ details.json pre {
   color: var(--text-2);
 }
 .fix-summary-kinds .icon {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-list {
   display: flex;
@@ -2141,7 +2144,7 @@ details.json pre {
   place-items: center;
   border-radius: 10px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-icon-inline {
   width: 28px;
@@ -2205,7 +2208,7 @@ details.json pre {
   font-weight: 750;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-action {
   margin: 0;
@@ -2555,7 +2558,7 @@ details.json pre {
   background: var(--surface);
 }
 .help-link:hover {
-  color: var(--accent);
+  color: var(--accent-strong);
   border-color: var(--accent);
   text-decoration: none;
 }
@@ -2599,7 +2602,7 @@ details.json pre {
 }
 .help-nav li a.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 .help-article {
@@ -2639,7 +2642,7 @@ details.json pre {
 }
 .help-steps li::marker {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .help-article .codeblock {
   margin: var(--s2) 0 var(--s3);
@@ -2726,7 +2729,7 @@ details.json pre {
 .edition-pro,
 .edition-enterprise {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* --- global search */
@@ -3493,7 +3496,7 @@ h6.md-h {
     cursor: pointer;
   }
   .tabbar-item.active {
-    color: var(--accent);
+    color: var(--accent-strong);
   }
   .tabbar-item:hover {
     text-decoration: none;
@@ -4825,7 +4828,7 @@ h6.md-h {
 }
 .onboard-steps li.current .onboard-dot {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .onboard-steps li.done .onboard-dot,
 .setup-list li.done .onboard-dot {
@@ -5290,7 +5293,7 @@ h6.md-h {
   height: 36px;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .int-group {
   margin: var(--s3) 0 var(--s2);
@@ -6726,7 +6729,7 @@ a.cov-chip:hover {
   height: 28px;
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .ask-bot-turn {
   display: flex;
