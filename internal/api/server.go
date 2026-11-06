@@ -404,6 +404,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/link-suggestions", s.assetLinkSuggestions)
 				r.Get("/assets/{id}/leaks", s.assetLeaks)
 				r.Get("/leaks", s.listLeaks)
+				r.Get("/leaks/summary", s.leakSummary)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -480,6 +481,10 @@ func (s *Server) Handler() http.Handler {
 				// security-only, checked inside like finding actions
 				r.Post("/leaks/{id}/dismiss", s.dismissLeak)
 				r.Post("/leaks/{id}/undismiss", s.undismissLeak)
+				// engineer, checked on the leak's asset like Check again
+				r.Post("/leaks/{id}/assign", s.assignLeak)
+				r.Post("/leaks/{id}/rotated", s.leakRotated)
+				r.With(s.requireWritable).Post("/leaks/{id}/check-again", s.leakCheckAgain)
 				r.Post("/incidents/{id}/actions", s.incidentAction)
 				r.With(s.requireWritable).Post("/assets/{id}/check", s.checkAsset)
 				r.With(s.requireWritable).Post("/fix-groups/{id}/check", s.checkFixGroup)

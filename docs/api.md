@@ -1125,7 +1125,13 @@ The same action on up to 500 findings (`ids`).
 
 **Who:** viewer
 
-[Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were scanned for keys at all. With none, an empty list means nothing was checked yet, not that no keys were found.
+[Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were scanned for keys at all. With none, an empty list means nothing was checked yet, not that no keys were found. Each also has its owner (`assignee_user_id`, `assignee_email`, `assignee_team_id`, `assignee_team`, and `asset_owner_team`, the asset's owner team, for when nobody is assigned), `due_at` (when it should be rotated by: 1 day for critical, 7 for high and 30 for medium, or the [risk policy](#get-risk-policy)'s fix days for P1, P2 and P3 when the workspace changed them; none for low), `overdue`, `rotated_at`, `rotated_by`, `rotated_by_name`, `rotation_note` and `state`: `needs_rotation`, `waiting_check` (marked rotated, waiting for a scan), `still_found` (a scan after it was marked rotated still saw the key), `verified_gone` (a complete scan no longer sees it) or `dismissed`. More query: `state` (one of those, or `overdue`; it implies its `status`), `assignee_user`, `assignee_team`, `assignee=none`.
+
+### `GET /leaks/summary`
+
+**Who:** viewer
+
+Counts of the leaks you can see, with the `asset_id` and `severity` filters of [`GET /leaks`](#get-leaks): `needs_rotation` (open, not marked rotated), `still_found`, `overdue`, `waiting_check`, `verified_gone_30d` (gone in a complete scan in the last 30 days) and `unassigned` (open, with no owner).
 
 ### `POST /leaks/{id}/dismiss`
 
@@ -1138,6 +1144,24 @@ Dismiss a leaked key, with an optional `note` (up to 1,000 characters): a test k
 **Who:** security (on the leak's asset, with a project grant)
 
 Open a dismissed leak again. `409` for a leak that is not dismissed: one resolved as gone stays resolved until a scan sees it again.
+
+### `POST /leaks/{id}/assign`
+
+**Who:** engineer (on the leak's asset, with a project grant)
+
+Set who rotates a leaked key: `user_id` and/or `team_id`; `0` clears one, one left out stays as it is. Someone with a project grant only assigns to the people of their projects, as for findings. Returns the leak. Recorded in the activity log.
+
+### `POST /leaks/{id}/rotated`
+
+**Who:** engineer (on the leak's asset, with a project grant)
+
+Record that the key was rotated (revoked at its provider and replaced), with an optional `note` (up to 1,000 characters). The leak stays open as `waiting_check` until a complete scan no longer sees the key (`verified_gone`); a scan that still sees it shows it as `still_found`, as the file still has the old key. With `"check": true` a check of the asset is asked for too, as [`POST /leaks/{id}/check-again`](#post-leaksidcheck-again) does. `409` for a leak that is not open. Returns `leak`, and `check` (or `check_error`, such as the plan's cooldown). Recorded in the activity log.
+
+### `POST /leaks/{id}/check-again`
+
+**Who:** engineer (on the leak's asset, with a project grant)
+
+Ask for the leak's asset to be scanned again, as [`POST /assets/{id}/check`](#post-assetsidcheck) does: its agent reports within a minute, an integration scans the repository again, otherwise the next upload. Returns the check (`201` for a new one, `200` when one is already waiting). Recorded in the activity log.
 
 ### `GET /fix-groups`
 
