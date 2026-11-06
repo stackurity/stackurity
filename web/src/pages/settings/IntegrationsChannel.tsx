@@ -28,10 +28,11 @@ import {
 import { useAuth } from "../../auth";
 import { useAction, useFacets, useLoad } from "../../hooks";
 import { Badge, Chip } from "../../components/Badge";
-import { Card, CheckCard, ErrorBox, FieldGroup, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
+import { Card, CheckCard, ErrorBox, FieldGroup, Loading, Notice, PageHeader, RelativeTime, SettingRow } from "../../components/ui";
 import { ProNotice } from "../../components/ProNotice";
 import { AddToSlackButton } from "../../components/NotifyChoices";
-import { IntegrationIcon } from "./Integrations";
+import { IntegrationIcon, StatusDot } from "../../components/IntegrationCards";
+import { scopeOf, statusOf } from "../../integrationHub";
 import {
   ChannelForm,
   channelTarget,
@@ -604,11 +605,17 @@ function useCtx(channels: Channel[] | undefined): Ctx {
   };
 }
 
-function statusBadge(c: Channel) {
-  if (!c.enabled) return <Badge status="disabled" />;
-  if (c.last_error) return <Badge status="failed" label="error" />;
-  if (c.last_ok_at) return <Badge status="ok" />;
-  return <Badge status="untested" tone="warn" label="not used yet" />;
+/** Status, last successful delivery and scope, as the Integrations cards show them. */
+function statusLine(c: Channel, projects: Pick<Project, "id" | "name">[]) {
+  const scope = scopeOf(c, projects);
+  return (
+    <>
+      <StatusDot status={statusOf({ enabled: c.enabled, ok: c.last_ok_at, error: c.last_error })} />
+      <span className="muted small">
+        Last successful delivery <RelativeTime iso={c.last_ok_at} /> · {scope.to ? <Link to={scope.to}>{scope.label}</Link> : scope.label}
+      </span>
+    </>
+  );
 }
 
 /**
@@ -830,7 +837,7 @@ export function IntegrationChannelPage() {
         }
         sub={
           <span className="int-sub">
-            <Chip>{kindLabel(channel)}</Chip> {statusBadge(channel)}
+            <Chip>{kindLabel(channel)}</Chip> {statusLine(channel, ctx.projects)}
           </span>
         }
         actions={
