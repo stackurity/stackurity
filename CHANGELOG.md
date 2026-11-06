@@ -11,9 +11,14 @@ Each release's section is published as its GitHub release notes, and a tag witho
 - **Feedback queue: sender email, on-demand virus scan, re-encoded images, storage warning** (the Stackurity team's server only). One short email to the sender when an item is released or will not be fixed (`STACKURITY_FEEDBACK_EMAILS=on`, off by default; it quotes nothing the sender wrote, and operators can preview it at `GET /admin/feedback/email-templates`). An on-demand ClamAV scan holds new attachments until they are scanned clean (`STACKURITY_FEEDBACK_SCAN=required`, with `deploy/feedback-scan` and a `scanner` token scope that reaches only the scan routes); an infected file is deleted and its item moved to `needs_owner`. Images are decoded and encoded again so only their pixels are kept (WebP becomes PNG; over 40 megapixels is refused). Above 80% of `STACKURITY_FEEDBACK_STORAGE_MAX_MB` the intake reply carries `storage_warning` and an error is logged. See [feedback-queue.md](docs/feedback-queue.md).
 - **Reply-To and Cc on email.** A message can now carry a Reply-To address and Cc addresses (`notify.Message.ReplyTo`, `.Cc`), sent as headers and, for Cc, in the envelope. They are for email only, never in a webhook's payload. An address that does not parse or holds a line break fails the send before the mail server is contacted (no header injection), an address already in To is not sent a second copy, and Cc counts towards the 50 recipients one email may have. Two new kinds of account email, `billing` (an organisation's billing and plan emails from a hosted service) and `sales_alert` (a hosted service's alerts to its operator), get their own footer line. Nothing sends them in the open-source server; self-hosted installations are unchanged.
 
+### Changed
+
+- **A channel says whether it ever delivered a real message, and where its secret is.** `GET /channels` adds `last_delivery_at` (the last real notification delivered, from the delivery log; tests never set it) and `secret_source` (`stored`, `missing` for a `secret:NAME` that is not stored, `server` for `env:`/`file:`, which **Secrets** never lists, or empty). `last_ok_at` is unchanged and now documented as the last time anything worked, tests and connection checks included, so a channel that was only ever tested no longer has to look as though it delivered.
+
 ### Upgrading
 
 - Migration `0100_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
+- Migration `0102_deliveries_channel_sent` adds a partial index on the delivery log (`deliveries (channel_id, sent_at) WHERE status = 'sent'`) for `last_delivery_at`.
 
 ## 0.19.0
 

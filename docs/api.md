@@ -1535,7 +1535,7 @@ What the server offers: `slack_app` (Add to Slack), `jira_app` (Connect Jira: th
 
 **Who:** security
 
-Notification channels.
+Notification channels. Three fields say different things about one: `last_ok_at` is the last time anything through it worked, a test or connection check (`POST /channels/{id}/test`) as well as a real message, and `last_error` the last failure. `last_delivery_at` is when it last delivered a real notification, from the delivery log; tests are never in the log, so a channel only ever tested has `last_ok_at` and a null `last_delivery_at`. `secret_source` says where `secret_ref` points: `stored` (a stored credential of this organisation), `missing` (a `secret:NAME` that is not stored, so sending fails until it is added under **Integrations → Secrets**), `server` (`env:` or `file:`, the server's own secrets, which **Secrets** never lists) or empty (no secret).
 
 ### `POST /channels`
 

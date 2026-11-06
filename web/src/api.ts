@@ -2895,11 +2895,16 @@ export interface Channel {
   secret_ref: string;
   enabled: boolean;
   created_at: string;
+  /** Last time anything through it worked: a test or connection check as well as a real message. */
   last_ok_at: string | null;
   last_error: string;
   /** The project or asset the channel belongs to; both null for the organisation's. */
   owner_project_id?: number | null;
   owner_asset_id?: number | null;
+  /** Last real notification delivered (the delivery log); tests never set it. Null: none yet. */
+  last_delivery_at?: string | null;
+  /** Where secret_ref points: a stored credential, one that is not stored, the server's own (env:/file:), or none. */
+  secret_source?: "stored" | "missing" | "server" | "";
 }
 
 export interface Route {
