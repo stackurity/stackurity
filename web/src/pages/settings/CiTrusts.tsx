@@ -3,6 +3,7 @@ import { api, type CITrust, type CITrustList, type List, type Project } from "..
 import { useAction, useLoad } from "../../hooks";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { CodeBlock, ErrorBox, FieldGroup, Notice, RelativeTime } from "../../components/ui";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 /*
  * Keyless CI scans (Integrations → CI pipeline): CI trusts, and
@@ -94,6 +95,7 @@ export function CiTrusts({ admin }: { admin: boolean }) {
       <p>
         <strong>1.</strong> Trust the repository here{admin ? "" : " (an administrator does this)"}.
       </p>
+      {admin && <PlanLimitNote kind="ci_trusts" />}
       {admin && (
         <>
           <ErrorBox error={list.error} title="Could not load CI trusts" />

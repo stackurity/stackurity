@@ -12,6 +12,7 @@ import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 import { ProjectChatAppsCard } from "../../components/ScopeNotifications";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 /*
  * Integrations: everything Stackurity connects to. Notification
@@ -392,6 +393,8 @@ export function IntegrationsHubPage() {
   return (
     <>
       <PageHeader help="notifications" title="Integrations" sub="Everything Stackurity connects to: where messages go, what it collects from, and AI assistants." />
+      <PlanLimitNote kind="channels" />
+      <PlanLimitNote kind="alert_rules" />
       <h2 className="h-sm">Active integrations</h2>
       <ErrorBox error={channels.error} title="Could not load notification integrations" />
       <ErrorBox error={sources.error} title="Could not load sources" />

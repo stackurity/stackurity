@@ -1,6 +1,8 @@
 # STACKURITY_* variables the docs name that only the licensed build reads
 # (its code is not in this repository). One per line: the name, two spaces,
 # the reason. TestDocumentedEnvVarsExist (envvars_test.go) reads this file.
+STACKURITY_CLOUD_FREE_PLAN  the hosted Free plan, Stackurity Cloud (licensed build)
+STACKURITY_CLOUD_PAID_LIMITS_FROM  when hosted paid plans get their new plan limits, Stackurity Cloud (licensed build)
 STACKURITY_OIDC_ALLOWED_DOMAINS  single sign-on, licensed build
 STACKURITY_OIDC_CLIENT_ID  single sign-on, licensed build
 STACKURITY_OIDC_CLIENT_SECRET  single sign-on, licensed build

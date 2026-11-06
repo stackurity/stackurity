@@ -9,6 +9,8 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+
+	"github.com/stackurity/stackurity/internal/tenant"
 )
 
 // This file holds release 0.7's loop: regressed issues, ignore rules
@@ -765,6 +767,9 @@ type CheckRequest struct {
 	AssetID  int64
 	FixGroup string
 	Reason   string // check (default) or applied
+	// Cooldown: a person's Check again, held to the plan's cooldown
+	// (plan_limits.go).
+	Cooldown bool
 }
 
 // RequestCheck records a check, or returns the one already waiting for a
@@ -802,6 +807,11 @@ func (s *Store) RequestCheck(ctx context.Context, in CheckRequest, actor Actor) 
 		}
 		if !errors.Is(err, pgx.ErrNoRows) {
 			return err
+		}
+		if ws, ok := tenant.Workspace(ctx); ok && in.Cooldown {
+			if err := checkCooldown(ctx, tx, ws, in.AssetID); err != nil {
+				return err
+			}
 		}
 		method := CheckReport
 		switch {

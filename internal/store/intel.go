@@ -1066,6 +1066,15 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	if status != "all" {
 		w.add("f.status = ?", status)
 	}
+	// The plan's history window: resolved issues older than it are not
+	// shown (kept, and shown again on a plan without the window).
+	since, err := s.historySince(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if since != nil {
+		w.add("(f.status <> 'resolved' OR f.resolved_at >= ?)", *since)
+	}
 	if f.Kind != "" {
 		w.add("f.kind = ?", f.Kind)
 	}

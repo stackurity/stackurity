@@ -14,6 +14,7 @@ import { PERMISSIONS, permissionLabel, scopeSummary } from "../../roles";
 import { EMPTY, phoneProblem, preview, problems, reduce, toRequest } from "../../userAccess";
 import { AccessPicker, teamInfo } from "../../components/AccessPicker";
 import { InvitationList, InviteForm } from "../../components/Invite";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 /** Organisation-wide roles, and "none": access only to the projects someone is given. */
 const ORG_ROLES: (UserRole | "none")[] = [...USER_ROLES, "none"];
@@ -240,6 +241,7 @@ export function UsersPage() {
           )
         }
       />
+      <PlanLimitNote kind="members" />
       {msg && <Notice kind="success">{msg}</Notice>}
       <ErrorBox error={act.error} title="Update failed" />
       {showInvite && (

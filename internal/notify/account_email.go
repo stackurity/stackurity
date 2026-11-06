@@ -118,6 +118,27 @@ func AskSpendEmail(level int, at time.Time) Message {
 		"An administrator can turn Ask Stackurity off under Integrations → AI assistants."}}
 }
 
+// InactivePauseEmail warns an organisation's administrators that it will
+// be paused on pauseOn because nobody has signed in for a while (the
+// plan's inactive pause); last is the second and last warning. base is the
+// installation's address.
+func InactivePauseEmail(base, org string, pauseOn time.Time, last bool, at time.Time) Message {
+	title := "Sign in to keep Stackurity checking " + org
+	if last {
+		title = "Last reminder: sign in to keep Stackurity checking " + org
+	}
+	m := Message{Event: "inactive_pause", Title: title, At: at, Summary: []string{
+		"Nobody in " + org + " has signed in to Stackurity for a while. On " + pauseOn.UTC().Format("2 January 2006") +
+			" it will be paused: nothing new is collected and no notifications are sent until someone signs in.",
+		"Everything already there is kept, and signing in at any time resumes it at once.",
+		"Any member signing in is enough, also after the pause.",
+	}}
+	if base != "" {
+		m.Link, m.LinkLabel = strings.TrimRight(base, "/")+"/", "Sign in"
+	}
+	return m
+}
+
 // testEmail is a channel's test notification.
 func testEmail(at time.Time) Message {
 	return Message{Event: "test", Title: "Stackurity test notification", At: at,

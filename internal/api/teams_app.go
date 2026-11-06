@@ -75,6 +75,10 @@ func (s *Server) startTeamsInstallFor(w http.ResponseWriter, r *http.Request, pr
 		s.fail(w, r, forbidden("Add to Teams is done signed in, from the dashboard"))
 		return
 	}
+	if err := s.Store.PlanRoom(r.Context(), store.LimitChannels, "teams_app"); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	code, err := s.Store.CreateTeamsInstallCode(r.Context(), uid, project)
 	if err != nil {
 		s.fail(w, r, err)

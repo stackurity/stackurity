@@ -193,6 +193,12 @@ export function ProjectsPage() {
                     <strong>{p.name}</strong>
                   </Link>
                   {p.archived_at && <span className="muted"> (archived)</span>}
+                  {p.read_only && (
+                    <span className="muted" title="Over your plan's project limit: its assets collect nothing new">
+                      {" "}
+                      (read-only)
+                    </span>
+                  )}
                   {p.description && <span className="small muted"> · {p.description}</span>}
                 </span>
                 <span className="small">{plural(p.asset_count, "asset")}</span>
@@ -532,6 +538,7 @@ export function ProjectDetailPage() {
         sub={
           <>
             {p.archived_at ? "Archived. " : ""}
+            {p.read_only ? "Read-only: over your plan's project limit, so its assets collect nothing new. " : ""}
             {p.description || plural(p.asset_count, "asset")}
           </>
         }

@@ -473,6 +473,16 @@ func (s *Store) ListInventory(ctx context.Context, f InventoryFilter) ([]Invento
 	w := &where{}
 	if !f.IncludeRemoved {
 		w.conds = append(w.conds, "i.removed_at IS NULL")
+	} else {
+		// The plan's history window (plan_history.go): software removed
+		// before it is not shown.
+		since, err := s.historySince(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		if since != nil {
+			w.add("(i.removed_at IS NULL OR i.removed_at >= ?)", *since)
+		}
 	}
 	w.conds = append(w.conds, "a.merged_into IS NULL")
 	if f.AssetID > 0 {

@@ -32,6 +32,7 @@ const STATUS_WORDS: Record<BillingStatus, string> = {
   halted: "Payment failed",
   cancelling: "Ends at the end of the period",
   cancelled: "Ended",
+  free: "Free plan",
 };
 
 const PERIOD_WORDS = { monthly: "month", yearly: "year" } as const;

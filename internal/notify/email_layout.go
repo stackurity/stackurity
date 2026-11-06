@@ -102,7 +102,7 @@ func emailWhy(m Message, host string) string {
 		return "You received this email because it is the address of a Stackurity account" + on + "."
 	case "signup":
 		return "You received this email because this address was used to sign up or sign in" + on + "."
-	case "ask_spend", "deletion_warning":
+	case "ask_spend", "deletion_warning", "inactive_pause":
 		return "You received this email because you are an administrator of an organisation" + on + "."
 	case "community_key":
 		return "You received this email because this address asked for a free Stackurity key" + on + "."

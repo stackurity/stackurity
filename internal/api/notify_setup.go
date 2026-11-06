@@ -256,6 +256,10 @@ func (s *Server) startSlackInstallFor(w http.ResponseWriter, r *http.Request, pr
 		s.fail(w, r, forbidden("Add to Slack is done signed in, from the dashboard"))
 		return
 	}
+	if err := s.Store.PlanRoom(r.Context(), store.LimitChannels, "slack_app"); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	var req struct {
 		ReturnTo string `json:"return_to"`
 	}

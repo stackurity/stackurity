@@ -42,7 +42,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 
   A password found in known data breaches answers `400 bad_request`. Passwords set before the rules keep working.
 - **Lists** return `{"items": [...], "total": N, "limit": L, "offset": O}`. Routes that page take `?limit=` (default 100, at most 500) and `?offset=`.
-- **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`. While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
+- **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`, and a new rule, channel, team, API token, member or SBOM import past the plan's limits `402 plan_limit`; a Check again within the plan's cooldown answers `429 check_cooldown`, and requests past the plan's hourly cap `429 rate_limited` ([Plan limits](asset-limits.md#plan-limits)). While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
 - **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
@@ -2277,7 +2277,7 @@ Audit events, paged. Query: `object_type`, `object_id`.
 
 **Who:** viewer (organisation-wide)
 
-[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not) and `report_mode` (`full` or `trial`).
+[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not), `report_mode` (`full` or `trial`) and `plan`: the [plan limits](asset-limits.md#plan-limits) and their use (`plan`, `next_plan`, `rules` with `used` and `limit` per kind, `members`, `allowed_channel_kinds`, `read_only_projects`, `sbom_imports`, `check_again_cooldown_seconds`, `api_requests_per_hour`, `history_days`, `inactive_pause_days`), or null when there are none.
 
 ## Automatic fixes
 
@@ -2355,7 +2355,7 @@ Renovate rules for the approved plans of a repository. Query: `repository`, `mod
 
 **Who:** instance admin
 
-Workspaces with `member_count`, `asset_count`, `monitored`, `asset_limit` (null: none), `projects`, `project_limit`, `read_only_at`, `read_only_reason` and `report_mode`.
+Workspaces with `member_count`, `asset_count`, `monitored`, `asset_limit` (null: none), `projects`, `project_limit`, `read_only_at`, `read_only_reason`, `report_mode` and `plan_limits`.
 
 ### `POST /admin/workspaces`
 
@@ -2367,7 +2367,7 @@ Creates a workspace (`name`, `slug`) and its first admin (`admin_email`, `admin_
 
 **Who:** instance admin
 
-Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, and `report_mode` (`full` or `trial`). See [asset-limits.md](asset-limits.md).
+Takes `name`, `disabled`, `plan`, `asset_limit` and `project_limit` (`-1` removes a limit), `read_only` with `read_only_reason`, `report_mode` (`full` or `trial`), and `plan_limits` (replaces them; `{}` removes them). See [asset-limits.md](asset-limits.md).
 
 ### `GET /admin/health`
 
@@ -2488,6 +2488,12 @@ Invoices of the organisation's subscriptions.
 **Who:** instance admin · Stackurity Cloud
 
 The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, and `items` (`id`, `key_id`, `email`, `name`, `company`, `issued_at`), newest first; `?limit=` 1 to 500, default 100.
+
+### `GET /admin/free-plan/preview`
+
+**Who:** instance admin · Stackurity Cloud
+
+A dry run of the Free plan (`STACKURITY_CLOUD_FREE_PLAN`) that changes nothing: `items`, exactly the organisations turning it on would change (`workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored`, `asset_limit`; none whose trial or plan already ended, which stay as they are), `free_plan_on`, and `paid_limits_from` (`STACKURITY_CLOUD_PAID_LIMITS_FROM`: when paid plans get their new limits; null: never). `400 no_free_plan` when the plans list no Free plan. Organisations the cloud's configuration keeps as they are (its operator's own) are listed with `kept` and no change: the Free plan changes nothing for them.
 
 ### `GET /admin/trials`
 

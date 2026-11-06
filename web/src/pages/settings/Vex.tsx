@@ -19,6 +19,7 @@ import { Badge, type Tone } from "../../components/Badge";
 import { Table } from "../../components/Table";
 import { Card, CheckCard, EmptyState, ErrorBox, FieldGroup, GoodToKnow, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../../components/ui";
 import { vexEmpty } from "../../emptyCopy";
+import { PlanLimitNote } from "../../components/PlanLimit";
 
 const LIMIT = 50;
 
@@ -243,6 +244,7 @@ function Sources({ sources, reload, error }: { sources: VEXSource[] | null; relo
         A document&apos;s author is whatever it says, so a source can apply its not affected statements without approval only when it is pinned: to a
         public key its signed attestations must verify with, or to the API token its uploads come from. Everything else waits for a person.
       </GoodToKnow>
+      <PlanLimitNote kind="vex_sources" />
       <ErrorBox error={act.error} title="Could not change the source" />
       {error ? <ErrorBox error={error as never} title="Could not load sources" /> : null}
       {sources && sources.length > 0 && (

@@ -290,6 +290,8 @@ export interface Project {
   asset_count: number;
   /** Your role in it, when you have access through projects only. */
   role?: UserRole;
+  /** Over the plan's project limit: its assets collect nothing new. */
+  read_only?: boolean;
 }
 
 export interface ProjectRef {
@@ -407,6 +409,41 @@ export interface AssetUsage {
   projects_at_limit: boolean;
   read_only: ReadOnlyState | null;
   report_mode: ReportMode;
+  /** The plan's limits and their use; null when there are none (self-hosted). */
+  plan: PlanUsage | null;
+}
+
+/** Kinds of rule a plan can limit (docs/asset-limits.md, "Plan limits"). */
+export type PlanRuleKind = "alert_rules" | "channels" | "owner_rules" | "ci_trusts" | "vex_sources" | "api_tokens" | "teams";
+
+export interface LimitUsage {
+  used: number;
+  /** Null: no limit. */
+  limit: number | null;
+}
+
+/** GET /usage `plan`: the plan limits and how much of each is used. */
+export interface PlanUsage {
+  plan: string;
+  /** The plan a refusal says to upgrade to. */
+  next_plan: string;
+  rules: Record<PlanRuleKind, LimitUsage>;
+  /** Members plus pending invitations. */
+  members: LimitUsage;
+  /** Null: every kind of channel. */
+  allowed_channel_kinds: string[] | null;
+  /** Projects over the project limit: their assets collect nothing new. */
+  read_only_projects: number[];
+  /** SBOM imports this calendar month (UTC). */
+  sbom_imports: LimitUsage;
+  /** Seconds between two Check agains on one asset; 0: any time. */
+  check_again_cooldown_seconds: number;
+  /** The organisation's API requests an hour; 0: no cap. */
+  api_requests_per_hour: number;
+  /** Days of resolved issues and past software shown; 0: all. */
+  history_days: number;
+  /** Paused after this many days without a sign-in; 0: never. */
+  inactive_pause_days: number;
 }
 
 /**
@@ -442,7 +479,9 @@ export type BillingStatus =
   | "past_due"
   | "halted"
   | "cancelling"
-  | "cancelled";
+  | "cancelled"
+  /** On the hosted Free plan (its limits instead of read-only). */
+  | "free";
 
 /** GET /billing (admins, hosted edition). */
 export interface Billing {

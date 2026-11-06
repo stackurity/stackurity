@@ -102,6 +102,40 @@ curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
 
 Uploads are refused in the store, where every path that collects goes through, so a new route cannot forget the check.
 
+## Plan limits
+
+`plan_limits` caps how many rules of each kind, and how many members, an organisation may have, which kinds of notification channel it may add, and whether projects over its project limit are read-only. Unset (`{}`, the default) means no limit: a self-hosted installation has none unless an instance administrator sets them, and a hosted service sets them from each organisation's plan.
+
+| Field | Limits |
+| --- | --- |
+| `rule_limits.alert_rules` | Notification rules: the organisation's, a project's and an asset's own, and a project's or asset's edited copy of an inherited rule. Turning an inherited rule off for a project or asset does not count |
+| `rule_limits.channels` | Notification channels, the organisation's, projects' and assets' together, including those made by Add to Slack and Add to Teams |
+| `rule_limits.owner_rules`, `ci_trusts`, `vex_sources`, `teams` | Owner rules, CI trusts, VEX sources, teams |
+| `rule_limits.api_tokens` | API tokens people make (not revoked, not expired). Agents', enrollment and CI tokens are not counted |
+| `max_members` | Members plus pending invitations. Accepting an invitation already sent is not refused, and inviting the same address again takes no new place |
+| `allowed_channel_kinds` | The kinds of channel that can be added: `stackurity_email`, `email`, `slack_app` (Add to Slack), `slack` (webhook), `teams_app`, `teams`, `webhook`, `jira`, `pagerduty`, `servicenow`. Left out: every kind |
+| `over_limit_read_only` | Projects beyond `project_limit` (the newest, by creation) are read-only: an asset that is only in such projects collects nothing new (`402 read_only`, naming the projects), and can still be viewed and alerted on for what is already known. Assets in an active project, and assets in no project, are not affected. Without it, a lower project limit keeps every project collecting, as before |
+| `check_again_cooldown_seconds` | How long after a Check again on an asset (or one of its fixes) the next may be asked for: `429` with code `check_cooldown`, `Retry-After` and `retry_at` in the details. A check still waiting for its report answers as before; "I applied this", scheduled checks and agent reports are not held to it |
+| `api_requests_per_hour` | People's and API tokens' requests to the organisation an hour, counted across replicas: `429 rate_limited` with `Retry-After` when used up. What agents and CI send (uploads, SBOM imports, enrollment, the agent's own endpoints, CI tokens) and anything a collector token does is not counted |
+| `sbom_imports_per_month` | SBOM imports (`POST /sbom/import`) a calendar month (UTC): `402 plan_limit` when used up; a failed import gives its place back |
+| `history_days` | How far back people's lists go: issues and incidents resolved, and software removed, before it are not shown in the dashboard, the API's lists or the outcomes report (which starts no earlier). Nothing is deleted, open issues and current software are always shown, and lifting the limit shows everything at once. Background work (evaluation, notifications) is not affected |
+| `inactive_pause_days` | When nobody in the organisation has signed in for that many days, its administrators are emailed 15 and 5 days before, then it is paused: nothing new is collected and no notifications are sent (as read-only, with its own reason), everything is kept, and the next sign-in by any member resumes it at once. An organisation already idle longer when the limit is set still gets both warnings first. 20 days or more |
+| `plan`, `next_plan` | The plan's name, and the plan a refusal tells people to upgrade to |
+
+A kind left out of `rule_limits` is unlimited. At a limit, only new ones are refused, with `402` and code `plan_limit`: *your plan allows 3 alert rules, and this organisation has 3, so no new one can be added: the ones you have keep working, and can be changed or deleted. Upgrade to Starter for more.* A channel of a kind the plan does not include is refused the same way. Nothing is deleted or switched off when a limit is lowered.
+
+The limits are enforced by the database (a trigger on each table, under a per-organisation lock), so every path that adds a row is held to them, including the Slack and Teams installs, accepting an invitation, a new account given access to a project, and a project's copy of an inherited rule. Add to Slack and Add to Teams check before sending anyone to Slack or Teams.
+
+**Settings → Usage** shows each limit against what is used, the channels the plan includes and the read-only projects; the page where each kind is added (Integrations, Teams, API tokens, Owners, CI, VEX, Users) shows "2 of 3 used", and at the limit what still works and the plan to upgrade to. Read-only projects say so on the Projects page.
+
+```sh
+curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
+  -H "Authorization: Bearer $ADMIN_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"plan_limits": {"plan": "Free", "next_plan": "Starter", "max_members": 2,
+       "rule_limits": {"alert_rules": 3, "channels": 2, "teams": 1},
+       "allowed_channel_kinds": ["stackurity_email", "slack_app"], "over_limit_read_only": true}}'   # {} removes them
+```
+
 ## Trial reports
 
 `report_mode` is `full` (the default) or `trial`. In trial mode reports and exports are shortened and watermarked, not refused:
@@ -116,4 +150,4 @@ curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
   -d '{"report_mode": "trial"}'   # or "full"
 ```
 
-`GET /api/v1/usage` also returns `projects`, `project_limit`, `projects_at_limit`, `read_only` (`since` and `reason`, or null) and `report_mode`; `GET /api/v1/auth/me` returns `read_only` and `report_mode` with the workspace, for every member.
+`GET /api/v1/usage` also returns `projects`, `project_limit`, `projects_at_limit`, `read_only` (`since` and `reason`, or null), `report_mode` and `plan` (the plan limits and their use, or null); `GET /api/v1/auth/me` returns `read_only` and `report_mode` with the workspace, for every member.

@@ -873,6 +873,14 @@ func (s *Store) ListIncidents(ctx context.Context, f IncidentFilter) ([]Incident
 	if status != "all" {
 		w.add("i.status = ?", status)
 	}
+	// The plan's history window (plan_history.go).
+	since, err := s.historySince(ctx)
+	if err != nil {
+		return nil, 0, err
+	}
+	if since != nil {
+		w.add("(i.status <> 'resolved' OR i.resolved_at >= ?)", *since)
+	}
 	if f.Kind != "" {
 		w.add("i.kind = ?", f.Kind)
 	}

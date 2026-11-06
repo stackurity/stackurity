@@ -40,6 +40,9 @@ type Project struct {
 	// Role is the caller's role in the project when they have project
 	// access only; empty for organisation-wide members.
 	Role auth.Role `json:"role,omitempty"`
+	// ReadOnly: the project is over the plan's project limit, so its
+	// assets collect nothing new (plan_limits.go).
+	ReadOnly bool `json:"read_only" db:"-"`
 }
 
 // ProjectRef names a project an asset belongs to.
@@ -72,7 +75,15 @@ func (s *Store) ListProjects(ctx context.Context, archived bool) ([]Project, err
 	if err != nil {
 		return nil, err
 	}
-	return pgx.CollectRows(rows, pgx.RowToStructByPos[Project])
+	ps, err := pgx.CollectRows(rows, pgx.RowToStructByPos[Project])
+	if err != nil {
+		return nil, err
+	}
+	ro, err := s.ReadOnlyProjectIDs(ctx)
+	for i := range ps {
+		ps[i].ReadOnly = ro[ps[i].ID]
+	}
+	return ps, err
 }
 
 func (s *Store) GetProject(ctx context.Context, id int64) (*Project, error) {
@@ -81,7 +92,12 @@ func (s *Store) GetProject(ctx context.Context, id int64) (*Project, error) {
 		return nil, err
 	}
 	p, err := pgx.CollectExactlyOneRow(rows, pgx.RowToAddrOfStructByPos[Project])
-	return p, notFound(err)
+	if err != nil {
+		return nil, notFound(err)
+	}
+	ro, err := s.ReadOnlyProjectIDs(ctx)
+	p.ReadOnly = ro[p.ID]
+	return p, err
 }
 
 // ProjectVisible reports whether the caller may choose the project in the

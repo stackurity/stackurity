@@ -81,6 +81,13 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 				return fmt.Errorf("add to project: %w", err)
 			}
 		}
+		// Assets only in projects over the plan's project limit collect
+		// nothing new (docs/asset-limits.md, "Plan limits").
+		if ws, ok := tenant.Workspace(ctx); ok {
+			if err := checkAssetCollecting(ctx, tx, ws, assetID); err != nil {
+				return err
+			}
+		}
 
 		var tok *int64
 		if tokenID > 0 {

@@ -1,10 +1,11 @@
 import { Link } from "react-router";
-import { api, type AssetUsage, type RefusedAsset } from "../../api";
+import { api, type AssetUsage, type PlanRuleKind, type PlanUsage, type RefusedAsset } from "../../api";
 import { useAuth } from "../../auth";
 import { useLoad } from "../../hooks";
 import { Table, type Column } from "../../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
 import { absTime } from "../../format";
+import { channelWord, limitOf, PLAN_LIMIT_WORDS } from "../../components/PlanLimit";
 
 /** Plain words for asset kinds, as people count them. */
 export const KIND_WORDS: Record<string, string> = {
@@ -82,7 +83,7 @@ export function UsagePage() {
   );
 }
 
-function UsageDetails({ u }: { u: AssetUsage }) {
+export function UsageDetails({ u }: { u: AssetUsage }) {
   const kinds = Object.entries(u.by_kind)
     .filter(([, n]) => n > 0)
     .sort((a, b) => b[1] - a[1]);
@@ -129,6 +130,7 @@ function UsageDetails({ u }: { u: AssetUsage }) {
           <Link to="/projects">Projects</Link>
         </p>
       </Card>
+      {u.plan && <PlanUsageCard plan={u.plan} />}
       <Card title="New assets refused at the limit" description="Assets that tried to report while the organisation was full. Make room and they are added the next time they report.">
         {u.refused.length === 0 ? (
           <EmptyState title="Nothing refused">New assets are refused only when the organisation is at its limit.</EmptyState>
@@ -143,4 +145,64 @@ function UsageDetails({ u }: { u: AssetUsage }) {
       </Card>
     </>
   );
+}
+
+/** Settings → Usage: every limit of the plan against what is used. */
+function PlanUsageCard({ plan }: { plan: PlanUsage }) {
+  const kinds = (Object.keys(PLAN_LIMIT_WORDS) as (PlanRuleKind | "members")[]).filter((k) => {
+    const u = limitOf(plan, k);
+    return u && u.limit !== null;
+  });
+  if (
+    kinds.length === 0 &&
+    plan.read_only_projects.length === 0 &&
+    !plan.allowed_channel_kinds &&
+    plan.sbom_imports.limit === null &&
+    !plan.check_again_cooldown_seconds &&
+    !plan.api_requests_per_hour &&
+    !plan.history_days &&
+    !plan.inactive_pause_days
+  )
+    return null;
+  return (
+    <Card
+      title={plan.plan ? `What your ${plan.plan} plan includes` : "What your plan includes"}
+      description="How many rules, channels and members your plan allows. At a limit only new ones are refused: everything you have keeps working."
+    >
+      {kinds.map((k) => {
+        const u = limitOf(plan, k)!;
+        return <UsageMeter key={k} used={u.used} limit={u.limit} noun={PLAN_LIMIT_WORDS[k]} />;
+      })}
+      {plan.sbom_imports.limit !== null && <UsageMeter used={plan.sbom_imports.used} limit={plan.sbom_imports.limit} noun="SBOM imports this month" />}
+      {(plan.check_again_cooldown_seconds > 0 || plan.api_requests_per_hour > 0 || plan.history_days > 0 || plan.inactive_pause_days > 0) && (
+        <p className="small">
+          {plan.check_again_cooldown_seconds > 0 && <>Check again: once every {cooldownWords(plan.check_again_cooldown_seconds)} for each asset. </>}
+          {plan.api_requests_per_hour > 0 && (
+            <>API requests: {plan.api_requests_per_hour.toLocaleString()} an hour (what agents and CI send is not counted).</>
+          )}
+          {plan.history_days > 0 && <> History: the last {plan.history_days} days of resolved issues are shown (everything is kept).</>}
+          {plan.inactive_pause_days > 0 && (
+            <> Paused after {plan.inactive_pause_days} days without anyone signing in, with two email reminders first.</>
+          )}
+        </p>
+      )}
+      {plan.allowed_channel_kinds && (
+        <p className="small">Notification channels on this plan: {plan.allowed_channel_kinds.map(channelWord).join(", ")}.</p>
+      )}
+      {plan.read_only_projects.length > 0 && (
+        <Notice kind="warn">
+          {plan.read_only_projects.length === 1 ? "One project is" : `${plan.read_only_projects.length} projects are`} over your plan's project
+          limit, so {plan.read_only_projects.length === 1 ? "its" : "their"} assets collect nothing new (everything already there can still be
+          viewed). Archive a project you no longer need{plan.next_plan ? `, or upgrade to ${plan.next_plan}` : ""}.
+        </Notice>
+      )}
+    </Card>
+  );
+}
+
+/** A cooldown in plain words: "hour", "10 minutes". */
+export function cooldownWords(seconds: number): string {
+  if (seconds % 3600 === 0) return seconds === 3600 ? "hour" : `${seconds / 3600} hours`;
+  if (seconds % 60 === 0) return seconds === 60 ? "minute" : `${seconds / 60} minutes`;
+  return `${seconds} seconds`;
 }

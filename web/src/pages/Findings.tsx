@@ -9,6 +9,7 @@ import { humanize, percent, plural } from "../format";
 import { FindingCards, FindingsTable, FindingTiles, PriorityTiles } from "../components/Findings";
 import { UncheckedBanner, useUnchecked } from "../components/Unchecked";
 import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetChips } from "../components/ui";
+import { HistoryWindowNote } from "../components/PlanLimit";
 
 const LIMIT = 50;
 
@@ -164,6 +165,7 @@ export function IssuesPage() {
         title="All issues"
         sub="Every known vulnerability and end-of-life release found in your assets, one per package. SOS first, then by priority."
       />
+      <HistoryWindowNote />
       <UncheckedBanner u={unchecked.data} assetId={Number(assetId) || undefined} />
       {summary.data && (
         <details className="sev-tiles">
