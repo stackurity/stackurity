@@ -9,6 +9,7 @@ on:
   pull_request:
   schedule:
     - cron: "17 4 * * *"   # daily, to catch newly published advisories the same day
+  workflow_dispatch:
 
 # A new push to a pull request cancels its older run.
 concurrency:
@@ -22,6 +23,43 @@ jobs:
   # govulncheck, npm audit and the image scan; blocking.
   gate:
     uses: ./.github/workflows/security-gate.yml
+    secrets:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+
+  # What Docker Hub users actually pull. A fix published after the last
+  # release (an Alpine package, a Go module) fails this run, which means:
+  # cut a patch release the same day.
+  published-image:
+    if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Trivy on docker.io/stackurity/stackurity:latest
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          version: v0.76.1
+          image-ref: docker.io/stackurity/stackurity:latest
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          trivyignores: .trivyignore.yaml
+      - name: Docker Scout on docker.io/stackurity/stackurity:latest
+        if: ${{ !cancelled() }}
+        uses: docker/scout-action@a4119c5a8c5076236a54e4ce99531f7e4dd2ef84 # v1.27.0
+        with:
+          command: cves
+          image: registry://docker.io/stackurity/stackurity:latest
+          only-fixed: true
+          only-severities: critical,high
+          ignore-base: true
+          ignore-suppressed: true
+          vex-location: .vex
+          exit-code: true
+          summary: true
+          write-comment: false
+          dockerhub-user: stackurity
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
 
   dependencies:
     runs-on: ubuntu-latest
