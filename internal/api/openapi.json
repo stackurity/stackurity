@@ -9699,7 +9699,7 @@
    "get": {
     "operationId": "get_admin_free_plan_preview",
     "summary": "Free plan dry run: organisations it would change (hosted edition)",
-    "description": "Stackurity Cloud (hosted) only. `items`: every organisation turning on the Free plan (STACKURITY_CLOUD_FREE_PLAN) would change, with `workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored` and `asset_limit`; `free_plan_on`. `400 no_free_plan` when the plans list no Free plan. Read only\n\nRole: instance admin",
+    "description": "Stackurity Cloud (hosted) only. `items`: exactly the organisations turning on the Free plan (STACKURITY_CLOUD_FREE_PLAN) would change (none whose trial or plan already ended), with `workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored` and `asset_limit`; `free_plan_on`; `paid_limits_from` (STACKURITY_CLOUD_PAID_LIMITS_FROM, null: never). `400 no_free_plan` when the plans list no Free plan. Read only\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],

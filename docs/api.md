@@ -2493,7 +2493,7 @@ The free self-hosted keys issued: `total`, `emails` (distinct), `last_30_days`, 
 
 **Who:** instance admin · Stackurity Cloud
 
-A dry run of the Free plan (`STACKURITY_CLOUD_FREE_PLAN`) that changes nothing: `items`, every organisation turning it on would change (`workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored`, `asset_limit`), and `free_plan_on`. `400 no_free_plan` when the plans list no Free plan. Organisations the cloud's configuration keeps as they are are left out.
+A dry run of the Free plan (`STACKURITY_CLOUD_FREE_PLAN`) that changes nothing: `items`, exactly the organisations turning it on would change (`workspace_id`, `name`, billing status `now` and `after`, `read_only`, `projects`, `project_limit`, `read_only_projects`, `monitored`, `asset_limit`; none whose trial or plan already ended, which stay as they are), `free_plan_on`, and `paid_limits_from` (`STACKURITY_CLOUD_PAID_LIMITS_FROM`: when paid plans get their new limits; null: never). `400 no_free_plan` when the plans list no Free plan. Organisations the cloud's configuration keeps as they are are left out.
 
 ### `GET /admin/trials`
 
