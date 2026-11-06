@@ -152,7 +152,8 @@ func TestEveryEmailHasASample(t *testing.T) {
 	for _, s := range EmailSamples("https://app.stackurity.dev") {
 		have[s.Message.Event] = true
 	}
-	cloud := map[string]bool{"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true} // pro's samples
+	cloud := map[string]bool{"signup": true, "deletion_warning": true, "trial_summary": true, "community_key": true, // pro's samples
+		"billing": true, "sales_alert": true}
 	need := map[string]bool{"opened": true, "escalated": true, "resolved": true, EventUrgent: true, EventSummary: true,
 		EventOverdue: true, EventConnected: true, EventDigest: true, store.CategoryMarketing: true, store.CategoryVulnerabilityNews: true}
 	for e := range accountEvents {

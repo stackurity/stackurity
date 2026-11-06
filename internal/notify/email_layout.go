@@ -104,6 +104,10 @@ func emailWhy(m Message, host string) string {
 		return "You received this email because this address was used to sign up or sign in" + on + "."
 	case "ask_spend", "deletion_warning", "inactive_pause":
 		return "You received this email because you are an administrator of an organisation" + on + "."
+	case "billing":
+		return "You received this email because you are an administrator or the billing contact of an organisation" + on + "."
+	case "sales_alert":
+		return "You received this email because this address gets the sales alerts of this installation" + on + "."
 	case "community_key":
 		return "You received this email because this address asked for a free Stackurity key" + on + "."
 	case "trial_summary":
@@ -120,7 +124,7 @@ func emailWhy(m Message, host string) string {
 // listStyle: the Summary lines are facts to list (alerts, digests,
 // figures), not paragraphs to read.
 func (m Message) listStyle() bool {
-	return m.IncidentID > 0 || m.Kind != "" || m.Event == EventDigest || m.Event == "trial_summary"
+	return m.IncidentID > 0 || m.Kind != "" || m.Event == EventDigest || m.Event == "trial_summary" || m.Event == "sales_alert"
 }
 
 // linkLabel is the label of the email's button.
