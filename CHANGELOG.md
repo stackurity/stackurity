@@ -12,7 +12,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Upgrading
 
-- Migration `0092_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
+- Migration `0100_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
 
 ## 0.19.0
 

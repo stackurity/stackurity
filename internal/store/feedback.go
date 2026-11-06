@@ -1,6 +1,6 @@
 package store
 
-// Feedback (migration 0092). The queue tables are platform data, read and
+// Feedback (migrations 0092 and 0100). The queue tables are platform data, read and
 // written only in system scope, and only by the server that runs the queue;
 // feedback_sent is an installation's per-user record of what it sent.
 

@@ -773,10 +773,7 @@ func (s *Server) emailFeedbackSender(ctx context.Context, it *store.FeedbackItem
 		s.Log.Error("feedback email", "err", err)
 		return
 	}
-	var lines []string
-	for _, para := range strings.Split(strings.TrimSpace(m.Body), "\n\n") {
-		lines = append(lines, para)
-	}
+	lines := strings.Split(strings.TrimSpace(m.Body), "\n\n")
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	msg := notify.Message{Event: "feedback_update", Title: m.Subject, At: time.Now().UTC(), Summary: lines}

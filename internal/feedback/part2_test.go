@@ -3,6 +3,7 @@ package feedback
 import (
 	"encoding/base64"
 	"encoding/binary"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -68,10 +69,10 @@ func TestReencode(t *testing.T) {
 	ihdr[8], ihdr[9] = 8, 2
 	big := append([]byte("\x89PNG\r\n\x1a\n"), pngChunk("IHDR", ihdr)...)
 	big = append(big, pngChunk("IEND", nil)...)
-	if _, _, err := Reencode(PNG, big); err != ErrTooManyPixels {
+	if _, _, err := Reencode(PNG, big); !errors.Is(err, ErrTooManyPixels) {
 		t.Fatalf("50 MP: %v", err)
 	}
-	if _, _, err := Reencode(PNG, []byte("\x89PNG\r\n\x1a\nbroken")); err != ErrBadImage {
+	if _, _, err := Reencode(PNG, []byte("\x89PNG\r\n\x1a\nbroken")); !errors.Is(err, ErrBadImage) {
 		t.Fatalf("broken: %v", err)
 	}
 }
