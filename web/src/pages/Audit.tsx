@@ -3,24 +3,12 @@ import { useSearchParams } from "react-router";
 import { api, type AuditEvent, type List } from "../api";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
+import { JsonDetail } from "../components/JsonDetail";
 import { Table, type Column } from "../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
 import { auditEmpty } from "../emptyCopy";
 
 const LIMIT = 50;
-
-function Detail({ value }: { value: unknown }) {
-  if (value === null || value === undefined) return <span className="muted">—</span>;
-  if (typeof value === "object" && Object.keys(value as object).length === 0) return <span className="muted">—</span>;
-  const json = JSON.stringify(value, null, 2);
-  const summary = JSON.stringify(value);
-  return (
-    <details className="json">
-      <summary className="mono small">{summary.length > 60 ? summary.slice(0, 60) + "…" : summary}</summary>
-      <pre className="mono small">{json}</pre>
-    </details>
-  );
-}
 
 export function AuditPage() {
   const [offset, setOffset] = useState(0);
@@ -45,7 +33,7 @@ export function AuditPage() {
     },
     { key: "action", header: "Action", cell: (e) => <span className="mono">{e.action}</span> },
     { key: "object", header: "Object", cell: (e) => (e.object_type ? `${e.object_type}${e.object_id ? ` #${e.object_id}` : ""}` : <span className="muted">—</span>) },
-    { key: "detail", header: "Detail", cell: (e) => <Detail value={e.detail} /> },
+    { key: "detail", header: "Detail", cell: (e) => <JsonDetail value={e.detail} /> },
   ];
 
   return (

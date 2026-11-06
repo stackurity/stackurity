@@ -2,6 +2,7 @@ import { useState } from "react";
 import { api, type Job, type List } from "../../api";
 import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
+import { JsonDetail } from "../../components/JsonDetail";
 import { Table, type Column } from "../../components/Table";
 import { EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
 import { jobsEmpty } from "../../emptyCopy";
@@ -19,7 +20,7 @@ export function JobsPage() {
   const columns: Column<Job>[] = [
     { key: "id", header: "#", numeric: true, cell: (j) => j.id },
     { key: "kind", header: "Kind", cell: (j) => <span className="mono">{j.kind}</span> },
-    { key: "payload", header: "Payload", cell: (j) => <span className="mono small break">{JSON.stringify(j.payload)}</span> },
+    { key: "payload", header: "Payload", cell: (j) => <JsonDetail value={j.payload} /> },
     { key: "state", header: "State", cell: (j) => <Badge status={jobState(j)} /> },
     { key: "attempts", header: "Attempts", numeric: true, cell: (j) => `${j.attempts}/${j.max_attempts}` },
     { key: "run", header: "Run at", cell: (j) => <RelativeTime iso={j.run_at} /> },

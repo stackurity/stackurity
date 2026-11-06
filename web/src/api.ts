@@ -15,9 +15,9 @@ export function atLeast(role: Role | undefined, min: UserRole): boolean {
 
 export const ASSET_KINDS = ["host", "repository", "image", "application", "managed_service", "sbom", "cluster", "workload"] as const;
 export const ASSET_STATUSES = ["ok", "partial", "stale", "removed"] as const;
-/** Plain words for collection_status. */
+/** Plain words for collection_status: reporting only, never security ("Reporting normally", not "Healthy"). */
 export const ASSET_STATUS_LABEL: Record<string, string> = {
-  ok: "Reporting",
+  ok: "Reporting normally",
   partial: "Last scan incomplete",
   stale: "Stopped reporting",
   removed: "Removed",

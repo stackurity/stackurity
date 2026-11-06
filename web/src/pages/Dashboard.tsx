@@ -361,14 +361,14 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
           <p className="small muted">{fixedTotal === 0 ? "Nothing fixed in the last 4 weeks yet." : "fixed in the last 4 weeks"}</p>
         </div>
         <div className="dash-trend">
-          <p className="dash-sub">Fix-by dates (SLA)</p>
+          <p className="dash-sub">Open issues against fix-by dates (SLA)</p>
           {sla.share === null ? (
             <p className="small muted">No open issues have a fix-by date. Nothing is late.</p>
           ) : (
             <>
               <p className="dash-sla-line">
                 <Link to="/fixes/issues?overdue=false" className="dash-sla-link">
-                  <span className="dash-trend-value text-good">{sla.onTime.toLocaleString()}</span> on time
+                  <span className="dash-trend-value text-good">{sla.onTime.toLocaleString()}</span> within deadline
                 </Link>
                 {" · "}
                 <Link to="/fixes/issues?overdue=true" className="dash-sla-link">
@@ -378,12 +378,12 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
               <div
                 className="dash-meter"
                 role="img"
-                aria-label={`${Math.round(sla.share * 100)}% of open issues are on time`}
+                aria-label={`${Math.round(sla.share * 100)}% of open issues are within their deadline`}
               >
                 <span className="dash-meter-fill" style={{ width: `${sla.share * 100}%` }} />
               </div>
               <p className="small muted">
-                {Math.round(sla.share * 100)}% on time
+                {Math.round(sla.share * 100)}% of open issues within deadline
                 {sla.dueToday > 0 && <>, {sla.dueToday.toLocaleString()} due today</>}
               </p>
             </>

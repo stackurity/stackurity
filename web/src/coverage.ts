@@ -242,7 +242,7 @@ export function ecosystemLink(e: EcosystemCoverage): string | null {
 
 /** The filter chips, in the order shown. */
 export const ASSET_GROUPS: { key: AssetCoverageGroup; label: string; tone: "good" | "warn" | "bad" | "muted" | "info" }[] = [
-  { key: "healthy", label: "Healthy", tone: "good" },
+  { key: "healthy", label: "Fully checked", tone: "good" },
   { key: "partly_checked", label: "Partly checked", tone: "warn" },
   { key: "failed_collection", label: "Failed collection", tone: "bad" },
   { key: "not_reporting", label: "Not reporting", tone: "bad" },
