@@ -12,6 +12,11 @@ export interface Column<T> {
 /**
  * A semantic, dense data table. Rows may be selectable (onRowClick); the row
  * is then keyboard-focusable and responds to Enter/Space.
+ *
+ * A table wider than the page scrolls sideways inside its own box
+ * (.table-wrap), never the page, and its first column (what the row is)
+ * stays in view while it does. Pass stickyFirst={false} when the first
+ * column does not say what the row is.
  */
 export function Table<T>({
   columns,
@@ -22,6 +27,7 @@ export function Table<T>({
   selectedKey,
   rowClassName,
   renderExpanded,
+  stickyFirst = true,
 }: {
   columns: Column<T>[];
   rows: T[];
@@ -32,10 +38,12 @@ export function Table<T>({
   rowClassName?: (row: T) => string | undefined;
   /** Rendered in a full-width row under the selected row. */
   renderExpanded?: (row: T) => ReactNode;
+  /** Keep the first column in view while the table scrolls sideways (default). */
+  stickyFirst?: boolean;
 }) {
   return (
-    <div className="table-wrap">
-      <table className="table">
+    <div className="table-wrap" tabIndex={0} role="region" aria-label={caption ?? "Table"}>
+      <table className={stickyFirst ? "table table-sticky-first" : "table"}>
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
           <tr>
