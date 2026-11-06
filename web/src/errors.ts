@@ -29,6 +29,7 @@ export const ERROR_SENTENCES: Record<string, string> = {
   password_change_required: "Change your password to continue.",
   not_configured: "This is not set up on this server.",
   not_found: "That could not be found. It may have been deleted.",
+  no_endpoint: "This is not available on this server. It may be part of another edition, or need a newer version.",
   password_reset_unavailable: "Password reset is not available on this server.",
   method_not_allowed: "That action is not available.",
   conflict: "That clashes with something that already exists. Reload and try again.",
@@ -84,6 +85,8 @@ export function errorView(e: ErrorLike): { text: string; support: string } {
   let msg = (e.message ?? "").trim();
   // The client's own fallbacks ("Request failed (502 Bad Gateway)") are not sentences for people.
   if (/^(Request|Upload) failed \(/.test(msg) || msg === e.code || RAW_CODE.test(msg)) msg = "";
+  // The router's answer for a path this build does not serve: say so in plain words.
+  if (e.status === 404 && /^no such endpoint\.?$/i.test(msg)) msg = ERROR_SENTENCES.no_endpoint;
   let text = msg || ERROR_SENTENCES[e.code] || BY_STATUS[e.status] || (e.status >= 500 ? ERROR_SENTENCES.internal : "Something went wrong. Try again.");
   text = text.charAt(0).toUpperCase() + text.slice(1);
   if (!/[.!?]$/.test(text)) text += ".";

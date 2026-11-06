@@ -5,6 +5,7 @@ import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Card, CardFooter, CheckCard, ChoiceCards, CopyBox, ErrorBox, GoodToKnow, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { chooseAction, confirmAction } from "../../components/ConfirmDialog";
+import { ProNotice } from "../../components/ProNotice";
 import { requiredNotice, requireSSOChoice, type ExistingTokens } from "../../ssoTokens";
 
 const ROLES: UserRole[] = ["viewer", "engineer", "security", "admin"];
@@ -42,12 +43,79 @@ function textToMap(t: string): Record<string, UserRole> | string {
   return out;
 }
 
+const SSO_DOCS = "https://github.com/stackurity/stackurity/blob/main/docs/install.md#single-sign-on";
+
 /**
- * Settings, Single sign-on (Stackurity Cloud): the organisation's own SAML
- * identity provider, the email domains it has proven, a test, and switching
- * it on or requiring it.
+ * Settings, Single sign-on. On Stackurity Cloud each organisation connects
+ * its own SAML provider here (OrgSingleSignOn). A self-hosted server has no
+ * such API: its operator sets single sign-on in the server's settings, so
+ * the page says that, and what is set up now, instead of an error.
  */
 export function SingleSignOnPage() {
+  const { meta } = useAuth();
+  return meta?.billing ? <OrgSingleSignOn /> : <SelfHostedSingleSignOn />;
+}
+
+/** "Okta (SAML), Google (OpenID Connect)": the providers this server's sign-in page offers. */
+export function ssoProvidersText(sso: { label: string; providers?: { label: string; protocol: string }[] } | undefined): string {
+  if (!sso) return "";
+  const list = sso.providers?.length ? sso.providers : [{ label: sso.label, protocol: "" }];
+  return list.map((p) => (p.protocol ? `${p.label} (${p.protocol === "saml" ? "SAML" : "OpenID Connect"})` : p.label)).join(", ");
+}
+
+/** Self-hosted: single sign-on lives in the server's settings, not on this page. */
+export function SelfHostedSingleSignOn() {
+  const { meta, has, me } = useAuth();
+  const providers = ssoProvidersText(meta?.sso);
+  const base = typeof window !== "undefined" ? window.location.origin : "https://<your Stackurity>";
+  return (
+    <>
+      <PageHeader
+        title="Single sign-on"
+        sub="On your own server, single sign-on (OpenID Connect or SAML) is set up by whoever runs the server, in the server's settings. This page shows what is set up and how to change it."
+      />
+      <Card title="On this server" description="What people see on the sign-in page now.">
+        <SettingRow title="Single sign-on" description={providers ? "People can choose these on the sign-in page." : "People sign in with their email and password."}>
+          {providers ? <strong>Set up: {providers}</strong> : <span className="muted">Not set up</span>}
+        </SettingRow>
+        <SettingRow title="Included in this workspace" description="Single sign-on needs the licensed build and a Pro or Enterprise licence.">
+          {has("sso") ? <span>Yes</span> : <ProNotice feature="sso" />}
+        </SettingRow>
+      </Card>
+      <Card title="How to set it up" description="Done once by the server's operator. Nothing here changes until the server restarts with the new settings.">
+        <ol className="steps-list">
+          <li>
+            Register Stackurity with your identity provider. For OpenID Connect the redirect URL is{" "}
+            <code>{base}/api/v1/auth/oidc/callback</code>. For SAML the ACS URL is <code>{base}/saml/acs</code> and the entity ID is{" "}
+            <code>{base}/saml/metadata</code>.
+          </li>
+          <li>
+            Set the provider's details on the server (<code>STACKURITY_OIDC_*</code> or <code>STACKURITY_SAML_*</code>) and restart it.
+          </li>
+          <li>
+            People who sign in this way join one workspace (<code>STACKURITY_OIDC_WORKSPACE</code> or <code>STACKURITY_SAML_WORKSPACE</code>).
+          </li>
+        </ol>
+        <p>
+          <a href={SSO_DOCS} target="_blank" rel="noreferrer">
+            Single sign-on in the install guide
+          </a>{" "}
+          lists every setting, with examples for Okta, Microsoft Entra ID and Google Workspace.
+        </p>
+        <GoodToKnow>
+          Keep one admin account with a password as a way back in if the provider is down.
+          {me?.user?.instance_admin ? "" : " Ask your Stackurity administrator, who runs the server, to make the change."} On Stackurity Cloud, each organisation connects its own SAML provider on this page instead.
+        </GoodToKnow>
+      </Card>
+    </>
+  );
+}
+
+/**
+ * Stackurity Cloud: the organisation's own SAML identity provider, the email
+ * domains it has proven, a test, and switching it on or requiring it.
+ */
+function OrgSingleSignOn() {
   const { can, state } = useAuth();
   const me = state.phase === "ready" ? state.me : null;
   const res = useLoad(() => api.orgSSO(), []);
@@ -161,6 +229,9 @@ export function SingleSignOnPage() {
   const verified = (data?.domains ?? []).some((d) => d.verified_at);
   const testParam = params.get("test");
   const isOwner = me?.user?.id === data?.owner_id;
+
+  // A build without the organisation SSO API (a self-hosted server that offers billing): explain, never the raw error.
+  if (res.error?.status === 404) return <SelfHostedSingleSignOn />;
 
   return (
     <>

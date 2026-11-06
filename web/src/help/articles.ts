@@ -965,7 +965,7 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       { p: "The role has exactly the list permissions the plugin uses; the page shows them. Nothing secret leaves Google Cloud: on each run Stackurity signs a short token naming your workspace and exchanges it for a one-hour token of the service account." },
-      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Settings ▸ Secrets**)." },
+      { p: "If your organisation cannot use workload identity federation, the page also shows the fallback: a service account key, stored as a workspace secret (**Integrations ▸ Stored credentials**)." },
       { p: "Services the role cannot read, or whose API is not enabled, appear in the project's coverage as failed or skipped with the reason, never as zero. GKE end-of-life dates come from endoflife.date; Memorystore for Redis has no lifecycle data there and is shown as not assessed." },
     ],
   },
@@ -1028,7 +1028,7 @@ stackurity.exe agent --interval 6h`,
       {
         steps: [
           "If Stackurity can reach the cluster's API server and you would rather not run anything in the cluster, apply the read-only role from `deploy/kubernetes/stackurity-reader.yaml` (`kubectl apply -f`).",
-          "Make a kubeconfig for its service account token and store it as a workspace secret (**Integrations ▸ Secrets**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
+          "Make a kubeconfig for its service account token and store it as a workspace secret (**Integrations ▸ Stored credentials**) holding `{\"kubeconfig\": \"…\"}`. When Stackurity runs in the cluster with that service account, set `in_cluster` instead.",
           "Go to **Integrations ▸ Add integration ▸ Plugin**, choose **Kubernetes** and set at least `cluster_name`. `environment_label` takes each workload's environment from a namespace label.",
           "Set the secret reference and click **Validate and create**, then **Run now**.",
         ],
@@ -1046,7 +1046,16 @@ stackurity.exe agent --interval 6h`,
     where: ["Fixes"],
     keywords: "fix group actions action plan security updates release upgrade kernels needs you hidden snooze",
     body: [
-      { p: "**Fixes** answers “what should we do?”. Each card is one change on one asset, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
+      { p: "**Fixes** answers “what should we do?”. Each fix is one change, such as an upgrade, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
+      { h: "The action centre" },
+      {
+        list: [
+          "**At a glance**: open fixes by priority (P1 to P4), fixes **Overdue** (an issue past the risk policy's fix deadline), the issues the fixes clear, and the issues a newer scan showed fixed in the last 30 days (from [Outcomes](help:outcomes)). Click a priority or Overdue to show only those fixes; click it again to show all.",
+          "**The table** lists every fix in one row: priority, the fix and its kind, where it is needed, the issues it clears, known exploited or SOS, effort, owner (who its issues are assigned to), the earliest due date, and its status: **Open**, **In progress** (someone started, or said they applied it), **Waiting for check** or **Regressed** (fixed before and back). Click a column heading to sort by it; click a row to open the fix. **Detailed** shows the same fixes as cards, with the command and the packages.",
+          "**Views**: built-in ones (My fixes, P1 & P2, Overdue, Exploited) and your own. Set the filters, give them a name and **Save**; only you see your views.",
+          "**Select** fixes (engineer role or higher) to **Assign owner** (and snooze or ignore, with the same rules as on a fix's page) or **Check again**, which asks every place that can report on demand for a fresh report.",
+        ],
+      },
       {
         table: [
           ["Kind", "What it means", "Typical fix"],
@@ -1461,20 +1470,20 @@ jobs:
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
-    where: ["Integrations", "Data sources"],
+    where: ["Assets", "Data sources"],
     keywords: "feeds osv kev endoflife stale evaluation gap coverage state checked request support ecosystem not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
         p: "**Coverage** (Assets ▸ Coverage) leads with one answer: the share of your components that were checked, and a bar splitting them into **Checked**, **Needs you**, **Not supported yet**, **Waiting for data** and **No published advisories**. Each part opens the components behind it. Below it: what you can fix, each ecosystem found (with **Request support** for one Stackurity doesn't check yet), and every asset, worst first. Open an asset's row to see which parts of its report could not be read; administrators can **Show all scopes**.",
       },
       {
-        p: "Each asset has a **coverage state**: **Healthy and recently evaluated**, or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
+        p: "The asset page shows three separate things at the top: **Reporting** (is the collector sending reports: reporting normally, last scan incomplete or stopped reporting), **Coverage** (how much was checked: fully checked, partly checked or not checked) and **Security** (open issues, with the P1 and P2 counts). An asset that reports normally and is fully checked can still have many open issues. Each asset has a **coverage state**: **Healthy and recently evaluated** (shown as **Coverage: fully checked**), or one or more of **Failed collection**, **Stale intelligence**, **Partially evaluated**, **Unsupported** and **Awaiting verification**, each with its reason. The asset page shows them above the tabs, the Findings tab says how many components the findings do not cover, and the Inventory tab marks each component as **Not checked**, **Unsupported**, **Stale intelligence** or **Awaiting verification** (filter by **Coverage**).",
       },
       {
         p: "Components that were not checked are split by who acts, on Findings, each asset's page and Coverage: **needs you** first (a version that could not be read, with the fix for each, or application files the agent may not read), then what **Stackurity doesn't support yet**, then what **resolves on its own** once vulnerability data syncs. The banner is a warning only when something needs you, or when vulnerability data is past its staleness window. A release with **no published advisories** is noted on its row and not counted.",
       },
       {
-        p: "**Integrations ▸ Data sources** lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
+        p: "**Assets ▸ Data sources** lists the data feeds: OSV per ecosystem (hourly), CISA KEV (hourly), endoflife.date (daily), and the npm and Packagist registries. Each shows OK, Stale, Error, Never synced or Disabled.",
       },
       {
         list: [
@@ -1907,7 +1916,7 @@ jobs:
           "**Incoming Webhooks**: turn it on, **Add New Webhook to Workspace**, pick the channel, and copy the webhook URL. No other scopes or OAuth settings are needed.",
           "**Interactivity & Shortcuts**: turn it on and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. Save.",
           "**Basic Information**, **App Credentials**: copy the **Signing Secret**.",
-          "In [Integrations, Secrets](/integrations/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
+          "In [Integrations, Stored credentials](/integrations/secrets), store the webhook URL and the signing secret (for example SLACK_WEBHOOK and SLACK_SIGNING).",
           "In [Integrations](/integrations), add (or edit) a Slack integration with **Advanced: use a webhook**: webhook URL reference `secret:SLACK_WEBHOOK`, signing secret reference `secret:SLACK_SIGNING`. Use **Send test**.",
         ],
       },
@@ -1938,7 +1947,7 @@ jobs:
         p: "**Disconnecting.** Deleting the integration in Stackurity deletes its key. Because Stackurity no longer has access to PagerDuty, the **Stackurity** integration stays on the PagerDuty service until you delete it there: the service, **Integrations**, **Stackurity**, **Delete Integration** (the integration's settings in Stackurity link to it). Until then it receives nothing from Stackurity. Connecting the same service again gives its integration a new key; delete the older **Stackurity** integration in PagerDuty.",
       },
       {
-        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Integrations, Secrets. Pick the EU service region if your PagerDuty account is in the EU.",
+        p: "**Without Connect PagerDuty**, add the integration yourself: in PagerDuty, the service, **Integrations**, **Add an integration**, **Events API V2**, and copy the **Integration Key**. Store it under Integrations, Stored credentials. Pick the EU service region if your PagerDuty account is in the EU.",
       },
       { h: "ServiceNow" },
       {

@@ -12,7 +12,10 @@ import {
   type FixGroup,
   type FixGroupDetail,
   type FixGroupSummary,
+  type FixWork,
   type List,
+  type OutcomesReport,
+  type SavedView,
 } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useFacets, useLoad } from "../hooks";
@@ -40,6 +43,7 @@ import { OwnerSplit } from "../components/Owners";
 import { assignGroup, FindingActions, GROUP_ACTION_MAX } from "../components/Workflow";
 import { CheckBadge, CheckResultText } from "../components/CheckAgain";
 import { fixPlaces, FixVerify, useCheckOptions } from "../components/FixVerify";
+import { ActionSummary, BulkBar, FixTable, fixStatus, parseSort, sortRows, ViewsMenu, workOf, type Row, type SortKey } from "../components/ActionCentre";
 import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
 
 const LIMIT = 20;
@@ -68,6 +72,7 @@ export function FixGroupList({
   environment,
   q,
   bucket,
+  more,
   compactEmpty,
 }: {
   assetId?: number;
@@ -75,13 +80,17 @@ export function FixGroupList({
   environment?: string;
   q?: string;
   bucket?: string;
+  /** The Fixes page's other filters (priority, overdue, exploited, assignee). */
+  more?: MoreFilters;
   compactEmpty?: boolean;
 }) {
   const [offset, setOffset] = useState(0);
-  useEffect(() => setOffset(0), [assetId, kind, environment, q, bucket]);
+  const moreKey = JSON.stringify(more ?? {});
+  useEffect(() => setOffset(0), [assetId, kind, environment, q, bucket, moreKey]);
   const res = useLoad(
-    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, limit: LIMIT, offset }),
-    [assetId, kind, environment, q, bucket, offset],
+    () => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, kind, environment, q, bucket, ...more, limit: LIMIT, offset }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [assetId, kind, environment, q, bucket, moreKey, offset],
   );
   const checkOptions = useCheckOptions((res.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   return (
@@ -89,7 +98,7 @@ export function FixGroupList({
       <ErrorBox error={res.error} title="Could not load the fixes" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState title={kind || environment || q || bucket ? "No fixes match these filters" : "Nothing to fix"} help="action-plan">
+        <EmptyState title={kind || environment || q || bucket || moreKey !== "{}" ? "No fixes match these filters" : "Nothing to fix"} help="action-plan">
           {!compactEmpty && (
             <p>
               No open issues need a change. That covers only what was inventoried and checked; see <Link to="/coverage">Coverage</Link>{" "}
@@ -112,19 +121,36 @@ export function FixGroupList({
   );
 }
 
-/** Fixes: every change to make, one card per fix, most urgent first. */
+/** Filters of the Fixes page beyond those FixGroupList always had. */
+export type MoreFilters = { priority?: string; overdue?: string; exploited?: string; assignee?: string };
+
+const TABLE_LIMIT = 100;
+
+/**
+ * Fixes: the action centre. Summary tiles, then every change to make as a
+ * dense table (or, with ?view=cards, one card per fix), most urgent first.
+ */
 export function FixesPage() {
   const [params, setParams] = useSearchParams();
+  const { canAct } = useAuth();
   const assetId = params.get("asset_id") ?? "";
   const kind = params.get("kind") ?? "";
   const environment = params.get("environment") ?? "";
   const bucket = params.get("bucket") ?? "";
+  const priority = params.get("priority") ?? "";
+  const overdue = params.get("overdue") ?? "";
+  const exploited = params.get("exploited") ?? "";
+  const assignee = params.get("assignee") ?? "";
+  const cards = params.get("view") === "cards";
   const qParam = params.get("q") ?? "";
   const [q, setQ] = useState(qParam);
   const dq = useDebounced(q);
   const facets = useFacets();
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
   const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary", { asset_id: assetId }), [assetId]);
+  // Proven fixed by a newer scan: the Outcomes report's remediated issues.
+  const outcomes = useLoad(() => api.get<{ report: OutcomesReport }>("/reports/outcomes", { days: 30 }), []);
+  const views = useLoad(() => api.get<List<SavedView>>("/saved-views", { page: "fixes" }), []);
 
   const with_ = (patch: Record<string, string>) => {
     const n = new URLSearchParams(params);
@@ -145,13 +171,18 @@ export function FixesPage() {
   }, [dq]);
   useEffect(() => setQ(qParam), [qParam]);
 
-  const active = [assetId, kind, environment, qParam].filter(Boolean).length;
+  const more: MoreFilters = Object.fromEntries(
+    Object.entries({ priority, overdue, exploited, assignee }).filter(([, v]) => v),
+  );
+  const active = [assetId, kind, environment, qParam, priority, overdue, exploited, assignee].filter(Boolean).length;
   const s = summary.data;
   const focus = s?.focus;
   const bucketCount = (b: FixBucket) => (b === "focus" ? focus?.groups : focus?.hidden?.[b]?.groups) ?? 0;
+  const rep = outcomes.data?.report;
+  const verified = rep ? (rep.remediated ?? rep.resolved) : null;
 
   return (
-    <>
+    <div className="ac">
       <PageHeader
         help="action-plan"
         title="Fixes"
@@ -159,22 +190,16 @@ export function FixesPage() {
       />
       <ErrorBox error={summary.error} title="Could not load the summary" />
       {s && (
-        <p className="lead-line">
-          {focus && (
-            <>
-              <Link to={link({ bucket: "focus" })}>
-                <strong>
-                  {plural(focus.groups, "fix", "fixes")} {focus.groups === 1 ? "needs" : "need"} you
-                </strong>
-              </Link>
-              {" · "}
-            </>
-          )}
-          <Link to={link({ bucket: "" })}>{plural(s.groups, "fix", "fixes")} in all</Link>, clearing{" "}
-          <Link to={assetId ? `/fixes/issues?asset_id=${assetId}` : "/fixes/issues"}>{plural(s.findings, "issue")}</Link>
-          {assetId && <span className="muted"> on this asset</span>}
-        </p>
+        <ActionSummary
+          s={s}
+          verified={verified}
+          link={link}
+          priority={priority}
+          overdue={overdue === "true"}
+          issuesLink={assetId ? `/fixes/issues?asset_id=${assetId}` : "/fixes/issues"}
+        />
       )}
+      {/* Other kinds of fixes that are not fix groups (the leaked keys card) go here, between the tiles and the tabs. */}
       <PresetChips
         label="Show"
         chips={[
@@ -191,48 +216,194 @@ export function FixesPage() {
           })),
         ]}
       />
-      <FilterPanel
-        active={active}
-        onClear={() => {
-          setQ("");
-          setParams(bucket ? new URLSearchParams({ bucket }) : new URLSearchParams(), { replace: true });
-        }}
-      >
-        <div className="field">
-          <label htmlFor="ap-q">Search</label>
-          <input id="ap-q" type="search" placeholder="Package, OS or title" value={q} onChange={(e) => setQ(e.target.value)} />
+      <div className="ac-toolbar">
+        <FilterPanel
+          active={active}
+          onClear={() => {
+            setQ("");
+            const keep = new URLSearchParams();
+            if (bucket) keep.set("bucket", bucket);
+            if (cards) keep.set("view", "cards");
+            setParams(keep, { replace: true });
+          }}
+        >
+          <div className="field">
+            <label htmlFor="ap-q">Search</label>
+            <input id="ap-q" type="search" placeholder="Package, OS or title" value={q} onChange={(e) => setQ(e.target.value)} />
+          </div>
+          <ProjectFilter id="ap-project" onChange={() => update({ asset_id: "" })} />
+          <div className="field">
+            <label htmlFor="ap-asset">Asset</label>
+            <AssetSelect id="ap-asset" value={assetId} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
+          </div>
+          <div className="field">
+            <label htmlFor="ap-env">Environment</label>
+            <select id="ap-env" value={environment} onChange={(e) => update({ environment: e.target.value })}>
+              <option value="">Any environment</option>
+              {(facets?.environments ?? []).map((x) => (
+                <option key={x} value={x}>
+                  {x}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ap-kind">Kind of fix</label>
+            <select id="ap-kind" value={kind} onChange={(e) => update({ kind: e.target.value })}>
+              <option value="">All kinds</option>
+              {FIX_GROUP_KINDS.map((k) => (
+                <option key={k} value={k}>
+                  {FIX_KIND_LABEL[k]}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ap-prio">Priority</label>
+            <select id="ap-prio" value={priority} onChange={(e) => update({ priority: e.target.value })}>
+              <option value="">Any priority</option>
+              {PRIORITIES.map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
+              {priority && !(PRIORITIES as readonly string[]).includes(priority) && <option value={priority}>{priority.replace(/,/g, ", ")}</option>}
+            </select>
+          </div>
+          <div className="field">
+            <label htmlFor="ap-assignee">Assigned to</label>
+            <select id="ap-assignee" value={assignee} onChange={(e) => update({ assignee: e.target.value })}>
+              <option value="">Anyone</option>
+              <option value="me">Me</option>
+            </select>
+          </div>
+          <div className="field">
+            <span className="label">Only</span>
+            <label className="check">
+              <input type="checkbox" checked={overdue === "true"} onChange={(e) => update({ overdue: e.target.checked ? "true" : "" })} /> Overdue
+            </label>
+            <label className="check">
+              <input type="checkbox" checked={exploited === "true"} onChange={(e) => update({ exploited: e.target.checked ? "true" : "" })} /> Known exploited
+            </label>
+          </div>
+        </FilterPanel>
+        <div className="ac-toolbar-end">
+          <ViewsMenu current={params.toString()} saved={views.data?.items ?? null} error={views.error} onChanged={views.reload} />
+          <nav className="ac-segmented" aria-label="Layout">
+            <Link to={link({ view: "" })} aria-current={!cards ? "true" : undefined}>
+              Table
+            </Link>
+            <Link to={link({ view: "cards" })} aria-current={cards ? "true" : undefined}>
+              Detailed
+            </Link>
+          </nav>
         </div>
-        <ProjectFilter id="ap-project" onChange={() => update({ asset_id: "" })} />
-        <div className="field">
-          <label htmlFor="ap-asset">Asset</label>
-          <AssetSelect id="ap-asset" value={assetId} onChange={(v) => update({ asset_id: v })} assets={assets.data?.items} />
-        </div>
-        <div className="field">
-          <label htmlFor="ap-env">Environment</label>
-          <select id="ap-env" value={environment} onChange={(e) => update({ environment: e.target.value })}>
-            <option value="">Any environment</option>
-            {(facets?.environments ?? []).map((x) => (
-              <option key={x} value={x}>
-                {x}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="field">
-          <label htmlFor="ap-kind">Kind of fix</label>
-          <select id="ap-kind" value={kind} onChange={(e) => update({ kind: e.target.value })}>
-            <option value="">All kinds</option>
-            {FIX_GROUP_KINDS.map((k) => (
-              <option key={k} value={k}>
-                {FIX_KIND_LABEL[k]}
-              </option>
-            ))}
-          </select>
-        </div>
-      </FilterPanel>
+      </div>
       {bucket && BUCKET_HELP[bucket as FixBucket] && <p className="hint">{BUCKET_HELP[bucket as FixBucket]}</p>}
       {kind && <p className="hint">{FIX_KIND_HELP[kind]}</p>}
-      <FixGroupList assetId={assetId ? Number(assetId) : undefined} kind={kind} environment={environment} q={qParam} bucket={bucket} />
+      {cards ? (
+        <FixGroupList assetId={assetId ? Number(assetId) : undefined} kind={kind} environment={environment} q={qParam} bucket={bucket} more={more} />
+      ) : (
+        <FixTableView
+          filters={{ asset_id: assetId, kind, environment, q: qParam, bucket, ...more }}
+          sort={parseSort(params.get("sort"))}
+          onSort={(key, desc) => update({ sort: key ? `${desc ? "-" : ""}${key}` : "" })}
+          selectable={canAct("engineer")}
+          onChanged={summary.reload}
+        />
+      )}
+    </div>
+  );
+}
+
+/** The table of fixes: loads a page, the work on each fix and its check state. */
+function FixTableView({
+  filters,
+  sort,
+  onSort,
+  selectable,
+  onChanged,
+}: {
+  filters: Record<string, string>;
+  sort: { key: SortKey | null; desc: boolean };
+  onSort: (key: SortKey | null, desc: boolean) => void;
+  selectable: boolean;
+  onChanged: () => void;
+}) {
+  const [offset, setOffset] = useState(0);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const fkey = JSON.stringify(filters);
+  useEffect(() => {
+    setOffset(0);
+    setSelected(new Set());
+  }, [fkey]);
+  const res = useLoad(
+    () => api.get<List<FixGroup>>("/fix-groups", { ...filters, limit: TABLE_LIMIT, offset }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [fkey, offset],
+  );
+  const items = res.data?.items ?? [];
+  const placeIds = items.flatMap(fixPlaces).map((p) => p.group_id);
+  const idsKey = [...new Set(placeIds)].sort().join(",");
+  const work = useLoad(async () => {
+    const ids = idsKey ? idsKey.split(",") : [];
+    const out = new Map<string, FixWork>();
+    for (let i = 0; i < ids.length; i += 200) {
+      const r = await api.get<List<FixWork>>("/fix-groups/work", { ids: ids.slice(i, i + 200).join(",") });
+      for (const w of r.items) out.set(w.group_id, w);
+    }
+    return out;
+  }, [idsKey]);
+  const checkOptions = useCheckOptions(placeIds);
+  const rows: Row[] = items.map((g, rank) => {
+    const w = work.data ? workOf(g, work.data) : null;
+    return { g, work: w, status: fixStatus(g, w, checkOptions), rank };
+  });
+  const sorted = sortRows(rows, sort.key, sort.desc);
+  const select = (ids: string[], on: boolean) =>
+    setSelected((prev) => {
+      const n = new Set(prev);
+      for (const id of ids) {
+        if (on) n.add(id);
+        else n.delete(id);
+      }
+      return n;
+    });
+  const chosen = items.filter((g) => selected.has(g.id));
+  const reload = () => {
+    res.reload();
+    work.reload();
+    onChanged();
+  };
+  const filtered = Object.values(filters).some(Boolean);
+
+  return (
+    <>
+      <ErrorBox error={res.error} title="Could not load the fixes" />
+      <ErrorBox error={work.error} title="Could not load who is working on these fixes" />
+      {!res.data && !res.error && <Loading />}
+      {res.data && items.length === 0 && (
+        <EmptyState title={filtered ? "No fixes match these filters" : "Nothing to fix"} help="action-plan">
+          <p>
+            No open issues need a change. That covers only what was inventoried and checked; see <Link to="/coverage">Coverage</Link> and{" "}
+            <Link to="/intelligence">Data sources</Link> for gaps.
+          </p>
+        </EmptyState>
+      )}
+      {res.data && items.length > 0 && (
+        <>
+          {selectable && chosen.length > 0 && <BulkBar rows={chosen} options={checkOptions} onClear={() => setSelected(new Set())} onDone={reload} />}
+          <FixTable rows={sorted} sort={sort} onSort={onSort} selected={selected} onSelect={select} selectable={selectable} />
+          <div className="ac-foot">
+            <span>
+              {plural(res.data.total, "fix", "fixes")}
+              {sort.key && res.data.total > TABLE_LIMIT ? "; sorting applies to this page" : ""}
+            </span>
+            <span>Open a fix for its steps, its issues and Check again.</span>
+          </div>
+          <Pager total={res.data.total} limit={TABLE_LIMIT} offset={offset} onChange={setOffset} />
+        </>
+      )}
     </>
   );
 }

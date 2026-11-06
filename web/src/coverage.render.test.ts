@@ -221,7 +221,7 @@ test("asset table: filter chips with counts, empty state", () => {
   const chips = render("GroupChips", { groups: list.groups, active: "not_reporting", onChange: () => {} });
   assert.deepEqual(
     [...chips.matchAll(/>([A-Z][a-z ]+) <span class="cov-filter-num">(\d+)/g)].map((m) => `${m[1]} ${m[2]}`),
-    ["Healthy 1", "Partly checked 0", "Failed collection 0", "Not reporting 1", "Awaiting first check 0"],
+    ["Fully checked 1", "Partly checked 0", "Failed collection 0", "Not reporting 1", "Awaiting first check 0"],
   );
   assert.match(chips, /aria-pressed="true"[^>]*>Not reporting/);
   assert.match(render("AssetCoverageTable", { list: { ...list, items: [], total: 0 }, renderProblems: () => null }), /No assets here/);

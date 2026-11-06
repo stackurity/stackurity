@@ -282,7 +282,11 @@ export function glanceTiles(s: SummaryLike): { priority: GlanceTile[]; flags: Gl
   };
 }
 
-/** The SLA as on time against overdue, with the share on time. */
+/**
+ * The SLA of open issues: within their deadline (not past the fix-by date,
+ * due today included) against overdue, with the share within deadline. It
+ * says nothing about fixed issues; "Fixed per week" counts those.
+ */
 export function slaSplit(sla: DashboardTrend["sla"] | null | undefined): { onTime: number; overdue: number; dueToday: number; share: number | null } {
   const onTime = (sla?.on_time ?? 0) + (sla?.due_today ?? 0);
   const overdue = sla?.overdue ?? 0;

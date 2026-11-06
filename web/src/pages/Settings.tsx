@@ -32,7 +32,8 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     entries: [
       { to: "/settings/usage", label: "Usage", icon: <IconGauge />, min: "admin" },
       { to: "/settings/billing", label: "Plan and billing", icon: <IconCard />, min: "admin", billing: true },
-      { to: "/settings/sso", label: "Single sign-on", icon: <IconSignIn />, min: "admin", billing: true },
+      // Every edition: self-hosted servers get where their single sign-on is set up.
+      { to: "/settings/sso", label: "Single sign-on", icon: <IconSignIn />, min: "admin" },
     ],
   },
   {
