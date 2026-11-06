@@ -1,6 +1,7 @@
 package notify
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -352,19 +353,60 @@ func (d *Dispatcher) issueDescription(in store.Incident, brief *store.IncidentBr
 // upgradeAction names the versions to move to as the dashboard does: the
 // action plan's target version, with "fixes from" the minimum fixed
 // version when they differ. Empty without package upgrades.
+// Each version is named with its package when the upgrades are for
+// different packages.
 func upgradeAction(ups []store.UpgradeTarget) string {
 	var parts []string
+	comps := map[string]bool{}
 	for _, u := range ups {
-		if u.Minimum == "" || u.Minimum == u.Target {
-			parts = append(parts, u.Target+" or later")
-		} else {
-			parts = append(parts, u.Target+" (fixes from "+u.Minimum+")")
+		comps[u.Component] = true
+	}
+	for _, u := range ups {
+		p := u.Target + " or later"
+		if u.Minimum != "" && u.Minimum != u.Target {
+			p = u.Target + " (fixes from " + u.Minimum + ")"
 		}
+		if len(comps) > 1 {
+			p = cmp.Or(u.Component, "the package") + " to " + p
+		}
+		parts = append(parts, p)
 	}
 	if len(parts) == 0 {
 		return ""
 	}
+	if len(comps) > 1 {
+		return "Upgrade " + strings.Join(parts, " / ")
+	}
 	return "Upgrade to " + strings.Join(parts, " / ")
+}
+
+// upgradesCoverIncident reports whether the action plan's upgrades name
+// every component of the incident and every component has a fix
+// everywhere, so "Upgrade to <target>" is the whole fix. Otherwise (a
+// Debian package with no fix next to an Ubuntu one, an OS package next to an
+// application one) the per-component action says more. An incident without
+// component_fixes (not correlated since they were added) keeps the upgrades.
+func upgradesCoverIncident(detail json.RawMessage, ups []store.UpgradeTarget) bool {
+	var det struct {
+		Fixes []componentFix `json:"component_fixes"`
+		Count int            `json:"component_count"`
+	}
+	if json.Unmarshal(detail, &det) != nil || len(det.Fixes) == 0 {
+		return true
+	}
+	if det.Count > len(det.Fixes) {
+		return false
+	}
+	have := map[string]bool{}
+	for _, u := range ups {
+		have[u.Component] = true
+	}
+	for _, c := range det.Fixes {
+		if c.Unfixed > 0 || !have[c.Component] {
+			return false
+		}
+	}
+	return true
 }
 
 // issueDescriptionIn is issueDescription for a scope. For a project, in
@@ -374,7 +416,7 @@ func upgradeAction(ups []store.UpgradeTarget) string {
 // link in the project.
 func (d *Dispatcher) issueDescriptionIn(in store.Incident, brief *store.IncidentBrief, sc issueScope) jiraDoc {
 	m := d.message(in, "opened")
-	if a := upgradeAction(brief.Upgrades); a != "" && in.Kind == "vulnerability" {
+	if a := upgradeAction(brief.Upgrades); a != "" && in.Kind == "vulnerability" && upgradesCoverIncident(in.Detail, brief.Upgrades) {
 		m.Action = a
 	}
 	var det struct {
@@ -382,7 +424,6 @@ func (d *Dispatcher) issueDescriptionIn(in store.Incident, brief *store.Incident
 		KnownExploited bool     `json:"known_exploited"`
 		Environments   []string `json:"environments"`
 		Components     []string `json:"components"`
-		FixedVersions  []string `json:"fixed_versions"`
 	}
 	_ = json.Unmarshal(in.Detail, &det)
 	intro := []jiraInline{{Text: fmt.Sprintf("Stackurity opened this issue for incident #%d (%s) and keeps it updated: findings that join or leave and priority changes are added as comments, and it is commented on when the incident resolves. ", in.ID, in.Title)}}

@@ -1207,10 +1207,21 @@ func TestProjectAccessRules(t *testing.T) {
 	if code := get(av, "/api/v1/incidents/"+o.s("shared-incident"), &inc); code != 200 {
 		t.Fatalf("shared incident: %d", code)
 	}
-	var detail struct{ Assets []string }
+	var detail struct {
+		Assets []string
+		Fixes  []struct {
+			Component string
+			Assets    int
+		} `json:"component_fixes"`
+		Count int `json:"component_count"`
+	}
 	_ = json.Unmarshal(inc.Incident.Detail, &detail)
 	if inc.Incident.FindingCount != 1 || inc.Incident.AssetCount != 1 || len(inc.Findings) != 1 || strings.Join(detail.Assets, ",") != "host-alpha" {
 		t.Errorf("Alpha's view of the shared incident: %+v %s", inc.Incident, inc.Incident.Detail)
+	}
+	// Its per-component fixes count only Alpha's assets too.
+	if detail.Count != 1 || len(detail.Fixes) != 1 || detail.Fixes[0].Assets != 1 {
+		t.Errorf("Alpha's component fixes: %s", inc.Incident.Detail)
 	}
 	get(admin, "/api/v1/incidents/"+o.s("shared-incident"), &inc)
 	if inc.Incident.FindingCount != 2 || inc.Incident.AssetCount != 2 {

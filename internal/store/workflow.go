@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -594,6 +595,34 @@ func (in Incident) Behind() bool {
 const incidentCols = `i.id, i.kind, i.key, i.owner_team_id, COALESCE(t.name, ''), i.title, i.priority, i.sos, i.status, i.state,
 	i.finding_count, i.asset_count, i.detail, i.created_at, i.updated_at, i.resolved_at, i.notified_priority, i.notified_at, i.escalation_level`
 
+// MaxComponentFixes bounds an incident's detail.component_fixes; the
+// detail's component_count says how many components there are in all.
+const MaxComponentFixes = 20
+
+// componentFixCols are, per component of a group of findings f (joined to
+// components c), the fixed versions its findings name, the assets it is on
+// and the assets where it has no fixed version: detail.component_fixes.
+// The component is shown as detail.components shows it (namespace/name, the
+// namespace naming the distribution for OS packages) and its purl type says
+// whether the namespace is one.
+const componentFixCols = `c.type AS purl_type, CASE WHEN c.namespace = '' THEN c.name ELSE c.namespace || '/' || c.name END AS component,
+	COALESCE(array_agg(DISTINCT f.fixed_version) FILTER (WHERE f.fixed_version <> ''), '{}') AS fixed_versions,
+	count(DISTINCT f.asset_id) AS assets, count(DISTINCT f.asset_id) FILTER (WHERE f.fixed_version = '') AS unfixed`
+
+// componentFixesAgg folds the componentFixCols rows of table into one
+// detail object per partition: {component_fixes: [...], component_count: n},
+// the components on most assets first, at most MaxComponentFixes of them.
+func componentFixesAgg(partition, table string) string {
+	return `SELECT ` + partition + `, jsonb_build_object(
+		  'component_fixes', jsonb_agg(jsonb_build_object('component', component, 'type', purl_type,
+		    'fixed_versions', to_jsonb(fixed_versions), 'assets', assets, 'unfixed', unfixed) ORDER BY rn)
+		    FILTER (WHERE rn <= ` + strconv.Itoa(MaxComponentFixes) + `),
+		  'component_count', count(*)) AS detail
+		FROM (SELECT *, row_number() OVER (PARTITION BY ` + partition + ` ORDER BY assets DESC, component, purl_type) AS rn
+		  FROM ` + table + `) x
+		GROUP BY ` + partition
+}
+
 // CorrelateIncidents groups active findings (open and not suppressed) into
 // incidents by (kind, key, owner team) and resolves incidents with nothing
 // active left. It is idempotent: reprocessing never duplicates incidents.
@@ -625,6 +654,18 @@ func (s *Store) CorrelateIncidents(ctx context.Context) error {
 			 WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND a.merged_into IS NULL
 			   AND NOT ` + selftestAsset + `
 			 GROUP BY f.kind, f.key, a.owner_team_id`,
+			// Which fix belongs to which component: a group can mix
+			// ubuntu/curl (fixed) with debian/curl (no fix yet), and the
+			// flat fixed_versions above cannot say so.
+			`CREATE TEMP TABLE active_component_fixes ON COMMIT DROP AS
+			 SELECT f.kind, f.key, a.owner_team_id, ` + componentFixCols + `
+			 FROM findings f JOIN assets a ON a.id = f.asset_id JOIN components c ON c.id = f.component_id
+			 WHERE f.status = 'open' AND f.state IN ('new', 'acknowledged', 'in_progress') AND a.merged_into IS NULL
+			   AND NOT ` + selftestAsset + `
+			 GROUP BY f.kind, f.key, a.owner_team_id, c.type, 5`,
+			`UPDATE active_groups g SET detail = g.detail || cf.detail
+			 FROM (` + componentFixesAgg("kind, key, owner_team_id", "active_component_fixes") + `) cf
+			 WHERE cf.kind = g.kind AND cf.key = g.key AND COALESCE(cf.owner_team_id, 0) = COALESCE(g.owner_team_id, 0)`,
 			// Ownership changed: move the open incident to the new owner
 			// rather than resolving it and opening another (which would send
 			// a false "resolved" notice).

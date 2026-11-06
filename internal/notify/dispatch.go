@@ -792,7 +792,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 			m.Summary = append(m.Summary, "Known exploited in the wild (CISA KEV)")
 		}
 		if in.Kind == "vulnerability" {
-			if f := list("fixed_versions"); len(f) > 0 {
+			if a, ok := componentFixAction(in.Detail); ok {
+				m.Action = a
+			} else if f := list("fixed_versions"); len(f) > 0 {
 				m.Action = "Upgrade to " + strings.Join(f, " / ") + " or later"
 			} else {
 				m.Action = "No fixed version is listed yet; review the advisory for mitigations"
