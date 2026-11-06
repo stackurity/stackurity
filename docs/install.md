@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.19.0` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.19.0` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.19.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.19.1` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.19.1` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.19.1 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist. The dashboard then asks for the server's [free key](#the-free-key): click **Get a free key** (with `STACKURITY_BASE_URL` set), or get one at https://app.stackurity.dev/self-hosted-key from any computer and paste it in. Agents and scans can send data before the key is entered.
 
@@ -941,7 +941,7 @@ The integration this creates:
 {"kind": "plugin", "config": {"plugin": "gcp-managed", "config": {"project_id": "acme-prod", "project_number": "123456789012", "environment_label": "env"}}, "schedule_minutes": 720}
 ```
 
-If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Settings → Secrets** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
+If your organisation cannot use workload identity federation, the same page shows the fallback: the same role and service account, plus a key (`gcloud iam service-accounts keys create`). Store the key file's contents, unchanged, as a workspace secret under **Integrations → Stored credentials** and set `"auth": "service_account_key"` and `"secret_ref": "secret:<name>"`. The key file's `token_uri` is ignored: the plugin signs in at `oauth2.googleapis.com` only. An organisation policy (`iam.disableServiceAccountKeyCreation`) may forbid keys.
 
 A service the role cannot read, or whose API is not enabled in the project, is shown under the project's coverage as failed or skipped with Google's reason, never as zero resources. Cloud Run services deployed from a container image are left to image scanning (add the image as a **Container image** integration).
 
@@ -1146,7 +1146,7 @@ With a plain incoming webhook, Slack buttons open the dashboard. With a Slack ap
 2. **Incoming Webhooks**: turn on **Activate Incoming Webhooks**, then **Add New Webhook to Workspace**, pick the channel and **Allow**. Copy the webhook URL (`https://hooks.slack.com/services/T.../B.../...`). This adds the `incoming-webhook` scope; add no other scope.
 3. **Interactivity & Shortcuts**: turn on **Interactivity** and set the **Request URL** to `https://<your Stackurity address>/api/v1/integrations/slack/actions`. **Save Changes**.
 4. **Basic Information**, **App Credentials**: **Show** and copy the **Signing Secret** (not the client secret or verification token).
-5. In Stackurity, **Settings → Secrets**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
+5. In Stackurity, **Integrations → Stored credentials**: store the webhook URL (for example as `SLACK_WEBHOOK`) and the signing secret (`SLACK_SIGNING`). Instance administrators can use `env:STACKURITY_SECRET_...` or `file:` references instead.
 6. **Integrations**, add Slack with **Advanced: use a webhook** (or edit the existing one, if it uses this app's webhook): webhook URL reference `secret:SLACK_WEBHOOK`, **Slack app signing secret reference** `secret:SLACK_SIGNING`. **Send test**. Messages from then on carry the interactive buttons.
 
 Each person links their Slack account once. The first time they click, Slack shows them (only them) a link that works once, for 15 minutes; they sign in to Stackurity and confirm "link Slack user X in Slack workspace T to my account". From then on their clicks act as them, with their role and projects, as in the dashboard: engineers and above can assign, security and admin can snooze, people with access to some projects only can act on those projects' fixes. Refusals are explained to them in Slack. Every action is audited as theirs with source `slack`. People see and remove their links under the account menu, **Your account** (and their link for one Slack workspace on that Slack integration's page, **Your Slack account**).
@@ -1167,7 +1167,7 @@ There is never more than one issue per incident and channel, across retries and 
 
 **Connect Jira** (Jira Cloud, when the server has the Stackurity Atlassian app: [jira-app.md](jira-app.md)) needs no token: an administrator approves on Atlassian's page and picks the site, project, issue type and done status from lists read from Jira. Its tokens are sealed and refreshed by the server; when Atlassian stops accepting them (the app was removed from the person's Atlassian account, or 90 days without use), the integration shows **Reconnect needed** and deliveries fail with that reason until someone reconnects. Where the app is configured, new Jira integrations use it unless **Use an API token instead** is chosen.
 
-With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Settings > Secrets). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
+With a token, the Jira account needs to browse the project, create issues, add comments and transition issues. **Send test** checks the credentials (or the connection), the project, the issue type and the mapped priorities without creating anything. Store the token as a workspace secret (`secret:NAME`, Integrations → Stored credentials). Jira Data Center and Server always use a personal access token: they have no OAuth 2.0 (3LO).
 
 ### PagerDuty
 
@@ -1281,7 +1281,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.19.0 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.19.1 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -1302,7 +1302,7 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.19.0 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.19.1 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
@@ -1310,7 +1310,7 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.1
 
 To give the server its [free key](#the-free-key) from a Secret rather than in the dashboard, `kubectl create secret generic stackurity-license --from-literal=key=<the key>` and add `--set license.existingSecret=stackurity-license`.
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.19.0 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.19.1 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 

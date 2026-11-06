@@ -3,8 +3,6 @@ import { Link, useNavigate, useParams, useSearchParams } from "react-router";
 import {
   api,
   vexExportURL,
-  ASSET_STATUS_HELP,
-  ASSET_STATUS_LABEL,
   CRITICALITIES,
   RELATION_KINDS,
   safeHttpUrl,
@@ -51,7 +49,7 @@ import { ActionsTable } from "../components/Remediation";
 import { FixGroupList } from "./ActionPlan";
 import { CheckAgain } from "../components/CheckAgain";
 import { EnableRemediation } from "../components/EnableRemediation";
-import { AssetCoverageNotice, AssetStateBadge, COVERAGE_FILTERS, RowCoverageNote, UNCHECKED_FILTERS } from "../components/Coverage";
+import { AssetCoverageNotice, COVERAGE_FILTERS, RowCoverageNote, UNCHECKED_FILTERS } from "../components/Coverage";
 import { useUnchecked } from "../components/Unchecked";
 import {
   Card,
@@ -68,6 +66,8 @@ import {
 } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { NoTeamsHint } from "../components/Teams";
+import { AssetDimensions } from "../components/AssetDimensions";
+import { coverageDimension, reportingDimension, securityDimension } from "../assetDimensions";
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
 
@@ -98,6 +98,9 @@ export function AssetDetailPage() {
   // Open-findings count decides the default tab (Findings first when any).
   const openFindings = useLoad(() => api.get<List<Finding>>("/findings", { asset_id: assetId, limit: 1 }), [assetId]);
   const findingCount = openFindings.data?.total ?? 0;
+  // Security, by priority: the urgent counts next to the total (assetDimensions.ts).
+  const p1 = useLoad(() => api.get<List<Finding>>("/findings", { asset_id: assetId, priority: "P1", limit: 1 }), [assetId]);
+  const p2 = useLoad(() => api.get<List<Finding>>("/findings", { asset_id: assetId, priority: "P2", limit: 1 }), [assetId]);
   // Relations decide whether this asset is a replica (Drift tab label).
   const relations = useLoad(() => api.get<List<Relation>>(`/assets/${assetId}/relations`), [assetId]);
   // Coverage says how far the findings can be trusted; shown wherever findings are.
@@ -195,13 +198,19 @@ export function AssetDetailPage() {
       <PageHeader help="assets"
         title={
           <>
-            {a.name}{" "}
-            <Badge status={a.collection_status} label={ASSET_STATUS_LABEL[a.collection_status]} title={ASSET_STATUS_HELP[a.collection_status]} />{" "}
-            {coverage.data && <AssetStateBadge state={coverage.data.state} label={coverage.data.label} />}
+            {a.name}
           </>
         }
         sub={
           <>
+            <AssetDimensions
+              dims={[
+                reportingDimension(a.collection_status),
+                ...(coverage.data && a.collection_status !== "removed" ? [coverageDimension(coverage.data.state, coverage.data.label)] : []),
+                ...(openFindings.data && a.collection_status !== "removed" ? [securityDimension(findingCount, p1.data?.total ?? 0, p2.data?.total ?? 0)] : []),
+              ]}
+              securityTo={findingCount > 0 ? `/fixes/issues?asset_id=${a.id}` : undefined}
+            />
             <span className="badges">
               <AssetKindBadge kind={a.kind} />
               <ExposureBadge asset={a} />

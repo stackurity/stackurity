@@ -27,10 +27,10 @@ const under = (path: string, ...prefixes: string[]) => prefixes.some((p) => path
 export function sectionOf(path: string): Section {
   if (path === "/") return "dashboard";
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
-  if (under(path, "/assets", "/components", "/coverage", "/projects", "/project-notifications")) return "assets";
+  if (under(path, "/assets", "/components", "/coverage", "/intelligence", "/projects", "/project-notifications")) return "assets";
   if (under(path, "/activity", "/incidents", "/checks", "/approvals")) return "activity";
   if (under(path, "/outcomes", "/reports", "/audit")) return "reports";
-  if (under(path, "/integrations", "/intelligence")) return "integrations";
+  if (under(path, "/integrations")) return "integrations";
   if (under(path, "/people")) return "people";
   if (under(path, "/admin", "/updates")) return "admin";
   if (under(path, "/settings")) return "settings";
@@ -103,15 +103,17 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
     ],
   },
-  // The assets themselves, the components in them, coverage, updates that
-  // are not security fixes, the projects that group them, and assets that
-  // might be one machine reported twice.
+  // The assets themselves, the components in them, coverage and the data
+  // sources it is checked against, updates that are not security fixes, the
+  // projects that group them, and assets that might be one machine reported
+  // twice.
   assets: {
     label: "Assets",
     tabs: [
       { to: "/assets", label: "Assets", match: (p) => under(p, "/assets") && !under(p, "/assets/conflicts") },
       { to: "/components", label: "Components", match: (p) => under(p, "/components") && !under(p, "/components/updates") },
       { to: "/coverage", label: "Coverage" },
+      { to: "/intelligence", label: "Data sources" },
       { to: "/components/updates", label: "Updates available" },
       { to: "/projects", label: "Projects", min: "admin" },
       { to: "/project-notifications", label: "Project notifications", act: "security", match: (p) => under(p, "/project-notifications") || /^\/projects\/\d+\/notifications/.test(p) },
@@ -142,11 +144,10 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
     tabs: [
       { to: "/integrations", label: "Integrations", min: "engineer", match: (p) => p === "/integrations" || under(p, ...INTEGRATION_PAGES) },
       { to: "/integrations/deliveries", label: "Delivery log", min: "security" },
-      { to: "/integrations/secrets", label: "Secrets", min: "admin" },
+      { to: "/integrations/secrets", label: "Stored credentials", min: "admin" },
       { to: "/integrations/tokens", label: "API tokens" },
       { to: "/integrations/ai-assistants", label: "AI assistants" },
       { to: "/integrations/plugins", label: "Plugins", min: "admin" },
-      { to: "/intelligence", label: "Data sources" },
     ],
   },
   people: {

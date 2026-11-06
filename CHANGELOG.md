@@ -6,17 +6,39 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
-### Added
-
-- **Feedback queue: sender email, on-demand virus scan, re-encoded images, storage warning** (the Stackurity team's server only). One short email to the sender when an item is released or will not be fixed (`STACKURITY_FEEDBACK_EMAILS=on`, off by default; it quotes nothing the sender wrote, and operators can preview it at `GET /admin/feedback/email-templates`). An on-demand ClamAV scan holds new attachments until they are scanned clean (`STACKURITY_FEEDBACK_SCAN=required`, with `deploy/feedback-scan` and a `scanner` token scope that reaches only the scan routes); an infected file is deleted and its item moved to `needs_owner`. Images are decoded and encoded again so only their pixels are kept (WebP becomes PNG; over 40 megapixels is refused). Above 80% of `STACKURITY_FEEDBACK_STORAGE_MAX_MB` the intake reply carries `storage_warning` and an error is logged. See [feedback-queue.md](docs/feedback-queue.md).
-- **Reply-To and Cc on email.** A message can now carry a Reply-To address and Cc addresses (`notify.Message.ReplyTo`, `.Cc`), sent as headers and, for Cc, in the envelope. They are for email only, never in a webhook's payload. An address that does not parse or holds a line break fails the send before the mail server is contacted (no header injection), an address already in To is not sent a second copy, and Cc counts towards the 50 recipients one email may have. Two new kinds of account email, `billing` (an organisation's billing and plan emails from a hosted service) and `sales_alert` (a hosted service's alerts to its operator), get their own footer line. Nothing sends them in the open-source server; self-hosted installations are unchanged.
-
 ### Fixed
 
 - **A request the browser cancelled is no longer a server error.** When a page was reloaded or closed while a request was still being answered, the API logged it as `request failed`, answered 500 and recorded it, so Platform health raised "New server error: 500 internal error on GET /api/v1/meta" when nothing had failed. Such a request is now answered 499 `client_closed` and is neither logged as an error nor recorded. A cancellation inside the server while the request is still open is still a 500.
 
+## 0.19.1
+
+### Changed
+
+- **Dashboard look and navigation.** A calmer colour system: neutral grey surfaces and sidebar instead of blue ones, one indigo-blue accent for primary buttons, the focus ring and the active tab, links in dark slate-blue (underlined on hover), and red, amber and green kept for meaning. P1 to P4 badges have their own colours. The icons are now [Lucide](https://lucide.dev) icons (ISC licence, see NOTICE), inlined as before. **Data sources** (`/intelligence`) moved from Integrations to Assets, after Coverage, and the Integrations tab **Secrets** is now **Stored credentials**, so it is not confused with leaked keys. Both keep their URLs.
+
+### Added
+
+- **Fixes is now an action centre.** The page opens with tiles for open fixes by priority (P1 to P4) and overdue (each one filters the list), the issues the fixes clear and the issues a newer scan showed fixed in the last 30 days. Below them, every fix is one row of a sortable table: priority, the fix, where, issues cleared, known exploited or SOS, effort, owner, due date and status (open, in progress, waiting for check, regressed). **Detailed** (`?view=cards`) keeps the cards; tabs, filters and old links work as before. **Views** offers My fixes, P1 & P2, Overdue and Exploited, and saves your own filters under a name (only you see them). Select fixes to assign them or check them again at once, with the same requests and roles as on a fix's page. API: `GET /fix-groups` takes `priority`, `overdue`, `exploited` and `assignee=me`; `GET /fix-groups/summary` adds `by_priority`, `overdue` and `exploited`; `GET /fix-groups/work` says who is working on each fix and its earliest deadline; `GET`, `POST /saved-views` and `DELETE /saved-views/{id}` keep a person's views.
+- **Feedback queue: sender email, on-demand virus scan, re-encoded images, storage warning** (the Stackurity team's server only). One short email to the sender when an item is released or will not be fixed (`STACKURITY_FEEDBACK_EMAILS=on`, off by default; it quotes nothing the sender wrote, and operators can preview it at `GET /admin/feedback/email-templates`). An on-demand ClamAV scan holds new attachments until they are scanned clean (`STACKURITY_FEEDBACK_SCAN=required`, with `deploy/feedback-scan` and a `scanner` token scope that reaches only the scan routes); an infected file is deleted and its item moved to `needs_owner`. Images are decoded and encoded again so only their pixels are kept (WebP becomes PNG; over 40 megapixels is refused). Above 80% of `STACKURITY_FEEDBACK_STORAGE_MAX_MB` the intake reply carries `storage_warning` and an error is logged. See [feedback-queue.md](docs/feedback-queue.md).
+- **Reply-To and Cc on email.** A message can now carry a Reply-To address and Cc addresses (`notify.Message.ReplyTo`, `.Cc`), sent as headers and, for Cc, in the envelope. They are for email only, never in a webhook's payload. An address that does not parse or holds a line break fails the send before the mail server is contacted (no header injection), an address already in To is not sent a second copy, and Cc counts towards the 50 recipients one email may have. Two new kinds of account email, `billing` (an organisation's billing and plan emails from a hosted service) and `sales_alert` (a hosted service's alerts to its operator), get their own footer line. Nothing sends them in the open-source server; self-hosted installations are unchanged.
+
+### Changed
+
+- **Asset pages name what each status means.** The top of an asset's page now shows three things side by side, each with its name: **Reporting** (reporting normally, last scan incomplete or stopped reporting), **Coverage** (fully checked, partly checked or not checked) and **Security** (open issues, with the P1 and P2 counts). Before, a green "Healthy and recently evaluated" badge sat next to an application with 70 open issues. The coverage state `healthy` is shown as **Coverage: fully checked** (the API keeps `healthy`), the assets list's **Status** column and filter are now **Reporting**, and the coverage page's **Healthy** chip is **Fully checked**.
+- **Dashboard SLA wording.** The fix-by dates tile is now **Open issues against fix-by dates (SLA)** and reads "1,381 within deadline · 0 overdue" and "100% of open issues within deadline", so it is not read as issues fixed on time; **Fixed per week** stays separate. The issues list's filter chip reads "within deadline (not past the fix-by date)".
+- **The Stack tab says what its total adds up.** It now reads, for example, "375 open findings across this application and the assets it runs on (70 on the application itself)", so it does not look like a different count from the asset's own issues.
+- **New API tokens expire after 90 days by default.** **Integrations → API tokens** offers 7 days, 30 days, 90 days (recommended), 1 year, Never and a number of hours. Never stays available for a token you rotate yourself. The API is unchanged (`ttl_hours` 0 or absent still means no expiry).
+- **Wide tables keep the first column in view.** A table wider than the page scrolls sideways inside its own box, as before, and now its first column (what the row is) stays put while it does; the box can be focused and scrolled with the keyboard.
+- **Audit log and Jobs show JSON as a one-line summary** ("asset_id 12, reason manual, +3 more") that opens to the formatted value, instead of raw JSON wrapping character by character.
+- **Ask Stackurity's header always shows the full name.** New, History and Feedback moved to a row under the header, which keeps only Minimise and Close.
+
+### Fixed
+
+- **Settings → Single sign-on on a self-hosted server** no longer shows "Could not load single sign-on: No such endpoint." It says that single sign-on (OpenID Connect or SAML) is set in the server's settings, shows the providers set up now and whether the workspace's licence includes it, lists the redirect, ACS and entity ID addresses to register, and links to the install guide. The entry is now in Settings on every edition. **Plan and billing** on a self-hosted server says that plans and billing are part of Stackurity Cloud instead of loading. Any other path a server does not serve now reads "This is not available on this server" rather than "No such endpoint".
+
 ### Upgrading
 
+- Migration `0101_saved_views` adds `saved_views`, each person's saved filters on a dashboard page (row-level security as for other per-person tables).
 - Migration `0100_feedback_scan` adds the attachments' scan state (`pending`, `clean`, `infected`), the `scanned` event and the `scanner` token scope.
 
 ## 0.19.0

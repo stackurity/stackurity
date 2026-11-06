@@ -165,8 +165,21 @@ type FixGroupFilter struct {
 	// ProductionEnvs names the production environments (from the risk
 	// policy), for the non_production bucket.
 	ProductionEnvs []string
+	// Priorities keeps groups whose most urgent issue has one of these
+	// priorities (P1 to P4).
+	Priorities []string
+	// Overdue keeps groups with an active issue past its fix deadline.
+	Overdue bool
+	// Exploited keeps groups with a known exploited issue.
+	Exploited bool
+	// AssigneeUser keeps groups with an open issue assigned to this user.
+	AssigneeUser int64
 	Page
 }
+
+// overdueGroupSQL is true for a fix group g with an active issue past its
+// fix deadline (the same test as a finding's overdue flag).
+const overdueGroupSQL = `EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND ` + activeFinding + ` AND f.fix_due < now())`
 
 // Fix buckets sort every fix group into what needs a person now (focus) or
 // the first reason it is left out of that view. Home shows the focus groups
@@ -218,6 +231,18 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 	if f.Bucket != "" {
 		w.args = append(w.args, lowerAll(f.ProductionEnvs))
 		w.add(fixBucketSQL(len(w.args))+" = ?", f.Bucket)
+	}
+	if len(f.Priorities) > 0 {
+		w.add("g.data->>'top_priority' = ANY(?)", f.Priorities)
+	}
+	if f.Overdue {
+		w.conds = append(w.conds, overdueGroupSQL)
+	}
+	if f.Exploited {
+		w.conds = append(w.conds, "COALESCE((g.data->>'known_exploited')::int, 0) > 0")
+	}
+	if f.AssigneeUser > 0 {
+		w.add("EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND f.status = 'open' AND f.assignee_user_id = ?)", f.AssigneeUser)
 	}
 	if f.ByFix {
 		return s.listFixGroupsByFix(ctx, w, f.Page.norm())
@@ -341,12 +366,19 @@ type FixPlanSummary struct {
 	// (security updates, kernel cleanup, package upgrades), not ones
 	// that wait on a release or end-of-life upgrade.
 	FixableFindings int64 `json:"fixable_findings"`
+	// ByPriority counts fixes by their most urgent issue (P1 to P4); a fix
+	// in several places counts once, at its most urgent place.
+	ByPriority map[string]int64 `json:"by_priority"`
+	// Overdue counts fixes with an active issue past its fix deadline.
+	Overdue int64 `json:"overdue"`
+	// Exploited counts fixes with a known exploited issue.
+	Exploited int64 `json:"exploited"`
 }
 
 // SummarizeFixPlan counts fixes and their findings. With byFix, the same fix
 // in several places counts once, as a list grouped by fix shows it.
 func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool) (*FixPlanSummary, error) {
-	sum := &FixPlanSummary{ByKind: map[string]map[string]int64{}}
+	sum := &FixPlanSummary{ByKind: map[string]map[string]int64{}, ByPriority: map[string]int64{}}
 	w := &where{}
 	if assetID > 0 {
 		w.add("g.asset_id = ?", assetID)
@@ -375,6 +407,29 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool)
 		}
 	}
 	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	prows, err := s.Pool.Query(ctx, `SELECT top, count(*), count(*) FILTER (WHERE overdue), count(*) FILTER (WHERE exploited) FROM (
+		SELECT min(g.data->>'top_priority') AS top, bool_or(`+overdueGroupSQL+`) AS overdue,
+		  bool_or(COALESCE((g.data->>'known_exploited')::int, 0) > 0) AS exploited
+		FROM fix_groups g`+w.sql()+` GROUP BY `+key+`) k GROUP BY top`, w.args...)
+	if err != nil {
+		return nil, err
+	}
+	defer prows.Close()
+	for prows.Next() {
+		var top *string
+		var n, overdue, exploited int64
+		if err := prows.Scan(&top, &n, &overdue, &exploited); err != nil {
+			return nil, err
+		}
+		if top != nil && *top != "" {
+			sum.ByPriority[*top] += n
+		}
+		sum.Overdue += overdue
+		sum.Exploited += exploited
+	}
+	if err := prows.Err(); err != nil {
 		return nil, err
 	}
 	q := `SELECT count(DISTINCT key), count(*) FILTER (WHERE sos) FROM findings WHERE fix_group IS NOT NULL AND status = 'open'`

@@ -252,10 +252,10 @@ export function tokensEmpty(revoked: boolean, canCreate: boolean): EmptyCopy {
 
 export function secretsEmpty(enabled: boolean): EmptyCopy {
   return {
-    title: "No secrets yet",
+    title: "No stored credentials yet",
     why: "No token, password or webhook URL is stored for integrations to use.",
     after: "Each secret appears here by name, to use as secret:NAME in an integration or a notification channel.",
-    action: enabled ? { label: "Add secret", permitted: true } : undefined,
+    action: enabled ? { label: "Add credential", permitted: true } : undefined,
   };
 }
 

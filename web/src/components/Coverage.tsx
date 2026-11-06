@@ -75,8 +75,9 @@ export function AssetStateBadge({ state, label }: { state: string; label?: strin
     <Badge
       status={state}
       tone={ASSET_STATE_TONES[state] ?? "info"}
-      label={label ?? ASSET_STATE_LABELS[state] ?? state}
-      title="Coverage: how far this asset's findings can be trusted"
+      // "Healthy" alone next to an asset reads as "secure": name the dimension (assetDimensions.ts).
+      label={`Coverage: ${state === "healthy" ? "fully checked" : (label ?? ASSET_STATE_LABELS[state] ?? state)}`}
+      title={`${label ?? ASSET_STATE_LABELS[state] ?? state}: how far this asset's findings can be trusted. It says nothing about how many issues were found.`}
     />
   );
 }

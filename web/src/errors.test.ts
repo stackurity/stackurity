@@ -47,3 +47,10 @@ test("the pattern catches what must not show", () => {
   for (const bad of ["(409 mfa_required)", "409 mfa_required", "failed: http_502", "(500 internal)"]) assert.match(bad, RAW_CODE, bad);
   for (const ok of ["Your session has ended.", "Install 3.0.2 now", "build 20348 is old"]) assert.doesNotMatch(ok, RAW_CODE, ok);
 });
+
+test("a path this build does not serve reads as not available here, never the router's words", () => {
+  const v = errorView({ status: 404, code: "not_found", message: "no such endpoint" });
+  assert.equal(v.text, ERROR_SENTENCES.no_endpoint);
+  assert.doesNotMatch(v.text, /endpoint/i);
+  assert.equal(v.support, "404 not_found");
+});

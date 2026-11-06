@@ -105,7 +105,7 @@ test("Risk at a glance: every number opens its filtered list", () => {
   );
 });
 
-test("SLA: due today counts as on time; no share without issues", () => {
+test("SLA: due today counts as within deadline; no share without issues", () => {
   assert.deepEqual(slaSplit({ on_time: 6, due_today: 2, overdue: 2 }), { onTime: 8, overdue: 2, dueToday: 2, share: 0.8 });
   assert.equal(slaSplit({ on_time: 0, due_today: 0, overdue: 0 }).share, null);
   assert.equal(slaSplit(null).share, null);
