@@ -8,6 +8,8 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Fixed
 
+- **The Fixes table shows fix names at every width.** At 1200 px the fix column was squeezed to nothing (its heading read "FI") and the summary tiles' labels were cut off ("Issues these cle…"). The fix column now keeps at least 220 px and cuts long names with an ellipsis, column headings wrap onto two lines, and below 1440 px the seven tiles sit in two rows with labels that wrap.
+
 - **A channel says whether it ever delivered a real message, and where its secret is.** `GET /channels` adds `last_delivery_at` (the last real notification delivered, from the delivery log; tests never set it) and `secret_source` (`stored`, `missing` for a `secret:NAME` that is not stored, `server` for `env:`/`file:`, which **Secrets** never lists, or empty). `last_ok_at` is unchanged and now documented as the last time anything worked, tests and connection checks included, so a channel that was only ever tested no longer has to look as though it delivered.
 
 ### Upgrading
