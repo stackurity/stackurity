@@ -33,6 +33,7 @@ import {
   urgencyOf,
   versionsText,
 } from "../components/FixGroups";
+import { LeakFixesCard } from "../components/Leaks";
 import { Badge } from "../components/Badge";
 import { NoFixAdviceView } from "../components/NoFixAdvice";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
@@ -175,6 +176,7 @@ export function FixesPage() {
           {assetId && <span className="muted"> on this asset</span>}
         </p>
       )}
+      <LeakFixesCard assetId={assetId ? Number(assetId) : undefined} />
       <PresetChips
         label="Show"
         chips={[

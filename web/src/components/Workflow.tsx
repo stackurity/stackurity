@@ -705,7 +705,7 @@ function NotePanel({
   );
 }
 
-function AssignPanel({
+export function AssignPanel({
   myId,
   pending,
   onSubmit,

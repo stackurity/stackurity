@@ -13,6 +13,7 @@ import {
   type IgnoreRequest,
   type Incident,
   type LeakList,
+  type LeakSummary,
   type List,
   type Onboarding,
   type Overview,
@@ -457,23 +458,32 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
  * expiring or unused, stored secrets not changed for a year. Only what
  * Stackurity was given, and keys found written in files (Leaked keys).
  */
-/** Keys found written in files: those that need action, and where the rest are kept. */
+/** Keys found written in files: those that need rotating or are overdue, and where the rest are kept. */
 function LeakLine() {
-  const action = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "critical,high", limit: 1 }), []);
+  const action = useLoad(() => api.get<LeakSummary>("/leaks/summary", { severity: "critical,high" }), []);
   const kept = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "medium,low", limit: 1 }), []);
   if (!action.data || !kept.data) return null;
-  const n = action.data.total;
-  const k = kept.data.total;
+  return <LeakLineText s={action.data} kept={kept.data.total} />;
+}
+
+export function LeakLineText({ s, kept }: { s: LeakSummary; kept: number }) {
+  const n = s.needs_rotation + s.still_found;
   if (n === 0) {
     return (
       <p className="small">
         <span className="text-good">
-          <IconCheckCircle size={14} /> No leaked keys need action
+          <IconCheckCircle size={14} /> No leaked keys need rotation
         </span>
-        {k > 0 && (
+        {s.waiting_check > 0 && (
           <span className="muted">
             {" "}
-            (<Link to="/fixes/leaks">{plural(k, "key")}</Link> kept in configuration files)
+            (<Link to="/fixes/leaks">{plural(s.waiting_check, "rotated key")}</Link> waiting for a check)
+          </span>
+        )}
+        {kept > 0 && (
+          <span className="muted">
+            {" "}
+            (<Link to="/fixes/leaks">{plural(kept, "key")}</Link> kept in configuration files)
           </span>
         )}
       </p>
@@ -482,9 +492,10 @@ function LeakLine() {
   return (
     <p className="dash-coverage-line">
       <Link to="/fixes/leaks" className="text-bad">
-        {plural(n, "leaked key")}
-      </Link>{" "}
-      <span className="small muted">need action (revoke and replace them)</span>
+        {plural(n, "leaked key")} {n === 1 ? "needs" : "need"} rotation
+      </Link>
+      {s.overdue > 0 && <strong className="text-bad">, {s.overdue.toLocaleString()} overdue</strong>}{" "}
+      <span className="small muted">(revoke and replace them{s.waiting_check > 0 ? `; ${s.waiting_check.toLocaleString()} more waiting for a check` : ""})</span>
     </p>
   );
 }
