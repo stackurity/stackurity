@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
 import { api, type Billing, type BillingPlan, type BillingStatus, type Invoice, type List } from "../../api";
+import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { absTime } from "../../format";
 import { Table, type Column } from "../../components/Table";
@@ -63,7 +64,8 @@ function priceWords(amount: number, p: BillingPlan): string {
 
 /** Settings, Plan and billing (admins, hosted edition). */
 export function BillingPage() {
-  const res = useLoad(() => api.get<Billing>("/billing"), []);
+  const { meta } = useAuth();
+  const res = useLoad(() => (meta?.billing ? api.get<Billing>("/billing") : Promise.resolve(null)), [meta?.billing]);
   const [billing, setBilling] = useState<Billing | null>(null);
   useEffect(() => {
     if (res.data) setBilling(res.data);
@@ -80,7 +82,13 @@ export function BillingPage() {
           </Link>
         }
       />
-      {res.error?.status === 404 ? (
+      {!meta?.billing ? (
+        // A self-hosted server has no billing: say where its limits come from.
+        <Notice kind="info">
+          <strong>Plans and billing are part of Stackurity Cloud.</strong> On your own server, what a workspace includes comes from the
+          server's licence and the plan its administrator sets. <Link to="/settings/usage">Usage</Link> shows what it uses.
+        </Notice>
+      ) : res.error?.status === 404 ? (
         // The server answers 404 for an organisation the operator set up
         // (not billed through Stackurity Cloud): explain, don't show an error.
         <Notice kind="info">
@@ -90,7 +98,7 @@ export function BillingPage() {
       ) : (
         <ErrorBox error={res.error} title="Could not load billing" />
       )}
-      {!b && !res.error && <Loading />}
+      {meta?.billing && !b && !res.error && <Loading />}
       {b && (
         <>
           {b.test_mode && (

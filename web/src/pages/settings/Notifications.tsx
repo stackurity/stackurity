@@ -931,7 +931,7 @@ export function ChannelForm({
           description={
             <>
               Passwords, tokens and webhook addresses are never typed into this form. Save the {secretWhat(kind, deployment, snAuth)} once under{" "}
-              <Link to="/integrations/secrets">Integrations → Secrets</Link>, then enter its name here as <Code>secret:NAME</Code>.
+              <Link to="/integrations/secrets">Integrations → Stored credentials</Link>, then enter its name here as <Code>secret:NAME</Code>.
             </>
           }
         >
@@ -1004,7 +1004,7 @@ export function ChannelForm({
               Interactivity with the Request URL <span className="break">
                 <Code>{`${window.location.origin}/api/v1/integrations/slack/actions`}</Code>
               </span>, and store its signing secret under{" "}
-              <Link to="/integrations/secrets">Integrations → Secrets</Link>. Empty: the buttons open Stackurity instead.{" "}
+              <Link to="/integrations/secrets">Integrations → Stored credentials</Link>. Empty: the buttons open Stackurity instead.{" "}
               <Link to="/help/notifications">How to set it up</Link>
             </p>
           </div>

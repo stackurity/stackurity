@@ -164,7 +164,7 @@ export function CloudConnectPanel({ provider, admin }: { provider: "gcp" | "azur
             <summary>{t.fallbackTitle}</summary>
             <CodeBlock text={setup.fallback_commands} label={`${t.name} fallback commands`} />
             <p className="small">
-              Store {setup.fallback_secret} as a workspace secret under <Link to="/integrations/secrets">Integrations → Secrets</Link>, then enter its name.
+              Store {setup.fallback_secret} as a workspace secret under <Link to="/integrations/secrets">Integrations → Stored credentials</Link>, then enter its name.
               Stored secrets are encrypted and never shown again.
             </p>
             <div className="field">

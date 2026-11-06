@@ -394,7 +394,7 @@ func checkSecretRef(r *http.Request, ref string) error {
 	}
 	if !power {
 		return forbidden("env: and file: secrets belong to the server; only an instance administrator can use them or change what uses them. " +
-			"Store the credential in this workspace (Integrations > Secrets) and reference it as secret:NAME")
+			"Store the credential in this workspace (Integrations > Stored credentials) and reference it as secret:NAME")
 	}
 	return nil
 }

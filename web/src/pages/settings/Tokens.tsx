@@ -140,6 +140,16 @@ export function TokensPage() {
   );
 }
 
+/** Expiry choices for a new token, in hours ("" is never). */
+const DEFAULT_TTL_HOURS = "2160";
+const TTL_CHOICES: [string, string][] = [
+  ["168", "7 days"],
+  ["720", "30 days"],
+  [DEFAULT_TTL_HOURS, "90 days (recommended)"],
+  ["8760", "1 year"],
+  ["", "Never"],
+];
+
 /** The higher of the organisation role and the project role: a token never acts above it, and the server checks each asset. */
 function highest(org: Role | "", project: Role | "" | undefined): Role {
   if (org && project) return atLeast(org, project as Exclude<Role, "collector">) ? org : project;
@@ -151,7 +161,9 @@ function CreateToken({ role, admin, onCreated }: { role: Role; admin: boolean; o
   if (admin) roles.unshift("collector");
   const [name, setName] = useState("");
   const [r, setR] = useState<Role>(admin ? "collector" : "viewer");
-  const [ttl, setTtl] = useState("");
+  // 90 days by default: a token that expires is safer if it leaks. "Never" stays one choice away.
+  const [ttl, setTtl] = useState(DEFAULT_TTL_HOURS);
+  const [custom, setCustom] = useState(false);
   const act = useAction();
 
   const submit = async (e: FormEvent) => {
@@ -160,7 +172,8 @@ function CreateToken({ role, admin, onCreated }: { role: Role; admin: boolean; o
     const c = await act.run(() => api.post<{ token: Token; secret: string }>("/tokens", { name: name.trim(), role: r, ttl_hours: ttlHours }));
     if (c) {
       setName("");
-      setTtl("");
+      setTtl(DEFAULT_TTL_HOURS);
+      setCustom(false);
       onCreated(c);
     }
   };
@@ -193,13 +206,39 @@ function CreateToken({ role, admin, onCreated }: { role: Role; admin: boolean; o
         <SettingRow title="Role" description="What the token may do. Give it the least it needs; it can never do more than you.">
           <ChoiceCards name="tk-role" legend="Role" options={options} value={r} onChange={setR} />
         </SettingRow>
-        <SettingRow title="Expires after (hours)" description="A token that expires is safer if it leaks. Leave empty for no expiry.">
+        <SettingRow title="Expires after" description="A token that expires is safer if it leaks. 90 days unless you choose otherwise.">
           <div className="field">
-            <label className="sr-only" htmlFor="tk-ttl">
-              Expires after (hours)
+            <label className="sr-only" htmlFor="tk-expiry">
+              Expires after
             </label>
-            <input id="tk-ttl" type="number" min={1} max={8784} placeholder="never" value={ttl} onChange={(e) => setTtl(e.target.value)} />
-            <p className="hint">Maximum 8784 (one year). For example, 720 is 30 days.</p>
+            <select
+              id="tk-expiry"
+              value={custom ? "custom" : ttl}
+              onChange={(e) => {
+                const v = e.target.value;
+                setCustom(v === "custom");
+                if (v !== "custom") setTtl(v);
+              }}
+            >
+              {TTL_CHOICES.map(([v, label]) => (
+                <option key={v} value={v}>
+                  {label}
+                </option>
+              ))}
+              <option value="custom">Another number of hours…</option>
+            </select>
+            {custom && (
+              <>
+                <label className="sr-only" htmlFor="tk-ttl">
+                  Expires after (hours)
+                </label>
+                <input id="tk-ttl" type="number" required min={1} max={8784} placeholder="hours" value={ttl} onChange={(e) => setTtl(e.target.value)} />
+                <p className="hint">Maximum 8784 (one year). For example, 720 is 30 days.</p>
+              </>
+            )}
+            {!custom && ttl === "" && (
+              <p className="hint">The token works until you revoke it. Choose this only for a token you rotate yourself.</p>
+            )}
           </div>
         </SettingRow>
         <CardFooter status="The token is shown once, right after you create it.">

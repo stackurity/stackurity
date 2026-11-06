@@ -1,5 +1,8 @@
 /* Stackurity dashboard. Plain CSS with variables; light and dark follow the OS.
-   Brand: navy #0B1F4D, blue #0A6CF5, cyan #19C3FF. */
+   Palette: neutral greys for surfaces, text and the sidebar; one accent
+   (indigo-blue, --accent) for primary buttons, the focus ring and the active
+   tab; red, amber and green only for meaning (bad, warning, good); P1 to P4
+   have their own tokens. Brand navy and cyan stay in the logo, not the chrome. */
 
 :root {
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
@@ -13,35 +16,35 @@
   --s5: 24px;
   --s6: 32px;
 
-  --brand-navy: #0b1f4d;
-  --brand-blue: #0a6cf5;
-  --brand-cyan: #19c3ff;
-
-  --bg: #f4f6fb;
+  --bg: #f6f7f8;
   --surface: #ffffff;
-  --surface-2: #f1f4f9;
-  --surface-3: #e8edf6;
-  --border: #dde3ee;
-  --border-strong: #c3ccdc;
-  --text: #0f1b33;
-  --text-2: #3d4a63;
-  --muted: #5a6780;
-  --link: #0758c9;
-  --accent: #0a6cf5;
-  --accent-hover: #0858cc;
-  --accent-soft: #e6f0ff;
+  --surface-2: #f3f4f6;
+  --surface-3: #e8e9ec;
+  --border: #e2e4e8;
+  --border-strong: #c9ccd3;
+  --text: #111827;
+  --text-2: #374151;
+  --muted: #5b6270;
+  --link: #23407a;
+  --accent: #2952cc;
+  --accent-hover: #2145ad;
+  --accent-soft: #eef1fa;
+  /* The accent as text or an icon on a surface (AA in both themes). */
+  --accent-strong: #2952cc;
   --accent-text: #ffffff;
-  --loader-1: var(--brand-navy);
-  --loader-2: var(--brand-blue);
-  --loader-3: var(--brand-cyan);
-  --focus: #0a6cf5;
-  --sidebar: #0b1f4d;
-  --sidebar-2: #0e2860;
-  --sidebar-text: #c6d3ee;
-  --sidebar-muted: #8ea2c9;
+  --loader-1: #111827;
+  --loader-2: #2952cc;
+  --loader-3: #9ca3af;
+  --focus: #2952cc;
+  --sidebar: #111827;
+  --sidebar-2: #1f2937;
+  --sidebar-text: #d1d5db;
+  --sidebar-muted: #9ca3af;
   --sidebar-active: #ffffff;
-  --sidebar-active-bg: rgba(25, 195, 255, 0.14);
-  --sidebar-hover-bg: rgba(255, 255, 255, 0.07);
+  --sidebar-active-bg: rgba(255, 255, 255, 0.08);
+  --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+  --sidebar-accent: #8aa4f0;
+  --sidebar-line: rgba(255, 255, 255, 0.08);
 
   --good-bg: #e4f5ea;
   --good-fg: #0f5f2e;
@@ -52,49 +55,68 @@
   --bad-bg: #fde8e6;
   --bad-fg: #9f170c;
   --bad-dot: #d93025;
-  --muted-bg: #eef1f6;
-  --muted-fg: #46536b;
-  --info-bg: #e6f0ff;
-  --info-fg: #0b4aa8;
-  --info-dot: #0a6cf5;
+  --muted-bg: #f3f4f6;
+  --muted-fg: #4b5563;
+  --info-bg: #f1f3f5;
+  --info-fg: #374151;
+  --info-dot: #6b7280;
+
+  /* Priority: P1 red (act now), P2 orange, P3 yellow-grey, P4 slate. */
+  --p1-bg: #b42318;
+  --p1-fg: #ffffff;
+  --p1-border: #b42318;
+  --p2-bg: #ffedd5;
+  --p2-fg: #9a3412;
+  --p2-border: #f08a4b;
+  --p3-bg: #f7f3e3;
+  --p3-fg: #6b5300;
+  --p3-border: #d6c78a;
+  --p4-bg: #f1f5f9;
+  --p4-fg: #475569;
+  --p4-border: #cbd5e1;
 
   --danger: #c4261b;
   --radius: 8px;
   --radius-sm: 6px;
-  --shadow-sm: 0 1px 2px rgba(15, 27, 51, 0.06);
-  --shadow: 0 1px 3px rgba(15, 27, 51, 0.08), 0 1px 2px rgba(15, 27, 51, 0.04);
-  --shadow-lg: 0 10px 30px rgba(11, 31, 77, 0.12);
-  --zebra: #f8fafd;
-  --row-hover: #eef4ff;
+  --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
+  --shadow: 0 1px 3px rgba(17, 24, 39, 0.08), 0 1px 2px rgba(17, 24, 39, 0.04);
+  --shadow-lg: 0 10px 30px rgba(17, 24, 39, 0.12);
+  --overlay: rgba(17, 24, 39, 0.45);
+  --zebra: #fafafb;
+  --row-hover: #f3f4f6;
   color-scheme: light;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #070f1f;
-    --surface: #0f1a2e;
-    --surface-2: #14223b;
-    --surface-3: #1a2b49;
-    --border: #22345a;
-    --border-strong: #31497a;
-    --text: #e8eef9;
-    --text-2: #bccae3;
-    --muted: #93a4c3;
-    --link: #74b8ff;
-    --accent: #2f7cf6;
-    --accent-hover: #4a8ff8;
-    --accent-soft: #132a52;
+    --bg: #0d1014;
+    --surface: #15181e;
+    --surface-2: #1b1f26;
+    --surface-3: #232830;
+    --border: #2a2f38;
+    --border-strong: #3a404b;
+    --text: #e6e8eb;
+    --text-2: #c3c7ce;
+    --muted: #9aa0aa;
+    --link: #b4c3e8;
+    --accent: #3f63d4;
+    --accent-hover: #4a6cd8;
+    --accent-soft: #1c2338;
+    --accent-strong: #8aa4f0;
     --accent-text: #ffffff;
-    --focus: #5fd4ff;
-    --loader-1: #2550b0;
-    --loader-2: #2f7cf6;
-    --sidebar: #050d1e;
-    --sidebar-2: #0a1a3a;
-    --sidebar-text: #bccae3;
-    --sidebar-muted: #7d90b5;
+    --focus: #7d97ec;
+    --loader-1: #3a404b;
+    --loader-2: #3f63d4;
+    --loader-3: #9aa0aa;
+    --sidebar: #090b0f;
+    --sidebar-2: #14171c;
+    --sidebar-text: #c3c7ce;
+    --sidebar-muted: #8b919c;
     --sidebar-active: #ffffff;
-    --sidebar-active-bg: rgba(25, 195, 255, 0.16);
-    --sidebar-hover-bg: rgba(255, 255, 255, 0.06);
+    --sidebar-active-bg: rgba(255, 255, 255, 0.08);
+    --sidebar-hover-bg: rgba(255, 255, 255, 0.05);
+    --sidebar-accent: #7d97ec;
+    --sidebar-line: rgba(255, 255, 255, 0.07);
 
     --good-bg: #0f2e1d;
     --good-fg: #8fe0a9;
@@ -105,18 +127,32 @@
     --bad-bg: #3b1513;
     --bad-fg: #ffaaa3;
     --bad-dot: #f0574c;
-    --muted-bg: #1a2742;
-    --muted-fg: #bccae3;
-    --info-bg: #11264a;
-    --info-fg: #a9cdff;
-    --info-dot: #4a95ff;
+    --muted-bg: #1e2229;
+    --muted-fg: #c3c7ce;
+    --info-bg: #1e2229;
+    --info-fg: #c3c7ce;
+    --info-dot: #8b919c;
+
+    --p1-bg: #dc2626;
+    --p1-fg: #ffffff;
+    --p1-border: #dc2626;
+    --p2-bg: #3b2412;
+    --p2-fg: #fdba74;
+    --p2-border: #ea7a2a;
+    --p3-bg: #2e2a17;
+    --p3-fg: #e8d48a;
+    --p3-border: #8a7a3c;
+    --p4-bg: #1e293b;
+    --p4-fg: #cbd5e1;
+    --p4-border: #475569;
 
     --danger: #ff7a70;
     --shadow-sm: none;
     --shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45);
-    --zebra: #122039;
-    --row-hover: #17294a;
+    --overlay: rgba(0, 0, 0, 0.55);
+    --zebra: #181b21;
+    --row-hover: #1e2229;
     color-scheme: dark;
   }
 }
@@ -343,11 +379,11 @@ code,
   bottom: 6px;
   width: 3px;
   border-radius: 3px;
-  background: var(--brand-cyan);
+  background: var(--sidebar-accent);
 }
 .nav-item :focus-visible,
 .sidebar :focus-visible {
-  outline-color: var(--brand-cyan);
+  outline-color: var(--sidebar-accent);
 }
 .nav-text {
   flex: 1;
@@ -376,7 +412,7 @@ code,
 .nav-sub {
   margin: 2px 0 6px;
   padding-left: 18px;
-  border-left: 1px solid rgba(255, 255, 255, 0.08);
+  border-left: 1px solid var(--sidebar-line);
   margin-left: 18px;
 }
 .nav-sub .nav-item {
@@ -407,7 +443,7 @@ code,
   display: flex;
   flex-direction: column;
   gap: 4px;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  border-top: 1px solid var(--sidebar-line);
 }
 .sidebar-foot .muted {
   color: var(--sidebar-muted);
@@ -880,6 +916,26 @@ h1 .badge {
 .table-wrap .table-wrap {
   max-height: none;
 }
+.table-wrap:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+/* A table wider than its box scrolls inside it; the first column, which
+   says what the row is, stays in view (Table's stickyFirst). */
+.table-sticky-first > thead > tr > th:first-child,
+.table-sticky-first > tbody > tr:not(.expanded) > td:first-child {
+  position: sticky;
+  left: 0;
+  max-width: min(22rem, 45vw);
+}
+/* Low specificity (:where), so zebra, hover and selected backgrounds still win. */
+.table-sticky-first > tbody > tr:where(:not(.expanded)) > td:where(:first-child) {
+  z-index: 1;
+  background: var(--surface);
+}
+.table-sticky-first > thead > tr > th:first-child {
+  z-index: 2;
+}
 
 .row-actions {
   display: flex;
@@ -944,7 +1000,7 @@ h1 .badge {
   color: var(--text);
 }
 .tab-active {
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 650;
   border-bottom-color: var(--accent);
 }
@@ -1310,9 +1366,9 @@ select:disabled {
   height: 48px;
   margin: 0 auto var(--s3);
   border-radius: 14px;
-  color: var(--accent);
-  background: var(--accent-soft);
-  border: 1px solid color-mix(in srgb, var(--accent) 25%, transparent);
+  color: var(--text-2);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
 }
 .empty-help {
   margin: var(--s3) 0 0;
@@ -1380,9 +1436,25 @@ select:disabled {
   max-width: 1000px;
 }
 
+details.json {
+  min-width: 14rem;
+  max-width: 28rem;
+}
 details.json summary {
   cursor: pointer;
   color: var(--text-2);
+}
+/* One line, cut with an ellipsis: never wrapped character by character. */
+details.json .json-summary {
+  display: inline-block;
+  max-width: calc(100% - 1.2em);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+details.json[open] {
+  max-width: 560px;
 }
 details.json pre {
   margin: 6px 0 0;
@@ -1404,8 +1476,8 @@ details.json pre {
   place-items: center;
   padding: 24px;
   background:
-    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--brand-cyan) 16%, transparent), transparent),
-    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--brand-blue) 16%, transparent), transparent),
+    radial-gradient(1200px 600px at 10% -10%, color-mix(in srgb, var(--accent) 8%, transparent), transparent),
+    radial-gradient(900px 500px at 110% 110%, color-mix(in srgb, var(--text) 6%, transparent), transparent),
     var(--bg);
 }
 .auth-card {
@@ -1448,13 +1520,13 @@ details.json pre {
 /* --- Stage 2: severity, KEV, findings */
 
 :root {
-  --crit-bg: #8f0f07;
-  --crit-fg: #ffffff;
+  --crit-bg: var(--p1-bg);
+  --crit-fg: var(--p1-fg);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --crit-bg: #d93025;
-    --crit-fg: #ffffff;
+    --crit-bg: var(--p1-bg);
+    --crit-fg: var(--p1-fg);
   }
 }
 .badge-crit {
@@ -1792,6 +1864,32 @@ details.json pre {
 .badge-orange .badge-dot {
   background: var(--orange-dot);
 }
+.badge-p1 {
+  background: var(--p1-bg);
+  color: var(--p1-fg);
+  border-color: var(--p1-border);
+}
+.badge-p2 {
+  background: var(--p2-bg);
+  color: var(--p2-fg);
+  border-color: var(--p2-border);
+}
+.badge-p3 {
+  background: var(--p3-bg);
+  color: var(--p3-fg);
+  border-color: var(--p3-border);
+}
+.badge-p4 {
+  background: var(--p4-bg);
+  color: var(--p4-fg);
+  border-color: var(--p4-border);
+}
+.badge-p1 .badge-dot,
+.badge-p2 .badge-dot,
+.badge-p3 .badge-dot,
+.badge-p4 .badge-dot {
+  background: currentColor;
+}
 .prio {
   font-variant-numeric: tabular-nums;
   min-width: 30px;
@@ -2068,7 +2166,7 @@ details.json pre {
   color: var(--text-2);
 }
 .fix-summary-kinds .icon {
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-list {
   display: flex;
@@ -2097,7 +2195,7 @@ details.json pre {
   place-items: center;
   border-radius: 10px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-icon-inline {
   width: 28px;
@@ -2161,7 +2259,7 @@ details.json pre {
   font-weight: 750;
   font-variant-numeric: tabular-nums;
   line-height: 1;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .fix-action {
   margin: 0;
@@ -2350,7 +2448,7 @@ details.json pre {
     --text: #1a1f29;
     --text-2: #4a5363;
     --muted: #5f6878;
-    --link: #1f5fbf;
+    --link: #23407a;
     --good-bg: #e3f4e8;
     --good-fg: #11612f;
     --good-dot: #1f8f48;
@@ -2362,9 +2460,9 @@ details.json pre {
     --bad-dot: #d93025;
     --muted-bg: #eef0f3;
     --muted-fg: #4a5363;
-    --info-bg: #e5eefc;
-    --info-fg: #1b4c99;
-    --info-dot: #3f7ae0;
+    --info-bg: #f1f3f5;
+    --info-fg: #374151;
+    --info-dot: #6b7280;
     --shadow: none;
     color-scheme: light;
   }
@@ -2511,7 +2609,7 @@ details.json pre {
   background: var(--surface);
 }
 .help-link:hover {
-  color: var(--accent);
+  color: var(--accent-strong);
   border-color: var(--accent);
   text-decoration: none;
 }
@@ -2555,7 +2653,7 @@ details.json pre {
 }
 .help-nav li a.active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 .help-article {
@@ -2595,7 +2693,7 @@ details.json pre {
 }
 .help-steps li::marker {
   font-weight: 700;
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .help-article .codeblock {
   margin: var(--s2) 0 var(--s3);
@@ -2682,7 +2780,7 @@ details.json pre {
 .edition-pro,
 .edition-enterprise {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 /* --- global search */
@@ -2994,7 +3092,7 @@ h6.md-h {
   display: grid;
   place-items: center;
   padding: var(--s4);
-  background: rgba(7, 15, 31, 0.55);
+  background: var(--overlay);
 }
 .confirm-dialog {
   width: 100%;
@@ -3077,7 +3175,7 @@ h6.md-h {
   box-shadow: var(--shadow-lg);
 }
 .dialog::backdrop {
-  background: rgba(7, 15, 31, 0.45);
+  background: var(--overlay);
 }
 .dialog-head {
   display: flex;
@@ -3300,7 +3398,7 @@ h6.md-h {
   width: 34px;
   height: 34px;
   border-radius: 999px;
-  background: var(--brand-navy);
+  background: var(--sidebar-2);
   color: #ffffff;
   font-weight: 700;
   font-size: 14px;
@@ -3449,7 +3547,7 @@ h6.md-h {
     cursor: pointer;
   }
   .tabbar-item.active {
-    color: var(--accent);
+    color: var(--accent-strong);
   }
   .tabbar-item:hover {
     text-decoration: none;
@@ -3467,7 +3565,7 @@ h6.md-h {
     position: fixed;
     inset: 0;
     z-index: 26;
-    background: rgba(7, 15, 31, 0.45);
+    background: var(--overlay);
   }
   .sheet {
     position: fixed;
@@ -3713,7 +3811,7 @@ h6.md-h {
     position: fixed;
     inset: 0;
     z-index: 39;
-    background: rgba(7, 15, 31, 0.45);
+    background: var(--overlay);
   }
   .preset-chips {
     flex-wrap: nowrap;
@@ -3963,8 +4061,8 @@ h6.md-h {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text-2);
   flex: none;
 }
 .dash-block-link {
@@ -4781,7 +4879,7 @@ h6.md-h {
 }
 .onboard-steps li.current .onboard-dot {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .onboard-steps li.done .onboard-dot,
 .setup-list li.done .onboard-dot {
@@ -5246,7 +5344,7 @@ h6.md-h {
   height: 36px;
   border-radius: var(--radius-sm);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .int-group {
   margin: var(--s3) 0 var(--s2);
@@ -5727,7 +5825,7 @@ div.assistant-card {
   --seg-checked: #17733d;
   --seg-needs_you: #e6a11c;
   --seg-not_supported: #7d8799;
-  --seg-waiting: #0a6cf5;
+  --seg-waiting: #2952cc;
   --seg-no_advisories: #aab3c2;
   display: flex;
   flex-direction: column;
@@ -5738,7 +5836,7 @@ div.assistant-card {
     --seg-checked: #2a9150;
     --seg-needs_you: #d99e32;
     --seg-not_supported: #5d687c;
-    --seg-waiting: #4f8ff7;
+    --seg-waiting: #6f8fea;
     --seg-no_advisories: #55647f;
   }
 }
@@ -5902,8 +6000,8 @@ div.assistant-card {
   width: 30px;
   height: 30px;
   border-radius: var(--radius-sm);
-  background: var(--accent-soft);
-  color: var(--accent);
+  background: var(--surface-2);
+  color: var(--text-2);
   flex: none;
 }
 .cov-section-aside {
@@ -6514,7 +6612,7 @@ a.cov-chip:hover {
   flex-direction: column;
   background: var(--surface);
   border-left: 1px solid var(--border);
-  box-shadow: -8px 0 24px rgba(15, 27, 51, 0.12);
+  box-shadow: -8px 0 24px rgba(17, 24, 39, 0.12);
 }
 .ask-head {
   display: flex;
@@ -6652,6 +6750,15 @@ a.cov-chip:hover {
   overflow: hidden;
   text-overflow: ellipsis;
 }
+/* New, History and Feedback, under the name: the header keeps only
+   Minimise and Close, so "Ask Stackurity" always fits. */
+.ask-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--border);
+}
 /* A phone: the header's buttons get the room; the name may shorten. */
 @media (max-width: 480px) {
   .ask-head {
@@ -6682,7 +6789,7 @@ a.cov-chip:hover {
   height: 28px;
   border-radius: 50%;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 .ask-bot-turn {
   display: flex;
@@ -6711,7 +6818,7 @@ a.cov-chip:hover {
   border-radius: 999px;
   background: var(--surface);
   color: var(--text);
-  box-shadow: 0 4px 16px rgba(15, 27, 51, 0.16);
+  box-shadow: 0 4px 16px rgba(17, 24, 39, 0.16);
   cursor: pointer;
   font: inherit;
 }
