@@ -6,6 +6,10 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+### Security
+
+- **Image: Syft 1.57.0 with patched compression and crypto modules.** The image's Syft (container image SBOMs) moves from 1.55.0 to 1.57.0, which brings `github.com/klauspost/compress` 1.20.3 (CVE-2026-116591, zstd panic on two-block frames, high). It is built with `github.com/andybalholm/brotli` 1.2.8 (CVE-2026-111497, which scanners map to it) and `golang.org/x/crypto` at the commit that splits out `openpgp` (GO-2026-5932). The server and agent take the same `x/crypto` commit. Stackurity never imported `openpgp`. The base image's musl (CVE-2026-107891) is fixed when Alpine 3.24 publishes the patched package. GO-2026-6905 (`blakesmith/ar` in Syft) has no fix yet.
+
 ### Added
 
 - **Leaked keys are tracked work: owner, due date, "I've rotated it" and Check again.** Each leaked key can be assigned to a person or team, has a rotate-by date (critical 1 day, high 7, medium 30, or the risk policy's P1–P3 fix deadlines when the organisation changed them; none for low) and can be marked rotated with a note. Marking it rotated does not resolve it: a complete scan that no longer finds the key shows it **Verified gone**, and a scan that still finds it shows **Still found after rotation**. **Check again** asks the asset's collector to scan again. **Fixes → Leaked keys** has a summary (need rotation, overdue, waiting for check, verified gone in the last 30 days), owner, due and state columns, filters, a row menu (Assign, Mark as rotated, Check again, Dismiss) and short rotation steps for AWS, GitHub, GitLab, Stripe, Slack, private keys and passwords. Open critical and high leaks are listed at the top of **Fixes**, and the dashboard counts those that need rotation and those overdue. New: `GET /leaks/summary`, `POST /leaks/{id}/assign`, `/rotated` and `/check-again` (engineer role), `GET /leaks?state=&assignee_user=&assignee_team=&assignee=none`, and the MCP tool `list_leaks` returns each leak's state, owner and due date. See [Leaked keys](docs/leaked-keys.md#rotating-a-leak).
