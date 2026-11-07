@@ -22,6 +22,8 @@ jobs:
   # vulnerability: govulncheck, npm audit and a scan of the built image.
   security:
     uses: ./.github/workflows/security-gate.yml
+    secrets:
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
     permissions:
       contents: read
 

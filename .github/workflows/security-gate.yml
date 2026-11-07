@@ -6,11 +6,24 @@
 #   Go       govulncheck fails only on vulnerabilities the code can reach;
 #            module-level notes without a fix are recorded in osv-scanner.toml.
 #   npm      web/audit-allow.json (tools/npm-audit-gate)
-#   image    .trivyignore.yaml
+#   image    .trivyignore.yaml (Trivy); for Docker Scout, an OpenVEX
+#            statement in .vex/ or an exception in the Docker Scout
+#            dashboard, each with a reason.
+#
+# The image is scanned by two scanners, Trivy and Docker Scout, because
+# their advisory data differ: on 6 Nov 2026 Trivy passed v0.19.2 while
+# Scout (what Docker Hub shows) reported a critical brotli and a high
+# klauspost/compress in Syft. Scout ignores the base image's own packages
+# (ignore-base): the Dockerfile runs `apk upgrade`, so any fix Alpine has
+# shipped is already in, and Trivy (Alpine's own security data, unfixed
+# ignored) still fails on base packages with a published fix.
 name: security-gate
 
 on:
   workflow_call:
+    secrets:
+      DOCKERHUB_TOKEN:
+        required: false
 
 permissions:
   contents: read
@@ -36,6 +49,8 @@ jobs:
 
   image:
     runs-on: ubuntu-latest
+    env:
+      SCOUT_LOGIN: ${{ secrets.DOCKERHUB_TOKEN != '' && 'yes' || '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
@@ -56,3 +71,21 @@ jobs:
           ignore-unfixed: true
           exit-code: "1"
           trivyignores: .trivyignore.yaml
+      # Docker Scout needs a Docker Hub login; pull requests from forks get
+      # no secrets, so it is skipped there and Trivy alone gates them.
+      - name: Scan the image with Docker Scout (fixable HIGH and CRITICAL fail)
+        if: ${{ env.SCOUT_LOGIN != '' }}
+        uses: docker/scout-action@a4119c5a8c5076236a54e4ce99531f7e4dd2ef84 # v1.27.0
+        with:
+          command: cves
+          image: local://stackurity:gate
+          only-fixed: true
+          only-severities: critical,high
+          ignore-base: true
+          ignore-suppressed: true
+          vex-location: .vex
+          exit-code: true
+          summary: true
+          write-comment: false
+          dockerhub-user: stackurity
+          dockerhub-password: ${{ secrets.DOCKERHUB_TOKEN }}
