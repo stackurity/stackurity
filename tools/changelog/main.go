@@ -9,7 +9,14 @@
 //
 // With -check it only validates CHANGELOG.md: every "## " heading is
 // "Unreleased" or a version, no version (and not Unreleased) appears twice,
-// and no released section is empty.
+// and no released section is empty; and every fragment in changelog.d
+// parses (see changelog.d/README.md).
+//
+// With -unreleased it prints what the next release's notes will be: the
+// "## Unreleased" section with the changelog.d fragments merged in, as
+// go run ./tools/release prepare will write them.
+//
+//	go run ./tools/changelog -unreleased
 package main
 
 import (
@@ -19,21 +26,41 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 func main() {
 	file := flag.String("file", "CHANGELOG.md", "changelog to read")
 	ver := flag.String("version", "", "release tag or version, e.g. v0.4.0")
-	check := flag.Bool("check", false, "only validate the changelog")
+	check := flag.Bool("check", false, "only validate the changelog and the changelog.d fragments")
+	unreleased := flag.Bool("unreleased", false, "print the Unreleased notes with the changelog.d fragments merged in")
+	dir := flag.String("fragments", fragments.Dir, "changelog fragments directory")
 	flag.Parse()
 	b, err := os.ReadFile(*file)
 	if err != nil {
 		fail(err)
 	}
 	if *check {
-		if err := Check(string(b)); err != nil {
+		err := Check(string(b))
+		if _, ferr := fragments.Load(*dir); ferr != nil {
+			err = errors.Join(err, ferr)
+		}
+		if err != nil {
 			fail(err)
 		}
+		return
+	}
+	if *unreleased {
+		frags, err := fragments.Load(*dir)
+		if err != nil {
+			fail(err)
+		}
+		notes, err := Unreleased(string(b), frags)
+		if err != nil {
+			fail(err)
+		}
+		fmt.Print(notes)
 		return
 	}
 	if *ver == "" {
@@ -113,6 +140,27 @@ func Section(doc, ver string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("CHANGELOG.md has no \"## %s\" section; add the release notes before tagging", v)
+}
+
+// Unreleased returns the next release's notes: the "## Unreleased" section
+// (missing is the same as empty) with the fragments merged in. It is empty
+// when there is nothing to release.
+func Unreleased(doc string, frags []fragments.Fragment) (string, error) {
+	body := ""
+	for _, s := range sections(doc) {
+		if strings.EqualFold(s.name, "Unreleased") {
+			body = s.body
+			break
+		}
+	}
+	notes, err := fragments.Merge(body, frags)
+	if err != nil {
+		return "", err
+	}
+	if notes = strings.TrimSpace(notes); notes == "" {
+		return "", nil
+	}
+	return notes + "\n", nil
 }
 
 // Check validates the whole changelog.

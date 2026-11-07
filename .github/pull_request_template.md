@@ -6,7 +6,7 @@
 
 Tick what this change touches, or write "n/a". CI checks environment variables, CLI commands and flags, API routes and the upgrade matrix (`tools/docslint`, `tools/releaselint`, `TestCLIDocumented`); the rest is up to you.
 
-- [ ] `CHANGELOG.md` under **Unreleased**, for anything a user or operator notices
+- [ ] A changelog fragment, `changelog.d/<short-slug>.md` (see `changelog.d/README.md`), for anything a user or operator notices. Don't edit CHANGELOG.md itself
 - [ ] Docs: `README.md` and `docs/*.md`, including `docs/api.md` and `internal/api/openapi.json` for API changes
 - [ ] MCP tools: `docs/ai-assistants.md`, and the notes for the assistant directory listings
 - [ ] Website copy and screenshots (stackurity/website)

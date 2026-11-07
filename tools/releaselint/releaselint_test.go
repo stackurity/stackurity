@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+
+	"github.com/stackurity/stackurity/tools/internal/fragments"
 )
 
 func read(t *testing.T, path string) string {
@@ -111,15 +113,20 @@ func TestUpgradeMatrixHasOneSource(t *testing.T) {
 // TestUpgradeMatrixHasNewestRelease fails when the newest published release
 // is not a source in the release-checks upgrade matrix, so every later
 // release is tested as an upgrade from it. With entries under "Unreleased"
-// in CHANGELOG.md, that is the first version below it. Without any (no
-// Unreleased heading, or the empty one tools/release puts above a release),
+// in CHANGELOG.md or a fragment in changelog.d, that is the first version
+// below it. Without any (no Unreleased heading, or the empty one
+// tools/release puts above a release, and no fragments),
 // the change is a release that renamed Unreleased to its version and cannot
 // be in the matrix before it is published, so the version before it must be.
 func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
 	changelog := read(t, "CHANGELOG.md")
 	versions := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)\s*$`).FindAllStringSubmatch(changelog, -1)
+	frags, err := fragments.Load(filepath.Join("..", "..", fragments.Dir))
+	if err != nil {
+		t.Fatal(err)
+	}
 	published := 0
-	if !hasUnreleasedEntries(changelog) {
+	if !hasUnreleasedEntries(changelog) && len(frags) == 0 {
 		published = 1
 	}
 	if len(versions) <= published {
