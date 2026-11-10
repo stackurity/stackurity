@@ -2535,13 +2535,13 @@ Removes a pack: its files show as unsupported again from the next scan.
 
 **Who:** admin · Stackurity Cloud
 
-The organisation's plan: status (`trial`, `trial_ended`, `awaiting_payment`, `active`, `past_due`, `halted`, `cancelling`, `cancelled`), plans, limits, read-only and deletion dates, `billing_enabled` and `contact_url`. `upgrade` (or null) is an upgrade that applies now and is billed from the next invoice: `from_plan`, `charge` (the amount for the rest of the period and when it is billed) and `message`.
+The organisation's plan: status (`trial`, `trial_ended`, `awaiting_payment`, `active`, `past_due`, `halted`, `cancelling`, `cancelled`), plans, limits, read-only and deletion dates, `billing_enabled` and `contact_url`. `billing_country` and `currency` (INR in India, EUR in the 27 EU member states, USD elsewhere; `country_currency` and `default_currency` say which), `billing_details` (who the tax invoices are made out to: `legal_name`, `address`, `state`, `tax_id`, `tax_id_check`; null before the first subscription), `details_needed` (`state`, `vat` or empty: what an admin must add before the next tax invoice), `vat_countries` (the EU member states, which need a VAT number) and `indian_states` (GST state codes and names). `upgrade` (or null) is an upgrade that applies now and is billed from the next invoice: `from_plan`, `charge` (the amount for the rest of the period and when it is billed) and `message`.
 
 ### `POST /billing/subscribe`
 
 **Who:** admin, a browser session · Stackurity Cloud
 
-`plan_id`, `extra_assets`, `country` (asked once; decides the currency), `replace`. Answers `billing`, `payment_url` (a page to pay on, or null) and `message` (what happened, for the admin; empty for an ordinary change). An upgrade the payment provider applies only at the end of the period (a card mandate it changes then) applies now: `message` and `billing.upgrade` say what is added to the next invoice. 409 `replace_required` when the payment provider cannot change the subscription's plan (UPI, e-mandate, an Indian card): asked again with `"replace": true`, it is cancelled and replaced by the bigger plan, paid on `payment_url`. 503 `billing_off` while billing is off; 409 while a payment is being confirmed.
+`plan_id`, `extra_assets`, `country` (asked once; decides the currency), `billing_details` (`legal_name`, `address`, `state`, `tax_id`: required with the first subscription in the EU, which is for businesses only and needs a VAT number in its country's format; in India the state, or a GSTIN that names it, when tax invoices are on; optional elsewhere; left out later, what is recorded stays), `replace`. 400 for missing or malformed billing details, or a VAT number the EU's VIES says is not registered (when the cloud checks VIES). Answers `billing`, `payment_url` (a page to pay on, or null) and `message` (what happened, for the admin; empty for an ordinary change). An upgrade the payment provider applies only at the end of the period (a card mandate it changes then) applies now: `message` and `billing.upgrade` say what is added to the next invoice. 409 `replace_required` when the payment provider cannot change the subscription's plan (UPI, e-mandate, an Indian card): asked again with `"replace": true`, it is cancelled and replaced by the bigger plan, paid on `payment_url`. 503 `billing_off` while billing is off; 409 while a payment is being confirmed.
 
 ### `POST /billing/cancel`
 
@@ -2553,7 +2553,19 @@ Cancels the plan at the end of the period; the organisation then becomes read-on
 
 **Who:** admin · Stackurity Cloud
 
-Invoices of the organisation's subscriptions.
+Invoices of the organisation's subscriptions. `tax_invoice` (or null) is Stackurity Cloud's own tax invoice for a paid one: `number` (such as `STK/26-27/0001`) and `url`, where it is downloaded.
+
+### `GET /billing/invoices/{id}/pdf`
+
+**Who:** admin · Stackurity Cloud
+
+The tax invoice of the organisation's invoice `id` (`inv_...`) as a PDF (`Content-Disposition: attachment`). 404 when it has none: not paid yet, paid before tax invoices came on, or waiting for billing details.
+
+### `PUT /billing/details`
+
+**Who:** admin, a browser session · Stackurity Cloud
+
+Changes who the tax invoices are made out to: `legal_name`, `address`, `state`, `tax_id`, checked as with the first subscription for the organisation's billing country (which does not change). Invoices already issued are not changed; one waiting for these details is issued within minutes. Answers the billing (as `GET /billing`). 409 before the first subscription.
 
 ### `GET /admin/community-keys`
 
