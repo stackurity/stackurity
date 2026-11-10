@@ -267,8 +267,8 @@ func lifecycleGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]string, 0, len(lr.byPurl))
-	for k := range lr.byPurl {
+	keys := make([]string, 0, len(lr.r.ByPurl))
+	for k := range lr.r.ByPurl {
 		keys = append(keys, k)
 	}
 	keys = append(keys, ov.FamilyKeys(keys)...)
