@@ -144,7 +144,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
   ];
   const slaCols: Column<OutcomeSLA>[] = [
     { key: "p", header: "Priority", cell: (s) => <PriorityBadge priority={s.priority} /> },
-    { key: "d", header: "Fix within", numeric: true, cell: (s) => dayCount(s.fix_days) },
+    { key: "d", header: "Policy days", numeric: true, cell: (s) => dayCount(s.fix_days) },
     { key: "res", header: "Resolved in time", cell: (s) => share(s.resolved_within_sla, s.resolved) },
     { key: "open", header: "Open now", numeric: true, cell: (s) => n(s.open_active) },
     {
@@ -222,8 +222,9 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
           </li>
           <li>Time to remedy runs from detection, or from the last reopening, to resolution.</li>
           <li>
-            SLA uses the fix deadline for each priority in the current <Link to="/settings/risk-policy">risk policy</Link>, counted from first
-            detection.
+            SLA compares each fix with that issue&apos;s fix-by date, the deadline people saw: it starts from the{" "}
+            <Link to="/settings/risk-policy">risk policy</Link>&apos;s days for its priority and follows patch windows, carried-over deadlines
+            and priority changes. Fixes that had no fix-by date are counted apart.
           </li>
         </ul>
       </GoodToKnow>
@@ -269,7 +270,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
         </Card>
       )}
 
-      <Card title="SLA compliance" description="Whether findings were fixed within the deadline your risk policy sets for each priority, and how many are late now.">
+      <Card title="SLA compliance" description="Whether findings were fixed by their fix-by date, and how many are late now. Policy days is the risk policy's starting deadline for each priority.">
         <Table caption="SLA compliance by priority" columns={slaCols} rows={sla} rowKey={(s) => s.priority} />
         <p className="hint">
           Also open now: {n(r.open.excepted)} suppressed or risk-accepted, {n(r.open.stale_asset)} on assets that stopped reporting (not
