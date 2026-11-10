@@ -6,6 +6,30 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.4
+
+### Security
+
+- **One-time install codes and collector tokens are masked on screen until you press Show code.** The install command on Add a server, the fleet and cloud-init commands and the onboarding collector token show only the code's first characters, so a screen share or screenshot does not reveal a usable code. Copy still copies the full command.
+
+### Added
+
+- **`pkg/engine`: the scan engine as a public Go package.** Lockfile parsing, the host and container collectors, leaked-key detection, OSV range matching and endoflife.date lifecycle resolution can now be imported from outside this module, with no server or database. The standalone scanner (`stackurity/scan`) uses it, so a parser or matching fix lands in both. The API may change before 1.0.
+- **Hugging Face access tokens are reported as leaked keys** (`hf_…`, critical), next to the Anthropic, OpenAI and Google keys already found.
+
+### Changed
+
+- **Changelog entries go in `changelog.d/`, one file per pull request.** Parallel pull requests no longer conflict on CHANGELOG.md. `go run ./tools/release prepare` merges the fragments into the release section in the usual subsection order and deletes them in the release commit; `go run ./tools/changelog -unreleased` previews the next release's notes, `-check` validates the fragments, and `tools/releaselint` counts a fragment as an Unreleased entry. Entries written directly under `## Unreleased` keep working during the transition. See [changelog.d/README.md](changelog.d/README.md).
+- The endoflife.date product resolver moved from `internal/intel` to `internal/lifecycle` so it runs without the store; results are unchanged.
+
+### Fixed
+
+- **A feed's first sync no longer leaves packages unchecked.** The re-evaluation a feed sync queues could start in the few milliseconds before the sync recorded its success, see the feed as never synced and skip it, so a new server's Ubuntu or Debian hosts showed almost no findings (and "feed has not completed a sync" under Coverage) until the feed next changed. The re-evaluation now starts 30 seconds after the sync.
+- **The dashboard's deadline figure adds up and is never rounded to 100%.** It now reads "1,132 of 1,134 (99.8%) within deadline" instead of "100% of open issues within deadline" when two are overdue. Open issues that are snoozed or accepted have no deadline, so they are left out of that figure; the dashboard now says how many, so its counts match the open-issue total. `GET /api/v1/dashboard/trend` returns them as `sla.excepted`. Outcomes and the evidence report use the same rounding.
+- **The evidence report shows its dates as "8 Oct 2026"**, the same in every locale, next to the date pickers (which follow the browser's locale, so 08/10/2026 could read as August or October).
+- **Tables never cut off their buttons.** A table's last column of row buttons (Reset password, Revoke, Remove and so on) stays pinned to the right edge while the rest scrolls, and a table with columns out of view shows a shadow on that edge and says it scrolls sideways.
+- **The page for instance administrators explains itself.** Someone without that role who opens an instance page (such as `/updates`) is told who it is for, gets a link to the changelog and a way back to Home.
+
 ## 0.19.3
 
 ### Security

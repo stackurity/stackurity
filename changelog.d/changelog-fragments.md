@@ -1,3 +1,0 @@
-### Changed
-
-- **Changelog entries go in `changelog.d/`, one file per pull request.** Parallel pull requests no longer conflict on CHANGELOG.md. `go run ./tools/release prepare` merges the fragments into the release section in the usual subsection order and deletes them in the release commit; `go run ./tools/changelog -unreleased` previews the next release's notes, `-check` validates the fragments, and `tools/releaselint` counts a fragment as an Unreleased entry. Entries written directly under `## Unreleased` keep working during the transition. See [changelog.d/README.md](changelog.d/README.md).
