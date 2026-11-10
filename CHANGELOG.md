@@ -6,6 +6,12 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.6
+
+### Changed
+
+- **Stackurity Cloud tax invoices** use SAC 998315 by default and carry the line "This is a computer-generated invoice and does not need a signature."
+
 ## 0.19.5
 
 ### Added
