@@ -943,7 +943,10 @@ h1 .badge {
 .table-sticky-end > tbody > tr:not(.expanded) > td:last-child {
   position: sticky;
   right: 0;
-  white-space: nowrap;
+}
+/* Buttons wrap onto a second line rather than taking half the table. */
+.table-sticky-end > tbody > tr:not(.expanded) > td:last-child {
+  max-width: 16rem;
 }
 .table-sticky-end > tbody > tr:where(:not(.expanded)) > td:where(:last-child) {
   z-index: 1;
@@ -951,9 +954,6 @@ h1 .badge {
 }
 .table-sticky-end > thead > tr > th:last-child {
   z-index: 2;
-}
-.table-sticky-end .row-actions {
-  flex-wrap: nowrap;
 }
 /* Shadows where columns are hidden, so a cut-off table never looks complete. */
 .table-wrap.more-left .table-sticky-first > * > tr > :first-child {
@@ -1476,20 +1476,24 @@ select:disabled {
 
 details.json {
   min-width: 14rem;
-  max-width: 28rem;
+  max-width: 22rem;
 }
 details.json summary {
   cursor: pointer;
   color: var(--text-2);
 }
-/* One line, cut with an ellipsis: never wrapped character by character. */
+/* Up to two lines, then an ellipsis; words wrap whole (never character by
+   character), so the column stays narrow enough to fit the table. */
 details.json .json-summary {
-  display: inline-block;
+  display: -webkit-inline-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   max-width: calc(100% - 1.2em);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
 }
 details.json[open] {
   max-width: 560px;
