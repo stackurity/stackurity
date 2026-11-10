@@ -70,8 +70,15 @@ func syncOpen(t *testing.T, s *store.Store, ctx context.Context, asset int64, wa
 
 func setFinding(t *testing.T, s *store.Store, ctx context.Context, key, priority string, age time.Duration) {
 	t.Helper()
-	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET priority = $2, first_seen = now() - make_interval(secs => $3) WHERE key = $1`,
-		key, priority, age.Seconds()); err != nil {
+	// fix_due as detection sets it: first seen plus the policy's deadline
+	// for the priority (none for a priority without one).
+	var due any
+	if d, ok := fixDays[priority]; ok {
+		due = d
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET priority = $2, first_seen = now() - make_interval(secs => $3),
+		fix_due = now() - make_interval(secs => $3) + make_interval(days => $4::int) WHERE key = $1`,
+		key, priority, age.Seconds(), due); err != nil {
 		t.Fatal(err)
 	}
 }

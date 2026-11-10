@@ -162,7 +162,10 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
     resolution_kind: NOT_REMEDIATION_KINDS.join(","),
     resolved_within: String(sinceFrom),
   }).toString()}`;
-  const withinPct = r.resolved.total > 0 ? percent(r.resolved.within_sla / r.resolved.total) : null;
+  // The same SLA as the dashboard and Outcomes: of the fixes that had a fix-by date.
+  const withDeadline = r.resolved.with_deadline ?? r.resolved.total;
+  const noDeadline = r.resolved.total - withDeadline;
+  const withinPct = withDeadline > 0 ? percent(r.resolved.within_sla / withDeadline) : null;
   const byPrio = r.open.by_priority ?? {};
   const overdueByPrio = r.open.overdue_by_priority ?? {};
   const medianByPrio = r.resolved.median_days_by_priority ?? {};
@@ -266,7 +269,9 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
                   <span className="muted">—</span>
                 ) : (
                   <>
-                    {withinPct} <span className="muted">({n(r.resolved.within_sla)} of {n(r.resolved.total)})</span>
+                    {withinPct} <span className="muted">({n(r.resolved.within_sla)} of {n(withDeadline)} with a fix-by date</span>
+                    {noDeadline > 0 && <span className="muted">; {plural(noDeadline, "fix", "fixes")} had none and {noDeadline === 1 ? "is" : "are"} not counted</span>}
+                    <span className="muted">)</span>
                   </>
                 ),
               ],

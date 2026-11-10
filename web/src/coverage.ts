@@ -38,10 +38,16 @@ export function segmentLink(seg: CoverageSegment): string {
   return `/components?segment=${seg}`;
 }
 
-/** A share as a whole percent, rounded down so "100%" means every one. */
+/**
+ * A share as a whole percent, rounded to the nearest (29 of 31 is 94%), but
+ * never up to 100% unless every one is covered, nor down to 0% unless none is.
+ */
 export function percent(part: number, whole: number): number {
   if (whole <= 0) return 0;
-  return Math.floor((part * 100) / whole);
+  const p = Math.round((part * 100) / whole);
+  if (p === 100 && part < whole) return 99;
+  if (p === 0 && part > 0) return 1;
+  return p;
 }
 
 export interface HeadlineSegment {

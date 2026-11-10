@@ -1097,7 +1097,7 @@ Counts by severity, kind, verification, priority and state, plus SOS, overdue, u
 
 **Who:** viewer
 
-The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (findings fixed, that is remediated or removed, in each of the last 4 weeks), with `checked_at` and `end_of_today`.
+The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`; and `excepted`, open findings that are snoozed or accepted and so outside the SLA), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (findings fixed, that is remediated or removed, in each of the last 4 weeks), with `checked_at` and `end_of_today`.
 
 ### `GET /findings/verify`
 
@@ -1547,7 +1547,7 @@ Deletes a team.
 
 **Who:** viewer (organisation-wide roles; members with project access only get 403)
 
-Owner rules, most specific first: who new issues are assigned to ([design](design/owner-rules.md)). Each has `project_id` or `asset_id` (or neither: every asset), `layer` and `component` (the part of the stack, either may be empty), `user_id` and/or `team_id` with their names, `note`, `level` (6, part of one asset's stack, down to 1, the organisation default), `describe` (the rule in words, as issue history shows it) and `assigned` (open issues it assigned). `asset_id=` lists the rules that can apply to that asset (its own, its active projects' and the organisation's); `project_id=` those for the project.
+Owner rules, most specific first: who new issues are assigned to ([design](design/owner-rules.md)). Each has `project_id` or `asset_id` (or neither: every asset), `layer` and `component` (the part of the stack, either may be empty), `user_id` and/or `team_id` with their names, `note`, `level` (6, part of one asset's stack, down to 1, the organisation default), `describe` (the rule in words, as issue history shows it) and `assigned` (open issues it assigned). Without `asset_id` or `project_id`, `coverage` splits every open issue by how it got its owner (`open`, `by_rule`, `by_hand`, `unassigned`), so the rules' counts can be read against the open total. `asset_id=` lists the rules that can apply to that asset (its own, its active projects' and the organisation's); `project_id=` those for the project.
 
 ### `POST /owner-rules`
 
@@ -2911,7 +2911,7 @@ Only coverage `unsupported`, or a not-evaluated reason known to be Stackurity's 
 
 - assets and their collection status, hosts needing a reboot, and evaluation gaps;
 - open findings by severity, priority and evidence state (`open.by_evidence`), and overdue findings;
-- findings remediated in the period (upgraded, fixed or removed), with the share resolved within their deadline and the median days from first detection to resolution; findings closed without remediation (advisory withdrawn or changed) are counted apart;
+- findings remediated in the period (upgraded, fixed or removed), with the share resolved by their fix-by date out of those that had one (`within_sla` of `with_deadline`; the rest had none) and the median days from first detection to resolution; findings closed without remediation (advisory withdrawn or changed) are counted apart;
 - every active exception with its reason, mitigation, expiry and `verification`;
 - drift for each `replica_of` pair.
 
@@ -3064,7 +3064,7 @@ Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended
 - `closed_not_remediation`: findings that closed in the window with nothing changed on the asset, `total` and `by_kind` (`advisory_withdrawn`, `advisory_changed`, `superseded`, `not_evaluated`, `other`). They are not in `resolved`, `time_to_remedy` or `sla`.
 - `time_to_remedy`: `mean_days` (MTTR) and `median_days` from detection, or from the last reopening, to resolution, by `priority` and `kind`, for remediated and removed findings; `all` rows are totals.
 - `causes`: every closure by `cause` with its `resolution_kind`, `counts_as_remediation` and `evidence`: `upgraded` (a newer inventory shows another version), `remediation` (a verified remediation action) and `removed` (a complete inventory no longer lists it) count as remediation; `superseded` (`evidence: fresh_collection`), `advisory_withdrawn` and `advisory_changed` (`evidence: intelligence`), `not_evaluated` (`evidence: coverage`) and `other` do not.
-- `sla`: per priority, the policy's `fix_days`, remediated findings resolved within that many days of first detection out of those remediated, and open and overdue counts now.
+- `sla`: per priority, the policy's `fix_days` (for reference), `resolved` (remediated findings that had a fix-by date), `resolved_within_sla` (of those, resolved by their fix-by date), `resolved_no_deadline` (remediated with no fix-by date, outside the SLA), and open and overdue counts now (overdue: past the fix-by date). This is the deadline people saw (it follows patch windows, carried-over deadlines and priority changes) and the same definition as the Dashboard and the evidence report.
 - `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
 - `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
 - `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.

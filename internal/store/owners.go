@@ -647,3 +647,25 @@ func (s *Store) FixGroupOwners(ctx context.Context, group string) ([]OwnerCount,
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[OwnerCount])
 }
+
+// OwnerCoverage splits the open issues by how they got their owner, so the
+// owner-rule counts can be read against the open total: by a rule, by a
+// person, or not at all.
+type OwnerCoverage struct {
+	Open       int64 `json:"open"`
+	ByRule     int64 `json:"by_rule"`
+	ByHand     int64 `json:"by_hand"`
+	Unassigned int64 `json:"unassigned"`
+}
+
+// SummarizeOwnerCoverage counts the open issues the caller may see.
+func (s *Store) SummarizeOwnerCoverage(ctx context.Context) (*OwnerCoverage, error) {
+	c := &OwnerCoverage{}
+	err := s.Pool.QueryRow(ctx, `SELECT count(*),
+		  count(*) FILTER (WHERE f.owner_rule_id IS NOT NULL),
+		  count(*) FILTER (WHERE f.owner_rule_id IS NULL AND (f.assignee_user_id IS NOT NULL OR f.assignee_team_id IS NOT NULL)),
+		  count(*) FILTER (WHERE f.owner_rule_id IS NULL AND f.assignee_user_id IS NULL AND f.assignee_team_id IS NULL)
+		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		WHERE f.status = 'open'`).Scan(&c.Open, &c.ByRule, &c.ByHand, &c.Unassigned)
+	return c, err
+}

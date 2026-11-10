@@ -966,13 +966,25 @@ h1 .badge {
   box-shadow: var(--shadow), inset -12px 0 10px -10px var(--table-edge);
 }
 .table-more {
-  margin: calc(-1 * var(--s1)) 0 var(--s2);
+  margin: 0 0 var(--s1);
   text-align: right;
 }
 @media print {
   .table-more {
     display: none;
   }
+}
+
+/* Text columns keep a readable width; a table wider than its box scrolls
+   sideways (Table's cue) rather than wrapping every few words. */
+.table .col-text-wide {
+  min-width: 16rem;
+}
+.table .col-text {
+  min-width: 10rem;
+}
+.table .col-nowrap {
+  white-space: nowrap;
 }
 
 .row-actions {

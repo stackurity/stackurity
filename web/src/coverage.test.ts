@@ -50,7 +50,9 @@ test("every segment and legend item links to the component list filtered to that
   assert.equal(SEGMENTS.length, 5);
 });
 
-test("the share rounds down: 100% only when every component was checked", () => {
+test("the share rounds to the nearest, but 100% only when every component was checked", () => {
+  assert.equal(percent(29, 31), 94);
+  assert.equal(percent(1, 1000), 1);
   assert.equal(percent(999, 1000), 99);
   assert.equal(percent(1000, 1000), 100);
   assert.equal(percent(0, 0), 0);

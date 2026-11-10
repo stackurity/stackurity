@@ -134,9 +134,11 @@ func TestClosedFindingsSayWhy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	// The SLA rows hold only curl: with a fix-by date (Resolved) or
+	// without one (NoDeadline, as here: no priority deadline was set).
 	var slaResolved int64
 	for _, s := range r.SLA {
-		slaResolved += s.Resolved
+		slaResolved += s.Resolved + s.NoDeadline
 	}
 	if r.Resolved != 1 || r.Remediated != 1 || slaResolved != 1 || r.NotRemediation.Total != 3 ||
 		r.NotRemediation.ByKind[store.ResolutionAdvisoryWithdrawn] != 1 || r.NotRemediation.ByKind[store.ResolutionAdvisoryChanged] != 1 ||

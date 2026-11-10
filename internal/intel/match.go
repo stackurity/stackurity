@@ -618,7 +618,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			// FR-15: no definitive severity until the version is confirmed.
 			sev = "unknown"
 		}
-		title := g.title
+		title := issueTitle(g.title)
 		if title == "" {
 			// Distro advisories often have no summary.
 			title = g.key + " in " + t.Name

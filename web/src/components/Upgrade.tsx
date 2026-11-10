@@ -72,12 +72,37 @@ function keyList(keys: string[] | null | undefined): ReactNode {
   return <span className="mono small break">{keys.join(", ")}</span>;
 }
 
-/** Facts and reasons behind an upgrade recommendation. */
-export function UpgradeDetails({ rec }: { rec: UpgradeRecommendation }) {
+/** The first numeric part of a version ("13" of "13.4.0"), for semver-like versions only. */
+export function majorOf(v: string | null | undefined): string | null {
+  const m = /^v?(\d+)\.\d+/.exec(v ?? "");
+  return m ? m[1] : null;
+}
+
+/**
+ * Facts and reasons behind an upgrade recommendation. The recommendation
+ * covers every open issue on the package; `issueFix` is the version that
+ * fixes the one issue on screen, so a page about that issue can say when it
+ * alone has a smaller fix than the recommendation (a customer must never
+ * read a major upgrade as required when a minor one fixes their issue).
+ */
+export function UpgradeDetails({ rec, issueFix }: { rec: UpgradeRecommendation; issueFix?: string | null }) {
+  const issues = (rec.fixes ?? []).length;
+  const smallerIssueFix = !!issueFix && !!rec.minimum_fixed_version && issueFix !== rec.minimum_fixed_version;
+  const issueInLine = smallerIssueFix && majorOf(issueFix) !== null && majorOf(issueFix) === majorOf(rec.installed_version);
   const entries: [string, ReactNode][] = [
     ["installed", <span className="mono">{rec.installed_version || "unknown"}</span>],
+  ];
+  if (smallerIssueFix)
+    entries.push([
+      "fixes this issue",
+      <span className="badges">
+        <span className="mono">{issueFix}</span>
+        {issueInLine && <Badge status="in_line" tone="good" label="same major line" />}
+      </span>,
+    ]);
+  entries.push(
     [
-      "minimum fixed",
+      smallerIssueFix && issues > 1 ? `minimum for all ${issues} open issues` : "minimum fixed",
       rec.minimum_fixed_version ? (
         <span className="badges">
           <span className="mono">{rec.minimum_fixed_version}</span>
@@ -89,7 +114,7 @@ export function UpgradeDetails({ rec }: { rec: UpgradeRecommendation }) {
     ],
     ["recommended", <RecommendedVersion rec={rec} />],
     ["based on", BASIS_LABEL[rec.basis] ?? rec.basis],
-  ];
+  );
   if (rec.latest_stable) entries.push(["latest stable", <span className="mono">{rec.latest_stable}</span>]);
   entries.push([
     "release data",
@@ -112,7 +137,16 @@ export function UpgradeDetails({ rec }: { rec: UpgradeRecommendation }) {
   if (rec.unfixed && rec.unfixed.length > 0) entries.push(["does not resolve", keyList(rec.unfixed)]);
   return (
     <>
-      {rec.requires_major && (
+      {rec.requires_major && issueInLine && (
+        <div className="alert alert-warn" role="alert">
+          <strong>This issue alone is fixed in {issueFix}</strong>, in the installed {majorOf(rec.installed_version)}.x line. The recommendation goes
+          to <span className="mono">{rec.recommended_version || rec.minimum_fixed_version}</span>, a major upgrade, because it is the smallest
+          version that also fixes the other open issues on this package
+          {rec.lifecycle?.status === "end_of_life" ? `, and the ${rec.lifecycle.product} ${rec.lifecycle.cycle} line is end of life` : ""}.
+          Expect breaking changes and test before rolling out; upgrading to {issueFix} first closes this issue sooner.
+        </div>
+      )}
+      {rec.requires_major && !issueInLine && (
         <div className="alert alert-warn" role="alert">
           <strong>Major upgrade:</strong> the fix is only in a new major version; expect breaking changes and test before rolling out.
         </div>
@@ -137,13 +171,13 @@ export function UpgradeDetails({ rec }: { rec: UpgradeRecommendation }) {
   );
 }
 
-export function UpgradeCard({ rec }: { rec: UpgradeRecommendation }) {
+export function UpgradeCard({ rec, issueFix }: { rec: UpgradeRecommendation; issueFix?: string | null }) {
   return (
     <Card title="Upgrade recommendation">
       <p className="hint">
         Built only from stored advisory, registry release and end-of-life data. Where data is missing it says so rather than guessing.
       </p>
-      <UpgradeDetails rec={rec} />
+      <UpgradeDetails rec={rec} issueFix={issueFix} />
     </Card>
   );
 }

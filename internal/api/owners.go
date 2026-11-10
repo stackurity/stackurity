@@ -16,7 +16,19 @@ func (s *Server) listOwnerRules(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, all(rules))
+	out := struct {
+		list[store.OwnerRule]
+		// Coverage is how every open issue got its owner, so the rules'
+		// counts can be read against the open total.
+		Coverage *store.OwnerCoverage `json:"coverage,omitempty"`
+	}{list: all(rules)}
+	if qInt(r, "asset_id") == 0 && qInt(r, "project_id") == 0 {
+		if out.Coverage, err = s.Store.SummarizeOwnerCoverage(r.Context()); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+	}
+	writeJSON(w, 200, out)
 }
 
 func (s *Server) createOwnerRule(w http.ResponseWriter, r *http.Request) {
