@@ -1026,7 +1026,8 @@ export interface InventoryRow {
 export interface DashboardTrend {
   checked_at: string;
   end_of_today: string;
-  sla: { on_time: number; due_today: number; overdue: number };
+  /** excepted: open but snoozed or accepted, so outside the SLA (missing from older servers). */
+  sla: { on_time: number; due_today: number; overdue: number; excepted?: number };
   open: { day: string; open: number }[];
   fixed: { start: string; end: string; fixed: number }[];
 }

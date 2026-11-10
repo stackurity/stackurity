@@ -88,7 +88,7 @@ function FleetCodeCreated({ created, onDone, hosts }: { created: EnrollmentCreat
         </div>
         <details className="schema-help">
           <summary>One server at a time</summary>
-          <CodeBlock text={installCommand(created.code).command} label="Install command" />
+          <CodeBlock text={installCommand(created.code).command} secret={created.code} label="Install command" />
         </details>
         <p className="small muted">
           Each server exchanges the code for its own token; no snippet holds a long-lived token. Servers that already
@@ -599,7 +599,7 @@ function NewDroplets() {
           <Notice kind="warn">
             Copy it now: the code is shown once. It enrolls up to 100 droplets within 7 days; make a new one for later batches.
           </Notice>
-          <CodeBlock text={cloudInit(snippetInput(created.code))} label="cloud-init user data" />
+          <CodeBlock text={cloudInit(snippetInput(created.code))} secret={created.code} label="cloud-init user data" />
         </>
       ) : show ? (
         <div className="form-actions">

@@ -383,7 +383,7 @@ function RepoSource({ project, onWaiting }: { project: Project; onWaiting: (name
       <p>
         <strong>1. Save this token as a CI secret named STACKURITY_TOKEN.</strong> It is shown only now, and can only send scans.
       </p>
-      <CodeBlock text={secret} label="Collector token" />
+      <CodeBlock text={secret} secret={secret} label="Collector token" />
       <p>
         <strong>2. GitHub Actions:</strong> add this step after the checkout.
       </p>

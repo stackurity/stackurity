@@ -29,6 +29,10 @@ type SLACounts struct {
 	DueToday int64 `json:"due_today"`
 	// Overdue are past their fix-by date.
 	Overdue int64 `json:"overdue"`
+	// Excepted are open but suppressed or risk accepted: they have an
+	// approved exception, so no fix-by date applies and the SLA leaves
+	// them out. The dashboard says so, so its counts add up.
+	Excepted int64 `json:"excepted"`
 }
 
 // TrendPoint is the open findings at the end of a day.
@@ -63,10 +67,11 @@ func (s *Store) SummarizeTrend(ctx context.Context, endOfToday time.Time) (*Dash
 		  count(*) FILTER (WHERE `+activeFinding+` AND (f.fix_due IS NULL OR f.fix_due >= $1)),
 		  count(*) FILTER (WHERE `+activeFinding+` AND f.fix_due >= now() AND f.fix_due < $1),
 		  count(*) FILTER (WHERE `+activeFinding+` AND f.fix_due < now()),
+		  count(*) FILTER (WHERE f.state IN ('suppressed', 'risk_accepted')),
 		  count(*)
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		WHERE f.status = 'open'`, endOfToday).
-		Scan(&t.CheckedAt, &t.SLA.OnTime, &t.SLA.DueToday, &t.SLA.Overdue, &openNow); err != nil {
+		Scan(&t.CheckedAt, &t.SLA.OnTime, &t.SLA.DueToday, &t.SLA.Overdue, &t.SLA.Excepted, &openNow); err != nil {
 		return nil, err
 	}
 	// What opened and closed each day since TrendDays ago, newest first.

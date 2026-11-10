@@ -182,6 +182,17 @@ export function groupAssetsByKind<T extends NamedAsset>(list: T[]): { kind: stri
   }));
 }
 
+/**
+ * A calendar day ("2026-10-08" or an ISO time) as "8 Oct 2026", the same in
+ * every locale: 08/10/2026 reads as August in the US and October elsewhere.
+ */
+export function utcDay(day: string | null | undefined): string {
+  if (!day) return "";
+  const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(day) ? `${day}T00:00:00Z` : day);
+  if (isNaN(d.getTime())) return day;
+  return d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
 /** A probability (0–1) as a percentage with at most one decimal: 0.1 → "10%", 0.00042 → "0.042%". */
 export function percent(p: number): string {
   const pc = p * 100;
