@@ -9999,6 +9999,87 @@
     }
    }
   },
+  "/billing/invoices/{id}/pdf": {
+   "get": {
+    "operationId": "get_billing_invoices_id_pdf",
+    "summary": "Download a tax invoice as PDF (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. The tax invoice of the organisation's invoice `id` (`inv_...`) as `application/pdf`, as an attachment. 404 when it has none: not paid yet, paid before tax invoices came on, or waiting for billing details\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/pdf": {
+        "schema": {
+         "type": "string",
+         "format": "binary"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/billing/details": {
+   "put": {
+    "operationId": "put_billing_details",
+    "summary": "Change who the tax invoices are made out to (hosted edition)",
+    "description": "Stackurity Cloud (hosted) only. `legal_name`, `address`, `state` (GST state code, India), `tax_id` (GSTIN or EU VAT number), checked for the organisation's billing country, which does not change. Answers the billing. 409 before the first subscription\n\nRole: admin",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "cloud",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/admin/free-plan/preview": {
    "get": {
     "operationId": "get_admin_free_plan_preview",
