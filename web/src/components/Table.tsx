@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 
 export interface Column<T> {
   key: string;
@@ -17,6 +17,11 @@ export interface Column<T> {
  * (.table-wrap), never the page, and its first column (what the row is)
  * stays in view while it does. Pass stickyFirst={false} when the first
  * column does not say what the row is.
+ *
+ * A last column with the key "actions" (the row's buttons) is pinned to the
+ * right edge, so its controls are never cut off. While columns are hidden
+ * to one side, that edge shows a shadow and a line under the table says the
+ * table scrolls sideways.
  */
 export function Table<T>({
   columns,
@@ -41,9 +46,33 @@ export function Table<T>({
   /** Keep the first column in view while the table scrolls sideways (default). */
   stickyFirst?: boolean;
 }) {
+  const wrap = useRef<HTMLDivElement>(null);
+  const [hidden, setHidden] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const check = () => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setHidden((h) => (h.left === left && h.right === right ? h : { left, right }));
+    };
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", check);
+      ro?.disconnect();
+    };
+  }, []);
+  const pinEnd = columns.length > 1 && columns[columns.length - 1].key === "actions";
+  const wrapCls = ["table-wrap", hidden.left ? "more-left" : "", hidden.right ? "more-right" : ""].filter(Boolean).join(" ");
+  const tableCls = ["table", stickyFirst ? "table-sticky-first" : "", pinEnd ? "table-sticky-end" : ""].filter(Boolean).join(" ");
   return (
-    <div className="table-wrap" tabIndex={0} role="region" aria-label={caption ?? "Table"}>
-      <table className={stickyFirst ? "table table-sticky-first" : "table"}>
+    <>
+    <div ref={wrap} className={wrapCls} tabIndex={0} role="region" aria-label={caption ?? "Table"}>
+      <table className={tableCls}>
         {caption && <caption className="sr-only">{caption}</caption>}
         <thead>
           <tr>
@@ -96,5 +125,11 @@ export function Table<T>({
         </tbody>
       </table>
     </div>
+    {(hidden.left || hidden.right) && (
+      <p className="table-more small muted" aria-hidden="true">
+        {hidden.right ? "More columns to the right: scroll the table sideways." : "Scroll the table back for the first columns."}
+      </p>
+    )}
+    </>
   );
 }

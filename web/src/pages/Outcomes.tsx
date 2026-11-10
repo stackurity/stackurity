@@ -13,7 +13,7 @@ import {
 } from "../api";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
-import { absTime, dayCount, durationDays, humanize, plural } from "../format";
+import { absTime, dayCount, durationDays, humanize, percent, plural } from "../format";
 import { NOT_REMEDIATION_KINDS } from "../resolution";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
@@ -29,7 +29,7 @@ function share(part: number, whole: number): ReactNode {
   if (whole === 0) return <span className="muted">none</span>;
   return (
     <>
-      {n(part)} of {n(whole)} <span className="muted">({Math.round((part / whole) * 100)}%)</span>
+      {n(part)} of {n(whole)} <span className="muted">({percent(part / whole)})</span>
     </>
   );
 }

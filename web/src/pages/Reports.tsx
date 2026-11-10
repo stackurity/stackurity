@@ -6,7 +6,7 @@ import { Link, useSearchParams } from "react-router";
 import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
-import { absTime, assetKindLabel, durationDays, humanize, plural } from "../format";
+import { absTime, assetKindLabel, durationDays, humanize, percent, plural, utcDay } from "../format";
 import { NOT_REMEDIATION_KINDS, RESOLUTION_KIND_LABEL } from "../resolution";
 import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
@@ -103,7 +103,7 @@ function EvidenceReportPage() {
         sub={
           <>
             {project && <>{project.name} · </>}
-            {from} to {to} (inclusive)
+            {utcDay(from)} to {utcDay(to)} (inclusive, UTC days)
             {r && <> · generated {absTime(r.generated_at)}</>}
           </>
         }
@@ -128,7 +128,9 @@ function EvidenceReportPage() {
           <label htmlFor="rep-to">To</label>
           <input id="rep-to" type="date" required value={to} min={from} onChange={(e) => setDate("to", e.target.value)} />
         </div>
-        <p className="hint">The period can be one day to one year. Dates are UTC days.</p>
+        <p className="hint">
+          {utcDay(from)} to {utcDay(to)}. The period can be one day to one year. Dates are UTC days.
+        </p>
       </form>
       <GoodToKnow title="How this report is counted">
         <ul>
@@ -160,7 +162,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
     resolution_kind: NOT_REMEDIATION_KINDS.join(","),
     resolved_within: String(sinceFrom),
   }).toString()}`;
-  const withinPct = r.resolved.total > 0 ? Math.round((r.resolved.within_sla / r.resolved.total) * 100) : null;
+  const withinPct = r.resolved.total > 0 ? percent(r.resolved.within_sla / r.resolved.total) : null;
   const byPrio = r.open.by_priority ?? {};
   const overdueByPrio = r.open.overdue_by_priority ?? {};
   const medianByPrio = r.resolved.median_days_by_priority ?? {};
@@ -264,7 +266,7 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
                   <span className="muted">—</span>
                 ) : (
                   <>
-                    {withinPct}% <span className="muted">({n(r.resolved.within_sla)} of {n(r.resolved.total)})</span>
+                    {withinPct} <span className="muted">({n(r.resolved.within_sla)} of {n(r.resolved.total)})</span>
                   </>
                 ),
               ],

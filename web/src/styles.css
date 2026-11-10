@@ -80,6 +80,7 @@
   --radius-sm: 6px;
   --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
   --shadow: 0 1px 3px rgba(17, 24, 39, 0.08), 0 1px 2px rgba(17, 24, 39, 0.04);
+  --table-edge: rgba(17, 24, 39, 0.22);
   --shadow-lg: 0 10px 30px rgba(17, 24, 39, 0.12);
   --overlay: rgba(17, 24, 39, 0.45);
   --zebra: #fafafb;
@@ -149,6 +150,7 @@
     --danger: #ff7a70;
     --shadow-sm: none;
     --shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
+    --table-edge: rgba(0, 0, 0, 0.6);
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45);
     --overlay: rgba(0, 0, 0, 0.55);
     --zebra: #181b21;
@@ -936,6 +938,42 @@ h1 .badge {
 .table-sticky-first > thead > tr > th:first-child {
   z-index: 2;
 }
+/* The row's buttons stay at the right edge (Table pins a last "actions" column). */
+.table-sticky-end > thead > tr > th:last-child,
+.table-sticky-end > tbody > tr:not(.expanded) > td:last-child {
+  position: sticky;
+  right: 0;
+}
+/* Buttons wrap onto a second line rather than taking half the table. */
+.table-sticky-end > tbody > tr:not(.expanded) > td:last-child {
+  max-width: 16rem;
+}
+.table-sticky-end > tbody > tr:where(:not(.expanded)) > td:where(:last-child) {
+  z-index: 1;
+  background: var(--surface);
+}
+.table-sticky-end > thead > tr > th:last-child {
+  z-index: 2;
+}
+/* Shadows where columns are hidden, so a cut-off table never looks complete. */
+.table-wrap.more-left .table-sticky-first > * > tr > :first-child {
+  box-shadow: 6px 0 6px -4px var(--table-edge);
+}
+.table-wrap.more-right .table-sticky-end > * > tr > :last-child {
+  box-shadow: -6px 0 6px -4px var(--table-edge);
+}
+.table-wrap.more-right:not(:has(.table-sticky-end)) {
+  box-shadow: var(--shadow), inset -12px 0 10px -10px var(--table-edge);
+}
+.table-more {
+  margin: calc(-1 * var(--s1)) 0 var(--s2);
+  text-align: right;
+}
+@media print {
+  .table-more {
+    display: none;
+  }
+}
 
 .row-actions {
   display: flex;
@@ -1438,20 +1476,24 @@ select:disabled {
 
 details.json {
   min-width: 14rem;
-  max-width: 28rem;
+  max-width: 22rem;
 }
 details.json summary {
   cursor: pointer;
   color: var(--text-2);
 }
-/* One line, cut with an ellipsis: never wrapped character by character. */
+/* Up to two lines, then an ellipsis; words wrap whole (never character by
+   character), so the column stays narrow enough to fit the table. */
 details.json .json-summary {
-  display: inline-block;
+  display: -webkit-inline-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
   max-width: calc(100% - 1.2em);
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  vertical-align: bottom;
+  white-space: normal;
+  overflow-wrap: break-word;
+  vertical-align: top;
 }
 details.json[open] {
   max-width: 560px;
@@ -2064,10 +2106,12 @@ details.json pre {
   overflow-x: auto;
   white-space: pre;
 }
-.codeblock .btn {
+.codeblock-actions {
   position: absolute;
   top: 6px;
   right: 6px;
+  display: flex;
+  gap: 4px;
 }
 .fromto {
   font-family: var(--mono);
@@ -2721,7 +2765,7 @@ details.json pre {
 /* --- Add server (install command) */
 
 .install-command .codeblock pre {
-  padding-right: 84px; /* keep the end of the one-line command clear of the Copy button */
+  padding-right: 190px; /* keep the end of the one-line command clear of the Show code and Copy buttons */
 }
 .schema-help > .form-grid {
   margin-top: var(--s3);

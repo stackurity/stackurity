@@ -23,7 +23,7 @@ import { SetupChecklist } from "./Onboarding";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useLoad } from "../hooks";
-import { plural } from "../format";
+import { percent, plural } from "../format";
 import { Badge } from "../components/Badge";
 import { useUnchecked } from "../components/Unchecked";
 import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
@@ -379,13 +379,14 @@ function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | n
               <div
                 className="dash-meter"
                 role="img"
-                aria-label={`${Math.round(sla.share * 100)}% of open issues are within their deadline`}
+                aria-label={`${sla.onTime.toLocaleString()} of ${sla.total.toLocaleString()} issues with a deadline (${percent(sla.share)}) are within it`}
               >
                 <span className="dash-meter-fill" style={{ width: `${sla.share * 100}%` }} />
               </div>
               <p className="small muted">
-                {Math.round(sla.share * 100)}% of open issues within deadline
+                {sla.onTime.toLocaleString()} of {sla.total.toLocaleString()} ({percent(sla.share)}) within deadline
                 {sla.dueToday > 0 && <>, {sla.dueToday.toLocaleString()} due today</>}
+                {sla.excepted > 0 && <>. Not counted: {plural(sla.excepted, "open issue")} snoozed or accepted, so no deadline applies</>}
               </p>
             </>
           )}

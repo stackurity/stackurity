@@ -95,6 +95,17 @@ func TestDashboardTrend(t *testing.T) {
 	if code := viewer.do("GET", "/api/v1/findings?overdue=false", nil, &list); code != 200 || list.Total != tr.SLA.OnTime+tr.SLA.DueToday {
 		t.Errorf("on time: %d, %d findings", code, list.Total)
 	}
+	// An approved exception leaves the SLA and is counted on its own, so
+	// within deadline + overdue + excepted adds up to the open issues.
+	if _, err := e.st.Pool.Exec(ws, `UPDATE findings SET state = 'risk_accepted' WHERE key = 'GHSA-c'`); err != nil {
+		t.Fatal(err)
+	}
+	if code := viewer.do("GET", "/api/v1/dashboard/trend?tz=UTC", nil, &tr); code != 200 {
+		t.Fatalf("trend: %d", code)
+	}
+	if tr.SLA.Excepted != 1 || tr.SLA.OnTime+tr.SLA.DueToday != 1 || tr.SLA.Overdue != 1 {
+		t.Errorf("SLA with an exception: %+v", tr.SLA)
+	}
 	for _, bad := range []string{"/api/v1/dashboard/trend?tz=Not/AZone", "/api/v1/dashboard/trend?tz=../../etc/passwd", "/api/v1/findings?due_before=today"} {
 		if code := viewer.do("GET", bad, nil, nil); code != 400 {
 			t.Errorf("%s: %d", bad, code)

@@ -579,13 +579,33 @@ export function JobStatus({ state, onDismiss }: { state: JobState; onDismiss?: (
 }
 
 /** Preformatted, copyable block (setup snippets, config). */
-export function CodeBlock({ text, label }: { text: string; label: string }) {
+/** A secret as it is shown until revealed: its first characters (the same prefix lists show), then dots. */
+export function maskSecret(secret: string): string {
+  return `${secret.slice(0, Math.min(8, Math.floor(secret.length / 3)))}••••••••••••`;
+}
+
+/**
+ * A command to copy. With `secret`, that part of the text is masked on screen
+ * until "Show" is pressed (screen shares and screenshots do not leak it);
+ * Copy always copies the real text.
+ */
+export function CodeBlock({ text, label, secret }: { text: string; label: string; secret?: string }) {
   const [copied, setCopied] = useState(false);
+  const [shown, setShown] = useState(false);
+  const masked = !!secret && !shown;
+  const display = masked ? text.split(secret!).join(maskSecret(secret!)) : text;
   return (
     <div className="codeblock">
       <pre className="mono small" aria-label={label} tabIndex={0}>
-        {text}
+        {display}
       </pre>
+      <div className="codeblock-actions">
+      {secret && (
+        <button type="button" className="btn btn-sm" aria-pressed={shown} onClick={() => setShown((v) => !v)}>
+          {shown ? "Hide code" : "Show code"}
+          <span className="sr-only"> in {label}</span>
+        </button>
+      )}
       <button
         type="button"
         className="btn btn-sm"
@@ -602,6 +622,7 @@ export function CodeBlock({ text, label }: { text: string; label: string }) {
         {copied ? "Copied" : "Copy"}
         <span className="sr-only"> {label}</span>
       </button>
+      </div>
     </div>
   );
 }
