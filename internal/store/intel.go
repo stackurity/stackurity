@@ -9,6 +9,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/stackurity/stackurity/internal/lifecycle"
 	"github.com/stackurity/stackurity/internal/osv"
 )
 
@@ -348,14 +349,7 @@ func (s *Store) AssetOperatingSystems(ctx context.Context) (map[int64]string, er
 }
 
 // OSProducts maps os-release IDs to endoflife.date product names.
-var OSProducts = map[string]string{
-	"debian": "debian", "ubuntu": "ubuntu", "alpine": "alpine-linux", "rocky": "rocky-linux",
-	"almalinux": "almalinux", "rhel": "rhel", "centos": "centos", "amzn": "amazon-linux",
-	"fedora": "fedora", "opensuse-leap": "opensuse", "sles": "sles", "ol": "oracle-linux",
-	// Not an os-release ID: the macOS agent reports the OS as
-	// pkg:generic/macos (internal/collect/darwin).
-	"macos": "macos",
-}
+var OSProducts = lifecycle.OSProducts
 
 // ComponentsOfTypes returns ids of components with current inventory whose
 // purl type is in types.

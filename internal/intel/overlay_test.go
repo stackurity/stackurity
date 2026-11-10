@@ -10,6 +10,7 @@ import (
 	"github.com/package-url/packageurl-go"
 
 	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
+	"github.com/stackurity/stackurity/internal/lifecycle"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -116,7 +117,7 @@ func overlayResolver() *lifecycleResolver {
 	for p := range overlayCycles {
 		names[p] = true
 	}
-	return &lifecycleResolver{byPurl: overlayEDL, names: names, overlay: eoloverlay.Default()}
+	return &lifecycleResolver{lifecycle.Resolver{ByPurl: overlayEDL, Names: names, Overlay: eoloverlay.Default()}}
 }
 
 func cyclesOf(product string) []store.LifecycleCycle {
@@ -231,18 +232,18 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		if cyc == nil || cyc.Cycle != c.cycle {
 			t.Errorf("%s: release line of %q = %+v, want %s", c.purl, m.cycleVersion, cyc, c.cycle)
 		}
-		if repo := thirdPartyRepo(lr.overlay, typ, key, c.purl, version); (repo != "") != c.vendor {
+		if repo := thirdPartyRepo(lr.r.Overlay, typ, key, c.purl, version); (repo != "") != c.vendor {
 			t.Errorf("%s: vendor build %q, want %v", c.purl, repo, c.vendor)
 		}
 	}
-	for _, e := range lr.overlay.Document().Products {
+	for _, e := range lr.r.Overlay.Document().Products {
 		if !covered[e.Product] {
 			t.Errorf("overlay product %s has no realistic purl case", e.Product)
 		}
 	}
 
-	lr.byPurl["pkg:rpm/redhat/dotnet-sdk-8.0"] = "dotnet"
-	lr.names["dotnet"] = true
+	lr.r.ByPurl["pkg:rpm/redhat/dotnet-sdk-8.0"] = "dotnet"
+	lr.r.Names["dotnet"] = true
 	if m, ok := lr.resolve("rpm", "pkg:rpm/rocky/dotnet-sdk-8.0", "8.0.110-1.el9_4", ""); ok {
 		t.Errorf("dotnet-sdk on Rocky Linux mapped through the rpm family: %+v", m)
 	}
@@ -262,11 +263,11 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		if m, ok := lr.resolve(typ, key, "1", ""); ok {
 			t.Errorf("%s: mapped to %+v", purl, m)
 		}
-		if l, ok := lr.overlay.Untracked(key); !ok || l != label {
+		if l, ok := lr.r.Overlay.Untracked(key); !ok || l != label {
 			t.Errorf("%s: untracked %q %v, want %s", purl, l, ok, label)
 		}
 	}
-	for _, u := range lr.overlay.Document().Untracked {
+	for _, u := range lr.r.Overlay.Document().Untracked {
 		found := false
 		for _, want := range []string{"NestJS", "Flask", "FastAPI", "CodeIgniter", "Varnish"} {
 			found = found || u.Label == want

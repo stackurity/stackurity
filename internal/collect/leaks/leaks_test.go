@@ -40,6 +40,7 @@ func TestKnownFormats(t *testing.T) {
 		{"slack webhook", ".env", "SLACK_URL=" + key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1") + "\n", "slack-webhook", 1},
 		{"slack webhook in json", "config/notify.json", `{"url": "` + key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1") + `"}`, "slack-webhook", 1},
 		{"slack webhook first", "hook.txt", key("https://hooks.slack.com/services/", "T0ABCDEF1/B0ABCDEF2/", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1"), "slack-webhook", 1},
+		{"hugging face", "train.py", "HF = '" + key("hf_", "AbCdEfGhIjKlMnOpQrStUvWxYz", "01234567") + "'\n", "huggingface-token", 1},
 		{"database url", "docker/run.sh", "DATABASE_URL=postgres://app:Kq7v9Lm2xZ@db:5432/app\n", "database-url", 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -227,5 +228,14 @@ func TestGrade(t *testing.T) {
 		if l.Severity != tc.want || l.Exposure != tc.exposure {
 			t.Errorf("%+v: got %s, want %s", tc, l.Severity, tc.want)
 		}
+	}
+}
+
+// ScanValues hands each leak's value to the caller and nothing else keeps it.
+func TestScanValues(t *testing.T) {
+	var got []string
+	leaks := ScanValues(".env", []byte("STRIPE="+stripeKey+"\n"), func(l Leak, v string) { got = append(got, l.Rule+"="+v) })
+	if len(leaks) != 1 || len(got) != 1 || got[0] != "stripe-live-key="+stripeKey {
+		t.Fatalf("leaks %+v, values %q", leaks, got)
 	}
 }

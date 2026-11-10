@@ -114,6 +114,8 @@ var rules = []rule{
 		re: regexp.MustCompile(`\b(sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,})\b`)},
 	{id: "anthropic-key", title: "Anthropic API key", severity: critical, hint: "sk-ant-", shown: 7,
 		re: regexp.MustCompile(`\b(sk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{80,})`)},
+	{id: "huggingface-token", title: "Hugging Face access token", severity: critical, hint: "hf_", shown: 3,
+		re: regexp.MustCompile(`\b(hf_[A-Za-z0-9]{34,40})\b`)},
 	{id: "sendgrid-key", title: "SendGrid API key", severity: critical, hint: "SG.", shown: 3,
 		re: regexp.MustCompile(`\b(SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43})\b`)},
 	{id: "npm-token", title: "npm access token", severity: critical, hint: "npm_", shown: 4,
@@ -141,6 +143,13 @@ const allow = "stackurity:allow"
 // Scan reports the leaks in one file's contents. name is the file's path,
 // used for its name and extension and recorded as given.
 func Scan(name string, data []byte) []Leak {
+	return ScanValues(name, data, nil)
+}
+
+// ScanValues is Scan that also hands each reported leak's value to
+// onValue (when not nil), for a caller that checks whether a key is live
+// (the standalone scanner's --verify). The value is never stored here.
+func ScanValues(name string, data []byte, onValue func(l Leak, value string)) []Leak {
 	cfg := configFile(name)
 	var out []Leak
 	seen := map[string]bool{}
@@ -183,6 +192,9 @@ func Scan(name string, data []byte) []Leak {
 			if !seen[l.Fingerprint] {
 				seen[l.Fingerprint] = true
 				out = append(out, l)
+				if onValue != nil && r.id != "private-key" {
+					onValue(l, value)
+				}
 			}
 		}
 	}

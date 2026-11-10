@@ -3,7 +3,6 @@ package intel
 import (
 	"context"
 	"fmt"
-	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -12,6 +11,7 @@ import (
 	"github.com/package-url/packageurl-go"
 
 	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
+	"github.com/stackurity/stackurity/internal/lifecycle"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
@@ -40,49 +40,16 @@ type EvalStats struct {
 	Gaps     int   `json:"gaps"`
 }
 
-// versionedPackages match distro packages that carry the upstream release
-// in their name, which endoflife.date's package identifiers do not cover
-// (its dotnet identifiers name pkg:rpm/redhat/dotnet-sdk-X.Y, a namespace
-// the agent never reports). One package per installation is matched (PHP's
-// -common is always installed, as is dotnet-runtime-X.Y under the SDK and
-// ASP.NET Core runtime) so each runtime yields one finding, not one per
-// module.
-var versionedPackages = []struct {
-	re      *regexp.Regexp // the first group is the release
-	product string
-}{
-	{regexp.MustCompile(`^pkg:deb/[^/]+/php(\d+\.\d+)-common$`), "php"},
-	{regexp.MustCompile(`^pkg:deb/[^/]+/ruby(\d+\.\d+)$`), "ruby"},
-	// Ubuntu's and Microsoft's deb packages, RHEL's and Microsoft's rpm
-	// packages: dotnet-runtime-8.0 is .NET 8 (endoflife.date cycle "8").
-	{regexp.MustCompile(`^pkg:(?:deb|rpm)/[^/]+/dotnet-runtime-(\d+\.\d+)$`), "dotnet"},
-}
+// versionedPackagesPattern and versionedDebProduct live in
+// internal/lifecycle, shared with the standalone scanner.
+func versionedPackagesPattern() string { return lifecycle.VersionedPackagesPattern() }
 
-// versionedPackagesPattern is every versionedPackages expression as one
-// alternation, for a database regular-expression match (Postgres ~ reads the
-// same \d, [^/] and (?:...) syntax).
-func versionedPackagesPattern() string {
-	res := make([]string, len(versionedPackages))
-	for i, p := range versionedPackages {
-		res[i] = p.re.String()
-	}
-	return strings.Join(res, "|")
-}
-
-// versionedDebProduct returns the endoflife.date product and release cycle
-// named by a versioned distro package, e.g. php7.4-common -> php 7.4,
-// dotnet-runtime-8.0 -> dotnet 8.0.
 func versionedDebProduct(purlKey string) (product, cycle string, ok bool) {
-	for _, p := range versionedPackages {
-		if m := p.re.FindStringSubmatch(purlKey); m != nil {
-			return p.product, m[1], true
-		}
-	}
-	return "", "", false
+	return lifecycle.VersionedDebProduct(purlKey)
 }
 
 // osProducts maps os-release IDs to endoflife.date product names.
-var osProducts = store.OSProducts
+var osProducts = lifecycle.OSProducts
 
 // isMacOS reports whether r is a Mac's operating system row
 // (internal/collect/darwin).
