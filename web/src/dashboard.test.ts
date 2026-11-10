@@ -1,3 +1,4 @@
+import { percent } from "./format.ts";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -106,7 +107,12 @@ test("Risk at a glance: every number opens its filtered list", () => {
 });
 
 test("SLA: due today counts as within deadline; no share without issues", () => {
-  assert.deepEqual(slaSplit({ on_time: 6, due_today: 2, overdue: 2 }), { onTime: 8, overdue: 2, dueToday: 2, share: 0.8 });
+  assert.deepEqual(slaSplit({ on_time: 6, due_today: 2, overdue: 2 }), { onTime: 8, overdue: 2, dueToday: 2, total: 10, excepted: 0, share: 0.8 });
+  // The tour's numbers: 1,135 open = 1,132 within + 2 overdue + 1 accepted; the share is of 1,134, not rounded to 100%.
+  const tour = slaSplit({ on_time: 1132, due_today: 0, overdue: 2, excepted: 1 });
+  assert.equal(tour.total, 1134);
+  assert.equal(tour.excepted, 1);
+  assert.equal(percent(tour.share!), "99.8%");
   assert.equal(slaSplit({ on_time: 0, due_today: 0, overdue: 0 }).share, null);
   assert.equal(slaSplit(null).share, null);
 });

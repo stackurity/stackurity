@@ -287,11 +287,20 @@ export function glanceTiles(s: SummaryLike): { priority: GlanceTile[]; flags: Gl
  * due today included) against overdue, with the share within deadline. It
  * says nothing about fixed issues; "Fixed per week" counts those.
  */
-export function slaSplit(sla: DashboardTrend["sla"] | null | undefined): { onTime: number; overdue: number; dueToday: number; share: number | null } {
+export function slaSplit(sla: DashboardTrend["sla"] | null | undefined): {
+  onTime: number;
+  overdue: number;
+  dueToday: number;
+  /** Issues the SLA counts (within deadline + overdue): the share's denominator. */
+  total: number;
+  /** Open issues outside the SLA because they are snoozed or accepted. */
+  excepted: number;
+  share: number | null;
+} {
   const onTime = (sla?.on_time ?? 0) + (sla?.due_today ?? 0);
   const overdue = sla?.overdue ?? 0;
   const total = onTime + overdue;
-  return { onTime, overdue, dueToday: sla?.due_today ?? 0, share: total === 0 ? null : onTime / total };
+  return { onTime, overdue, dueToday: sla?.due_today ?? 0, total, excepted: sla?.excepted ?? 0, share: total === 0 ? null : onTime / total };
 }
 
 /** Points of a sparkline in a width x height box, oldest left; flat when every value is equal. */

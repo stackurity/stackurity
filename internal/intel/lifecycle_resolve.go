@@ -2,24 +2,18 @@ package intel
 
 import (
 	"context"
-	"strings"
 
 	"github.com/package-url/packageurl-go"
 
 	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
+	"github.com/stackurity/stackurity/internal/lifecycle"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
 )
 
-// lifecycleResolver decides which endoflife.date product, and which release
-// line of it, an inventory row is: endoflife.date's identifiers, the lifecycle
-// overlay (eoloverlay), runtimes and operating systems by name, and versioned
-// distro package names.
-type lifecycleResolver struct {
-	byPurl  map[string]string // endoflife.date purl -> product
-	names   map[string]bool   // every endoflife.date product
-	overlay *eoloverlay.Overlay
-}
+// lifecycleResolver wraps lifecycle.Resolver (shared with the standalone
+// scanner) with the catalogue the store holds.
+type lifecycleResolver struct{ r lifecycle.Resolver }
 
 func newLifecycleResolver(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) (*lifecycleResolver, error) {
 	byPurl, err := st.LifecycleProductsByPurl(ctx)
@@ -33,7 +27,7 @@ func newLifecycleResolver(ctx context.Context, st *store.Store, ov *eoloverlay.O
 	if ov == nil {
 		ov = eoloverlay.Default()
 	}
-	return &lifecycleResolver{byPurl: byPurl, names: names, overlay: ov}, nil
+	return &lifecycleResolver{lifecycle.Resolver{ByPurl: byPurl, Names: names, Overlay: ov}}, nil
 }
 
 // lifecycleMatch is a row's product and the version its release line is read
@@ -46,28 +40,8 @@ type lifecycleMatch struct {
 // resolve maps one row. kind is the row's evidence kind (operating-system,
 // runtime, ...) for generic purls.
 func (lr *lifecycleResolver) resolve(purlType, purlKey, version, kind string) (lifecycleMatch, bool) {
-	if purlType == "generic" && kind == "operating-system" {
-		p := osProducts[strings.TrimPrefix(purlKey, "pkg:generic/")]
-		return lifecycleMatch{p, version, "name"}, p != ""
-	}
-	if m, ok := lr.overlay.Product(purlKey, func(k string) string { return lr.byPurl[k] }); ok && lr.names[m.Product] {
-		cv := version
-		if m.Cycle != "" {
-			cv = m.Cycle
-		}
-		return lifecycleMatch{m.Product, cv, m.Rule}, true
-	}
-	// pkg:generic/<name> where <name> is an endoflife.date product
-	// (e.g. amazon-eks, aws-lambda, nginx).
-	if name := strings.TrimPrefix(purlKey, "pkg:generic/"); purlType == "generic" && lr.names[name] {
-		return lifecycleMatch{name, version, "name"}, true
-	}
-	if purlType == "deb" || purlType == "rpm" {
-		if p, cycle, ok := versionedDebProduct(purlKey); ok && lr.names[p] {
-			return lifecycleMatch{p, cycle, "package_name"}, true
-		}
-	}
-	return lifecycleMatch{}, false
+	m, ok := lr.r.Resolve(purlType, purlKey, version, kind)
+	return lifecycleMatch{m.Product, m.CycleVersion, m.Rule}, ok
 }
 
 // thirdPartyRepo names the repository a distro-type package (deb, rpm) was

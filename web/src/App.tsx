@@ -1,5 +1,5 @@
 import { lazy, Suspense, type ReactNode } from "react";
-import { Navigate, Route, Routes, useLocation, useParams } from "react-router";
+import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router";
 import type { UserRole } from "./api";
 import { useAuth } from "./auth";
 import { Layout } from "./components/Layout";
@@ -125,7 +125,12 @@ function RequireInstanceAdmin({ children }: { children: ReactNode }) {
   if (!me?.user?.instance_admin) {
     return (
       <div className="alert alert-warn" role="alert">
-        This page is for instance administrators, who operate this installation.
+        This page is for instance administrators, the people who run and upgrade this Stackurity server, so it is not part of your
+        organisation&apos;s settings. To see what each release changed, read the{" "}
+        <a href="https://github.com/stackurity/stackurity/blob/main/CHANGELOG.md" target="_blank" rel="noopener noreferrer">
+          changelog
+        </a>
+        , or ask whoever runs this server. <Link to="/">Back to Home</Link>
       </div>
     );
   }

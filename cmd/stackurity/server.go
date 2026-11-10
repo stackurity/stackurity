@@ -1403,6 +1403,10 @@ func intelConfig(dataDir string) (intel.Config, []string) {
 	return cfg, warnings
 }
 
+// evalAfterSync is how long after a feed sync its re-evaluation starts, so
+// the sync has recorded its success by then (see registerIntel).
+const evalAfterSync = 30 * time.Second
+
 func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.Logger) {
 	cfg, warnings := intelConfig(dataDir)
 	for _, w := range warnings {
@@ -1413,6 +1417,10 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	feedsOn := os.Getenv("STACKURITY_FEEDS") != "off"
 	// Re-evaluation is queued before the feed's cursor moves on, so a crash
 	// in between makes the retried sync queue it again rather than lose it.
+	// It starts evalAfterSync later: the feed records its success only after
+	// this returns, and an evaluation that starts first still sees the feed
+	// as never synced (a new server's first Ubuntu sync then matched almost
+	// nothing until the feed next changed).
 	syncer.Changed = func(ctx context.Context, feed string, res *intel.SyncResult) error {
 		ids, err := intel.ComponentsToEvaluate(ctx, st, feed, res)
 		if err != nil || len(ids) == 0 {
@@ -1426,7 +1434,7 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			return err
 		}
 		for _, ws := range wss {
-			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Time{}); err != nil {
+			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Now().Add(evalAfterSync)); err != nil {
 				return err
 			}
 		}

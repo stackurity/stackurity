@@ -78,7 +78,7 @@ export function InstallCommandTabs({
       />
       <div role="tabpanel" id={`${idPrefix}panel-${os}`} aria-labelledby={`${idPrefix}tab-${os}`} className="tabpanel">
         {os === "windows" && <p className="small">In PowerShell opened with <strong>Run as administrator</strong>:</p>}
-        <CodeBlock text={command} label={os === "windows" ? "Install command for Windows (PowerShell)" : os === "macos" ? "Install command for macOS" : "Install command for Linux"} />
+        <CodeBlock text={command} secret={code} label={os === "windows" ? "Install command for Windows (PowerShell)" : os === "macos" ? "Install command for macOS" : "Install command for Linux"} />
       </div>
     </div>
   );
