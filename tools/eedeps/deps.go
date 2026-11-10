@@ -18,4 +18,17 @@ import (
 	// the public suffix list.
 	_ "golang.org/x/net/idna"
 	_ "golang.org/x/net/publicsuffix"
+
+	// Tax-invoice PDFs of Stackurity Cloud (internal/cloud in
+	// stackurity-pro): signintech/gopdf (MIT) embeds a TrueType font, so
+	// customer names and addresses in any EU language print correctly. The
+	// fonts are golang.org/x/image's Go fonts (BSD-3-Clause), already a
+	// dependency.
+	_ "github.com/signintech/gopdf"
+	_ "golang.org/x/image/font/gofont/gobold"
+	_ "golang.org/x/image/font/gofont/goregular"
+	_ "golang.org/x/image/font/sfnt"
+	// Country names on the invoice ("Germany" for DE).
+	_ "golang.org/x/text/language"
+	_ "golang.org/x/text/language/display"
 )

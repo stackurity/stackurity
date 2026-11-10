@@ -518,6 +518,14 @@ export interface Billing {
   /** Currency for a billing country, and for every other country. */
   country_currency: Record<string, string>;
   default_currency: string;
+  /** Who the tax invoices are made out to; null before the first subscription. */
+  billing_details: BillingDetails | null;
+  /** What an admin must add before the next tax invoice: "state", "vat", or "". */
+  details_needed: string;
+  /** EU member states: business customers only, with a VAT number. */
+  vat_countries: string[];
+  /** Indian states and union territories by GST state code. */
+  indian_states: Record<string, string>;
   plans: BillingPlan[];
   /** False while paid plans cannot be bought yet: the plans are shown with contact_url instead. */
   billing_enabled: boolean;
@@ -537,6 +545,20 @@ export interface Invoice {
   period_start: string | null;
   period_end: string | null;
   url: string;
+  /** Stackurity Cloud's own tax invoice for a paid invoice, with its download link. */
+  tax_invoice: { number: string; url: string } | null;
+}
+
+/** Who the tax invoices are made out to (Stackurity Cloud). */
+export interface BillingDetails {
+  legal_name: string;
+  address: string;
+  /** GST state code of an Indian address ("29"). */
+  state: string;
+  /** GSTIN in India, VAT number in the EU. */
+  tax_id: string;
+  /** How the tax number was checked: "format" or "vies". */
+  tax_id_check?: string;
 }
 
 export interface PackManifest {

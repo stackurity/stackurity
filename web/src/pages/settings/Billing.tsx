@@ -1,14 +1,15 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type Billing, type BillingPlan, type BillingStatus, type Invoice, type List } from "../../api";
+import { api, type Billing, type BillingDetails, type BillingPlan, type BillingStatus, type Invoice, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { absTime } from "../../format";
 import { Table, type Column } from "../../components/Table";
-import { Card, CardFooter, EmptyState, ErrorBox, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
+import { Card, CardFooter, EmptyState, ErrorBox, FieldGroup, KeyValues, Loading, Notice, PageHeader } from "../../components/ui";
 import { UsageMeter } from "./Usage";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { errorView } from "../../errors";
+import { detailsComplete, detailsRule } from "../../billingDetails";
 
 /** Money in a currency's smallest unit (paise, cents), formatted for people. */
 export function money(amount: number, currency: string): string {
@@ -62,6 +63,71 @@ function priceWords(amount: number, p: BillingPlan): string {
   return money(amount, p.currency) + (p.tax_percent > 0 ? ` + ${p.tax_percent}% ${p.tax_label}` : "");
 }
 
+const EMPTY_DETAILS: BillingDetails = { legal_name: "", address: "", state: "", tax_id: "" };
+
+/** The fields of who the tax invoices are made out to, for a billing country. */
+function DetailsFields({ country, b, d, onChange, idp }: { country: string; b: Billing; d: BillingDetails; onChange: (d: BillingDetails) => void; idp: string }) {
+  const rule = detailsRule(country, b);
+  const set = (k: keyof BillingDetails) => (e: { target: { value: string } }) => onChange({ ...d, [k]: e.target.value });
+  const states = Object.entries(b.indian_states).sort((x, y) => x[1].localeCompare(y[1]));
+  return (
+    <FieldGroup
+      title="Invoice to"
+      description={
+        rule === "vat"
+          ? "Plans in the EU are for businesses: your invoices are made out to your company, with its VAT number, and VAT is reverse charged (you account for it)."
+          : rule === "state"
+            ? "Your tax invoices are made out to this name and address. The state decides the GST on them (CGST and SGST in Karnataka, IGST elsewhere)."
+            : "Your tax invoices are made out to this name and address. Leave them empty to use the organisation's name."
+      }
+    >
+      <div className="field">
+        <label htmlFor={`${idp}-name`}>{rule === "vat" ? "Company's legal name" : "Legal name (optional)"}</label>
+        <input id={`${idp}-name`} value={d.legal_name} maxLength={200} required={rule === "vat"} onChange={set("legal_name")} autoComplete="organization" />
+      </div>
+      <div className="field">
+        <label htmlFor={`${idp}-address`}>{rule === "vat" ? "Address" : "Address (optional)"}</label>
+        <textarea id={`${idp}-address`} rows={3} value={d.address} maxLength={500} required={rule === "vat"} onChange={set("address")} autoComplete="street-address" />
+      </div>
+      {rule === "state" && (
+        <div className="field">
+          <label htmlFor={`${idp}-state`}>State</label>
+          <select id={`${idp}-state`} value={d.state} onChange={set("state")} aria-describedby={`${idp}-state-hint`}>
+            <option value="">Choose…</option>
+            {states.map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+          <p className="hint" id={`${idp}-state-hint`}>
+            The state of the billing address. With a GSTIN it is taken from the GSTIN.
+          </p>
+        </div>
+      )}
+      <div className="field">
+        <label htmlFor={`${idp}-tax`}>{rule === "vat" ? "VAT number" : rule === "state" ? "GSTIN (optional)" : "Tax number (optional)"}</label>
+        <input
+          id={`${idp}-tax`}
+          value={d.tax_id}
+          maxLength={40}
+          required={rule === "vat"}
+          onChange={set("tax_id")}
+          aria-describedby={`${idp}-tax-hint`}
+          placeholder={rule === "vat" ? `${country === "GR" ? "EL" : country}123456789` : rule === "state" ? "29ABCDE1234F1Z5" : ""}
+        />
+        <p className="hint" id={`${idp}-tax-hint`}>
+          {rule === "vat"
+            ? "With or without the country prefix. It must be a valid VAT number for the billing country."
+            : rule === "state"
+              ? "For a GST-registered business: printed on your invoices."
+              : "Printed on your invoices if you give one."}
+        </p>
+      </div>
+    </FieldGroup>
+  );
+}
+
 /** Settings, Plan and billing (admins, hosted edition). */
 export function BillingPage() {
   const { meta } = useAuth();
@@ -110,6 +176,7 @@ export function BillingPage() {
           {b.billing_enabled ? (
             <>
               <ChoosePlan b={b} onChanged={setBilling} />
+              {b.billing_country && <DetailsCard b={b} onChanged={setBilling} />}
               <Invoices />
             </>
           ) : (
@@ -153,6 +220,7 @@ function Current({ b: cur, onChanged }: { b: Billing; onChanged: (b: Billing) =>
       }`,
     ]);
   if (cur.billing_country) entries.push(["Billing country", `${countryName(cur.billing_country)} (${cur.currency ?? ""})`]);
+  if (cur.billing_details?.tax_id) entries.push([cur.billing_country === "IN" ? "GSTIN" : cur.billing_country && cur.vat_countries.includes(cur.billing_country) ? "VAT number" : "Tax number", cur.billing_details.tax_id]);
   entries.push(["Data stored in", cur.region_label]);
   return (
     <Card
@@ -204,7 +272,9 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
   const [extra, setExtra] = useState(String(b.extra_assets ?? 0));
   const [paymentUrl, setPaymentUrl] = useState<string | null>(null);
   const [done, setDone] = useState<string | null>(null);
+  const [details, setDetails] = useState<BillingDetails>(EMPTY_DETAILS);
   const act = useAction();
+  const first = !b.billing_country;
 
   if (b.plans.length === 0) return null;
   const n = plan?.extra_asset_price ? Number(extra) : 0;
@@ -221,6 +291,7 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
         plan_id: plan.id,
         extra_assets: n,
         country,
+        ...(first ? { billing_details: details } : {}),
         ...(replace ? { replace: true } : {}),
       }),
     );
@@ -295,6 +366,7 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
                 </p>
               </div>
             )}
+            {first && country && <DetailsFields country={country} b={b} d={details} onChange={setDetails} idp="bill-first" />}
             {currency && (
               <>
                 <fieldset className="plan-choices">
@@ -368,7 +440,11 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
                     )
                   }
                 >
-                  <button type="submit" className="btn btn-primary" disabled={act.pending || !valid || unchanged || !country}>
+                  <button
+                    type="submit"
+                    className="btn btn-primary"
+                    disabled={act.pending || !valid || unchanged || !country || (first && !detailsComplete(country, details, b))}
+                  >
                     {act.pending ? "Saving…" : subscribed ? "Change plan" : "Subscribe"}
                   </button>
                 </CardFooter>
@@ -382,6 +458,70 @@ function ChoosePlan({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => v
           </>
         )}
       </form>
+    </Card>
+  );
+}
+
+/** Who the tax invoices are made out to, after the first subscription (the country stays). */
+function DetailsCard({ b, onChanged }: { b: Billing; onChanged: (b: Billing) => void }) {
+  const country = b.billing_country ?? "";
+  const saved = b.billing_details ?? EMPTY_DETAILS;
+  const [d, setD] = useState<BillingDetails>(saved);
+  const [editing, setEditing] = useState(false);
+  const act = useAction();
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    const r = await act.run(() => api.put<Billing>("/billing/details", d));
+    if (r) {
+      onChanged(r);
+      setEditing(false);
+    }
+  };
+  const lines: [string, ReactNode][] = [
+    ["Name", saved.legal_name || <span className="muted">the organisation's name</span>],
+    ["Address", saved.address ? <span style={{ whiteSpace: "pre-line" }}>{saved.address}</span> : <span className="muted">not given</span>],
+  ];
+  if (country === "IN") lines.push(["State", b.indian_states[saved.state] ?? <span className="muted">not given</span>]);
+  lines.push([detailsRule(country, b) === "vat" ? "VAT number" : country === "IN" ? "GSTIN" : "Tax number", saved.tax_id || "Not applicable"]);
+  return (
+    <Card
+      title="Billing details"
+      description="Who your tax invoices are made out to. Changes apply to the next invoice; invoices already issued stay as they are."
+      actions={
+        !editing ? (
+          <button type="button" className="btn btn-sm" onClick={() => (setD(saved), setEditing(true))}>
+            Edit
+          </button>
+        ) : undefined
+      }
+    >
+      {b.details_needed === "state" && (
+        <Notice kind="warn">
+          <strong>Add the state of your billing address</strong> to get your tax invoices: it decides the GST on them. Invoices waiting for it are issued
+          within minutes of saving.
+        </Notice>
+      )}
+      {b.details_needed === "vat" && (
+        <Notice kind="warn">
+          <strong>Add your company's legal name, address and VAT number</strong> to get your tax invoices.
+        </Notice>
+      )}
+      {editing ? (
+        <form className="form" onSubmit={save}>
+          <ErrorBox error={act.error} title="Could not save the billing details" />
+          <DetailsFields country={country} b={b} d={d} onChange={setD} idp="bill-details" />
+          <CardFooter status={`Billing country: ${countryName(country)}. To change it, contact support.`}>
+            <button type="button" className="btn" onClick={() => setEditing(false)} disabled={act.pending}>
+              Cancel
+            </button>
+            <button type="submit" className="btn btn-primary" disabled={act.pending || !detailsComplete(country, d, b)}>
+              {act.pending ? "Saving…" : "Save"}
+            </button>
+          </CardFooter>
+        </form>
+      ) : (
+        <KeyValues entries={lines} />
+      )}
     </Card>
   );
 }
@@ -429,6 +569,18 @@ const invoiceColumns: Column<Invoice>[] = [
   { key: "status", header: "Status", cell: (i) => i.status },
   { key: "paid", header: "Paid", cell: (i) => (i.paid_at ? <time title={absTime(i.paid_at)}>{day(i.paid_at)}</time> : <span className="muted">not yet</span>) },
   {
+    key: "tax",
+    header: "Tax invoice",
+    cell: (i) =>
+      i.tax_invoice ? (
+        <a href={i.tax_invoice.url} download={`${i.tax_invoice.number.replaceAll("/", "-")}.pdf`} title={`Download tax invoice ${i.tax_invoice.number} (PDF)`}>
+          {i.tax_invoice.number}
+        </a>
+      ) : (
+        <span className="muted">-</span>
+      ),
+  },
+  {
     key: "link",
     header: <span className="sr-only">Open</span>,
     cell: (i) =>
@@ -443,7 +595,7 @@ const invoiceColumns: Column<Invoice>[] = [
 function Invoices() {
   const res = useLoad(() => api.get<List<Invoice>>("/billing/invoices"), []);
   return (
-    <Card title="Invoices" description="Every charge, with a link to download the invoice.">
+    <Card title="Invoices" description="Every charge, with the payment provider's invoice and, once paid, your tax invoice to download as a PDF.">
       <ErrorBox error={res.error} title="Could not load invoices" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <EmptyState title="No invoices yet">Invoices appear here after the first payment.</EmptyState>}
