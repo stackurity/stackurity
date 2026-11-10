@@ -268,6 +268,7 @@ export function PoliciesTab() {
     {
       key: "name",
       header: "Policy",
+      className: "col-text-wide",
       cell: (p) => (
         <>
           <strong>{p.name}</strong>
@@ -275,9 +276,9 @@ export function PoliciesTab() {
         </>
       ),
     },
-    { key: "enabled", header: "Status", cell: (p) => (p.enabled ? <Badge status="enabled" /> : <Badge status="disabled" />) },
+    { key: "enabled", header: "Status", className: "col-nowrap", cell: (p) => (p.enabled ? <Badge status="enabled" /> : <Badge status="disabled" />) },
     { key: "target", header: "Target", cell: (p) => <TargetLabel target={p.target} /> },
-    { key: "scope", header: "Scope", cell: (p) => scopeText(p, teamList) },
+    { key: "scope", header: "Scope", className: "col-text", cell: (p) => scopeText(p, teamList) },
     {
       key: "changes",
       header: "Change types",
@@ -292,9 +293,10 @@ export function PoliciesTab() {
     {
       key: "approval",
       header: "Approval",
+      className: "col-nowrap",
       cell: (p) => (p.approval === "automatic" ? <Badge status="automatic" tone="warn" label="automatic" /> : <Badge status="required" tone="good" label="required" />),
     },
-    { key: "window", header: "Window", cell: (p) => <span className="small">{windowText(p)}</span> },
+    { key: "window", header: "Window", className: "col-text", cell: (p) => <span className="small">{windowText(p)}</span> },
   ];
   if (admin)
     cols.push({

@@ -123,6 +123,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
   const sla = r.sla ?? [];
   const slaResolved = sla.reduce((a, s) => a + s.resolved, 0);
   const slaWithin = sla.reduce((a, s) => a + s.resolved_within_sla, 0);
+  const slaNoDeadline = sla.reduce((a, s) => a + (s.resolved_no_deadline ?? 0), 0);
   const causes = r.causes ?? [];
   const closedTotal = causes.reduce((a, c) => a + c.count, 0);
   const notRemediation = r.closed_not_remediation ?? { total: 0, by_kind: {} };
@@ -184,7 +185,15 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
           }
         />
         <StatTile label="Median time to remedy" value={days(total?.median_days)} sub={total ? `mean ${typeof total.mean_days === "number" ? days(total.mean_days) : "none"}` : "nothing resolved"} />
-        <StatTile label="Resolved within SLA" value={slaResolved ? share(slaWithin, slaResolved) : <span className="muted">none</span>} sub="against the current policy" />
+        <StatTile
+          label="Resolved within SLA"
+          value={slaResolved ? share(slaWithin, slaResolved) : <span className="muted">none</span>}
+          sub={
+            slaNoDeadline > 0
+              ? `by each issue's fix-by date; ${plural(slaNoDeadline, "fix", "fixes")} had none and ${slaNoDeadline === 1 ? "is" : "are"} not counted`
+              : "by each issue's fix-by date"
+          }
+        />
         <StatTile
           label="Reopened"
           value={n(r.reopened.findings)}
@@ -229,6 +238,9 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
           </Card>
           <Card title="Time to remedy by kind" description="How long fixes took for vulnerabilities compared with end-of-life components.">
             <Table caption="Time to remedy by kind" columns={timingCols} rows={byKind} rowKey={(t) => t.kind} />
+            {!byKind.some((t) => t.kind === "end_of_life") && (
+              <p className="small muted">No end-of-life components were resolved in this window, so there is nothing to compare yet.</p>
+            )}
           </Card>
         </div>
       )}

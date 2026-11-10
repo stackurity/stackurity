@@ -1922,6 +1922,8 @@ export interface OutcomeSLA {
   fix_days: number;
   resolved: number;
   resolved_within_sla: number;
+  /** Fixes with no fix-by date, outside the SLA (missing from older servers). */
+  resolved_no_deadline?: number;
   rate: number | null;
   open_active: number;
   open_overdue: number;
@@ -3642,6 +3644,8 @@ export interface EvidenceReport {
     remediated?: number;
     removed?: number;
     within_sla: number;
+    /** Fixes that had a fix-by date: the SLA's denominator (missing from older servers: use total). */
+    with_deadline?: number;
     median_days: number | null;
     median_days_by_priority: Record<string, number> | null;
   };
@@ -4088,4 +4092,12 @@ export async function waitForJob(id: number, opts: { intervalMs?: number; timeou
     await new Promise((r) => setTimeout(r, interval));
   }
   return null;
+}
+
+/** GET /owner-rules coverage: how every open issue got its owner. */
+export interface OwnerCoverage {
+  open: number;
+  by_rule: number;
+  by_hand: number;
+  unassigned: number;
 }

@@ -282,7 +282,7 @@ export function FindingDetailPage() {
       )}
       <FindingFixGroup f={f} />
       {f.status === "open" && <RecommendedAction f={f} hasUpgrade={!!res.data.upgrade} />}
-      {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} />}
+      {f.status === "open" && res.data.upgrade && <UpgradeCard rec={res.data.upgrade} issueFix={f.fixed_version} />}
       {f.status === "open" && <AskAI question={askFromFinding(f)} />}
       <WorkflowPanel
         f={f}

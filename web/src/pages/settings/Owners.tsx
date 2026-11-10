@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { api, STACK_LAYERS, type Asset, type List, type OwnerPlan, type OwnerRule, type OwnerRuleInput, type Project, type Team, type User } from "../../api";
+import { api, STACK_LAYERS, type Asset, type List, type OwnerCoverage, type OwnerPlan, type OwnerRule, type OwnerRuleInput, type Project, type Team, type User } from "../../api";
 import { useAction, useLoad } from "../../hooks";
 import { plural } from "../../format";
 import { AssetSelect } from "../../components/AssetPicker";
@@ -24,7 +24,7 @@ const LEVEL_LABEL: Record<number, string> = {
 
 /** People > Owner rules: who new issues are assigned to. */
 export function OwnersPage() {
-  const rules = useLoad(() => api.get<List<OwnerRule>>("/owner-rules"), []);
+  const rules = useLoad(() => api.get<List<OwnerRule> & { coverage?: OwnerCoverage }>("/owner-rules"), []);
   const act = useAction();
   const [editing, setEditing] = useState<number | "new" | null>(null);
   const [plan, setPlan] = useState<OwnerPlan | null>(null);
@@ -183,6 +183,14 @@ export function OwnersPage() {
             />
           )}
         />
+      )}
+      {rules.data?.coverage && rules.data.items.length > 0 && (
+        <p className="small muted">
+          Of {plural(rules.data.coverage.open, "open issue")}: {rules.data.coverage.by_rule.toLocaleString()} assigned by these rules,{" "}
+          {rules.data.coverage.by_hand.toLocaleString()} assigned by a person, and{" "}
+          <strong>{rules.data.coverage.unassigned.toLocaleString()} with no owner</strong>
+          {rules.data.coverage.unassigned > 0 ? " (no rule matches them yet: add one, or assign them by hand)" : ""}.
+        </p>
       )}
       {rules.data && rules.data.items.length > 0 && (
         <GoodToKnow title="Which rule wins">

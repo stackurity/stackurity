@@ -217,6 +217,12 @@ export function FixesPage() {
           })),
         ]}
       />
+      {s && focus && FIX_BUCKETS.reduce((a, b) => a + bucketCount(b), 0) > s.groups && (
+        <p className="small muted ac-overlap">
+          A fix needed in several places is in the view of each place (for example Needs you on production and Lower priority elsewhere), so
+          these views add up to more than All fixes.
+        </p>
+      )}
       <div className="ac-toolbar">
         <FilterPanel
           active={active}

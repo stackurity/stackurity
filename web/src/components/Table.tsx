@@ -71,6 +71,12 @@ export function Table<T>({
   const tableCls = ["table", stickyFirst ? "table-sticky-first" : "", pinEnd ? "table-sticky-end" : ""].filter(Boolean).join(" ");
   return (
     <>
+    {/* Above the table, so a long table's cue is seen before scrolling down to its end. */}
+    {(hidden.left || hidden.right) && (
+      <p className="table-more small muted" aria-hidden="true">
+        {hidden.right ? "More columns to the right: scroll the table sideways →" : "← Scroll the table back for the first columns"}
+      </p>
+    )}
     <div ref={wrap} className={wrapCls} tabIndex={0} role="region" aria-label={caption ?? "Table"}>
       <table className={tableCls}>
         {caption && <caption className="sr-only">{caption}</caption>}
@@ -125,11 +131,6 @@ export function Table<T>({
         </tbody>
       </table>
     </div>
-    {(hidden.left || hidden.right) && (
-      <p className="table-more small muted" aria-hidden="true">
-        {hidden.right ? "More columns to the right: scroll the table sideways." : "Scroll the table back for the first columns."}
-      </p>
-    )}
     </>
   );
 }

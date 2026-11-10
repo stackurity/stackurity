@@ -72,12 +72,18 @@ type OutcomeCause struct {
 	Remediation bool   `json:"counts_as_remediation"`
 }
 
-// OutcomeSLA compares findings with the risk policy's fix deadline for
-// their priority, counted from first detection.
+// OutcomeSLA compares findings with their own fix-by date (fix_due), the
+// deadline people saw: the same definition as the dashboard and the
+// evidence report, so the three agree. FixDays is the current policy's
+// deadline for the priority, shown for reference.
 type OutcomeSLA struct {
-	Priority      string   `json:"priority"`
-	FixDays       int      `json:"fix_days"`
+	Priority string `json:"priority"`
+	FixDays  int    `json:"fix_days"`
+	// Resolved counts the fixes that had a fix-by date: the SLA's
+	// denominator. NoDeadline had none (no policy deadline for their
+	// priority when found, or an exception), so the SLA leaves them out.
 	Resolved      int64    `json:"resolved"`
+	NoDeadline    int64    `json:"resolved_no_deadline"`
 	ResolvedInSLA int64    `json:"resolved_within_sla"`
 	Rate          *float64 `json:"rate"`
 	OpenActive    int64    `json:"open_active"`  // open now, not suppressed or accepted
@@ -183,7 +189,7 @@ var closedInWindow = `WITH res AS (
 // with the start of their last open episode. Findings closed with nothing
 // changed on the asset are not remediation and are left out.
 var resolvedInWindow = `WITH res AS (
-	SELECT f.id, f.kind, f.priority, f.resolution, f.first_seen, f.resolved_at,
+	SELECT f.id, f.kind, f.priority, f.resolution, f.first_seen, f.resolved_at, f.fix_due,
 	  COALESCE((SELECT max(e.at) FROM finding_events e WHERE e.finding_id = f.id AND e.action = 'reopened'
 	    AND e.at <= f.resolved_at), f.first_seen) AS opened_at
 	FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
@@ -272,20 +278,27 @@ func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays 
 	for _, p := range prios {
 		sla[p] = &OutcomeSLA{Priority: p, FixDays: fixDays[p]}
 	}
-	rows, err = s.Pool.Query(ctx, resolvedInWindow+`SELECT res.priority, count(*),
-		count(*) FILTER (WHERE res.resolved_at <= res.first_seen + make_interval(days => d.days))
-		FROM res JOIN unnest($3::text[], $4::int[]) AS d(priority, days) ON d.priority = res.priority GROUP BY 1`, from, to, prios, days)
+	rows, err = s.Pool.Query(ctx, resolvedInWindow+`SELECT res.priority, count(*) FILTER (WHERE res.fix_due IS NOT NULL),
+		count(*) FILTER (WHERE res.fix_due IS NULL),
+		count(*) FILTER (WHERE res.resolved_at <= res.fix_due)
+		FROM res GROUP BY 1`, from, to)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var p string
-		var n, in int64
-		if err := rows.Scan(&p, &n, &in); err != nil {
+		var n, none, in int64
+		if err := rows.Scan(&p, &n, &none, &in); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		sla[p].Resolved, sla[p].ResolvedInSLA = n, in
+		x := sla[p]
+		if x == nil {
+			x = &OutcomeSLA{Priority: p}
+			sla[p] = x
+			prios = append(prios, p)
+		}
+		x.Resolved, x.NoDeadline, x.ResolvedInSLA = n, none, in
 	}
 	rows.Close()
 	if err := rows.Err(); err != nil {
@@ -293,7 +306,7 @@ func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays 
 	}
 	const active = `f.state IN ('new', 'acknowledged', 'in_progress')`
 	rows, err = s.Pool.Query(ctx, `SELECT f.priority, count(*) FILTER (WHERE `+active+`),
-		count(*) FILTER (WHERE `+active+` AND d.days IS NOT NULL AND now() > f.first_seen + make_interval(days => d.days)),
+		count(*) FILTER (WHERE `+active+` AND f.fix_due < now()),
 		count(*) FILTER (WHERE f.state IN ('suppressed', 'risk_accepted')), count(*) FILTER (WHERE f.verification = 'stale')
 		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		LEFT JOIN unnest($1::text[], $2::int[]) AS d(priority, days) ON d.priority = f.priority
