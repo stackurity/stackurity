@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -71,6 +72,15 @@ const maxRuntimeCandidates = 200
 // collectRuntimes adds unmanaged runtimes to b and records coverage.
 func (c *Collector) collectRuntimes(ctx context.Context, b *model.ObservationBatch) {
 	owned, ownErr := c.ownedFiles()
+	if errors.Is(ownErr, errNoPackageDB) && !c.exists("var/lib/dpkg/status") {
+		// No package database the collector reads (a scratch or
+		// distroless image): no package was reported, so none can be
+		// reported twice, and every runtime is outside a package manager.
+		// Distroless images record their packages in
+		// /var/lib/dpkg/status.d, which is not read; reading it would need
+		// its file lists here too.
+		owned, ownErr = map[string]bool{}, nil
+	}
 	candidates := c.runtimeCandidates()
 	var rpmCheck []string
 	for _, cand := range candidates {
@@ -215,6 +225,14 @@ func usrMerge(p string) string {
 	return p
 }
 
+// errNoPackageDB: the root has no dpkg file lists, apk or rpm database.
+var errNoPackageDB = errors.New("no package database")
+
+func (c *Collector) exists(p string) bool {
+	_, err := os.Stat(c.path(p))
+	return err == nil
+}
+
 // ownedFiles returns the paths that dpkg or apk installed. It returns nil,
 // nil when neither database exists (an rpm host is checked separately).
 func (c *Collector) ownedFiles() (map[string]bool, error) {
@@ -262,7 +280,7 @@ func (c *Collector) ownedFiles() (map[string]bool, error) {
 		if hasRPMDB(c) {
 			return nil, nil
 		}
-		return nil, fmt.Errorf("no package database")
+		return nil, errNoPackageDB
 	}
 	return owned, nil
 }
@@ -284,13 +302,27 @@ func (c *Collector) probeRuntime(ctx context.Context, cand *runtimeCandidate) mo
 		set(cand.probe.product, m[1], model.ConfidenceInferred, "install-path")
 		return o
 	}
+	// When the binary is not run, or running it gives no version, the
+	// files installed with it may still say (python.go).
+	fromFiles := func() model.Observation {
+		if cand.probe.product != "python" {
+			return o
+		}
+		if fv, ok := c.pythonVersionFromFiles(cand.resolved); ok {
+			set("python", fv.version, fv.confidence, fv.how)
+			for k, v := range fv.evidence {
+				o.Evidence[k] = v
+			}
+		}
+		return o
+	}
 	if c.RunVersion == nil {
 		o.Evidence["not_run"] = "running binaries is disabled"
-		return o
+		return fromFiles()
 	}
 	if reason := c.unsafeToRun(cand.resolved); reason != "" {
 		o.Evidence["not_run"] = reason
-		return o
+		return fromFiles()
 	}
 	out, err := c.RunVersion(ctx, c.path(cand.resolved), cand.probe.args)
 	if m := cand.probe.re.FindSubmatch(out); m != nil {
@@ -306,7 +338,7 @@ func (c *Collector) probeRuntime(ctx context.Context, cand *runtimeCandidate) mo
 	} else {
 		o.Evidence["error"] = "version not recognised in output"
 	}
-	return o
+	return fromFiles()
 }
 
 // unsafeToRun refuses binaries another user could have replaced: running

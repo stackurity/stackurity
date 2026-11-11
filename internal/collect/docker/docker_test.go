@@ -93,9 +93,7 @@ func (f *fakeDocker) add(id string, tags []string, workdir string, layers ...[]b
 	arch := saveArchive(id, layers...)
 	info := Image{ID: id, RepoTags: tags, Size: int64(len(arch)), Os: "linux", Architecture: "amd64"}
 	if workdir != "" {
-		info.Config = &struct {
-			WorkingDir string `json:"WorkingDir"`
-		}{workdir}
+		info.Config = &ImageConfig{WorkingDir: workdir}
 	}
 	for _, tg := range tags {
 		name, _, _ := strings.Cut(tg, ":")
@@ -122,7 +120,10 @@ type entry struct {
 	mode             int64
 }
 
-func file(name, body string) entry   { return entry{name: name, body: body, typ: tar.TypeReg} }
+func file(name, body string) entry { return entry{name: name, body: body, typ: tar.TypeReg} }
+func exe(name, body string) entry {
+	return entry{name: name, body: body, typ: tar.TypeReg, mode: 0o755}
+}
 func link(name, target string) entry { return entry{name: name, link: target, typ: tar.TypeSymlink} }
 func exe(name string, body []byte) entry {
 	return entry{name: name, body: string(body), typ: tar.TypeReg, mode: 0o755}
