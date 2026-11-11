@@ -46,8 +46,9 @@ func actionCentreHost(t *testing.T, e *env, ctx context.Context, name, version s
 }
 
 type acGroup struct {
-	ID          string `json:"id"`
-	TopPriority string `json:"top_priority"`
+	ID          string         `json:"id"`
+	TopPriority string         `json:"top_priority"`
+	ByPriority  map[string]int `json:"by_priority"`
 }
 
 type acList struct {
@@ -67,6 +68,10 @@ func TestFixGroupWorkAndFilters(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	a := actionCentreHost(t, e, ctx, "web-1", "4.17.15")
 	actionCentreHost(t, e, ctx, "web-2", "4.17.10")
+	// One urgent issue, for the fixes' share of P1 and P2 issues.
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE findings SET priority = 'P1' WHERE id = (SELECT min(id) FROM findings WHERE asset_id = $1)`, a); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := planner.Rebuild(ctx, e.st, time.Now()); err != nil {
 		t.Fatal(err)
 	}
@@ -121,6 +126,20 @@ func TestFixGroupWorkAndFilters(t *testing.T) {
 			t.Errorf("g1 work = %+v", w)
 		}
 	}
+	// A pending request to ignore an issue shows as waiting for approval.
+	if _, err := e.st.Pool.Exec(ctx, `INSERT INTO ignore_requests (finding_ids, reason, note, scope, expiry) VALUES ($1, 'accepted_risk', 'test', 'asset', 'never')`,
+		[]int64{fs.Items[0].ID}); err != nil {
+		t.Fatal(err)
+	}
+	work.Items = nil
+	if eng.do("GET", "/api/v1/fix-groups/work?ids="+url.QueryEscape(ids), nil, &work); len(work.Items) != 2 {
+		t.Fatalf("work again: %+v", work)
+	}
+	for _, w := range work.Items {
+		if want := map[bool]int64{true: 1, false: 0}[w.GroupID == g1]; w.AwaitingApproval != want {
+			t.Errorf("%s awaiting approval = %d, want %d", w.GroupID, w.AwaitingApproval, want)
+		}
+	}
 	// The viewer sees the same owners, but none is theirs.
 	work.Items = nil
 	if view.do("GET", "/api/v1/fix-groups/work?ids="+url.QueryEscape(g1), nil, &work); len(work.Items) != 1 || work.Items[0].Mine != 0 {
@@ -166,6 +185,7 @@ func TestFixGroupWorkAndFilters(t *testing.T) {
 		ByPriority map[string]int `json:"by_priority"`
 		Overdue    int            `json:"overdue"`
 		Exploited  int            `json:"exploited"`
+		Urgent     int            `json:"urgent_findings"`
 	}
 	if code := view.do("GET", "/api/v1/fix-groups/summary?group_by=asset", nil, &sum); code != 200 || sum.Groups != 2 || sum.Overdue != 1 || sum.Exploited != 0 {
 		t.Fatalf("summary: %d %+v", code, sum)
@@ -174,6 +194,13 @@ func TestFixGroupWorkAndFilters(t *testing.T) {
 		if sum.ByPriority[p] != n {
 			t.Errorf("summary by priority %v, list %v", sum.ByPriority, byPrio)
 		}
+	}
+	urgent := 0
+	for _, g := range all.Items {
+		urgent += g.ByPriority["P1"] + g.ByPriority["P2"]
+	}
+	if urgent == 0 || sum.Urgent != urgent {
+		t.Errorf("urgent findings = %d, the fixes' P1 and P2 add up to %d", sum.Urgent, urgent)
 	}
 	sum.ByPriority = nil
 	if view.do("GET", "/api/v1/fix-groups/summary?group_by=asset&asset_id="+itoa(a), nil, &sum); sum.Groups != 1 || sum.Overdue != 1 {

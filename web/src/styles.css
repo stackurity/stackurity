@@ -4570,6 +4570,23 @@ h6.md-h {
 .fix-what .hint {
   margin: var(--s2) 0 0;
 }
+/* A fix's expected impact: short label and value pairs that wrap on narrow screens. */
+.fix-impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  margin: var(--s3) 0 0;
+}
+.fix-impact dt {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-impact dd {
+  margin: 0;
+}
 .fix-found-in {
   margin: var(--s2) 0 2px;
 }

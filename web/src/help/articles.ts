@@ -1043,12 +1043,12 @@ stackurity.exe agent --interval 6h`,
     where: ["Security", "Fixes"],
     keywords: "fix group actions action plan security updates release upgrade kernels needs you hidden snooze",
     body: [
-      { p: "**Fixes** answers “what should we do?”. Each fix is one change, such as an upgrade, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
+      { p: "**Fixes** answers “what should I do?”, where All issues answers “what is wrong?”, Leaked keys “which credentials must I rotate?” and Automatic fixes “what can Stackurity safely do for me?”. Each fix is one change, such as an upgrade, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
       { h: "The action centre" },
       {
         list: [
           "**At a glance**: open fixes by priority (P1 to P4), fixes **Overdue** (an issue past the risk policy's fix deadline), the issues the fixes clear, and the issues a newer scan showed fixed in the last 30 days (from [Outcomes](help:outcomes)). Click a priority or Overdue to show only those fixes; click it again to show all.",
-          "**The table** lists every fix in one row: priority, the fix and its kind, where it is needed, the issues it clears, known exploited or SOS, effort, owner (who its issues are assigned to), the earliest due date, and its status: **Open**, **In progress** (someone started, or said they applied it), **Waiting for check** or **Regressed** (fixed before and back). Click a column heading to sort by it; click a row to open the fix. **Detailed** shows the same fixes as cards, with the command and the packages.",
+          "**The table** lists every fix in one row, in the order you decide in: **Recommended action** (what changes, such as “Upgrade openssl to 3.0.15”, with its kind and a note when it is a major upgrade or needs a restart), **Affected assets** (where), **Risk** (the priority of its most urgent issue, plus **SOS** and **KEV** when an issue matches an SOS rule or is known to be exploited), **Issues resolved** (and, when it clears P1 or P2 issues, its share of all open P1 and P2 issues), **Owner** (who its issues are assigned to), **Deadline** (the earliest fix date; red only once it has passed) and **Status**: **Not started**, **In progress** (someone started, or said they applied it), **Waiting for approval** (someone asked to ignore some of its issues and security has yet to decide), **Waiting for check** or **Regressed** (fixed before and back). Click a column heading to sort by it; click a row to open the fix. On a narrow screen the table scrolls sideways, and a line above it says so. **Detailed** shows the same fixes as cards, with the command and the packages.",
           "**Views**: built-in ones (My fixes, P1 & P2, Overdue, Exploited) and your own. Set the filters, give them a name and **Save**; only you see your views.",
           "**Select** fixes (engineer role or higher) to **Assign owner** (and snooze or ignore, with the same rules as on a fix's page) or **Check again**, which asks every place that can report on demand for a fresh report.",
         ],
@@ -1079,7 +1079,7 @@ stackurity.exe agent --interval 6h`,
       { h: "A fix page" },
       {
         list: [
-          "**What and why**: one sentence, for example how many issues it clears and how many are known to be exploited.",
+          "**What and why**: one sentence, for example how many issues it clears and how many are known to be exploited, then the expected impact: vulnerabilities resolved and their share of all open P1 and P2 issues, affected assets, known exploited issues addressed, whether it is a major upgrade (possible breaking changes) and whether it needs a restart (a Windows cumulative update, or OS updates that include the kernel). A fact the data does not cover is left out rather than shown as “no”.",
           "**Where**: the asset, its environment, the files the issues were found in, and the packages. **Last checked** says when the asset last reported, with the command to check again now (restart the agent on a server, `stackurity scan` for a repository).",
           "**How to fix**: the command or upgrade with a **Copy** button, the kind of change (patch, minor, major), a warning for major upgrades, and the recommended version from release data.",
           "**Issues this fix clears**, with bars by priority and by severity.",

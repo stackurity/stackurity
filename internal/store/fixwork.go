@@ -27,6 +27,9 @@ type FixWork struct {
 	Unassigned int64    `json:"unassigned"`
 	// Mine counts open issues assigned to the caller.
 	Mine int64 `json:"mine"`
+	// AwaitingApproval counts open issues in a pending request to ignore
+	// them, which a security or admin user has yet to decide.
+	AwaitingApproval int64 `json:"awaiting_approval"`
 }
 
 // FixWorkMax is how many groups one FixGroupWork call takes.
@@ -42,7 +45,8 @@ func (s *Store) FixGroupWork(ctx context.Context, ids []string, userID int64) ([
 		SELECT f.fix_group, COALESCE(u.email, t.name) AS owner, count(*) AS n
 		FROM findings f LEFT JOIN users u ON u.id = f.assignee_user_id LEFT JOIN teams t ON t.id = f.assignee_team_id
 		WHERE f.fix_group = ANY($1) AND f.status = 'open' AND (f.assignee_user_id IS NOT NULL OR f.assignee_team_id IS NOT NULL)
-		GROUP BY 1, 2)
+		GROUP BY 1, 2),
+	pending AS (SELECT DISTINCT unnest(finding_ids) AS id FROM ignore_requests WHERE status = 'pending')
 	SELECT f.fix_group,
 		count(*) FILTER (WHERE `+activeFinding+`),
 		min(f.fix_due) FILTER (WHERE `+activeFinding+`),
@@ -51,7 +55,8 @@ func (s *Store) FixGroupWork(ctx context.Context, ids []string, userID int64) ([
 		count(*) FILTER (WHERE f.regressed_at IS NOT NULL AND f.state IN ('new', 'acknowledged')),
 		COALESCE((SELECT array_agg(owner ORDER BY n DESC, owner) FROM (SELECT owner, n FROM o WHERE o.fix_group = f.fix_group ORDER BY n DESC, owner LIMIT 5) x), '{}'),
 		count(*) FILTER (WHERE f.assignee_user_id IS NULL AND f.assignee_team_id IS NULL),
-		count(*) FILTER (WHERE $2 > 0 AND f.assignee_user_id = $2)
+		count(*) FILTER (WHERE $2 > 0 AND f.assignee_user_id = $2),
+		count(*) FILTER (WHERE f.id IN (SELECT id FROM pending))
 	FROM findings f WHERE f.fix_group = ANY($1) AND f.status = 'open'
 	GROUP BY f.fix_group ORDER BY f.fix_group`, ids, userID)
 	if err != nil {
@@ -59,7 +64,7 @@ func (s *Store) FixGroupWork(ctx context.Context, ids []string, userID int64) ([
 	}
 	return pgx.CollectRows(rows, func(r pgx.CollectableRow) (FixWork, error) {
 		var w FixWork
-		err := r.Scan(&w.GroupID, &w.Active, &w.Due, &w.Overdue, &w.InProgress, &w.Regressed, &w.Owners, &w.Unassigned, &w.Mine)
+		err := r.Scan(&w.GroupID, &w.Active, &w.Due, &w.Overdue, &w.InProgress, &w.Regressed, &w.Owners, &w.Unassigned, &w.Mine, &w.AwaitingApproval)
 		return w, err
 	})
 }

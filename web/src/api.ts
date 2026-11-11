@@ -3489,6 +3489,8 @@ export interface FixGroup {
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
+  /** True when the change takes effect only after a restart (a Windows cumulative update, or OS updates with a kernel image). */
+  reboot?: boolean;
   /** No-fix groups: per application package, what can be done without a fixed version. */
   no_fix_advice?: NoFixAdvice | null;
 }
@@ -3574,6 +3576,8 @@ export interface FixGroupSummary {
   overdue?: number;
   /** Fixes with a known exploited issue. */
   exploited?: number;
+  /** P1 and P2 issues across all the fixes: what one fix's P1 and P2 issues are a share of. */
+  urgent_findings?: number;
 }
 
 /** GET /fix-groups/work: where the work on one fix group stands. */
@@ -3587,6 +3591,8 @@ export interface FixWork {
   owners: string[] | null;
   unassigned: number;
   mine: number;
+  /** Open issues in a pending request to ignore them, waiting for security to decide. */
+  awaiting_approval?: number;
 }
 
 /** GET/POST /saved-views: a person's own named filter on a page. */

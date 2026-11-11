@@ -6,7 +6,12 @@ export function LeaksPage() {
     <>
       <PageHeader
         title="Leaked keys"
-        sub="Keys, tokens and passwords found written in files on your servers, applications and repositories. Stackurity never stores the values: each row names the kind of key, where it is and why that matters."
+        sub={
+          <>
+            <strong>Which credentials must I rotate?</strong> Keys, tokens and passwords found written in files on your servers, applications and
+            repositories. Stackurity never stores the values: each row names the kind of key, where it is and why that matters.
+          </>
+        }
       />
       <LeaksView />
     </>

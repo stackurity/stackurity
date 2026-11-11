@@ -113,6 +113,10 @@ type Group struct {
 	RequiresMajor     bool     `json:"requires_major,omitempty"`
 	RecommendedYanked bool     `json:"recommended_yanked,omitempty"`
 	Rationale         []string `json:"rationale,omitempty"`
+	// Reboot is true when the change only takes effect after a restart: a
+	// Windows cumulative update, or OS updates that include the kernel.
+	// False means none of those, not a promise that no service restarts.
+	Reboot bool `json:"reboot,omitempty"`
 	// NoFixAdvice says, per application package in a NoFix group, what can
 	// be done without a fixed version (see AdviseNoFix).
 	NoFixAdvice *NoFixAdvice `json:"no_fix_advice,omitempty"`
@@ -374,6 +378,7 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Title = "Install available security updates"
 		g.Action = update
 		g.Effort = "low"
+		g.Reboot = hasKernel(g.pkgs)
 		g.Note = fmt.Sprintf("%s across %s are fixed by updates already published for %s.", issues, plural(g.PackageCount, "package"), osLabel)
 	case WindowsUpdate:
 		describeWindowsUpdate(g, osLabel)
@@ -438,7 +443,7 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Effort = "medium"
 		if len(from) > 0 {
 			if ct, err := version.ChangeType(g.purlType, from[0], g.ToVersion); err == nil {
-				g.Effort = effortOf(ct)
+				g.Effort, g.ChangeType = effortOf(ct), ct
 			}
 		}
 	case ProgramUpdate:
@@ -478,6 +483,7 @@ func describeWindowsUpdate(g *Group, osLabel string) {
 	g.Action += " through Windows Update, WSUS or the Microsoft Update Catalog, then restart. " +
 		"It is cumulative, so it fixes these issues whichever update first fixed them; any later cumulative update does too."
 	g.Effort = "low"
+	g.Reboot = true // a cumulative update finishes installing at the restart
 	g.FixKey = fmt.Sprintf("%s:%s>%s", WindowsUpdate, kb, build)
 	kbs := sortedKeys(g.kbs)
 	verb := "are"
@@ -548,6 +554,7 @@ func Merge(gs []Group) Group {
 		m.UniqueIssues = max(m.UniqueIssues, g.UniqueIssues)
 		m.PackageCount = max(m.PackageCount, g.PackageCount)
 		m.SOS = m.SOS || g.SOS
+		m.Reboot = m.Reboot || g.Reboot
 		if g.TopPriority < m.TopPriority {
 			m.TopPriority = g.TopPriority
 		}
@@ -559,6 +566,20 @@ func Merge(gs []Group) Group {
 		}
 	}
 	return m
+}
+
+// hasKernel reports whether OS packages include a kernel image, which
+// runs only after a reboot (headers, tools and devel packages do not).
+func hasKernel(pkgs map[string]bool) bool {
+	for p := range pkgs {
+		switch {
+		case strings.HasPrefix(p, "linux-image"), strings.HasPrefix(p, "linux-modules"),
+			p == "linux-lts", p == "linux-virt", p == "kernel", p == "kernel-core", p == "kernel-default",
+			p == "kernel-uek", p == "kernel-rt", p == "kernel-modules", strings.HasPrefix(p, "kernel-uek-core"):
+			return true
+		}
+	}
+	return false
 }
 
 func effortOf(changeType string) string {

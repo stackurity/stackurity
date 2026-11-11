@@ -373,6 +373,9 @@ type FixPlanSummary struct {
 	Overdue int64 `json:"overdue"`
 	// Exploited counts fixes with a known exploited issue.
 	Exploited int64 `json:"exploited"`
+	// UrgentFindings counts the P1 and P2 findings of all the fixes: what
+	// a fix's own P1 and P2 findings are a share of (its risk reduction).
+	UrgentFindings int64 `json:"urgent_findings"`
 }
 
 // SummarizeFixPlan counts fixes and their findings. With byFix, the same fix
@@ -385,7 +388,8 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool)
 	}
 	key := groupKeySQL(byFix)
 	rows, err := s.Pool.Query(ctx, `SELECT g.kind, count(DISTINCT `+key+`), sum((g.data->>'finding_count')::int),
-		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+key+` END)
+		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+key+` END),
+		COALESCE(sum(COALESCE((g.data->'by_priority'->>'P1')::int, 0) + COALESCE((g.data->'by_priority'->>'P2')::int, 0)), 0)
 		FROM fix_groups g`+w.sql()+` GROUP BY g.kind`, w.args...)
 	if err != nil {
 		return nil, err
@@ -393,10 +397,11 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool)
 	defer rows.Close()
 	for rows.Next() {
 		var k string
-		var groups, findings, sos int64
-		if err := rows.Scan(&k, &groups, &findings, &sos); err != nil {
+		var groups, findings, sos, urgent int64
+		if err := rows.Scan(&k, &groups, &findings, &sos, &urgent); err != nil {
 			return nil, err
 		}
+		sum.UrgentFindings += urgent
 		sum.ByKind[k] = map[string]int64{"groups": groups, "findings": findings}
 		sum.Groups += groups
 		sum.Findings += findings
