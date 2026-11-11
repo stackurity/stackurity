@@ -1041,6 +1041,9 @@ type FindingFilter struct {
 	SOS          bool
 	AssigneeUser int64
 	AssigneeTeam int64
+	// AssigneeMine keeps findings assigned to this user or to a team they
+	// are a member of (My work).
+	AssigneeMine int64
 	Unassigned   bool
 	FixGroup     string
 	IncidentID   int64
@@ -1159,6 +1162,9 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	}
 	if f.AssigneeTeam > 0 {
 		w.add("f.assignee_team_id = ?", f.AssigneeTeam)
+	}
+	if f.AssigneeMine > 0 {
+		w.add(mineSQL, f.AssigneeMine)
 	}
 	if f.IncidentID > 0 {
 		w.add("f.incident_id = ?", f.IncidentID)

@@ -1083,7 +1083,7 @@ Query:
 - `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true` (or `false`: active and not past the fix-by date), `due_after` and `due_before` (RFC 3339: active findings due at or after, or before, that time)
 - `epss_min` (0 to 1; `0.1` is 10%): vulnerability findings one of whose CVEs has at least that EPSS
 - `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
-- `assignee_user`, `assignee_team`, `assignee=none` (unassigned)
+- `assignee_user`, `assignee_team`, `assignee=none` (unassigned), `assignee=me` (the caller), `assignee=mine` (the caller or a team they are a member of)
 - `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)
 - `second_check` (`agreed`, `disagreed`, `could_not_check`), `sort`, `limit`, `offset`
 
@@ -1193,7 +1193,7 @@ Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `enviro
 
 - `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
 - `priority`: `P1` to `P4`, several separated by commas: the fix's most urgent issue.
-- `overdue=true`: fixes with an active issue past its fix deadline (the risk policy's SLA or patch calendar). `exploited=true`: fixes with a known exploited issue. `assignee=me`: fixes with an open issue assigned to the caller.
+- `overdue=true`: fixes with an active issue past its fix deadline (the risk policy's SLA or patch calendar). `exploited=true`: fixes with a known exploited issue. `assignee=me`: fixes with an open issue assigned to the caller; `assignee=mine`: to the caller or a team they are a member of.
 - `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
 
 A `no_fix` group with application packages (npm, PyPI, Composer and the like; not operating system packages) carries `no_fix_advice`: what can be done about each package without a fixed version, from stored data only. Its `action` says the same in one paragraph.
@@ -1239,7 +1239,7 @@ One fix group with its findings, paged.
 
 **Who:** viewer
 
-Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet).
+Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet), `failed=true` (finished in the last 30 days without clearing the fix: still open, partly fixed, incomplete or expired, and still the latest check of that fix on that asset).
 
 ### `GET /checks/options`
 
