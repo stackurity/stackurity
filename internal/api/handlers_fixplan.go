@@ -30,17 +30,21 @@ func (s *Server) listFixGroups(w http.ResponseWriter, r *http.Request) {
 	}
 	f.Overdue = qBool(r, "overdue") != nil && *qBool(r, "overdue")
 	f.Exploited = qBool(r, "exploited") != nil && *qBool(r, "exploited")
-	switch q.Get("assignee") {
+	switch a := q.Get("assignee"); a {
 	case "":
-	case "me":
+	case "me", "mine":
 		p := principal(r)
 		if p == nil || p.User == nil {
-			s.fail(w, r, badRequest("assignee=me needs a signed-in user"))
+			s.fail(w, r, badRequest("assignee="+a+" needs a signed-in user"))
 			return
 		}
-		f.AssigneeUser = p.User.ID
+		if a == "me" {
+			f.AssigneeUser = p.User.ID
+		} else {
+			f.AssigneeMine = p.User.ID
+		}
 	default:
-		s.fail(w, r, badRequest("assignee must be me"))
+		s.fail(w, r, badRequest("assignee must be me or mine (me and my teams)"))
 		return
 	}
 	if f.Bucket != "" {

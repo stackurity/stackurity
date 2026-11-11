@@ -464,6 +464,11 @@ export function ViewsMenu({
               All open fixes<span className="ac-view-hint">Most urgent first</span>
             </Link>
           </li>
+          <li>
+            <Link to="/fixes/mine" onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")}>
+              My work<span className="ac-view-hint">Your issues, approvals and what failed, on one page</span>
+            </Link>
+          </li>
           {BUILTIN_VIEWS.map((v) => (
             <li key={v.name}>
               <Link to={to(v.query)} onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")} aria-current={viewKey(v.query) === here ? "true" : undefined}>

@@ -188,6 +188,11 @@ export function FixesPage() {
         help="action-plan"
         title="Fixes"
         sub="Each fix is one change, such as an upgrade, that clears one or more issues. Most urgent first; open a fix for the steps."
+        actions={
+          <Link className="btn" to="/fixes/mine" title="Your issues, overdue work, approvals waiting for you, failed checks and open incidents on one page">
+            My work
+          </Link>
+        }
       />
       <ErrorBox error={summary.error} title="Could not load the summary" />
       {s && (
@@ -282,6 +287,7 @@ export function FixesPage() {
             <select id="ap-assignee" value={assignee} onChange={(e) => update({ assignee: e.target.value })}>
               <option value="">Anyone</option>
               <option value="me">Me</option>
+              <option value="mine">Me and my teams</option>
             </select>
           </div>
           <div className="field">

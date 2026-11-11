@@ -1,0 +1,105 @@
+/*
+ * Fixes ▸ My work (pages/MyWork.tsx): short lists, one per kind of work,
+ * in the action centre's dense style. Colours come from the theme tokens.
+ */
+
+.mw-scope {
+  margin: 0;
+  align-self: center;
+}
+
+.mw-section {
+  margin: 0 0 var(--s3);
+  padding: var(--s3) var(--s4);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.mw-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  flex-wrap: wrap;
+  margin: 0 0 var(--s2);
+}
+.mw-head h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+}
+.mw-count {
+  display: inline-block;
+  min-width: 22px;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-2);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 20px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+.mw-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.mw-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--s3);
+  min-height: var(--ac-row-h, 40px);
+  padding: 6px 0;
+  border-top: 1px solid var(--border);
+}
+.mw-lead {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 34px;
+}
+.mw-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mw-title {
+  font-weight: 600;
+}
+
+/* An empty section is one line. */
+.mw-empty {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  padding: var(--s2) var(--s4);
+  color: var(--text-2);
+  box-shadow: none;
+}
+.mw-empty > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.mw-empty-icon {
+  display: inline-flex;
+  color: var(--good-dot);
+}
+
+@media (max-width: 640px) {
+  .mw-row {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .mw-lead {
+    grid-column: 1 / -1;
+  }
+}

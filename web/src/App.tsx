@@ -77,6 +77,7 @@ import { PlanDetailPage } from "./pages/PlanDetail";
 import { PluginsPage } from "./pages/settings/Plugins";
 import { AwsPage } from "./pages/settings/Aws";
 import { FixesPage, FixGroupDetailPage } from "./pages/ActionPlan";
+import { MyWorkPage } from "./pages/MyWork";
 import { DeliveryLogPage, IntegrationStepsPage, IntegrationsHubPage } from "./pages/settings/Integrations";
 import { IntegrationAddPage, IntegrationChannelPage } from "./pages/settings/IntegrationsChannel";
 import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
@@ -270,6 +271,8 @@ export function App() {
         <Route path="help" element={help} />
         <Route path="help/:topic" element={help} />
         <Route path="fixes" element={<FixesPage />} />
+        {/* My work: one place to start the day (Fixes ▸ My work). */}
+        <Route path="fixes/mine" element={<MyWorkPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
         <Route path="fixes/leaks" element={<LeaksPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />

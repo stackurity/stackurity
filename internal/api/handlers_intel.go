@@ -46,6 +46,20 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	}
 	f.AssigneeUser = qInt(r, "assignee_user")
 	f.Unassigned = q.Get("assignee") == "none"
+	// assignee=me: assigned to the caller; assignee=mine: to the caller or
+	// one of their teams (My work).
+	if a := q.Get("assignee"); a == "me" || a == "mine" {
+		p := principal(r)
+		if p == nil || p.User == nil {
+			s.fail(w, r, badRequest("assignee="+a+" needs a signed-in user"))
+			return
+		}
+		if a == "me" {
+			f.AssigneeUser = p.User.ID
+		} else {
+			f.AssigneeMine = p.User.ID
+		}
+	}
 	f.FixGroup = q.Get("fix_group")
 	switch sc := q.Get("second_check"); sc {
 	case "", store.SecondCheckAgreed, store.SecondCheckDisagreed, store.SecondCheckCouldNotCheck:

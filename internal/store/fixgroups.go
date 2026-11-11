@@ -174,8 +174,15 @@ type FixGroupFilter struct {
 	Exploited bool
 	// AssigneeUser keeps groups with an open issue assigned to this user.
 	AssigneeUser int64
+	// AssigneeMine keeps groups with an open issue assigned to this user
+	// or to a team they are a member of (My work).
+	AssigneeMine int64
 	Page
 }
+
+// mineSQL is true for a finding f assigned to the user ? or to one of
+// their teams.
+const mineSQL = `(f.assignee_user_id = ? OR f.assignee_team_id IN (SELECT tm.team_id FROM team_members tm WHERE tm.user_id = ?))`
 
 // overdueGroupSQL is true for a fix group g with an active issue past its
 // fix deadline (the same test as a finding's overdue flag).
@@ -243,6 +250,9 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 	}
 	if f.AssigneeUser > 0 {
 		w.add("EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND f.status = 'open' AND f.assignee_user_id = ?)", f.AssigneeUser)
+	}
+	if f.AssigneeMine > 0 {
+		w.add("EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND f.status = 'open' AND "+mineSQL+")", f.AssigneeMine)
 	}
 	if f.ByFix {
 		return s.listFixGroupsByFix(ctx, w, f.Page.norm())
