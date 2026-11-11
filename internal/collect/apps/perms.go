@@ -45,6 +45,33 @@ var unneededDirs = map[string]bool{"cache": true, "tmp": true, "logs": true, "up
 // and which nothing the scan looks for is in.
 var secretFiles = map[string]bool{"wp-config.php": true, "settings.php": true, "settings.local.php": true, "configuration.php": true}
 
+// codeIgniterSecret reports whether the path parts (relative to the
+// application) name a CodeIgniter credentials file: database, email or mail
+// settings, or a *.local.php override, directly in application/config
+// (app/Config in CodeIgniter 4). Like secretFiles they are kept from other
+// users and hold nothing the scan looks for. Other config files
+// (routes.php, autoload.php) and the same names elsewhere are still gaps.
+func codeIgniterSecret(parts []string) bool {
+	n := len(parts)
+	if n < 3 {
+		return false
+	}
+	dir := parts[n-3] + "/" + parts[n-2]
+	if dir != "application/config" && dir != "app/Config" {
+		return false
+	}
+	name := strings.ToLower(parts[n-1])
+	if !strings.HasSuffix(name, ".php") {
+		return false
+	}
+	if strings.HasSuffix(name, ".local.php") {
+		return true
+	}
+	base := strings.TrimSuffix(name, ".php")
+	stem, _, _ := strings.Cut(base, ".")
+	return stem == "database" || stem == "email" || stem == "mail"
+}
+
 // denied collects the paths one application scan skipped because the
 // agent's user may not read them.
 type denied struct {
@@ -57,7 +84,7 @@ type denied struct {
 
 // note records host path p when err is a permission error (EACCES or
 // EPERM) and reports whether it was one. A path nothing needs (see
-// unneededDirs, secretFiles, .env files) is not recorded.
+// unneededDirs, secretFiles, codeIgniterSecret, .env files) is not recorded.
 func (d *denied) note(p string, err error) bool {
 	if err == nil || !errors.Is(err, fs.ErrPermission) {
 		return false
@@ -75,7 +102,7 @@ func (d *denied) note(p string, err error) bool {
 		inTree = inTree || packageTrees[part]
 	}
 	name := parts[len(parts)-1]
-	if secretFiles[name] || strings.HasPrefix(name, ".env") || unneededDirs[name] {
+	if secretFiles[name] || strings.HasPrefix(name, ".env") || unneededDirs[name] || codeIgniterSecret(parts) {
 		return true
 	}
 	switch {

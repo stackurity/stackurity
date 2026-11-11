@@ -87,6 +87,25 @@ func TestUnreadableFiles(t *testing.T) {
 			tr.unreadable("var/www/site/wp-content/cache")
 			tr.unreadable("var/www/site/logs")
 		}, "", false, "", 0, []string{"pkg:npm/bootstrap@3.3.6", "pkg:npm/jquery@2.2.1"}},
+		// CodeIgniter keeps database and mail credentials in
+		// application/config (app/Config in CodeIgniter 4); a production
+		// help centre has them root:www 0640. Nothing the scan needs is in
+		// them.
+		{"CodeIgniter config secrets", func(tr *tree) {
+			for _, p := range []string{"application/config/database.local.php", "application/config/mail.local.php",
+				"application/config/database.php", "application/config/email.production.php", "app/Config/Database.php"} {
+				tr.file("var/www/site/"+p, "<?php")
+				tr.unreadable("var/www/site/" + p)
+			}
+		}, "", false, "", 0, []string{"pkg:npm/bootstrap@3.3.6", "pkg:npm/jquery@2.2.1"}},
+		{"other CodeIgniter config is still read", func(tr *tree) {
+			tr.file("var/www/site/application/config/routes.php", "<?php")
+			tr.unreadable("var/www/site/application/config/routes.php")
+		}, "partial", false, "cannot read /var/www/site/application/config/routes.php: ", 0, nil},
+		{"a local config outside application/config", func(tr *tree) {
+			tr.file("var/www/site/lib/database.local.php", "<?php")
+			tr.unreadable("var/www/site/lib/database.local.php")
+		}, "partial", false, "cannot read /var/www/site/lib/database.local.php: ", 0, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			tr := newTree(t)
