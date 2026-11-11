@@ -179,6 +179,7 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		return nil, nil
 	}
 	rc.Feed = feed.Name
+	rc.FeedCursor, rc.FeedLastSuccess, rc.FeedRead = feed.Cursor, feed.LastSuccess, true
 	note := func(s string) {
 		if rc.Reason != "" {
 			rc.Reason += "; "

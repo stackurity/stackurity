@@ -266,14 +266,27 @@ same before after-upgrade upgrade
 log "backup the upgraded database and restore it into a new server"
 docker exec "$ID-old-db" pg_dump -U stackurity -Fc stackurity >"$WORK/upgraded.dump"
 postgres restored-db
-# A new server has no stackurity_app role: pg_restore reports those grants
-# and exits 1 (docs/install.md); any other error fails the check.
+# A new server has none of the roles the server creates on start
+# (stackurity_app, and stackurity_purge from migration 0103): pg_restore
+# reports those grants and exits 1 (docs/install.md). Only these roles are
+# allowed to be missing; any other error fails the check.
 docker exec -i "$ID-restored-db" pg_restore -U stackurity -d stackurity --clean --if-exists <"$WORK/upgraded.dump" 2>"$WORK/restore.err" || true
-if grep -i 'error' "$WORK/restore.err" | grep -v 'stackurity_app' | grep -v 'errors ignored on restore' >&2; then
-	fail "pg_restore reported errors other than the missing role"
+if grep -i 'error' "$WORK/restore.err" | grep -v 'stackurity_app' | grep -v 'role "stackurity_purge" does not exist' |
+	grep -v 'errors ignored on restore' >&2; then
+	fail "pg_restore reported errors other than the missing roles"
 fi
 url=$(server restored "$CUR" restored-db)
 [ "$(psql restored-db "SELECT count(*) FROM pg_roles WHERE rolname = 'stackurity_app'")" = 1 ] || fail "stackurity_app role was not recreated"
+# The trust badge's history stays append-only after a restore: start-up
+# recreates the purge role, gives it the purge function back and takes
+# UPDATE and DELETE away from the application role again.
+if [ "$(psql restored-db "SELECT count(*) FROM pg_class WHERE relname = 'trust_badge_status'")" = 1 ]; then
+	[ "$(psql restored-db "SELECT has_function_privilege('stackurity_purge', 'trust_badge_status_purge(interval, text)', 'EXECUTE')
+		AND NOT has_table_privilege('stackurity_app', 'trust_badge_status', 'UPDATE')
+		AND NOT has_table_privilege('stackurity_app', 'trust_badge_status', 'DELETE')
+		AND NOT has_function_privilege('stackurity_app', 'trust_badge_status_purge(interval, text)', 'EXECUTE')")" = t ] ||
+		fail "trust badge history grants were not restored on start"
+fi
 api "$url" >"$WORK/assets-restored"
 same assets-prev assets-restored "API asset total after restore"
 stop restored

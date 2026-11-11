@@ -181,8 +181,48 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	if _, err := conn.Exec(ctx, ensureAppRole); err != nil {
 		return done, fmt.Errorf("ensure %s role: %w", appRole, err)
 	}
+	// ensureAppRole grants every table: take back what the application
+	// must never do to append-only history, and restore the purge role.
+	if _, err := conn.Exec(ctx, ensureAppendOnly); err != nil {
+		return done, fmt.Errorf("ensure append-only grants: %w", err)
+	}
 	return done, nil
 }
+
+// ensureAppendOnly keeps the trust badge's status history and purge log
+// append-only for the application role (migration 0103) after
+// ensureAppRole's blanket grants, and gives the purge role (stackurity_purge)
+// its only right back after a restore: running the purge function. It does
+// nothing before migration 0103 or where roles cannot be managed.
+const ensureAppendOnly = `DO $$
+BEGIN
+    IF to_regclass(format('%I.trust_badge_status', current_schema())) IS NULL THEN
+        RETURN;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_app') THEN
+        REVOKE ALL ON trust_badge_status, trust_badge_purges FROM stackurity_app;
+        GRANT SELECT, INSERT ON trust_badge_status TO stackurity_app;
+        GRANT SELECT ON trust_badge_purges TO stackurity_app;
+        REVOKE EXECUTE ON FUNCTION trust_badge_status_purge(interval, text) FROM stackurity_app;
+    END IF;
+    REVOKE EXECUTE ON FUNCTION trust_badge_status_purge(interval, text) FROM PUBLIC;
+    IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_purge') THEN
+        BEGIN
+            CREATE ROLE stackurity_purge NOLOGIN NOSUPERUSER NOBYPASSRLS;
+        EXCEPTION
+            WHEN duplicate_object OR unique_violation THEN NULL;
+            WHEN insufficient_privilege THEN RETURN;
+        END;
+    END IF;
+    IF NOT pg_has_role(current_user, 'stackurity_purge', 'MEMBER') THEN
+        BEGIN
+            EXECUTE format('GRANT stackurity_purge TO %I', current_user);
+        EXCEPTION WHEN insufficient_privilege THEN RETURN;
+        END;
+    END IF;
+    EXECUTE format('GRANT USAGE ON SCHEMA %I TO stackurity_purge', current_schema());
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %I.trust_badge_status_purge(interval, text) TO stackurity_purge', current_schema());
+END $$`
 
 // ensureAppRole creates the application role and grants it access to every
 // table, sequence and function. Where the login role may not create roles
