@@ -6,17 +6,17 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/CycloneDX/cyclonedx-go v0.12.0
 	github.com/anthropics/anthropic-sdk-go/v2 v2.0.0
-	github.com/aws/aws-sdk-go-v2 v1.47.5
+	github.com/aws/aws-sdk-go-v2 v1.47.8
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.13
 	github.com/aws/aws-sdk-go-v2/service/eks v1.105.2
 	github.com/aws/aws-sdk-go-v2/service/elasticache v1.64.1
 	github.com/aws/aws-sdk-go-v2/service/lambda v1.114.0
 	github.com/aws/aws-sdk-go-v2/service/opensearch v1.87.1
-	github.com/aws/aws-sdk-go-v2/service/rds v1.131.1
+	github.com/aws/aws-sdk-go-v2/service/rds v1.132.2
 	github.com/aws/aws-sdk-go-v2/service/ssm v1.81.2
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.6
-	github.com/aws/smithy-go v1.28.7
+	github.com/aws/smithy-go v1.28.8
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/crewjam/saml v0.5.1
 	github.com/go-chi/chi/v5 v5.5.0
@@ -47,11 +47,11 @@ require (
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.25 // indirect
 	github.com/aws/aws-sdk-go-v2/feature/ec2/imds v1.20.5 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.8 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/configsources v1.5.11 // indirect
+	github.com/aws/aws-sdk-go-v2/internal/endpoints/v2 v2.8.11 // indirect
 	github.com/aws/aws-sdk-go-v2/internal/v4a v1.5.8 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.23 // indirect
-	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.8 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/accept-encoding v1.13.24 // indirect
+	github.com/aws/aws-sdk-go-v2/service/internal/presigned-url v1.14.11 // indirect
 	github.com/aws/aws-sdk-go-v2/service/signin v1.12.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sso v1.39.1 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.44.1 // indirect
