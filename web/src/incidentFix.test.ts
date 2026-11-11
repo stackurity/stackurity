@@ -44,3 +44,28 @@ test("no component_fixes falls back", () => {
   assert.equal(fixLines(undefined), null);
   assert.equal(fixLines([]), null);
 });
+
+// Debian/Ubuntu binary packages whose fix is named by their source package's
+// version: apt has no telnet 2:2.5-3ubuntu4.1, so the advice names the source
+// build, and a binary whose version is the source's keeps its own line.
+test("a fix named by source version names the source build", () => {
+  const lines = fixLines([
+    { component: "ubuntu/telnet", type: "deb", fixed_versions: ["2:2.5-3ubuntu4.1"], assets: 2, unfixed: 0, source_package: "inetutils" },
+    { component: "ubuntu/inetutils-telnetd", type: "deb", fixed_versions: ["2:2.5-3ubuntu4.1"], assets: 1, unfixed: 0 },
+  ])!;
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0].text, "upgrade to a build from inetutils 2:2.5-3ubuntu4.1 or later.");
+  assert.equal(lines[1].text, "upgrade to 2:2.5-3ubuntu4.1 or later.");
+  assert.deepEqual(fixedVersionRows(lines), [
+    { components: "ubuntu/telnet", versions: "inetutils 2:2.5-3ubuntu4.1" },
+    { components: "ubuntu/inetutils-telnetd", versions: "2:2.5-3ubuntu4.1" },
+  ]);
+  const per = fixLines([
+    { component: "ubuntu/telnet", type: "deb", fixed_versions: ["2:2.4-2ubuntu0.1", "2:2.5-3ubuntu4.1"], assets: 3, unfixed: 0, source_package: "inetutils" },
+  ])!;
+  assert.match(per[0].text, /^upgrade to a build from inetutils at the version for each asset's release: 2:2\.4-2ubuntu0\.1 \/ 2:2\.5-3ubuntu4\.1 or later\./);
+  const part = fixLines([
+    { component: "ubuntu/telnet", type: "deb", fixed_versions: ["2:2.5-3ubuntu4.1"], assets: 3, unfixed: 1, source_package: "inetutils" },
+  ])!;
+  assert.match(part[0].text, /^upgrade to a build from inetutils 2:2\.5-3ubuntu4\.1 or later on the 2 assets where it is published\./);
+});

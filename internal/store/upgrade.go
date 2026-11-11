@@ -20,8 +20,13 @@ type UpgradeIssue struct {
 	FixedVersion string
 	Subscription string // paid channel the fix needs
 	Product      string // endoflife.date product, for end-of-life findings
-	FindingID    int64  // the lowest id among the findings with this issue
-	Findings     int64  // open findings with this issue (one per asset and location)
+	// Debian/Ubuntu: when the advisory's versions are the source package's
+	// and the binary package has a version of its own, the source package
+	// and the source version the binary was built from (osv.SourceFixOf).
+	SourcePackage string
+	SourceVersion string
+	FindingID     int64 // the lowest id among the findings with this issue
+	Findings      int64 // open findings with this issue (one per asset and location)
 }
 
 // upgradeIssueLimit bounds the distinct issues read for one component.
@@ -43,9 +48,12 @@ func (s *Store) UpgradeIssues(ctx context.Context, componentID, inventoryID int6
 	rows, err := s.Pool.Query(ctx, `SELECT i.version, COALESCE(substring(i.purl from '[?&]distro=([^&#]+)'), ''), f.kind, f.key,
 		f.fixed_version, COALESCE(f.evidence->>'requires_subscription',
 		  CASE WHEN (f.evidence->>'requires_ubuntu_pro')::boolean THEN 'Ubuntu Pro' ELSE '' END),
-		CASE WHEN f.kind = 'end_of_life' THEN COALESCE(f.evidence->>'product', '') ELSE '' END, min(f.id), count(*)
+		CASE WHEN f.kind = 'end_of_life' THEN COALESCE(f.evidence->>'product', '') ELSE '' END,
+		CASE WHEN COALESCE(f.evidence->'match'->>'source_version', '') <> '' THEN COALESCE(f.evidence->>'osv_package', '') ELSE '' END,
+		CASE WHEN COALESCE(f.evidence->>'osv_package', '') <> '' THEN COALESCE(f.evidence->'match'->>'source_version', '') ELSE '' END,
+		min(f.id), count(*)
 		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN assets a ON a.id = f.asset_id`+w.sql()+`
-		GROUP BY 1, 2, 3, 4, 5, 6, 7 ORDER BY 1, 2, 4 LIMIT `+strconv.Itoa(upgradeIssueLimit), w.args...)
+		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9 ORDER BY 1, 2, 4 LIMIT `+strconv.Itoa(upgradeIssueLimit), w.args...)
 	if err != nil {
 		return nil, err
 	}

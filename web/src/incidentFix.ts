@@ -15,6 +15,16 @@ export interface ComponentFix {
   assets: number;
   /** Assets where the component has no fixed version. */
   unfixed: number;
+  /** Debian/Ubuntu: the fixed versions are this source package's; the
+   * component (a binary package) has versions of its own, so the advice is
+   * "a build from <source> <version>", never the source version as the
+   * binary's (the package manager has no such version). */
+  source_package?: string;
+}
+
+/** What to install for a fixed version (incident_fix.go's componentFix.to). */
+function target(c: ComponentFix, v: string): string {
+  return c.source_package ? `a build from ${c.source_package} ${v}` : v;
 }
 
 export type FixLineKind = "fix" | "per_release" | "partial" | "none";
@@ -24,6 +34,8 @@ export interface FixLine {
   /** The components the line is about, each with its asset count. */
   components: { name: string; assets: number }[];
   versions: string[];
+  /** The versions are this source package's (ComponentFix.source_package). */
+  source?: string;
   /** What to do, after "<components>: ". */
   text: string;
 }
@@ -57,6 +69,7 @@ export function fixLines(fixes: ComponentFix[] | undefined | null): FixLine[] | 
       return;
     }
     const n: FixLine = { ...line, components: [{ name: c.component, assets: c.assets }] };
+    if (c.source_package) n.source = c.source_package;
     lines.push(n);
     if (key) byKey.set(key, n);
   };
@@ -71,7 +84,8 @@ export function fixLines(fixes: ComponentFix[] | undefined | null): FixLine[] | 
         text: `no fixed version is published yet${d ? ` for ${d}` : ""}. Watch the advisory and consider mitigations.`,
       });
     } else if (c.unfixed > 0) {
-      const to = vs.length === 1 ? `${vs[0]} or later` : `the version for each asset's release (${vs.join(" / ")} or later)`;
+      const each = c.source_package ? `a build from ${c.source_package} at the version for each asset's release` : "the version for each asset's release";
+      const to = vs.length === 1 ? `${target(c, vs[0])} or later` : `${each} (${vs.join(" / ")} or later)`;
       add("", c, {
         kind: "partial",
         versions: vs,
@@ -81,10 +95,10 @@ export function fixLines(fixes: ComponentFix[] | undefined | null): FixLine[] | 
       add("", c, {
         kind: "per_release",
         versions: vs,
-        text: `upgrade to the version for each asset's release: ${vs.join(" / ")} or later. See the Fix column for each asset's version.`,
+        text: `upgrade to ${c.source_package ? `a build from ${c.source_package} at ` : ""}the version for each asset's release: ${vs.join(" / ")} or later. See the Fix column for each asset's version.`,
       });
     } else {
-      add(`fix|${vs[0]}`, c, { kind: "fix", versions: vs, text: `upgrade to ${vs[0]} or later.` });
+      add(`fix|${c.source_package ?? ""}|${vs[0]}`, c, { kind: "fix", versions: vs, text: `upgrade to ${target(c, vs[0])} or later.` });
     }
   }
   return lines;
@@ -103,10 +117,11 @@ export function fixedVersionRows(lines: FixLine[]): { components: string; versio
     versions:
       l.kind === "none"
         ? "none yet"
-        : l.kind === "partial"
-          ? `${l.versions.join(" / ")} (not for every asset)`
-          : l.kind === "per_release"
-            ? `${l.versions.join(" / ")} (per release)`
-            : l.versions.join(" / "),
+        : (l.source ? `${l.source} ` : "") +
+          (l.kind === "partial"
+            ? `${l.versions.join(" / ")} (not for every asset)`
+            : l.kind === "per_release"
+              ? `${l.versions.join(" / ")} (per release)`
+              : l.versions.join(" / ")),
   }));
 }

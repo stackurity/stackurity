@@ -38,7 +38,7 @@ var versionToken = regexp.MustCompile(`\d+(?:[.:~+-]\w+)+`)
 // from the input: recommendations must never make up a version.
 func checkNoInvented(t *testing.T, in Input, r Recommendation) {
 	t.Helper()
-	allowed := map[string]bool{in.Installed: true}
+	allowed := map[string]bool{in.Installed: true, in.SourceVersion: true}
 	for _, f := range in.Findings {
 		allowed[f.FixedVersion] = true
 	}

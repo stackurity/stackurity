@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/words"
@@ -146,6 +147,10 @@ type OSDetail struct {
 	SourcePackage string `json:"source_package,omitempty"`
 	Backport      bool   `json:"backport"`
 	Subscription  string `json:"subscription,omitempty"`
+	// SourceFix is set when the fixed version is the source package's and
+	// the installed binary package has a version of its own (Debian,
+	// Ubuntu): what to upgrade, and the source version with the fix.
+	SourceFix *osv.SourceFix `json:"source_fix,omitempty"`
 }
 
 type ImageDetail struct {
@@ -198,6 +203,10 @@ func Build(in Input, now time.Time) Explanation {
 	if n := str(m, "normalised"); n != "" {
 		e.Installed.Compared = n
 	}
+	srcFix, isSourceFix := osv.SourceFixOf(f.ComponentName, ev, f.FixedVersion)
+	if isSourceFix {
+		e.Installed.Compared = srcFix.Source + " " + srcFix.SourceVersion
+	}
 	if in.Feed != nil {
 		e.Source.Feed, e.Source.RefreshedAt, e.Source.Stale = in.Feed.Name, in.Feed.LastSuccess, in.Feed.Stale
 	} else {
@@ -208,6 +217,12 @@ func Build(in Input, now time.Time) Explanation {
 	}
 	seen := "seen " + ago(inv.LastSeen, now)
 	installed := fmt.Sprintf("Installed %s (from %s, %s)", orUnknown(f.Version), e.Installed.From, seen)
+	if isSourceFix {
+		// The advisory's versions are the source package's; say which one
+		// was compared, as the binary's own version is not.
+		installed = fmt.Sprintf("Installed %s (built from %s %s; from %s, %s)", orUnknown(f.Version), srcFix.Source, srcFix.SourceVersion,
+			e.Installed.From, seen)
+	}
 	refreshed := "never refreshed"
 	if e.Source.RefreshedAt != nil {
 		refreshed = "refreshed " + ago(e.Source.RefreshedAt, now)
@@ -297,11 +312,16 @@ func Build(in Input, now time.Time) Explanation {
 		if kb := str(ev, "kb"); kb != "" && fixed != "" {
 			fixed += " (" + kb + ")" // a Windows build and the update that brings it
 		}
+		if isSourceFix && f.FixedVersion != "" {
+			// apt has no such version of the binary package: name the
+			// source version and the package to upgrade.
+			fixed = fmt.Sprintf("%s %s (upgrade %s to a build from it or later)", srcFix.Source, f.FixedVersion, srcFix.Binary)
+		}
 		switch {
 		case f.FixedVersion != "" && sub != "":
 			fix = fmt.Sprintf("; fixed in %s, only with %s", fixed, sub)
 		case f.FixedVersion != "" && backport:
-			fix = fmt.Sprintf("; fixed in %s (the distribution backported the fix to this upstream release)", f.FixedVersion)
+			fix = fmt.Sprintf("; fixed in %s (the distribution backported the fix to this upstream release)", fixed)
 		case f.FixedVersion != "":
 			fix = "; fixed in " + fixed
 		}
@@ -316,6 +336,9 @@ func Build(in Input, now time.Time) Explanation {
 		case purlType == "deb" || purlType == "rpm" || purlType == "apk":
 			e.Type = TypeOSPackage
 			e.OS = &OSDetail{Release: str(ev, "target_ecosystem"), SourcePackage: str(ev, "osv_package"), Backport: backport, Subscription: sub}
+			if isSourceFix {
+				e.OS.SourceFix = &srcFix
+			}
 		default:
 			e.Type = TypePackageAdvisory
 			e.Package = &PackageDetail{Ecosystem: str(ev, "target_ecosystem"), Name: str(ev, "osv_package"), Direct: f.Direct, Location: f.Location}

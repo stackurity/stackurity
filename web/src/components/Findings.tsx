@@ -8,8 +8,21 @@ import { reportDate } from "../reporting";
 import { Assignee, DueDate } from "./Workflow";
 import { Table, type Column } from "./Table";
 import { RelativeTime, StatTile } from "./ui";
+import { sourceCheckCommand, sourceFixOf } from "../sourceFix";
 
 export function FixCell({ f }: { f: Finding }) {
+  const src = f.fixed_version ? sourceFixOf(f) : null;
+  if (src)
+    // A Debian/Ubuntu fix named by source version: apt has no such version
+    // of this binary package, so say which source build to get.
+    return (
+      <span
+        className="fix"
+        title={`Upgrade ${src.binary} to a build from ${src.source} ${src.fixed} or later (${src.binary} has a version number of its own). Check with: ${sourceCheckCommand(src)}`}
+      >
+        → {src.source} {src.fixed}
+      </span>
+    );
   if (f.fixed_version)
     return (
       <span className="fix" title={`Upgrade to ${f.fixed_version} or later`}>

@@ -20,7 +20,7 @@ func ForFinding(ctx context.Context, st *store.Store, f *store.Finding, now time
 		return nil, err
 	}
 	l := loader{st: st, now: now}
-	rec, err := l.recommend(ctx, c.ID, c.Type, c.PurlKey, f.Version, rows)
+	rec, err := l.recommend(ctx, c.ID, c.Type, c.PurlKey, c.Name, f.Version, rows)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func ForComponent(ctx context.Context, st *store.Store, componentID int64, now t
 	l := loader{st: st, now: now}
 	out := []VersionRecommendation{}
 	for _, k := range order {
-		rec, err := l.recommend(ctx, componentID, c.Type, c.PurlKey, k.version, groups[k])
+		rec, err := l.recommend(ctx, componentID, c.Type, c.PurlKey, c.Name, k.version, groups[k])
 		if err != nil {
 			return nil, 0, err
 		}
@@ -97,7 +97,7 @@ type loader struct {
 	cycles  []store.LifecycleCycle
 }
 
-func (l *loader) recommend(ctx context.Context, componentID int64, purlType, purlKey, installed string, rows []store.UpgradeIssue) (Recommendation, error) {
+func (l *loader) recommend(ctx context.Context, componentID int64, purlType, purlKey, name, installed string, rows []store.UpgradeIssue) (Recommendation, error) {
 	if !l.fetched {
 		rels, err := l.st.ReleasesFor(ctx, []int64{componentID})
 		if err != nil {
@@ -123,9 +123,12 @@ func (l *loader) recommend(ctx context.Context, componentID int64, purlType, pur
 		}
 		l.fetched = true
 	}
-	in := Input{PurlType: purlType, Installed: installed, Release: l.release, Product: l.product, Cycles: l.cycles, Now: l.now}
+	in := Input{PurlType: purlType, Installed: installed, Package: name, Release: l.release, Product: l.product, Cycles: l.cycles, Now: l.now}
 	var findings int64
 	for _, r := range rows {
+		if in.SourcePackage == "" && r.SourcePackage != "" {
+			in.SourcePackage, in.SourceVersion = r.SourcePackage, r.SourceVersion
+		}
 		in.Findings = append(in.Findings, Finding{ID: r.FindingID, Kind: r.Kind, Key: r.Key, FixedVersion: r.FixedVersion, Subscription: r.Subscription})
 		findings += r.Findings
 	}

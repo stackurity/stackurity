@@ -12,17 +12,22 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/lifecycle"
+	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
 // Basis says where the recommended version comes from.
 const (
-	BasisDistroFixed   = "distro_fixed"   // OS package: the distribution's fixed build
-	BasisLatestInLine  = "latest_in_line" // newest stable release in the major line, at or above the minimum fix
-	BasisMinimumFixed  = "minimum_fixed"  // the minimum fixed version itself (no newer stable release is known)
-	BasisSupportedLine = "supported_line" // the installed line is end of life: newest release of the oldest supported line
-	BasisNone          = "none"           // nothing to recommend
+	BasisDistroFixed = "distro_fixed" // OS package: the distribution's fixed build
+	// Debian/Ubuntu binary package with a version of its own, whose fix the
+	// advisory names by source version: no version of the binary can be
+	// named, so Recommended is empty and Source says what to install.
+	BasisDistroSourceFixed = "distro_source_fixed"
+	BasisLatestInLine      = "latest_in_line" // newest stable release in the major line, at or above the minimum fix
+	BasisMinimumFixed      = "minimum_fixed"  // the minimum fixed version itself (no newer stable release is known)
+	BasisSupportedLine     = "supported_line" // the installed line is end of life: newest release of the oldest supported line
+	BasisNone              = "none"           // nothing to recommend
 )
 
 // Release-data states.
@@ -47,10 +52,16 @@ type Input struct {
 	PurlType  string
 	Installed string
 	Findings  []Finding
-	Release   *store.Release         // nil: no release data
-	Product   string                 // endoflife.date product; "" when none
-	Cycles    []store.LifecycleCycle // the product's release lines, newest first
-	Now       time.Time
+	// Debian/Ubuntu: the binary package's name, and the source package and
+	// source version it was built from when the advisories compared those
+	// (store.UpgradeIssue.SourcePackage); empty otherwise.
+	Package       string
+	SourcePackage string
+	SourceVersion string
+	Release       *store.Release         // nil: no release data
+	Product       string                 // endoflife.date product; "" when none
+	Cycles        []store.LifecycleCycle // the product's release lines, newest first
+	Now           time.Time
 }
 
 // Line is the support status of one release line.
@@ -74,6 +85,13 @@ type Recommendation struct {
 	RequiresMajor bool   `json:"requires_major"`
 	// Subscription names a paid channel the fix needs (Ubuntu Pro, SUSE LTSS).
 	Subscription string `json:"requires_subscription,omitempty"`
+	// Source is set for a Debian or Ubuntu binary package with a version of
+	// its own (telnet 0.17+2.5-3ubuntu4, built from inetutils
+	// 2:2.5-3ubuntu4): the advisories list source versions, so
+	// MinimumFixed is the source package's version, Recommended is empty
+	// (apt has no such version of the binary) and the action is to upgrade
+	// Source.Binary to a build from Source.Source at Source.Fixed or later.
+	Source *osv.SourceFix `json:"source,omitempty"`
 
 	ReleaseData      string     `json:"release_data"`
 	ReleaseSource    string     `json:"release_source,omitempty"`
@@ -193,6 +211,15 @@ func Recommend(in Input) Recommendation {
 	// 2-4. recommended version for the vulnerability fixes
 	if rec.MinimumFixed != "" {
 		switch {
+		case IsDistro(in.PurlType) && in.SourcePackage != "":
+			// Recommended is cleared below, once what it fixes is known.
+			rec.Recommended, rec.Basis = rec.MinimumFixed, BasisDistroSourceFixed
+			rec.Source = &osv.SourceFix{Binary: in.Package, Source: in.SourcePackage, SourceVersion: in.SourceVersion, Fixed: rec.MinimumFixed}
+			say("%s (installed %s) is built from the source package %s %s. The distribution's advisories list %s versions, "+
+				"so the fix is named by source version: %s %s is the highest fixed source version they list for the open findings. "+
+				"Upgrade %s to a build from %s %s or later (sudo apt-get install --only-upgrade %s); %s shows the source version installed.",
+				in.Package, in.Installed, in.SourcePackage, in.SourceVersion, in.SourcePackage, in.SourcePackage, rec.MinimumFixed,
+				in.Package, in.SourcePackage, rec.MinimumFixed, in.Package, rec.Source.CheckCommand())
 		case IsDistro(in.PurlType):
 			rec.Recommended, rec.Basis = rec.MinimumFixed, BasisDistroFixed
 			say("%s is the highest fixed build the distribution's advisories list for the open findings.", rec.MinimumFixed)
@@ -256,7 +283,11 @@ func Recommend(in Input) Recommendation {
 	}
 	sort.Strings(rec.Fixes)
 	sort.Strings(rec.Unfixed)
-	if ct, err := version.ChangeType(in.PurlType, in.Installed, rec.Recommended); err == nil {
+	if rec.Source != nil {
+		// The fix is a distribution update of the source package; there is
+		// no version of the binary package to name.
+		rec.Recommended, rec.ChangeType = "", "distro"
+	} else if ct, err := version.ChangeType(in.PurlType, in.Installed, rec.Recommended); err == nil {
 		rec.ChangeType = ct
 		rec.RequiresMajor = ct == "major"
 	}

@@ -407,7 +407,8 @@ var tools = map[string]tool{
 		},
 	},
 	"list_findings": {
-		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions and " +
+		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions (source_fix: " +
+			"the fixed version is the Debian/Ubuntu source package's, and source_fix.action says which package to upgrade) and " +
 			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days; epss_cve: the CVE it is for, " +
 			"the highest-scored when the advisory covers several), and vex: the latest " +
 			"imported VEX statement about it (status not_affected, affected, fixed or under_investigation; for not_affected, " +
@@ -798,23 +799,27 @@ func init() {
 
 // finding is the part of a finding an assistant needs to act on it.
 type finding struct {
-	ID             int64    `json:"id"`
-	Kind           string   `json:"kind"`
-	Key            string   `json:"key"`
-	Severity       string   `json:"severity"`
-	Priority       string   `json:"priority"`
-	State          string   `json:"state"`
-	AssetID        int64    `json:"asset_id"`
-	AssetName      string   `json:"asset_name"`
-	ComponentName  string   `json:"component_name"`
-	Version        string   `json:"version"`
-	FixedVersion   string   `json:"fixed_version"`
-	Location       string   `json:"location"`
-	Direct         *bool    `json:"direct"`
-	Title          string   `json:"title"`
-	KnownExploited bool     `json:"known_exploited"`
-	EPSS           *float32 `json:"epss"`
-	EPSSCVE        *string  `json:"epss_cve,omitempty"`
+	ID            int64  `json:"id"`
+	Kind          string `json:"kind"`
+	Key           string `json:"key"`
+	Severity      string `json:"severity"`
+	Priority      string `json:"priority"`
+	State         string `json:"state"`
+	AssetID       int64  `json:"asset_id"`
+	AssetName     string `json:"asset_name"`
+	ComponentName string `json:"component_name"`
+	Version       string `json:"version"`
+	FixedVersion  string `json:"fixed_version"`
+	// SourceFix is set when fixed_version is the version of the source
+	// package a Debian or Ubuntu binary package was built from, and the
+	// binary has a version of its own (internal/osv SourceFix).
+	SourceFix      *sourceFix `json:"source_fix,omitempty"`
+	Location       string     `json:"location"`
+	Direct         *bool      `json:"direct"`
+	Title          string     `json:"title"`
+	KnownExploited bool       `json:"known_exploited"`
+	EPSS           *float32   `json:"epss"`
+	EPSSCVE        *string    `json:"epss_cve,omitempty"`
 	// VEX is the latest imported VEX statement about the finding (status,
 	// justification, source, and whether it was approved and applies).
 	VEX     *findingVEX `json:"vex,omitempty"`
@@ -823,6 +828,44 @@ type finding struct {
 	// AsOf: the asset was scanned once, on this date; the finding is true
 	// as of then.
 	AsOf *string `json:"as_of,omitempty"`
+}
+
+// sourceFix: telnet 0.17+2.5-3ubuntu4 is built from inetutils
+// 2:2.5-3ubuntu4, and the fix is inetutils 2:2.5-3ubuntu4.1. apt has no
+// telnet 2:2.5-3ubuntu4.1, so an assistant must not offer it as telnet's
+// version: Action says what to do.
+type sourceFix struct {
+	Package       string `json:"package"`
+	SourcePackage string `json:"source_package"`
+	Installed     string `json:"installed_source_version"`
+	Action        string `json:"action"`
+}
+
+// UnmarshalJSON reads a finding from the API, deriving SourceFix from the
+// evidence (match.source_version, which the matcher records only when the
+// binary's version differs from its source's), which is not passed on.
+func (f *finding) UnmarshalJSON(b []byte) error {
+	type plain finding
+	var w struct {
+		plain
+		Evidence struct {
+			Package string `json:"osv_package"`
+			Match   struct {
+				SourceVersion string `json:"source_version"`
+			} `json:"match"`
+		} `json:"evidence"`
+	}
+	if err := json.Unmarshal(b, &w); err != nil {
+		return err
+	}
+	*f = finding(w.plain)
+	if src, sv := w.Evidence.Package, w.Evidence.Match.SourceVersion; src != "" && sv != "" && f.FixedVersion != "" {
+		bin := f.ComponentName[strings.LastIndexByte(f.ComponentName, '/')+1:]
+		f.SourceFix = &sourceFix{Package: bin, SourcePackage: src, Installed: sv,
+			Action: fmt.Sprintf("upgrade %s to a build from %s %s or later (sudo apt-get install --only-upgrade %s); "+
+				"fixed_version is %s's version, not %s's", bin, src, f.FixedVersion, bin, src, bin)}
+	}
+	return nil
 }
 
 // findingVEX is the part of a finding's VEX statement an assistant needs.
