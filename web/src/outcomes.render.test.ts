@@ -83,7 +83,7 @@ function render(r: OutcomesReport): string {
 test("executive summary: posture, impact, SLA, trend, overdue, owners and exceptions in plain words", () => {
   const html = render(report());
   for (const t of ["Security posture", "Business impact", "Fixing on time (SLA)", "Remediation trend", "Overdue risks", "Team accountability", "Exceptions"]) {
-    assert.match(html, new RegExp(`>${t.replace(/[()]/g, "\\$&")}<`), t);
+    assert.ok(html.includes(`>${t}<`), t);
   }
   assert.match(html, /3 internet-facing production assets have an urgent or high-priority issue\./);
   assert.match(html, /7 of 9 fixes \(77\.8%\) were made by their fix-by date\./);
