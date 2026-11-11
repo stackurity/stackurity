@@ -31,6 +31,8 @@ import { CommunityKeysPage } from "./pages/admin/CommunityKeys";
 import { PickRepositoriesPage, SocialConfirmPage, SocialSignupPage } from "./pages/Social";
 import { UsagePage } from "./pages/settings/Usage";
 import { BillingPage } from "./pages/settings/Billing";
+import { TrustBadgePage } from "./pages/settings/TrustBadge";
+import { TrustBadgesAdminPage } from "./pages/admin/TrustBadges";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { DashboardPage } from "./pages/Dashboard";
 import { AutomaticFixPoliciesPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
@@ -317,6 +319,14 @@ export function App() {
             }
           />
           <Route
+            path="trust-badge"
+            element={
+              <RequireRole min="admin">
+                <TrustBadgePage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="billing"
             element={
               <RequireRole min="admin">
@@ -561,6 +571,14 @@ export function App() {
           element={
             <RequireInstanceAdmin>
               <HealthPage />
+            </RequireInstanceAdmin>
+          }
+        />
+        <Route
+          path="admin/trust-badges"
+          element={
+            <RequireInstanceAdmin>
+              <TrustBadgesAdminPage />
             </RequireInstanceAdmin>
           }
         />

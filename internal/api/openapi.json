@@ -68,6 +68,10 @@
    "name": "Setup"
   },
   {
+   "name": "Trust badge",
+   "description": "The \"Monitored by Stackurity\" badge and its public trust page (Stackurity Cloud only)."
+  },
+  {
    "name": "VEX"
   }
  ],
@@ -17428,6 +17432,624 @@
      "Notifications"
     ],
     "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/trust-badges": {
+   "get": {
+    "operationId": "get_admin_trust_badges",
+    "summary": "Every organisation's trust badges",
+    "description": "For Stackurity's operators, with each badge's last decision. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: instance admin",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "instance admin",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/trust-badges/{id}/history": {
+   "get": {
+    "operationId": "get_admin_trust_badges_id_history",
+    "summary": "A trust badge's decisions with their evidence",
+    "description": "Full evidence for each decision, newest first. Each read is audited. Stackurity Cloud only (404 elsewhere).\n\nRole: instance admin",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "instance admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/trust": {
+   "get": {
+    "operationId": "get_public_trust",
+    "summary": "Trust pages listed in search engines",
+    "description": "`?listed=1`: `slugs` of the badges that are on, listed and active, for the sitemap. No sign-in; 120 requests a minute per address. Stackurity Cloud only (404 elsewhere).\n\nRole: none",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "listed",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/trust/{slug}": {
+   "get": {
+    "operationId": "get_public_trust_slug",
+    "summary": "A trust page's public data",
+    "description": "`slug`, `name`, `website_url`, `logo_url`, `state` (`active` or `not_active`), `last_evaluated_at`, `kinds`, `unsupported_kinds`, `show_marketing`, `listed`, `rule_version`. Never an id, a count or a package, host, repository, image or project name, nor an item the customer switched off. 404 for an unknown slug or a badge that is off. No sign-in; 120 requests a minute per address. Stackurity Cloud only (404 elsewhere).\n\nRole: none",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "slug",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/public/trust/{slug}/logo": {
+   "get": {
+    "operationId": "get_public_trust_slug_logo",
+    "summary": "A trust page's logo",
+    "description": "The customer's logo (PNG, JPEG or WebP) when the trust data names it; 404 otherwise. No sign-in. Stackurity Cloud only (404 elsewhere).\n\nRole: none",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "none",
+    "security": [],
+    "parameters": [
+     {
+      "name": "slug",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges": {
+   "get": {
+    "operationId": "get_trust_badges",
+    "summary": "The organisation's trust badges",
+    "description": "The badges the caller may manage, the plan's limits and the badge terms to accept. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_trust_badges",
+    "summary": "Make a trust badge (off)",
+    "description": "`slug`, `scope_kind` (`projects` or `assets`), `project_ids` or `asset_ids`, `display_name`, `website_url` and the item switches. 402 beyond the plan's badges, 409 for a taken address. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}": {
+   "put": {
+    "operationId": "put_trust_badges_id",
+    "summary": "Change a trust badge",
+    "description": "The same body as making one. Audited with the values before and after. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_trust_badges_id",
+    "summary": "Delete a trust badge",
+    "description": "Its history stays until the retention purge. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}/enabled": {
+   "post": {
+    "operationId": "post_trust_badges_id_enabled",
+    "summary": "Turn a trust badge on or off",
+    "description": "`enabled`. On needs the current terms accepted. Decided at once; turning off takes effect at once and purges cached copies. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}/history": {
+   "get": {
+    "operationId": "get_trust_badges_id_history",
+    "summary": "A trust badge's status timeline",
+    "description": "Decisions, newest first: time, result, reason and rule version. Each read is audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}/logo": {
+   "put": {
+    "operationId": "put_trust_badges_id_logo",
+    "summary": "Upload a trust page logo",
+    "description": "The image as the body: PNG, JPEG or WebP, at most 256 KiB. Paid plans only. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_trust_badges_id_logo",
+    "summary": "Remove a trust page logo",
+    "description": "Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}/preview": {
+   "get": {
+    "operationId": "get_trust_badges_id_preview",
+    "summary": "Preview a trust badge",
+    "description": "What the public would see if the badge were on now: the trust data and images, from a live run of the rule (nothing written). Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/trust-badges/{id}/terms": {
+   "post": {
+    "operationId": "post_trust_badges_id_terms",
+    "summary": "Accept the badge terms",
+    "description": "`version` (the current one) and `accepted: true`; a person in the dashboard only. Audited. Stackurity Cloud only (404 elsewhere).\n\nRole: admin, or an admin of every project or asset the badge covers",
+    "tags": [
+     "Trust badge"
+    ],
+    "x-stackurity-role": "admin, or an admin of every project or asset the badge covers",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "requestBody": {
      "required": true,
      "content": {

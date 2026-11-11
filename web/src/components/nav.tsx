@@ -53,14 +53,17 @@ interface TabLink {
   billing?: boolean;
   /** Shown only where the server hands out free self-hosted keys (Stackurity Cloud). */
   communityKeys?: boolean;
+  /** Shown only where the trust badge is offered (Stackurity Cloud). */
+  trustBadge?: boolean;
 }
 
 /** Whether the signed-in person may open a tab: the same rules as the routes in App.tsx. */
-function useAllowed(): (t: Pick<TabLink, "min" | "act" | "instanceAdmin" | "billing" | "communityKeys">) => boolean {
+function useAllowed(): (t: Pick<TabLink, "min" | "act" | "instanceAdmin" | "billing" | "communityKeys" | "trustBadge">) => boolean {
   const { can, canAct, me, meta } = useAuth();
   return (t) =>
     (!t.billing || Boolean(meta?.billing)) &&
     (!t.communityKeys || Boolean(meta?.community_keys)) &&
+    (!t.trustBadge || Boolean(meta?.trust_badge)) &&
     (!t.act || canAct(t.act)) &&
     (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
 }
@@ -165,6 +168,7 @@ const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/admin/workspaces", label: "Workspaces", instanceAdmin: true },
       { to: "/admin/health", label: "Platform health", instanceAdmin: true },
       { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
+      { to: "/admin/trust-badges", label: "Trust badges", instanceAdmin: true, trustBadge: true },
       { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
       { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", instanceAdmin: true },

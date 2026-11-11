@@ -368,6 +368,7 @@ func serverCmd() *cobra.Command {
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
 				Health: checker, UpdateCheck: updateCfg.Enabled,
+				TrustBadge: trustBadge.On, TrustBadgePurge: trustBadge.Purge, TrustPageBase: trustBadge.PageBase,
 				// Error reports stay in this database (docs/install.md#error-reports).
 				ClientErrors:  clientErrorsOn(),
 				CoverageGaps:  func(ctx context.Context) (any, error) { return coverageGaps(ctx) },

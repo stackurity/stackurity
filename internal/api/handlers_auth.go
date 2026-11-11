@@ -45,6 +45,10 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	if aud := s.ciAudience(); aud != "" {
 		meta["ci_audience"] = aud
 	}
+	// Settings, Trust badge (Stackurity Cloud with the badge on).
+	if s.TrustBadge {
+		meta["trust_badge"] = true
+	}
 	if editionMeta != nil {
 		editionMeta(s, r, meta)
 	}

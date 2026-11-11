@@ -68,11 +68,16 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/openapi.json":       {class: "public"},
 	"GET /api/v1/public/cves/":       {class: "public"},
 	"GET /api/v1/public/cves/recent": {class: "public"},
-	"POST /api/v1/setup":             {class: "skip"},
-	"POST /api/v1/auth/login":        {class: "skip"},
-	"POST /api/v1/auth/logout":       {class: "skip"},
-	"POST /api/v1/enroll":            {class: "public"},
-	"POST /api/v1/ci/token":          {class: "public"},
+	// The trust badge's public image and trust data (trust_badge.go).
+	"GET /badge/{file}":                    {class: "public"},
+	"GET /api/v1/public/trust/":            {class: "public"},
+	"GET /api/v1/public/trust/{slug}":      {class: "public"},
+	"GET /api/v1/public/trust/{slug}/logo": {class: "public"},
+	"POST /api/v1/setup":                   {class: "skip"},
+	"POST /api/v1/auth/login":              {class: "skip"},
+	"POST /api/v1/auth/logout":             {class: "skip"},
+	"POST /api/v1/enroll":                  {class: "public"},
+	"POST /api/v1/ci/token":                {class: "public"},
 	// Error reports from the dashboard, signed in or not: they write to
 	// the caller's own workspace only, and nothing comes back
 	// (client_errors_test.go).
@@ -312,25 +317,27 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/cloud-setup/azure": {class: "list", query: "?tenant_id=aaaaaaaa-0000-0000-0000-000000000001&subscription_id=bbbbbbbb-0000-0000-0000-000000000002"},
 
 	// Instance administration.
-	"GET /api/v1/admin/license/":             {class: "instance"},
-	"PUT /api/v1/admin/license/":             {class: "instance"},
-	"DELETE /api/v1/admin/license/":          {class: "instance"},
-	"POST /api/v1/admin/license/link":        {class: "instance"},
-	"POST /api/v1/admin/license/link/claim":  {class: "instance"},
-	"GET /api/v1/admin/packs/":               {class: "instance"},
-	"POST /api/v1/admin/packs/install":       {class: "instance"},
-	"POST /api/v1/admin/packs/upload":        {class: "instance"},
-	"PATCH /api/v1/admin/packs/{id}":         {class: "instance"},
-	"POST /api/v1/admin/packs/{id}/rollback": {class: "instance"},
-	"DELETE /api/v1/admin/packs/{id}":        {class: "instance"},
-	"GET /api/v1/admin/health":               {class: "instance"},
-	"GET /api/v1/admin/coverage-gaps":        {class: "instance"},
-	"GET /api/v1/admin/client-errors":        {class: "instance"},
-	"GET /api/v1/updates":                    {class: "instance"},
-	"GET /api/v1/admin/workspaces/":          {class: "instance"},
-	"POST /api/v1/admin/workspaces/":         {class: "instance"},
-	"PATCH /api/v1/admin/workspaces/{id}":    {class: "instance", obj: id("workspace")},
-	"PATCH /api/v1/feeds/{name}":             {class: "instance"},
+	"GET /api/v1/admin/license/":                  {class: "instance"},
+	"PUT /api/v1/admin/license/":                  {class: "instance"},
+	"DELETE /api/v1/admin/license/":               {class: "instance"},
+	"POST /api/v1/admin/license/link":             {class: "instance"},
+	"POST /api/v1/admin/license/link/claim":       {class: "instance"},
+	"GET /api/v1/admin/packs/":                    {class: "instance"},
+	"POST /api/v1/admin/packs/install":            {class: "instance"},
+	"POST /api/v1/admin/packs/upload":             {class: "instance"},
+	"PATCH /api/v1/admin/packs/{id}":              {class: "instance"},
+	"POST /api/v1/admin/packs/{id}/rollback":      {class: "instance"},
+	"DELETE /api/v1/admin/packs/{id}":             {class: "instance"},
+	"GET /api/v1/admin/health":                    {class: "instance"},
+	"GET /api/v1/admin/coverage-gaps":             {class: "instance"},
+	"GET /api/v1/admin/trust-badges":              {class: "instance"},
+	"GET /api/v1/admin/trust-badges/{id}/history": {class: "instance"},
+	"GET /api/v1/admin/client-errors":             {class: "instance"},
+	"GET /api/v1/updates":                         {class: "instance"},
+	"GET /api/v1/admin/workspaces/":               {class: "instance"},
+	"POST /api/v1/admin/workspaces/":              {class: "instance"},
+	"PATCH /api/v1/admin/workspaces/{id}":         {class: "instance", obj: id("workspace")},
+	"PATCH /api/v1/feeds/{name}":                  {class: "instance"},
 
 	// Collectors and agents.
 	"POST /api/v1/ingest":                 {class: "create", body: func(a *tenantFx) any { return a.claimBatch() }},
@@ -501,7 +508,22 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/projects/{id}":                    {class: "object", obj: id("project")},
 	// Notifications of A's project or asset: B gets 404 for the project or
 	// asset before anything else is read.
-	"GET /api/v1/projects/{id}/notifications":                      {class: "object", obj: id("project")},
+	"GET /api/v1/projects/{id}/notifications": {class: "object", obj: id("project")},
+	// Trust badges (trust_badge.go).
+	"GET /api/v1/trust-badges": {class: "list"},
+	"POST /api/v1/trust-badges": {class: "create", body: func(a *tenantFx) any {
+		return map[string]any{"slug": "sweep-badge", "scope_kind": "projects", "project_ids": []int64{a.int("project")}}
+	}},
+	"PUT /api/v1/trust-badges/{id}": {class: "object", obj: id("trustbadge"), body: func(a *tenantFx) any {
+		return map[string]any{"slug": "sweep-badge", "scope_kind": "projects", "project_ids": []int64{a.int("project")}}
+	}},
+	"DELETE /api/v1/trust-badges/{id}":                             {class: "object", obj: id("trustbadge")},
+	"POST /api/v1/trust-badges/{id}/terms":                         {class: "object", obj: id("trustbadge"), body: func(a *tenantFx) any { return map[string]any{"version": api.TrustBadgeTermsVersion, "accepted": true} }},
+	"POST /api/v1/trust-badges/{id}/enabled":                       {class: "object", obj: id("trustbadge"), body: func(a *tenantFx) any { return map[string]any{"enabled": true} }},
+	"PUT /api/v1/trust-badges/{id}/logo":                           {class: "object", obj: id("trustbadge")},
+	"DELETE /api/v1/trust-badges/{id}/logo":                        {class: "object", obj: id("trustbadge")},
+	"GET /api/v1/trust-badges/{id}/preview":                        {class: "object", obj: id("trustbadge")},
+	"GET /api/v1/trust-badges/{id}/history":                        {class: "object", obj: id("trustbadge")},
 	"POST /api/v1/projects/{id}/notifications/routes":              {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"name": "sweep", "channel_id": a.int("channel")} }},
 	"PUT /api/v1/projects/{id}/notifications/routes/{rid}":         {class: "object", obj: map[string]string{"id": "project", "rid": "route"}, body: func(a *tenantFx) any { return map[string]any{"name": "hacked", "channel_id": a.int("channel")} }},
 	"DELETE /api/v1/projects/{id}/notifications/routes/{rid}":      {class: "object", obj: map[string]string{"id": "project", "rid": "route"}},
@@ -851,6 +873,13 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s project: %d", tag, code)
 	}
 	set("project", proj.ID)
+	// A trust badge over the project, off (its terms not accepted).
+	badge, err := e.st.CreateTrustBadge(ctx, store.TrustBadge{Slug: tag + "-trust", ScopeKind: "projects", ProjectIDs: []int64{proj.ID},
+		ShowMarketing: true, Listed: true}, me.User.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("trustbadge", badge.ID)
 	var grant struct{ Grant store.Grant }
 	if code := admin.do("POST", "/api/v1/access-grants", map[string]any{"project_id": proj.ID, "team_id": team.ID, "role": "engineer"}, &grant); code != 201 {
 		t.Fatalf("%s grant: %d", tag, code)

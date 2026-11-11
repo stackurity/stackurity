@@ -71,6 +71,8 @@ export interface Meta {
   email_preferences?: boolean;
   /** True when passkeys work on this server (STACKURITY_BASE_URL with a domain name over https). */
   passkeys?: boolean;
+  /** True when organisations can show a trust badge (Stackurity Cloud with the badge switched on). */
+  trust_badge?: boolean;
   /** True when the dashboard reports the errors people hit to this server (off with STACKURITY_CLIENT_ERRORS=off). */
   client_errors?: boolean;
   /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
