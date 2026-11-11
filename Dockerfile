@@ -14,7 +14,7 @@ RUN npm run build
 # EE_TAGS adds build tags an edition built on it needs (default "ee").
 FROM scratch AS pro
 
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS build
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
@@ -48,7 +48,7 @@ RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
       -o /out/agents/stackurity-windows-amd64 ./cmd/stackurity; \
     (cd /out/agents && sha256sum stackurity-windows-amd64 > stackurity-windows-amd64.sha256)
 
-FROM --platform=$BUILDPLATFORM golang:1.27.3-alpine AS syft
+FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS syft
 # Syft generates container image SBOMs from registries (no container runtime).
 # Built from source with this toolchain rather than taking the release
 # binary: Syft's own builds lag Go security releases. SYFT_DEPS raises
