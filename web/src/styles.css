@@ -4588,6 +4588,68 @@ h6.md-h {
 .asset-details[open] > summary {
   margin-bottom: var(--s3);
 }
+/* A card that opens and closes (DisclosureCard): the finding page's sections. */
+.disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  min-height: 44px;
+  position: relative;
+  padding-left: 22px;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+.disclosure > summary:hover h2 {
+  color: var(--link);
+}
+.disclosure > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+.disclosure[open] > summary {
+  margin-bottom: var(--s3);
+}
+.disclosure > summary h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.disclosure-badges {
+  font-weight: normal;
+}
+.disclosure-body > .advisory {
+  box-shadow: none;
+}
+.finding-what {
+  font-size: 15px;
+  margin: 0 0 var(--s3);
+}
+.finding-glance {
+  margin-bottom: var(--s3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .disclosure > summary::before {
+    transition: none;
+  }
+}
 .danger-zone {
   margin-top: var(--s5);
   padding: var(--s4) var(--s5);

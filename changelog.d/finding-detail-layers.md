@@ -1,0 +1,3 @@
+### Changed
+
+- **An issue's page starts with what to do.** A new **What to do** box at the top says what is wrong in one sentence, where it is (the asset, and other assets with the same open issue), its priority, the fix and the actions (Acknowledge, Start work, Assign…), plus who owns it: owner, state, the deadline that applies and, while a VEX exception waits, who must approve it. Why it matched, the upgrade recommendation, the priority calculation, the workflow and the affected component follow as sections that open and close, and the technical details (how it was decided, raw evidence, advisories, history) are collapsed at the bottom. Nothing was removed. A link to a section, such as `/findings/123#history`, opens it.

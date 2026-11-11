@@ -310,6 +310,49 @@ export function Card({
   );
 }
 
+/**
+ * A card that opens and closes (native <details>, so it works by keyboard
+ * and find-in-page). The summary shows the title, a one-line description
+ * and any badges, so a closed card still says what is inside. `forceOpen`
+ * opens it (a link to its id); the person can close it again.
+ */
+export function DisclosureCard({
+  id,
+  title,
+  description,
+  badges,
+  defaultOpen = false,
+  forceOpen = false,
+  children,
+}: {
+  id: string;
+  title: ReactNode;
+  description?: ReactNode;
+  badges?: ReactNode;
+  defaultOpen?: boolean;
+  forceOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen || forceOpen);
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+  return (
+    <details className="card disclosure" id={id} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="card-head card-head-desc">
+        <div className="card-head-text">
+          <h2>
+            {title}
+            {badges && <span className="badges disclosure-badges">{badges}</span>}
+          </h2>
+          {description && <p className="card-desc">{description}</p>}
+        </div>
+      </summary>
+      <div className="disclosure-body">{children}</div>
+    </details>
+  );
+}
+
 /*
  * Settings layout (see web/UI-PATTERNS.md). A settings card is a stack of
  * SettingRows: what the setting is and what it is for on the left, its
