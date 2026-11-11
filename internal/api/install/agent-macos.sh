@@ -39,7 +39,7 @@ if [ "${STACKURITY_UNINSTALL:-}" = 1 ]; then
   rm -rf "$HOME_DIR" "$LOGS"
   if dscl . -read "/Users/$ACCOUNT" >/dev/null 2>&1; then dscl . -delete "/Users/$ACCOUNT"; fi
   if dscl . -read "/Groups/$ACCOUNT" >/dev/null 2>&1; then dscl . -delete "/Groups/$ACCOUNT"; fi
-  say "removed the agent. Its host stays on the server until an admin deletes it (and its token under Settings > API tokens)."
+  say "removed the agent. Its host stays on the server until an admin deletes it (and its token under Integrations > API tokens)."
   exit 0
 fi
 

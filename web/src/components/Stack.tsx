@@ -265,7 +265,7 @@ export function SuggestedLinks({
   );
 }
 
-function MembersTable({ members, root }: { members: StackMember[]; root: number }) {
+export function MembersTable({ members, root }: { members: StackMember[]; root: number }) {
   const names = new Map(members.map((m) => [m.asset_id, m.name]));
   const columns: Column<StackMember>[] = [
     {
@@ -305,7 +305,7 @@ function MembersTable({ members, root }: { members: StackMember[]; root: number 
       cell: (m) =>
         m.open > 0 ? (
           <Link to={`/assets/${m.asset_id}?tab=findings`}>
-            <Badge status="open" tone="bad" label={`${m.open.toLocaleString()} open`} />
+            <Badge status="open" tone="warn" label={`${m.open.toLocaleString()} open`} title="Open findings on this asset; the layers table below shows which are known exploited or overdue" />
           </Link>
         ) : (
           <span className="muted">—</span>
@@ -315,7 +315,7 @@ function MembersTable({ members, root }: { members: StackMember[]; root: number 
   return <Table caption="Assets in this stack" columns={columns} rows={members} rowKey={(m) => m.asset_id} />;
 }
 
-function LayersTable({
+export function LayersTable({
   layers,
   selected,
   onSelect,

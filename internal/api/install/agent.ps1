@@ -77,7 +77,7 @@ if ($env:STACKURITY_UNINSTALL -eq '1') {
   }
   Remove-Item Env:STACKURITY_UNINSTALL -ErrorAction SilentlyContinue
   Say 'removed the agent, its service and its token from this host'
-  Say 'the host stays in Stackurity until you delete it under Assets; its collector token stays valid until you revoke it under Settings > API tokens'
+  Say 'the host stays in Stackurity until you delete it under Assets; its collector token stays valid until you revoke it under Integrations > API tokens'
   return
 }
 
