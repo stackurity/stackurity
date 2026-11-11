@@ -7242,7 +7242,7 @@
    "get": {
     "operationId": "get_onboarding",
     "summary": "The first-run flow",
-    "description": "The first-run flow: `state` (`new`, `skipped`, `done`), `show_flow` (state `new` and no assets yet), `has_assets`, `project_id` and `project` (chosen in the flow), and `steps` (`project`, `asset`, `notifications`, `invite`), each read from what exists. When every step is done the state becomes `done`\n\nRole: admin",
+    "description": "The first-run flow: `state` (`new`, `skipped`, `done`), `show_flow` (state `new` and no assets yet), `has_assets`, `project_id` and `project` (chosen in the flow), and `steps` (`project`, `asset`, `notifications`, `invite`), each read from what exists. The state becomes `done` only when an admin hides the Dashboard's setup checklist\n\nRole: admin",
     "tags": [
      "Projects and people"
     ],

@@ -11,12 +11,12 @@ export const ARTICLES: Article[] = [
     id: "getting-started",
     title: "Your first ten minutes",
     section: "Getting started",
-    summary: "Create a project, add a server, repository or SBOM, see what it found, turn on alerts and invite people.",
+    summary: "Create a project, add a server, repository or SBOM, see what it found, turn on alerts and invite people; then the Dashboard's setup checklist.",
     where: ["Dashboard"],
     keywords: "setup set up onboarding first run welcome checklist invite invitation getting started quiet first scan",
     body: [
       {
-        p: "A new organisation's administrators start in **Set up Stackurity**. Each step can be skipped. Until every step is done, the Dashboard shows a checklist that leads back to the step you skipped. Installations that already have assets never see it.",
+        p: "A new organisation's administrators start in **Set up Stackurity**. Each step can be skipped. Afterwards the Dashboard shows a setup checklist, with a few more steps, until an administrator hides it. Installations that already have assets never see it.",
       },
       {
         steps: [
@@ -46,7 +46,23 @@ export const ARTICLES: Article[] = [
       { note: "Running the server yourself? See the install guide (docs/install.md) for the first start, the setup token and backups." },
       { h: "The checklist on the Dashboard" },
       {
-        p: "Until you hide it, the Dashboard lists what is left: add a server, connect an AI assistant, turn on notifications and invite your team. Each item opens the right page, and is ticked once it is done.",
+        p: "Administrators see **Finish setting up** on the Dashboard, with how far you have got (\"3 of 8 done\") and a bar. Each step says why it is worth doing and what you get once it is done, and its button opens the page that does it. A step is ticked from what exists in the workspace, so doing it somewhere else counts too. If a step could not be checked just now, it says so instead of showing a tick.",
+      },
+      {
+        table: [
+          ["Step", "Why", "Ticked when"],
+          ["Connect your first server", "See every package your servers run, and which have known vulnerabilities.", "At least one server reports."],
+          ["Add your source repositories", "Catch vulnerable libraries in the code, before they reach a server.", "At least one repository is scanned."],
+          ["Turn on vulnerability alerts", "New urgent issues reach Slack or email without anyone opening the Dashboard.", "An alert rule is on."],
+          ["Set who owns what", "Each issue reaches the right person or team without being forwarded.", "At least one owner rule exists ([People ▸ Owners](/people/owners))."],
+          ["Set how issues are prioritised and fixed", "Priorities and fix deadlines match how your team works.", "The [risk policy](/settings/risk-policy) has been saved, or (Pro) an automatic-fix policy exists."],
+          ["Invite your team", "The people who fix things see their own issues.", "Someone was invited, or the organisation has another member."],
+          ["Connect an AI assistant", "Ask what is installed and what to upgrade, in plain words.", "An assistant was connected."],
+          ["Set up two-factor sign-in", "A leaked password alone cannot open your admin account.", "Your account has a passkey or an authenticator app."],
+        ],
+      },
+      {
+        p: "While there is no project yet, **Create a project** comes first. On Community, the policy step also shows that automatic fixes are part of Stackurity Pro; the step is ticked by the risk policy alone. Once every step is done, **Dismiss** removes the checklist; **Hide the checklist** removes it before then. Either hides it for every administrator in the workspace.",
       },
     ],
   },
