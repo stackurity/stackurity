@@ -222,6 +222,86 @@ func TestOutcomesReport(t *testing.T) {
 	}
 }
 
+// TestOutcomesExecutive: the executive figures count with the report's own
+// rules, so the trend's fixed adds up to the report's resolved and the
+// overdue list and owners match its open counts.
+func TestOutcomesExecutive(t *testing.T) {
+	f := newOutcomeFixture(t)
+	s, ctx := f.s, f.ctx
+	now := time.Now()
+	from, to := now.AddDate(0, 0, -30), now.Add(time.Minute)
+	r, err := s.OutcomesReport(ctx, from, to, fixDays)
+	if err != nil {
+		t.Fatal(err)
+	}
+	x, err := s.OutcomesExecutive(ctx, r.From, to, []string{"production", "prod"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if x.PeriodDays != 7 || len(x.Trend) != 5 || !x.Trend[0].Start.Equal(r.From) || !x.Trend[len(x.Trend)-1].End.Equal(to) {
+		t.Fatalf("periods: %d days, %+v", x.PeriodDays, x.Trend)
+	}
+	var fixed, opened int64
+	for i, p := range x.Trend {
+		fixed += p.Fixed
+		opened += p.Opened
+		if i > 0 && !p.Start.Equal(x.Trend[i-1].End) {
+			t.Errorf("period %d does not follow on: %+v", i, x.Trend)
+		}
+	}
+	// CVE-1 (10 days ago, and reopened today), CVE-2 (today), CVE-4 (20
+	// days ago); CVE-3 and CVE-5 were first seen before the window.
+	if fixed != r.Resolved || opened != 4 || x.Trend[len(x.Trend)-1].Opened != 2 {
+		t.Errorf("trend fixed %d (report resolved %d), opened %d: %+v", fixed, r.Resolved, opened, x.Trend)
+	}
+	if int64(len(x.Overdue)) != r.Open.Overdue || x.Overdue[0].Key != "CVE-4" || x.Overdue[0].Priority != "P1" || x.Overdue[0].OwnerKind != "" {
+		t.Errorf("overdue = %+v, report overdue %d", x.Overdue, r.Open.Overdue)
+	}
+	if x.OwnersTotal != 1 || x.Owners[0] != (store.OutcomeOwner{Open: 1, Overdue: 1, Urgent: 1}) {
+		t.Errorf("owners = %+v", x.Owners)
+	}
+	// Environment and exposure are not recorded: neither is counted.
+	if x.Impact != (store.OutcomeImpact{UrgentAssets: 1}) {
+		t.Errorf("impact = %+v", x.Impact)
+	}
+	if x.Exceptions.Pending != 0 || x.Exceptions.Expired != 0 {
+		t.Errorf("exceptions = %+v", x.Exceptions)
+	}
+
+	// Production (any case) and internet-facing; a pending request; a
+	// snooze on CVE-4 that ran out.
+	if _, err := s.Pool.Exec(ctx, `UPDATE assets SET environment = 'Production', internet_exposed = true WHERE id = $1`, f.asset); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `INSERT INTO ignore_requests (finding_ids, reason, note, scope, expiry)
+		SELECT ARRAY[id], 'accepted_risk', 'n', 'asset', 'never' FROM findings WHERE key = 'CVE-4'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE findings SET state = 'suppressed', suppressed_until = now() - interval '1 second' WHERE key = 'CVE-4'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.ExpireSuppressions(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if x, err = s.OutcomesExecutive(ctx, r.From, now.Add(2*time.Minute), []string{"production"}); err != nil {
+		t.Fatal(err)
+	}
+	if x.Impact != (store.OutcomeImpact{UrgentAssets: 1, EnvironmentKnown: 1, Production: 1, ExposureKnown: 1, Exposed: 1, ExposedProduction: 1}) {
+		t.Errorf("impact = %+v", x.Impact)
+	}
+	if x.Exceptions.Pending != 1 || x.Exceptions.PendingSince == nil || x.Exceptions.Expired != 1 || x.Exceptions.ExpiredStillOpen != 1 {
+		t.Errorf("exceptions = %+v", x.Exceptions)
+	}
+
+	// A window past 91 days is counted in 4-week periods.
+	if x, err = s.OutcomesExecutive(ctx, now.AddDate(0, 0, -365), now, nil); err != nil {
+		t.Fatal(err)
+	}
+	if x.PeriodDays != 28 || len(x.Trend) != 14 {
+		t.Errorf("a year: %d-day periods, %d of them", x.PeriodDays, len(x.Trend))
+	}
+}
+
 func TestVerifySince(t *testing.T) {
 	f := newOutcomeFixture(t)
 	r, err := f.s.VerifySince(f.ctx, f.before, 0, 0)
@@ -273,6 +353,22 @@ func TestOutcomesAreWorkspaceScoped(t *testing.T) {
 	if r.Resolved != 0 || r.Reopened.Events != 0 || r.Reopened.ResolutionEvents != 0 || r.Open.Active != 0 || len(r.Causes) != 0 ||
 		len(r.Open.ByEvidence) != 0 {
 		t.Errorf("beta sees alpha's outcomes: %+v", r)
+	}
+	if _, err := f.s.Pool.Exec(f.ctx, `INSERT INTO ignore_requests (finding_ids, reason, note, scope, expiry)
+		SELECT ARRAY[id], 'accepted_risk', 'n', 'asset', 'never' FROM findings WHERE key = 'CVE-4'`); err != nil {
+		t.Fatal(err)
+	}
+	x, err := f.s.OutcomesExecutive(beta, r.From, now.Add(time.Minute), []string{"production"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, p := range x.Trend {
+		if p.Opened != 0 || p.Fixed != 0 {
+			t.Errorf("beta sees alpha's trend: %+v", x.Trend)
+		}
+	}
+	if len(x.Overdue) != 0 || len(x.Owners) != 0 || x.Impact.UrgentAssets != 0 || x.Exceptions.Pending != 0 {
+		t.Errorf("beta sees alpha's executive figures: %+v", x)
 	}
 	v, err := f.s.VerifySince(beta, f.before, 0, 0)
 	if err != nil {

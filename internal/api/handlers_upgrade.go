@@ -239,11 +239,17 @@ func (s *Server) outcomesReport(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
+	if rep.Executive, err = s.Store.OutcomesExecutive(r.Context(), rep.From, to, pol.ProductionEnvironments); err != nil {
+		s.fail(w, r, err)
+		return
+	}
 	trial, err := s.reportTrial(r)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
+	rep.Executive.Overdue = trialClip(trial, "overdue_top", rep.Executive.Overdue)
+	rep.Executive.Owners = trialClip(trial, "by_owner", rep.Executive.Owners)
 	rep.Reopened.Recent = trialClip(trial, "reopened", rep.Reopened.Recent)
 	if rep.Remediation != nil {
 		rep.Remediation.Failures = trialClip(trial, "recent_failures", rep.Remediation.Failures)

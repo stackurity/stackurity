@@ -2531,6 +2531,37 @@ details.json pre {
   margin-bottom: 16px;
 }
 
+/* Outcomes, executive summary: short, readable, printable on one or two pages. */
+.outcomes-exec .exec-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-bottom: var(--s4);
+}
+.outcomes-exec .exec-h {
+  font-size: 0.95rem;
+  margin: 0 0 var(--s2);
+}
+.outcomes-exec .exec-lines {
+  margin: 0 0 var(--s2);
+  padding-left: 1.2em;
+}
+.outcomes-exec .exec-lines li + li {
+  margin-top: 4px;
+}
+.outcomes-exec .exec-lead {
+  font-size: 1rem;
+  margin: 0 0 var(--s2);
+}
+.outcomes-exec .exec-prio {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+@media (max-width: 760px) {
+  .outcomes-exec .exec-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media print {
   /* Always print with the light palette, whatever the screen theme. */
   :root {
@@ -2594,6 +2625,36 @@ details.json pre {
   }
   .table-wrap {
     overflow: visible;
+    max-height: none;
+  }
+  /* Outcomes' executive summary: one or two pages, no controls. */
+  .outcomes-exec-page {
+    font-size: 10.5pt;
+  }
+  .outcomes-exec-page .page-head {
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .card {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .exec-tiles {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .outcomes-exec .tile {
+    padding: 6px 8px;
+  }
+  .outcomes-exec .exec-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .table td,
+  .outcomes-exec .table th {
+    padding: 3px 6px;
+  }
+  .outcomes-exec .table-wrap {
     max-height: none;
   }
   a {
