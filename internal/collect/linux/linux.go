@@ -187,6 +187,17 @@ func (c *Collector) OwnedFunc() func(string) bool {
 	}
 }
 
+// ListedOwnedFunc reports whether dpkg or apk installed a host path, from
+// their file lists only. It is nil when the root has neither list (an rpm
+// root, or none at all), where OwnedFunc would guess by directory.
+func (c *Collector) ListedOwnedFunc() func(string) bool {
+	owned, err := c.ownedFiles()
+	if err != nil || owned == nil {
+		return nil
+	}
+	return func(p string) bool { return owned[p] || owned[usrMerge(p)] }
+}
+
 func hasRPMDB(c *Collector) bool {
 	for _, p := range []string{"var/lib/rpm/rpmdb.sqlite", "var/lib/rpm/Packages", "usr/lib/sysimage/rpm/rpmdb.sqlite"} {
 		if _, err := os.Stat(c.path(p)); err == nil {

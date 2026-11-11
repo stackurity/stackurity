@@ -20,6 +20,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/gobin/gobintest"
 	"github.com/stackurity/stackurity/internal/model"
 )
 
@@ -118,10 +119,14 @@ func (f *fakeDocker) exported(id string) int {
 type entry struct {
 	name, body, link string
 	typ              byte
+	mode             int64
 }
 
 func file(name, body string) entry   { return entry{name: name, body: body, typ: tar.TypeReg} }
 func link(name, target string) entry { return entry{name: name, link: target, typ: tar.TypeSymlink} }
+func exe(name string, body []byte) entry {
+	return entry{name: name, body: string(body), typ: tar.TypeReg, mode: 0o755}
+}
 
 func layerTar(entries ...entry) []byte {
 	var buf bytes.Buffer
@@ -136,7 +141,11 @@ func layerTar(entries ...entry) []byte {
 				tw.WriteHeader(&tar.Header{Name: d, Typeflag: tar.TypeDir, Mode: 0o755})
 			}
 		}
-		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: 0o644, Linkname: e.link, Size: int64(len(e.body))}
+		mode := e.mode
+		if mode == 0 {
+			mode = 0o644
+		}
+		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: mode, Linkname: e.link, Size: int64(len(e.body))}
 		if e.typ != tar.TypeReg {
 			h.Size = 0
 		}
@@ -648,5 +657,40 @@ func TestScratchImage(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("coverage = %+v", r.Coverage)
+	}
+}
+
+// Go binaries in an image are read for their modules: an alpine image with
+// a Go application in /usr/local/bin and a Go binary apk installed reports
+// the application's toolchain and modules at its path, and leaves the
+// packaged binary to its apk entry.
+func TestImageGoBinary(t *testing.T) {
+	bins := gobintest.Build(t)
+	db := apkDB + "C:Q1ghi=\nP:packaged-go\nV:1.0.0-r0\nA:x86_64\no:packaged-go\nF:usr/bin\nR:packaged-go\n\n"
+	arch := saveArchive(idShop,
+		layerTar(file("etc/os-release", "ID=alpine\nVERSION_ID=3.20.3\nPRETTY_NAME=\"Alpine Linux v3.20\"\n"),
+			file("lib/apk/db/installed", db), exe("usr/bin/packaged-go", bins.Plain)),
+		layerTar(exe("usr/local/bin/stackurity", bins.Stripped)))
+	root, err := extractImage(context.Background(), bytes.NewReader(arch), t.TempDir(), 64<<20, "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := ReadRoot(context.Background(), root, &Image{}, "test")
+	var golang []string
+	for _, o := range r.Observations {
+		if strings.HasPrefix(o.Purl, "pkg:golang/") {
+			if o.Location != "/usr/local/bin/stackurity" || o.Evidence["binary"] != o.Location {
+				t.Errorf("%s at %q", o.Purl, o.Location)
+			}
+			p, _, _ := strings.Cut(o.Purl, "@")
+			golang = append(golang, p)
+		}
+	}
+	slices.Sort(golang)
+	if want := []string{"pkg:golang/example.com/dep", "pkg:golang/example.com/new", "pkg:golang/stdlib"}; !slices.Equal(golang, want) {
+		t.Errorf("golang components = %v, want %v", golang, want)
+	}
+	if c := coverage(&model.ObservationBatch{Coverage: r.Coverage}, "go-binaries"); c.Status != "checked" {
+		t.Errorf("go-binaries coverage = %+v", c)
 	}
 }
