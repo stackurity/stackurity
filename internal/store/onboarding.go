@@ -14,13 +14,13 @@ import (
 )
 
 // Onboarding (0.9): the first-run flow an organisation's admins see while it
-// has no assets, and the checklist on Home until it is done.
+// has no assets, and the checklist on Home until an admin hides it.
 
 // Onboarding states (workspaces.onboarding_state).
 const (
 	OnboardingNew     = "new"     // the flow shows while there are no assets
 	OnboardingSkipped = "skipped" // Home shows the checklist instead
-	OnboardingDone    = "done"    // nothing shows
+	OnboardingDone    = "done"    // an admin hid the checklist: nothing shows
 )
 
 // Onboarding is where an organisation is in its first ten minutes.
@@ -44,12 +44,10 @@ type OnboardingSteps struct {
 	Assistant     bool `json:"assistant"`     // someone connected an AI assistant (OAuth) to the organisation
 }
 
-func (s OnboardingSteps) all() bool {
-	return s.Project && s.Asset && s.Notifications && s.Invite && s.Assistant
-}
-
-// GetOnboarding returns the workspace's onboarding state. When every step
-// is done the state becomes done, and the checklist stops showing.
+// GetOnboarding returns the workspace's onboarding state. The state becomes
+// done only when an admin hides the checklist: the Dashboard's checklist has
+// more steps than these (owner rules, the risk policy), read from their own
+// endpoints, and says when they are all done.
 func (s *Store) GetOnboarding(ctx context.Context) (*Onboarding, error) {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
@@ -83,12 +81,6 @@ func (s *Store) GetOnboarding(ctx context.Context) (*Onboarding, error) {
 		Scan(&o.HasAssets, &o.Steps.Project, &o.Steps.Asset, &o.Steps.Notifications, &o.Steps.Invite, &o.Steps.Assistant)
 	if err != nil {
 		return nil, err
-	}
-	if o.State != OnboardingDone && o.Steps.all() {
-		if _, err := s.Pool.Exec(ctx, `UPDATE workspaces SET onboarding_state = 'done' WHERE id = $1`, ws); err != nil {
-			return nil, err
-		}
-		o.State = OnboardingDone
 	}
 	o.ShowFlow = o.State == OnboardingNew && !o.HasAssets
 	return o, nil

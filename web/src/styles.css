@@ -4478,8 +4478,9 @@ h6.md-h {
 }
 .setup-compact summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s2) var(--s3);
   min-height: 32px;
   cursor: pointer;
   font-weight: 600;
@@ -5200,7 +5201,7 @@ h6.md-h {
   color: var(--accent-strong);
 }
 .onboard-steps li.done .onboard-dot,
-.setup-list li.done .onboard-dot {
+.setup-row.done .onboard-dot {
   border-color: var(--good-fg);
   background: var(--good-bg);
   color: var(--good-fg);
@@ -5404,27 +5405,74 @@ h6.md-h {
   margin: 0;
   font-size: 1.05rem;
 }
+/* Setup steps: tick, why and what you get, the button on the right. */
 .setup-list {
   list-style: none;
   margin: var(--s2) 0 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s2) var(--s4);
 }
-.setup-list li {
+.setup-row {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: 44px;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border);
 }
-.setup-list li.done {
+.setup-row:first-child {
+  border-top: 0;
+}
+.setup-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.setup-row-why {
+  color: var(--text);
+}
+.setup-row-after,
+.setup-row-locked {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.setup-row.done strong,
+.setup-row.done .setup-row-why {
   color: var(--muted);
 }
-.setup-list a {
+.setup-row > .btn {
+  flex: none;
+  align-self: center;
+}
+.setup-progress {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  gap: var(--s2);
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.setup-checklist > .setup-progress {
+  display: flex;
+  margin-top: var(--s2);
+}
+.setup-progress-track {
+  display: inline-block;
+  width: 160px;
+  max-width: 40vw;
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.setup-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.setup-progress-fill.complete {
+  background: var(--good-dot);
 }
 .confirm-card {
   border-color: var(--accent);
@@ -5452,8 +5500,12 @@ h6.md-h {
   .onboard-steps li.current {
     flex: 4;
   }
-  .setup-list {
-    grid-template-columns: 1fr;
+  .setup-row {
+    flex-wrap: wrap;
+  }
+  .setup-row > .btn {
+    margin-left: calc(28px + var(--s3));
+    align-self: flex-start;
   }
   .onboard .btn-sm,
   .setup-checklist .btn,

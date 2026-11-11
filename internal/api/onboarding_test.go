@@ -71,7 +71,7 @@ func projectAssets(t *testing.T, s *session, project int64) []string {
 
 // The first-run flow: a new organisation's admin sees it, each step is
 // read from what exists, assets added through it land in the chosen
-// project, and it ends when every step is done. Other roles do not see it.
+// project, and the checklist stays until an admin hides it. Other roles do not see it.
 func TestOnboardingFlow(t *testing.T) {
 	e := newEnv(t)
 	e.user("admin@x.io", auth.RoleAdmin)
@@ -153,15 +153,22 @@ func TestOnboardingFlow(t *testing.T) {
 		o.Steps.Assistant {
 		t.Fatalf("before an assistant: %+v", o)
 	}
-	// 7. A connected assistant: every step is done, and so is the flow.
+	// 7. A connected assistant: every step here is done, but the checklist
+	// (which has more steps) stays until an admin hides it.
 	withBaseURL(e)
 	registerAssistant(t, e).connect(t, admin, auth.RoleViewer, 0)
-	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "done" || !o.Steps.Assistant {
+	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "new" || o.ShowFlow || !o.Steps.Assistant {
 		t.Fatalf("all steps done: %+v", o)
 	}
-	// Skipping and resuming.
-	if code := admin.do("PUT", "/api/v1/onboarding", map[string]any{"state": "skipped"}, &o); code != 200 || o.State != "done" {
-		t.Errorf("a finished flow stays done: %+v", o)
+	// Finishing the flow keeps the checklist; hiding it ends it for good.
+	if code := admin.do("PUT", "/api/v1/onboarding", map[string]any{"state": "skipped"}, &o); code != 200 || o.State != "skipped" || o.ShowFlow {
+		t.Errorf("finish the flow: %+v", o)
+	}
+	if code := admin.do("PUT", "/api/v1/onboarding", map[string]any{"state": "done"}, &o); code != 200 || o.State != "done" {
+		t.Errorf("hide the checklist: %+v", o)
+	}
+	if code := admin.do("GET", "/api/v1/onboarding", nil, &o); code != 200 || o.State != "done" {
+		t.Errorf("hidden stays hidden: %+v", o)
 	}
 	var audit struct{ Items []store.AuditEvent }
 	admin.do("GET", "/api/v1/audit?object_type=settings&object_id=onboarding", nil, &audit)

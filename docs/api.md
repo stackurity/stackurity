@@ -3029,7 +3029,7 @@ In trial report mode every report and export carries a watermark ([asset-limits.
 
 ## Onboarding
 
-A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping sets `skipped`: the dashboard then shows a checklist on the Dashboard until every step is done or someone hides it (`done`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
+A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping or finishing the flow sets `skipped`: the Dashboard then shows a setup checklist until an admin hides it (`done`); the state no longer becomes `done` by itself when these steps are done, because the checklist has more steps (owner rules from `GET /owner-rules`, a saved risk policy from `GET /risk-policy`, servers and repositories from `GET /overview`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
 
 Assets added through the flow land in its project: the install command's enrollment code, the CI token and the SBOM upload all carry `project_id`.
 
