@@ -157,51 +157,10 @@ func nvdRecord(p nvdProduct, c nvdCVE, anomalies nvdAnomalies) *osv.Vulnerabilit
 	seenRange, seenVersion := map[string]bool{}, map[string]bool{}
 	owned := false
 	for _, cfg := range c.Configurations {
-		var platform []nvdNode
-		var vulnerable []nvdNode
-		for _, n := range cfg.Nodes {
-			anyVuln := false
-			for _, m := range n.CPEMatch {
-				anyVuln = anyVuln || m.Vulnerable
-			}
-			if anyVuln {
-				vulnerable = append(vulnerable, n)
-			} else {
-				platform = append(platform, n)
-			}
-		}
-		mine := false
-		for _, n := range vulnerable {
-			for _, m := range n.CPEMatch {
-				if m.Vulnerable && p.OwnsCPE(m.Criteria) {
-					mine = true
-				}
-			}
-		}
-		if !mine {
+		vulnerable, ok, mine := nvdConfiguration(p, cfg, anomalies)
+		owned = owned || mine
+		if !ok {
 			continue
-		}
-		owned = true
-		if cfg.Negate {
-			anomalies[nvdNegated]++
-			continue
-		}
-		if strings.EqualFold(cfg.Operator, "AND") && len(platform) > 0 {
-			// "Program X running on Y": only a configuration that allows
-			// the product's platform applies to its hosts.
-			allowed := false
-			for _, n := range platform {
-				if n.Negate {
-					continue
-				}
-				for _, m := range n.CPEMatch {
-					allowed = allowed || p.PlatformAllows(m.Criteria)
-				}
-			}
-			if !allowed {
-				anomalies[nvdOtherOS]++
-				continue
-			}
 		}
 		for _, n := range vulnerable {
 			if n.Negate {
@@ -266,6 +225,57 @@ func nvdRecord(p nvdProduct, c nvdCVE, anomalies nvdAnomalies) *osv.Vulnerabilit
 		}
 	}
 	return v
+}
+
+// nvdConfiguration reads one configuration of a CVE: its vulnerable nodes,
+// whether they apply to the product (ok), and whether the configuration
+// names the product at all (mine). A configuration that names the product
+// but does not apply is counted in anomalies.
+func nvdConfiguration(p nvdProduct, cfg nvdConfig, anomalies nvdAnomalies) (vulnerable []nvdNode, ok, mine bool) {
+	var platform []nvdNode
+	for _, n := range cfg.Nodes {
+		anyVuln := false
+		for _, m := range n.CPEMatch {
+			anyVuln = anyVuln || m.Vulnerable
+		}
+		if anyVuln {
+			vulnerable = append(vulnerable, n)
+		} else {
+			platform = append(platform, n)
+		}
+	}
+	for _, n := range vulnerable {
+		for _, m := range n.CPEMatch {
+			if m.Vulnerable && p.OwnsCPE(m.Criteria) {
+				mine = true
+			}
+		}
+	}
+	if !mine {
+		return nil, false, false
+	}
+	if cfg.Negate {
+		anomalies[nvdNegated]++
+		return nil, false, true
+	}
+	if strings.EqualFold(cfg.Operator, "AND") && len(platform) > 0 {
+		// "Program X running on Y": only a configuration that allows
+		// the product's platform applies to its hosts.
+		allowed := false
+		for _, n := range platform {
+			if n.Negate {
+				continue
+			}
+			for _, m := range n.CPEMatch {
+				allowed = allowed || p.PlatformAllows(m.Criteria)
+			}
+		}
+		if !allowed {
+			anomalies[nvdOtherOS]++
+			return nil, false, true
+		}
+	}
+	return vulnerable, true, true
 }
 
 // nvdRange reads one CPE match: a range, an exact version, or why it is
