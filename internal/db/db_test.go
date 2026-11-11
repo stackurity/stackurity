@@ -82,3 +82,61 @@ func TestMigrateKeepsTrustBadgeHistoryAppendOnly(t *testing.T) {
 	}
 	check("after a restart")
 }
+
+// A backup restored onto a server that lacked the roles comes back with
+// the purge role's grant missing, and the application role then gets every
+// table from ensureAppRole's blanket grants. Start-up must protect the
+// history again: the purge role runs the purge, the application role may
+// not update, delete or purge.
+func TestMigrateReprotectsRestoredTrustBadgeHistory(t *testing.T) {
+	pool := testdb.New(t)
+	ctx := context.Background()
+	var schema string
+	if err := pool.QueryRow(ctx, `SELECT current_schema()`).Scan(&schema); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := pgx.ParseConfig(os.Getenv("STACKURITY_TEST_DATABASE_URL"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.RuntimeParams["search_path"] = schema
+	owner, err := pgx.ConnectConfig(ctx, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer owner.Close(ctx)
+	// The state after such a restore and the blanket grants.
+	for _, q := range []string{
+		`REVOKE ALL ON FUNCTION trust_badge_status_purge(interval, text) FROM stackurity_purge`,
+		`REVOKE USAGE ON SCHEMA ` + pgx.Identifier{schema}.Sanitize() + ` FROM stackurity_purge`,
+		`GRANT ALL ON trust_badge_status, trust_badge_purges TO stackurity_app`,
+		`GRANT EXECUTE ON FUNCTION trust_badge_status_purge(interval, text) TO stackurity_app`,
+	} {
+		if _, err := owner.Exec(ctx, q); err != nil {
+			t.Fatalf("%s: %v", q, err)
+		}
+	}
+	privs := func() (appUpd, appDel, appPurge, publicPurge, rolePurge bool) {
+		// publicPurge: EXECUTE for PUBLIC, which would let any role purge.
+		t.Helper()
+		if err := owner.QueryRow(ctx, `SELECT has_table_privilege('stackurity_app', 'trust_badge_status', 'UPDATE'),
+			has_table_privilege('stackurity_app', 'trust_badge_status', 'DELETE'),
+			has_function_privilege('stackurity_app', 'trust_badge_status_purge(interval, text)', 'EXECUTE'),
+			EXISTS (SELECT 1 FROM pg_proc p, aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+			  WHERE p.oid = 'trust_badge_status_purge(interval, text)'::regprocedure AND a.grantee = 0 AND a.privilege_type = 'EXECUTE'),
+			has_function_privilege('stackurity_purge', 'trust_badge_status_purge(interval, text)', 'EXECUTE')`).Scan(
+			&appUpd, &appDel, &appPurge, &publicPurge, &rolePurge); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	if u, d, p, pub, r := privs(); !u || !d || !p || pub || r {
+		t.Fatalf("set-up did not apply: %v %v %v %v %v", u, d, p, pub, r)
+	}
+	if _, err := db.Migrate(ctx, pool); err != nil {
+		t.Fatal(err)
+	}
+	if u, d, p, pub, r := privs(); u || d || p || pub || !r {
+		t.Errorf("after start: app update=%v delete=%v purge=%v, public purge=%v, purge role purge=%v", u, d, p, pub, r)
+	}
+}

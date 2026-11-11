@@ -1238,11 +1238,13 @@ docker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean -
 docker compose up -d
 ```
 
-Load the roles before `pg_restore`. The migrations grant privileges to the `stackurity_app` role, and on a PostgreSQL server that does not have it, `pg_restore` fails on each of those grants (`role "stackurity_app" does not exist`) and exits with status 1. If you have no roles file for the dump, create the role instead, then run `pg_restore`:
+Load the roles before `pg_restore`. The migrations grant privileges to the `stackurity_app` and `stackurity_purge` roles, and on a PostgreSQL server that does not have them, `pg_restore` fails on each of those grants (`role "stackurity_app" does not exist`) and exits with status 1. If you have no roles file for the dump, create the roles instead, then run `pg_restore`:
 
 ```sh
-docker compose exec -T postgres psql -U stackurity -d postgres -c 'CREATE ROLE stackurity_app NOLOGIN;'
+docker compose exec -T postgres psql -U stackurity -d postgres -c 'CREATE ROLE stackurity_app NOLOGIN;' -c 'CREATE ROLE stackurity_purge NOLOGIN;'
 ```
+
+If you restored without them, the restore is still usable: the server creates both roles on start and grants them their privileges again, including taking back what the application role must not do to the trust badge's history (see [Trust badge](trust-badge.md#status-history)).
 
 Test a restore regularly. A backup you have never restored is not a backup. To check one: restore it into a separate PostgreSQL, start Stackurity against it with `STACKURITY_FEEDS=off`, and confirm that `/readyz` answers 200 and `stackurity admin list-workspaces` shows your workspaces and asset counts.
 
