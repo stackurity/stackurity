@@ -6,6 +6,27 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.8
+
+### Security
+
+- Built with Go 1.27.4, which fixes GO-2026-6859: a race in `net/http`'s `MaxBytesReader` header handling could crash the HTTP/1 server.
+
+### Added
+
+- **Trust badge, part 1: the rule and its history (Stackurity Cloud only, off).** The rule that decides whether a "Monitored by Stackurity" badge is active, and an append-only history of every decision with the evidence to rebuild it. Every evaluation now records which refresh of each vulnerability source it read. Which refresh each evaluation read is recorded on every server (`inventory_evaluations`); the badges, their decisions and anything public exist only on the Stackurity Cloud build with `STACKURITY_TRUST_BADGE=on`. The badge launches after legal sign-off. See [Trust badge](docs/trust-badge.md).
+- **Trust badge, part 2: the badge, trust data and settings (Stackurity Cloud only, off).** The public badge image (`/badge/<slug>.svg`) and trust page data (`/api/v1/public/trust/<slug>`, plus the listed slugs for the sitemap and the customer's logo), with a contract test that no response carries an id, a count, a package, host, repository, image or project name, or an item the customer switched off. **Settings → Trust badge**: choose the projects or assets it covers, the address, name, website and what is shown, preview exactly what the public would see, accept the badge terms (pending counsel's sign-off), turn it on or off, copy the snippets, and read the badge's status timeline. Every change and every history read is audited. **Admin → Trust badges**: Stackurity's operators see the full evidence behind any decision, each view audited. Free plans have one badge with the marketing line always shown; the licensed Cloud build lets paid plans switch the line off, add a logo and have one badge per project. Turning a badge off takes effect at once, and with Cloudflare credentials set its cached copies are purged. Nothing exists on self-hosted servers, and the badge launches only after counsel's sign-off. See [Trust badge](docs/trust-badge.md).
+
+### Fixed
+
+- **Outcomes explains its SLA the way it now measures it.** The page still said the SLA counts the policy's days from first detection, though since 0.19.7 it compares each fix with that issue's fix-by date. The note, the SLA card and its "Policy days" column now say so.
+- **A finding's upgrade card no longer gives a second issue count.** It said "minimum for all 37 open issues" next to the fix's "36 issues cleared together", because its list also holds the package's end-of-life entry. The row now reads "minimum for everything it resolves", and the resolves list below shows what that is.
+
+### Upgrading
+
+- Migration `0103_trust_badge` adds the tables `inventory_evaluations`, `trust_badges`, `trust_badge_status` and `trust_badge_purges`, the purge function and a NOLOGIN role `stackurity_purge` (where the migrating user may create roles).
+- Migration `0104_trust_badge_public` adds the trust page name, website and logo to `trust_badges`.
+
 ## 0.19.7
 
 ### Added
