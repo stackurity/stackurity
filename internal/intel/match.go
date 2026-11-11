@@ -251,6 +251,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 				notEvaluated(perr)
 			} else {
 				rc.Feed = feed.Name
+				rc.FeedCursor, rc.FeedLastSuccess, rc.FeedRead = feed.Cursor, feed.LastSuccess, true
 				rc.Reason = oracleNote(r, t, advs)
 			}
 			if k, ok := kernels[r.InventoryID]; ok {

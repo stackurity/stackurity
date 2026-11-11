@@ -169,6 +169,10 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			trustBadge, err := trustBadgeFromEnv(trustBadgeCloud, os.Getenv)
+			if err != nil {
+				return err
+			}
 			holder, licFromEnv, err := loadLicence(ctx, st, log)
 			if err != nil {
 				return err
@@ -427,6 +431,7 @@ func serverCmd() *cobra.Command {
 			registerJobs(w, st, res, dataDir, log, pluginRunner, packMgr, cloud, ghApp, awsClient, glRunner)
 			registerInactivePause(w, st, srv.AccountMail, srv.BaseURL, log)
 			registerFeedbackRetention(w, st, feedbackQueue, log)
+			registerTrustBadge(w, st, log, trustBadge)
 			// Prioritise, correlate, plan and deliver notifications; none
 			// for a read-only workspace.
 			w.EveryCollectingWorkspace("alerts", tm.Alerts, dispatcher.Tick)

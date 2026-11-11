@@ -578,6 +578,14 @@ type RowCoverage struct {
 	State       string // CoverageEvaluated, CoverageUnsupported or CoverageNotEvaluated
 	Reason      string // why it was not evaluated, or how an evaluated row is reported
 	Feed        string // the vulnerability feed it was matched against
+	// FeedCursor and FeedLastSuccess are that feed's cursor and last
+	// successful sync as the evaluation read them, at its start
+	// (inventory_evaluations; the trust badge compares them with the feed's
+	// latest refresh). FeedRead is false when the caller did not record
+	// them: the feed's current values are stored instead.
+	FeedCursor      string
+	FeedLastSuccess *time.Time
+	FeedRead        bool
 	// Lifecycle is the upstream end-of-life note for a distribution
 	// package (see intel.distroLifecycle); nil when there is none.
 	Lifecycle map[string]any
@@ -608,10 +616,38 @@ func (s *Store) SetCoverage(ctx context.Context, rows []RowCoverage) error {
 			}
 			notes = append(notes, note)
 		}
-		if _, err := s.Pool.Exec(ctx, `UPDATE inventory i SET coverage = u.state, coverage_reason = u.reason,
-			coverage_feed = u.feed, lifecycle_note = u.note::jsonb, evaluated_at = now()
-			FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[]) AS u(id, state, reason, feed, note)
-			WHERE i.id = u.id`, ids, states, reasons, feeds, notes); err != nil {
+		cursors := make([]string, 0, end-i)
+		synced := make([]*time.Time, 0, end-i)
+		read := make([]bool, 0, end-i)
+		for _, r := range rows[i:end] {
+			cursors = append(cursors, r.FeedCursor)
+			synced = append(synced, r.FeedLastSuccess)
+			read = append(read, r.FeedRead)
+		}
+		// One statement: the row's coverage and its evaluation per source
+		// change together. A row matched against another source than before
+		// loses the old source's evaluation, so it never looks evaluated
+		// against two sources when it was matched against one.
+		if _, err := s.Pool.Exec(ctx, `WITH u AS (
+			  SELECT * FROM unnest($1::bigint[], $2::text[], $3::text[], $4::text[], $5::text[], $6::text[], $7::timestamptz[], $8::bool[])
+			    AS u(id, state, reason, feed, note, cursor, synced, read)),
+			upd AS (
+			  UPDATE inventory i SET coverage = u.state, coverage_reason = u.reason,
+			    coverage_feed = u.feed, lifecycle_note = u.note::jsonb, evaluated_at = now()
+			  FROM u WHERE i.id = u.id
+			  RETURNING i.id, i.workspace_id, u.state, u.feed, u.cursor, u.synced, u.read),
+			gone AS (
+			  DELETE FROM inventory_evaluations e USING upd
+			  WHERE e.inventory_id = upd.id AND (upd.state <> 'evaluated' OR e.feed <> upd.feed))
+			INSERT INTO inventory_evaluations (inventory_id, feed, workspace_id, evaluated_at, feed_cursor, feed_last_success)
+			SELECT upd.id, upd.feed, upd.workspace_id, now(),
+			  CASE WHEN upd.read THEN upd.cursor ELSE COALESCE(f.cursor, '') END,
+			  CASE WHEN upd.read THEN upd.synced ELSE f.last_success END
+			FROM upd LEFT JOIN feeds f ON f.name = upd.feed
+			WHERE upd.state = 'evaluated' AND upd.feed <> ''
+			ON CONFLICT (inventory_id, feed) DO UPDATE SET evaluated_at = EXCLUDED.evaluated_at,
+			  feed_cursor = EXCLUDED.feed_cursor, feed_last_success = EXCLUDED.feed_last_success`,
+			ids, states, reasons, feeds, notes, cursors, synced, read); err != nil {
 			return err
 		}
 	}
