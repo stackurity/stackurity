@@ -80,6 +80,23 @@ type Target struct {
 	// Variant is the os-release ID where one release has several products
 	// (SUSE: "sles", "sles_sap", "sled").
 	Variant string
+	// SourceVersion is true when Version is the source package's version
+	// (Debian, Ubuntu) rather than the installed binary package's.
+	SourceVersion bool
+}
+
+// splitSource separates a source package name from a version it may carry:
+// "inetutils (2:2.5-3ubuntu4.2)" (dpkg) or "inetutils@2:2.5-3ubuntu4.2"
+// (Syft's upstream qualifier).
+func splitSource(s string) (name, ver string) {
+	s = strings.TrimSpace(s)
+	if n, v, ok := strings.Cut(s, " "); ok {
+		return n, strings.TrimSpace(strings.Trim(strings.TrimSpace(v), "()"))
+	}
+	if n, v, ok := strings.Cut(s, "@"); ok && n != "" {
+		return n, v
+	}
+	return s, ""
 }
 
 // TargetFor maps a purl (with version and qualifiers) to an OSV target. ok is
@@ -99,10 +116,9 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 	if source == "" && evidence != nil {
 		source = evidence["source_package"]
 	}
-	// Strip any "(version)" an upstream qualifier may carry.
-	if i := strings.IndexByte(source, ' '); i > 0 {
-		source = source[:i]
-	}
+	// An upstream qualifier may carry the source version: the dpkg spelling
+	// "name (version)" or Syft's "name@version".
+	source, sourceVersion := splitSource(source)
 	switch p.Type {
 	case "npm":
 		t.Ecosystem, t.Name = "npm", joinNS(p.Namespace, p.Name)
@@ -151,6 +167,19 @@ func TargetFor(purl, ver string, evidence map[string]string) (Target, bool) {
 		name := p.Name
 		if source != "" {
 			name = source
+			// Debian and Ubuntu advisories are keyed by source package and
+			// list source versions. A binary package can carry a version of
+			// its own (telnet 0.17+2.5-3ubuntu4.2 is built from inetutils
+			// 2:2.5-3ubuntu4.2), so the binary version compared with the
+			// source's fixed version gives wrong answers. dpkg omits the
+			// source version when it equals the binary's, and older agents
+			// do not report it: the binary version is kept then.
+			if v := evidence["source_version"]; v != "" {
+				sourceVersion = v
+			}
+			if sourceVersion != "" {
+				t.Version, t.SourceVersion = sourceVersion, true
+			}
 		}
 		switch strings.ToLower(p.Namespace) {
 		case "debian":
