@@ -17,6 +17,20 @@ type componentFix struct {
 	FixedVersions []string `json:"fixed_versions"`
 	Assets        int      `json:"assets"`
 	Unfixed       int      `json:"unfixed"`
+	// SourcePackage: the fixed versions are this source package's, and the
+	// component (a Debian or Ubuntu binary package) has versions of its own.
+	SourcePackage string `json:"source_package,omitempty"`
+}
+
+// to names what to install for a fixed version: the version itself, or for
+// a binary package whose fix is named by its source package's version, a
+// build from that source ("a build from inetutils 2:2.5-3ubuntu4.1"), since
+// the package manager has no such version of the binary.
+func (c componentFix) to(v string) string {
+	if c.SourcePackage != "" {
+		return "a build from " + c.SourcePackage + " " + v
+	}
+	return v
 }
 
 // osPackageTypes are the purl types whose namespace names the distribution.
@@ -83,17 +97,21 @@ func componentFixAction(detail json.RawMessage) (string, bool) {
 			add("none|"+d, c, text)
 		case c.Unfixed > 0:
 			add("", c, fmt.Sprintf("upgrade to %s where it is published (%s); no fixed version yet on the other %s, watch the advisory",
-				versionsText(c.FixedVersions), assetsText(fixed), assetsText(c.Unfixed)))
+				versionsText(c, c.FixedVersions), assetsText(fixed), assetsText(c.Unfixed)))
 		case len(c.FixedVersions) > 1:
-			add("", c, "upgrade to the version for each asset's release: "+strings.Join(c.FixedVersions, " / ")+
+			to := "the version for each asset's release"
+			if c.SourcePackage != "" {
+				to = "a build from " + c.SourcePackage + " at the version for each asset's release"
+			}
+			add("", c, "upgrade to "+to+": "+strings.Join(c.FixedVersions, " / ")+
 				" or later (each asset's fixed version is in Stackurity)")
 		default:
-			add("fix|"+c.FixedVersions[0], c, "upgrade to "+c.FixedVersions[0]+" or later")
+			add("fix|"+c.SourcePackage+"|"+c.FixedVersions[0], c, "upgrade to "+c.to(c.FixedVersions[0])+" or later")
 		}
 	}
 	if len(lines) == 1 && len(lines[0].comps) == 1 && det.Count <= 1 {
 		if c := lines[0].comps[0]; c.Unfixed == 0 && len(c.FixedVersions) == 1 {
-			return fmt.Sprintf("Upgrade %s to %s or later (%s)", c.Component, c.FixedVersions[0], assetsText(c.Assets)), true
+			return fmt.Sprintf("Upgrade %s to %s or later (%s)", c.Component, c.to(c.FixedVersions[0]), assetsText(c.Assets)), true
 		}
 	}
 	parts := make([]string, 0, len(lines)+1)
@@ -120,9 +138,12 @@ func componentFixAction(detail json.RawMessage) (string, bool) {
 }
 
 // versionsText is one version, or the versions for each release line.
-func versionsText(vs []string) string {
+func versionsText(c componentFix, vs []string) string {
 	if len(vs) == 1 {
-		return vs[0] + " or later"
+		return c.to(vs[0]) + " or later"
+	}
+	if c.SourcePackage != "" {
+		return "a build from " + c.SourcePackage + " at the version for each asset's release (" + strings.Join(vs, " / ") + " or later)"
 	}
 	return "the version for each asset's release (" + strings.Join(vs, " / ") + " or later)"
 }

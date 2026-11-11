@@ -5,6 +5,7 @@ import { Card, KeyValues, RelativeTime } from "./ui";
 
 const BASIS_LABEL: Record<string, string> = {
   distro_fixed: "the distribution's fixed build",
+  distro_source_fixed: "the distribution's fixed build of the source package",
   latest_in_line: "newest stable release in the major line",
   minimum_fixed: "minimum fixed version",
   supported_line: "newest release of a supported line",
@@ -49,6 +50,26 @@ export function LineStatus({ line }: { line: UpgradeLine | null | undefined }) {
 
 /** The recommended version with its change type and warnings. */
 export function RecommendedVersion({ rec }: { rec: UpgradeRecommendation }) {
+  const src = rec.source;
+  if (src && src.fixed_source_version)
+    // apt has no such version of the binary package: name the source build.
+    return (
+      <span className="badges">
+        <span>
+          <span className="mono">{src.package}</span> built from <span className="mono">{src.source_package} {src.fixed_source_version}</span>{" "}
+          or later
+        </span>
+        <Badge status="distro" tone="muted" label="distro update" />
+        {rec.requires_subscription && (
+          <Badge
+            status="subscription"
+            tone="warn"
+            label={`${rec.requires_subscription} (paid)`}
+            title={`This build is published only in ${rec.requires_subscription}, a paid subscription; without it, upgrade to a supported release or wait for a free fix`}
+          />
+        )}
+      </span>
+    );
   if (!rec.recommended_version) return <span className="muted">none</span>;
   return (
     <span className="badges">
@@ -90,7 +111,18 @@ export function UpgradeDetails({ rec, issueFix }: { rec: UpgradeRecommendation; 
   const smallerIssueFix = !!issueFix && !!rec.minimum_fixed_version && issueFix !== rec.minimum_fixed_version;
   const issueInLine = smallerIssueFix && majorOf(issueFix) !== null && majorOf(issueFix) === majorOf(rec.installed_version);
   const entries: [string, ReactNode][] = [
-    ["installed", <span className="mono">{rec.installed_version || "unknown"}</span>],
+    [
+      "installed",
+      <span>
+        <span className="mono">{rec.installed_version || "unknown"}</span>
+        {rec.source && (
+          <span className="muted small">
+            {" "}
+            (built from <span className="mono">{rec.source.source_package} {rec.source.installed_source_version}</span>)
+          </span>
+        )}
+      </span>,
+    ],
   ];
   if (smallerIssueFix)
     entries.push([
@@ -107,7 +139,10 @@ export function UpgradeDetails({ rec, issueFix }: { rec: UpgradeRecommendation; 
       smallerIssueFix && issues > 1 ? "minimum for everything it resolves" : "minimum fixed",
       rec.minimum_fixed_version ? (
         <span className="badges">
-          <span className="mono">{rec.minimum_fixed_version}</span>
+          <span className="mono">
+            {rec.source ? `${rec.source.source_package} ` : ""}
+            {rec.minimum_fixed_version}
+          </span>
           {rec.minimum_fixed_yanked && <Badge status="withdrawn" tone="bad" label="withdrawn" />}
         </span>
       ) : (
