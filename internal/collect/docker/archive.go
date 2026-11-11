@@ -171,12 +171,10 @@ func (x *extractor) image(arch string) (*Image, error) {
 		return nil, fmt.Errorf("image config %q is missing", m.config)
 	}
 	var c struct {
-		OS           string `json:"os"`
-		Architecture string `json:"architecture"`
-		Variant      string `json:"variant"`
-		Config       struct {
-			WorkingDir string `json:"WorkingDir"`
-		} `json:"config"`
+		OS           string      `json:"os"`
+		Architecture string      `json:"architecture"`
+		Variant      string      `json:"variant"`
+		Config       ImageConfig `json:"config"`
 	}
 	if err := json.Unmarshal(cfg, &c); err != nil {
 		return nil, fmt.Errorf("image config: %w", err)
@@ -188,10 +186,9 @@ func (x *extractor) image(arch string) (*Image, error) {
 			im.RepoTags = append(im.RepoTags, t)
 		}
 	}
-	if c.Config.WorkingDir != "" {
-		im.Config = &struct {
-			WorkingDir string `json:"WorkingDir"`
-		}{c.Config.WorkingDir}
+	if c.Config.WorkingDir != "" || len(c.Config.Env) > 0 {
+		ic := c.Config
+		im.Config = &ic
 	}
 	return im, nil
 }

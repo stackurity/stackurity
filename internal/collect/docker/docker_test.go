@@ -125,9 +125,6 @@ func exe(name, body string) entry {
 	return entry{name: name, body: body, typ: tar.TypeReg, mode: 0o755}
 }
 func link(name, target string) entry { return entry{name: name, link: target, typ: tar.TypeSymlink} }
-func exe(name string, body []byte) entry {
-	return entry{name: name, body: string(body), typ: tar.TypeReg, mode: 0o755}
-}
 
 func layerTar(entries ...entry) []byte {
 	var buf bytes.Buffer
@@ -670,8 +667,8 @@ func TestImageGoBinary(t *testing.T) {
 	db := apkDB + "C:Q1ghi=\nP:packaged-go\nV:1.0.0-r0\nA:x86_64\no:packaged-go\nF:usr/bin\nR:packaged-go\n\n"
 	arch := saveArchive(idShop,
 		layerTar(file("etc/os-release", "ID=alpine\nVERSION_ID=3.20.3\nPRETTY_NAME=\"Alpine Linux v3.20\"\n"),
-			file("lib/apk/db/installed", db), exe("usr/bin/packaged-go", bins.Plain)),
-		layerTar(exe("usr/local/bin/stackurity", bins.Stripped)))
+			file("lib/apk/db/installed", db), exe("usr/bin/packaged-go", string(bins.Plain))),
+		layerTar(exe("usr/local/bin/stackurity", string(bins.Stripped))))
 	root, err := extractImage(context.Background(), bytes.NewReader(arch), t.TempDir(), 64<<20, "amd64")
 	if err != nil {
 		t.Fatal(err)

@@ -47,9 +47,7 @@ func TestArchiveMatchesRunningImage(t *testing.T) {
 	d := startDocker(t)
 	d.mu.Lock()
 	d.images[id] = &fakeImage{archive: arch, info: Image{ID: id, RepoTags: []string{"api:2", "api:latest"}, Size: int64(len(arch)),
-		Os: "linux", Architecture: "amd64", Config: &struct {
-			WorkingDir string `json:"WorkingDir"`
-		}{"/usr/src/app"}}}
+		Os: "linux", Architecture: "amd64", Config: &ImageConfig{WorkingDir: "/usr/src/app"}}}
 	d.mu.Unlock()
 	d.run(Container{ID: "c1", Names: []string{"/api"}, Image: "api:latest", ImageID: id, State: "running"})
 	running := newScanner(t, d.socket).Collect(context.Background(), hostRef)[1]
