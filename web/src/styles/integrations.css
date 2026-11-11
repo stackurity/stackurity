@@ -160,9 +160,11 @@
   border-left: 3px solid var(--bad-dot);
   padding-left: calc(var(--s4) - 2px);
 }
+/* Paused reads quieter by colour, not opacity: muted text at 75% opacity
+   fell below 4.5:1 contrast. */
 .ix-card-paused .ix-card-head,
 .ix-card-paused .ix-meta {
-  opacity: 0.75;
+  color: var(--text-2);
 }
 .ix-card-head {
   display: flex;

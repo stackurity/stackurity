@@ -6,7 +6,10 @@ import { useLoad } from "../hooks";
 import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { FilterChips, TableToolbar } from "../components/FilterChips";
+import { TableSkeleton } from "../components/Skeleton";
+import { activeFilters, withoutFilter, withoutFilters, type FilterDef } from "../filterChips";
 import { incidentsEmpty } from "../emptyCopy";
 import { IssueLinks } from "../components/IssueLinks";
 import { HistoryWindowNote } from "../components/PlanLimit";
@@ -126,6 +129,16 @@ export function IncidentsPage() {
 
   const sosCount = sosOpen.data?.total ?? 0;
   const filtered = Boolean(kind || priority || sos || escalated || team || asset || status !== "open");
+  const filterDefs: FilterDef[] = [
+    { key: "status", label: "Status", defaultValue: "open", format: (v) => (v === "all" ? "open and resolved" : v) },
+    { key: "kind", label: "Kind", format: (v) => INCIDENT_KIND_LABEL[v] ?? humanize(v) },
+    { key: "priority", label: "Priority" },
+    { key: "team_id", label: "Owner team", format: (v) => teams.data?.items.find((t) => String(t.id) === v)?.name ?? `team #${v}` },
+    { key: "asset_id", label: "Asset", format: (v) => assets.data?.items.find((a) => String(a.id) === v)?.name ?? `asset #${v}` },
+    { key: "sos", label: "SOS only", flag: true },
+    { key: "escalated", label: "Escalated", flag: true },
+  ];
+  const clearFilters = () => setParams(withoutFilters(params, filterDefs), { replace: true });
 
   return (
     <>
@@ -200,16 +213,17 @@ export function IncidentsPage() {
           <input type="checkbox" checked={escalated} onChange={(e) => update({ escalated: e.target.checked ? "true" : "" })} /> Escalated
           (deadline missed)
         </label>
-        {filtered && (
-          <button type="button" className="btn btn-link" onClick={() => setParams(new URLSearchParams(), { replace: true })}>
-            Clear filters
-          </button>
-        )}
       </form>
+      <TableToolbar>
+        <FilterChips filters={activeFilters(params, filterDefs)} onRemove={(key) => setParams(withoutFilter(params, key), { replace: true })} onClear={clearFilters} />
+      </TableToolbar>
       <ErrorBox error={res.error} title="Could not load incidents" />
-      {!res.data && !res.error && <Loading />}
+      {!res.data && !res.error && <TableSkeleton columns={7} label="Loading incidents…" />}
       {res.data && res.data.items.length === 0 && (
-        <EmptyState {...incidentsEmpty(filtered, assets.data?.items.length === 0, can("admin"))} help="incidents" />
+        <EmptyState {...incidentsEmpty(filtered, assets.data?.items.length === 0, can("admin"))}
+          {...(filtered ? { action: { label: "Clear filters", permitted: true, onClick: clearFilters } } : {})}
+          help="incidents"
+        />
       )}
       {res.data && res.data.items.length > 0 && (
         <>

@@ -4,7 +4,8 @@ import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import { Card, EmptyState, ErrorBox, FieldGroup, Loading, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { Card, EmptyState, ErrorBox, FieldGroup, Notice, PageHeader, RelativeTime } from "../../components/ui";
+import { TableSkeleton } from "../../components/Skeleton";
 import { PasswordChecklist } from "../../components/PasswordStrength";
 import { passwordOK } from "../../passwordStrength";
 import { RequireMfaCard } from "../TwoFactor";
@@ -280,7 +281,7 @@ export function UsersPage() {
       >
         {!showCreate && !showInvite && <PermissionsDisclosure />}
         <ErrorBox error={res.error} title="Could not load users" />
-        {!res.data && !res.error && <Loading />}
+        {!res.data && !res.error && <TableSkeleton label="Loading users…" />}
         {res.data && res.data.items.length === 0 && <EmptyState title="No users" />}
         {res.data && res.data.items.length > 0 && (
           <Table

@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 
+import { densityClass } from "../tableDensity";
+import { useTableDensity } from "./Density";
+
 export interface Column<T> {
   key: string;
   header: ReactNode;
@@ -22,6 +25,9 @@ export interface Column<T> {
  * right edge, so its controls are never cut off. While columns are hidden
  * to one side, that edge shows a shadow and a line under the table says the
  * table scrolls sideways.
+ *
+ * Row spacing follows the viewer's choice in DensityControl (Comfortable,
+ * Default, Compact; remembered in this browser).
  */
 export function Table<T>({
   columns,
@@ -67,7 +73,9 @@ export function Table<T>({
     };
   }, []);
   const pinEnd = columns.length > 1 && columns[columns.length - 1].key === "actions";
-  const wrapCls = ["table-wrap", hidden.left ? "more-left" : "", hidden.right ? "more-right" : ""].filter(Boolean).join(" ");
+  // Row spacing the viewer chose (DensityControl); none for Default.
+  const density = densityClass(useTableDensity());
+  const wrapCls = ["table-wrap", density, hidden.left ? "more-left" : "", hidden.right ? "more-right" : ""].filter(Boolean).join(" ");
   const tableCls = ["table", stickyFirst ? "table-sticky-first" : "", pinEnd ? "table-sticky-end" : ""].filter(Boolean).join(" ");
   return (
     <>

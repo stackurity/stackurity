@@ -5,6 +5,7 @@ import { UpdateBadge } from "../components/Badge";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, Loading, PageHeader, Pager } from "../components/ui";
+import { TableSkeleton } from "../components/Skeleton";
 import { LatestCell } from "./AssetDetail";
 import { countsText, installsQuery, packageName, updateFilterOf, versionsText, type ComponentUpdate, type UpdatesSummary } from "../updates";
 
@@ -116,7 +117,7 @@ export function UpdatesAvailablePage() {
           </Card>
           <Card title="Installs">
             <ErrorBox error={rows.error} title="Could not load installs" />
-            {!rows.data && !rows.error && <Loading />}
+            {!rows.data && !rows.error && <TableSkeleton label="Loading installs…" />}
             {rows.data && rows.data.items.length === 0 && <p className="muted small">None of this update type.</p>}
             {rows.data && rows.data.items.length > 0 && (
               <>

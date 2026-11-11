@@ -5,20 +5,8 @@ import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
-import {
-  Card,
-  CardFooter,
-  ChoiceCards,
-  Code,
-  CopyBox,
-  EmptyState,
-  ErrorBox,
-  Loading,
-  PageHeader,
-  RelativeTime,
-  SettingRow,
-  type ChoiceOption,
-} from "../../components/ui";
+import { Card, CardFooter, ChoiceCards, Code, CopyBox, EmptyState, ErrorBox, PageHeader, RelativeTime, SettingRow, type ChoiceOption } from "../../components/ui";
+import { TableSkeleton } from "../../components/Skeleton";
 import { tokensEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { PlanLimitNote } from "../../components/PlanLimit";
@@ -133,7 +121,7 @@ export function TokensPage() {
         </label>
       </div>
       <ErrorBox error={res.error} title="Could not load tokens" />
-      {!res.data && !res.error && <Loading />}
+      {!res.data && !res.error && <TableSkeleton label="Loading tokens…" />}
       {res.data && rows.length === 0 && <EmptyState {...tokensEmpty(res.data.items.length > 0, Boolean(me?.user && me.token === null))} />}
       {rows.length > 0 && <Table caption="API tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />}
     </>

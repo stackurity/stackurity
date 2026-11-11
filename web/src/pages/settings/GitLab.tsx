@@ -112,7 +112,7 @@ export function GitLabConnections({ status, admin, onChange }: { status: GitLabS
                     Sync
                   </button>
                 )}
-                <button type="button" className="btn btn-sm btn-danger" onClick={() => void cleanUp(c)} disabled={act.pending}>
+                <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void cleanUp(c)} disabled={act.pending}>
                   Disconnect
                 </button>
                 <button type="button" className="btn btn-sm" onClick={() => void removeHere(c)} disabled={act.pending}>

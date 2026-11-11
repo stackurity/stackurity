@@ -4,7 +4,8 @@ import { useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { JsonDetail } from "../../components/JsonDetail";
 import { Table, type Column } from "../../components/Table";
-import { EmptyState, ErrorBox, Loading, PageHeader, RelativeTime } from "../../components/ui";
+import { EmptyState, ErrorBox, PageHeader, RelativeTime } from "../../components/ui";
+import { TableSkeleton } from "../../components/Skeleton";
 import { jobsEmpty } from "../../emptyCopy";
 
 function jobState(j: Job): string {
@@ -51,7 +52,7 @@ export function JobsPage() {
         </div>
       </div>
       <ErrorBox error={res.error} title="Could not load jobs" />
-      {!res.data && !res.error && <Loading />}
+      {!res.data && !res.error && <TableSkeleton label="Loading jobs…" />}
       {res.data && res.data.items.length === 0 && <EmptyState {...jobsEmpty(Boolean(state))} />}
       {res.data && res.data.items.length > 0 && <Table caption="Jobs" columns={columns} rows={res.data.items} rowKey={(j) => j.id} />}
     </>

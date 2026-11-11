@@ -141,7 +141,7 @@ export function SosBadge({ rule }: { rule?: string }) {
 }
 
 const STATE_TONES: Record<string, Tone> = {
-  new: "bad",
+  new: "warn",
   acknowledged: "warn",
   in_progress: "info",
   suppressed: "muted",
@@ -164,9 +164,10 @@ export function StateBadge({ state }: { state: string | undefined | null }) {
 }
 
 // --- 0.7: the seven states shown to people
+// A state is not urgency (priority, SOS and deadlines are): only Regressed is red. See web/UI-PATTERNS.md.
 
 const DISPLAY_STATE: Record<string, { label: string; tone: Tone; title: string }> = {
-  new: { label: "New", tone: "bad", title: "Nobody has looked at it yet" },
+  new: { label: "New", tone: "warn", title: "Nobody has looked at it yet" },
   to_do: { label: "To do", tone: "warn", title: "Someone has seen it; the fix deadline still applies" },
   in_progress: { label: "In progress", tone: "info", title: "A fix is being worked on" },
   fixed: { label: "Fixed", tone: "good", title: "The latest check no longer finds it" },
