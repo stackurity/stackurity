@@ -4,7 +4,7 @@ The trust badge says "Monitored by Stackurity" on a customer's README or website
 
 One part runs on every installation: each evaluation records which refresh of each vulnerability source it read, in `inventory_evaluations` (see condition 4 below). That table is kept up to date on every server, with or without the badge, because it is written wherever components are evaluated; it holds nothing public and nothing about badges.
 
-**Not launched.** The badge launches only after counsel has signed off its legal wording in writing (the trust page disclaimer, the acceptance checkbox and the terms clause) and answered the legal review brief's questions. Until then `STACKURITY_TRUST_BADGE` stays off in production. The acceptance checkbox in the dashboard is draft 2 of the brief, versioned `2026-11-draft2`; when counsel's text replaces it, the version changes and every badge needs the new terms accepted before it is turned on again.
+**Launched 11 Nov 2026** on Stackurity Cloud, once the owner confirmed counsel's sign-off of the legal wording (the trust page disclaimer, the acceptance checkbox and the terms clause). The acceptance checkbox in the dashboard is versioned `2026-11`; when its wording changes, the version changes and every badge needs the new terms accepted before it is turned on again.
 
 ## When a badge is active
 
@@ -88,7 +88,7 @@ The badge launches only when every item is done. Each automated item names its t
 | Not active and turned off show within the stated cache limits | `TestTrustBadgePublicContract`, `TestTrustBadgePurgesCache` |
 | No blocked claim in badge images, metadata, snippets or marketing | `TestTrustBadgeImageWording`; the website's claims check |
 | Free and paid acceptance flows tested, and a self-hosted server can't serve a badge | `TestTrustBadgePlans`, `TestTrustBadgeOffServesNothing`, `TestTrustBadgeFromEnv`, `TestTrustBadgeOffRegistersNothing` |
-| Counsel's written sign-off on drafts 1 to 3 and answers to all 13 questions | **Not done.** Outside the code. |
+| Counsel's written sign-off on drafts 1 to 3 and answers to all 13 questions | **Done** (the owner confirmed it on 11 Nov 2026). Outside the code. |
 
 ## Settings
 

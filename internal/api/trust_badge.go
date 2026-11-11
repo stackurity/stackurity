@@ -27,14 +27,13 @@ import (
 // server answers 404 to all of them.
 
 // TrustBadgeTermsVersion names the badge terms the acceptance checkbox
-// shows. PENDING COUNSEL'S SIGN-OFF: the wording below is draft 2 of the
-// legal review brief; change the version when counsel's text replaces it,
-// and every badge then needs the new terms accepted before it is turned on
-// again.
-const TrustBadgeTermsVersion = "2026-11-draft2"
+// shows: draft 2 of the legal review brief, signed off for launch on
+// 11 Nov 2026. Change the version whenever the wording changes; every badge
+// then needs the new terms accepted before it is turned on again.
+const TrustBadgeTermsVersion = "2026-11"
 
-// TrustBadgeTermsText is the acceptance checkbox (draft 2, PENDING
-// COUNSEL'S SIGN-OFF).
+// TrustBadgeTermsText is the acceptance checkbox (draft 2 of the legal
+// review brief, signed off 11 Nov 2026).
 const TrustBadgeTermsText = "I'm authorised to publish this badge for my organisation and I accept the Trust badge terms " +
 	"(section 14 of the Terms of Service). I understand the badge is a monitoring status, not a security certification, " +
 	"and we won't describe it as one, or as a guarantee, audit or endorsement by Stackurity. We're responsible for how we " +

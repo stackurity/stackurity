@@ -40,8 +40,7 @@ type trustBadgeConfig struct {
 }
 
 // trustBadgeFromEnv reads STACKURITY_TRUST_BADGE (on or off, default off)
-// and the retention purge settings. The badge stays off until counsel has
-// signed off the badge's legal wording (docs/trust-badge.md).
+// and the retention purge settings (docs/trust-badge.md). Off by default.
 func trustBadgeFromEnv(cloud bool, getenv func(string) string) (trustBadgeConfig, error) {
 	var c trustBadgeConfig
 	switch v := strings.TrimSpace(getenv("STACKURITY_TRUST_BADGE")); v {
