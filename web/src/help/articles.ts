@@ -79,6 +79,9 @@ export const ARTICLES: Article[] = [
         p: "Where your organisation has turned it on, the **Ask** button at the top of every page (Alt+K) opens an assistant that answers from your Stackurity data, with links to the issues, assets and fixes it used. It reads only what you can see, and changes nothing. The page you have open is its context; click **(remove)** to ask without it.",
       },
       {
+        p: "An answer leads with a short **Recommendation**. **Why**, **Evidence** and **Alternatives and trade-offs** open on a click; **Data gaps** (what it could not check) starts open. Advisory ids and the issues and assets it names link to their pages, and **What Ask looked at**, under each answer, lists the lookups it made. Nothing in an answer is done for you: make any change on the linked pages.",
+      },
+      {
         p: "Before your first question it shows where your questions go (with Anthropic's API, to Anthropic in the United States) and what is sent: your question, the page you have open and the data the assistant reads, without colleagues' names or email addresses. Your conversations are kept 30 days (backups up to about 60), only you can read them, and **History** lets you delete them. Answers can be wrong: check the linked pages.",
       },
       {

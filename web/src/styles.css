@@ -6732,6 +6732,56 @@ a.cov-chip:hover {
 .ask-tool {
   margin: 0;
 }
+/* A structured answer: the recommendation, then sections that open on a click. */
+.ask-lead {
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.ask-lead-label {
+  display: block;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 2px;
+}
+.ask-lead .ask-answer > :last-child {
+  margin-bottom: 0;
+}
+.ask-sec {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.ask-sec > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 2px 0;
+}
+.ask-sec[open] > summary {
+  margin-bottom: 4px;
+}
+.ask-sec-gaps > summary {
+  color: var(--warn-fg);
+}
+.ask-ran {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.ask-ran-reads > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.ask-ran-reads ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.ask-ran-note {
+  margin: 2px 0 0;
+}
 .ask-form {
   border-top: 1px solid var(--border);
   padding: 12px 16px;
