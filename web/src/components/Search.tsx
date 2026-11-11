@@ -1,13 +1,13 @@
 import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
-import { api, qs, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH, type SearchResults } from "../api";
+import { api, qs, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH, type SearchFinding, type SearchResults, type SearchVuln } from "../api";
 import { useDebounced, useLoad } from "../hooks";
 import { componentName, plural } from "../format";
 import { AssetKindBadge, KevBadge, SeverityBadge } from "./Badge";
 import { IconSearch } from "./Icons";
 import { errorView } from "../errors";
 
-export type SearchGroup = "vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members";
+export type SearchGroup = "assets" | "components" | "vulnerabilities" | "advisories" | "teams" | "members";
 
 export interface SearchItem {
   key: string;
@@ -27,7 +27,17 @@ export interface SearchSection {
   rank: number;
 }
 
-const GROUP_ORDER: SearchGroup[] = ["vulnerabilities", "findings", "assets", "components", "teams", "members"];
+/**
+ * The order of an investigation: what matches (assets, components), where it
+ * is installed, what is wrong with it, and the public advisories behind that;
+ * then the organisation's teams and people.
+ */
+export const GROUP_ORDER: SearchGroup[] = ["assets", "components", "vulnerabilities", "advisories", "teams", "members"];
+
+export interface SearchSectionOptions {
+  /** "rank" (the dropdown) puts the group with the best match first; "investigate" (the results page) keeps GROUP_ORDER. */
+  order?: "rank" | "investigate";
+}
 
 export function searchPath(q: string): string {
   return `/search${qs({ q })}`;
@@ -50,72 +60,66 @@ function samples(refs: { id: number; name: string; version?: string }[], total: 
 }
 
 /** Turns API results into ordered sections, shared by the dropdown and the results page. */
-export function searchSections(r: SearchResults): SearchSection[] {
+export function searchSections(r: SearchResults, opt: SearchSectionOptions = {}): SearchSection[] {
+  const vulnItem = (v: SearchVuln): SearchItem => {
+    const affected = v.kind !== "";
+    return {
+      key: `v:${v.key}`,
+      href: affected ? `/fixes/issues${qs({ key: v.key, status: "all" })}` : searchPath(v.key),
+      title: (
+        <>
+          <span className="mono">{v.key}</span> <SeverityBadge severity={v.severity} score={v.score} />
+          {v.known_exploited && <> <KevBadge /></>}
+        </>
+      ),
+      meta: affected ? (
+        <>
+          {v.open_findings > 0
+            ? `${plural(v.open_findings, "open finding")} on ${plural(v.affected_assets, "asset")}`
+            : "No open findings"}
+          {v.resolved_findings > 0 && `, ${v.resolved_findings.toLocaleString()} resolved`}
+          {v.components.length > 0 && ` · ${v.components.join(", ")}`}
+        </>
+      ) : (
+        "No affected assets in this workspace"
+      ),
+      detail: (
+        <>
+          {(v.title || v.advisory?.summary) && <span>{v.title || v.advisory?.summary}</span>}
+          {affected && v.assets.length > 0 && <span>Assets: {samples(v.assets, v.affected_assets)}</span>}
+          {v.advisory && (
+            <span className="muted">
+              Advisories: {[...v.advisory.ids, ...v.advisory.aliases.filter((a) => !v.advisory?.ids.includes(a))].join(", ")}
+              {v.advisory.withdrawn && " (withdrawn)"}
+            </span>
+          )}
+        </>
+      ),
+    };
+  };
+  const findingItem = (f: SearchFinding): SearchItem => ({
+    key: `f:${f.key}:${f.title}`,
+    href: `/fixes/issues${qs({ key: f.key })}`,
+    title: (
+      <>
+        <span>{f.title}</span> <SeverityBadge severity={f.severity} score={f.score} />
+      </>
+    ),
+    meta: (
+      <>
+        <span className="mono">{f.key}</span>
+        {` · ${plural(f.open_findings, "open finding")} on ${plural(f.affected_assets, "asset")}`}
+      </>
+    ),
+    detail: f.assets.length > 0 ? <span>Assets: {samples(f.assets, f.affected_assets)}</span> : undefined,
+  });
+  // Vulnerabilities are what affects (or affected) this workspace, with the
+  // open findings whose title matches; an advisory that affects nothing here
+  // is source intelligence and goes under Advisories.
+  const affected = r.vulnerabilities.filter((v) => v.kind !== "");
+  const advisories = r.vulnerabilities.filter((v) => v.kind === "");
+  const findings = r.findings ?? [];
   const sections: SearchSection[] = [
-    {
-      id: "vulnerabilities",
-      title: "Vulnerabilities",
-      more: Boolean(r.more.vulnerabilities),
-      rank: Math.min(3, ...r.vulnerabilities.map((v) => v.rank)),
-      items: r.vulnerabilities.map((v) => {
-        const affected = v.kind !== "";
-        return {
-          key: `v:${v.key}`,
-          href: affected ? `/fixes/issues${qs({ key: v.key, status: "all" })}` : searchPath(v.key),
-          title: (
-            <>
-              <span className="mono">{v.key}</span> <SeverityBadge severity={v.severity} score={v.score} />
-              {v.known_exploited && <> <KevBadge /></>}
-            </>
-          ),
-          meta: affected ? (
-            <>
-              {v.open_findings > 0
-                ? `${plural(v.open_findings, "open finding")} on ${plural(v.affected_assets, "asset")}`
-                : "No open findings"}
-              {v.resolved_findings > 0 && `, ${v.resolved_findings.toLocaleString()} resolved`}
-              {v.components.length > 0 && ` · ${v.components.join(", ")}`}
-            </>
-          ) : (
-            "No affected assets in this workspace"
-          ),
-          detail: (
-            <>
-              {(v.title || v.advisory?.summary) && <span>{v.title || v.advisory?.summary}</span>}
-              {affected && v.assets.length > 0 && <span>Assets: {samples(v.assets, v.affected_assets)}</span>}
-              {v.advisory && (
-                <span className="muted">
-                  Advisories: {[...v.advisory.ids, ...v.advisory.aliases.filter((a) => !v.advisory?.ids.includes(a))].join(", ")}
-                  {v.advisory.withdrawn && " (withdrawn)"}
-                </span>
-              )}
-            </>
-          ),
-        };
-      }),
-    },
-    {
-      id: "findings",
-      title: "Findings",
-      more: Boolean(r.more.findings),
-      rank: Math.min(3, ...(r.findings ?? []).map((f) => f.rank)),
-      items: (r.findings ?? []).map((f) => ({
-        key: `f:${f.key}:${f.title}`,
-        href: `/fixes/issues${qs({ key: f.key })}`,
-        title: (
-          <>
-            <span>{f.title}</span> <SeverityBadge severity={f.severity} score={f.score} />
-          </>
-        ),
-        meta: (
-          <>
-            <span className="mono">{f.key}</span>
-            {` · ${plural(f.open_findings, "open finding")} on ${plural(f.affected_assets, "asset")}`}
-          </>
-        ),
-        detail: f.assets.length > 0 ? <span>Assets: {samples(f.assets, f.affected_assets)}</span> : undefined,
-      })),
-    },
     {
       id: "assets",
       title: "Assets",
@@ -178,9 +182,27 @@ export function searchSections(r: SearchResults): SearchSection[] {
                 {c.versions.length > 10 && ", …"}
               </span>
             )}
+            <span>
+              <Link to={`/components/${c.id}`}>All installed versions and where each one is</Link>
+            </span>
           </>
         ),
       })),
+    },
+    {
+      id: "vulnerabilities",
+      title: "Vulnerabilities",
+      more: Boolean(r.more.vulnerabilities || r.more.findings),
+      rank: Math.min(3, ...affected.map((v) => v.rank), ...findings.map((f) => f.rank)),
+      items: [...affected.map(vulnItem), ...findings.map(findingItem)],
+    },
+    {
+      id: "advisories",
+      title: "Advisories",
+      // Advisory-only matches sort after affected ones, so a cut list may have lost them.
+      more: Boolean(r.more.vulnerabilities),
+      rank: Math.min(3, ...advisories.map((v) => v.rank)),
+      items: advisories.map(vulnItem),
     },
     {
       id: "teams",
@@ -220,9 +242,10 @@ export function searchSections(r: SearchResults): SearchSection[] {
       })),
     },
   ];
+  const byGroup = (a: SearchSection, b: SearchSection) => GROUP_ORDER.indexOf(a.id) - GROUP_ORDER.indexOf(b.id);
   return sections
     .filter((s) => s.items.length > 0)
-    .sort((a, b) => a.rank - b.rank || GROUP_ORDER.indexOf(a.id) - GROUP_ORDER.indexOf(b.id));
+    .sort(opt.order === "investigate" ? byGroup : (a, b) => a.rank - b.rank || byGroup(a, b));
 }
 
 function isEditable(t: EventTarget | null): boolean {

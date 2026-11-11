@@ -123,6 +123,7 @@ export const ARTICLES: Article[] = [
         ],
       },
       { p: "Each place shows only what your role can open: People needs the admin role, Admin is for instance administrators. On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (the other places, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
+      { p: "**Search** (press `/` anywhere) finds vulnerability and advisory ids, packages (optionally with a version, such as `openssl 3.0.2`), assets, teams and people. Press Enter for the full results page. It starts with an **Overview**: how many matching components are installed, in how many versions and on how many assets, and how many open issues are critical or urgent (P1); select a figure to open that list. Then come **Components** (open one for every installed version and the assets it is on), **Vulnerabilities** (CVEs and other issues on your assets, with their severity), **Advisories** (public advisories that match but affect nothing here), then teams and people." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },

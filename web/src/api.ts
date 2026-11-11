@@ -1773,6 +1773,25 @@ export interface SearchResults {
   teams: SearchTeam[];
   members: SearchMember[];
   more: Partial<Record<"vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members", boolean>>;
+  /** Counts of every match, with `summary=1` (the results page). */
+  summary?: SearchSummary;
+}
+
+/** The overview of a search: every match counted, whatever the limit. */
+export interface SearchSummary {
+  /** Installed packages matching, their distinct installed versions (the version asked for, if any) and the assets with one. */
+  components: number;
+  versions: number;
+  installed_assets: number;
+  /** The package name alone, for the Components list's search. */
+  component_query: string;
+  /** The text the finding counts match, as the Issues list's search does. */
+  findings_query: string;
+  open_findings: number;
+  affected_assets: number;
+  critical: number;
+  /** Priority P1. */
+  urgent: number;
 }
 
 export const SEARCH_MIN_LENGTH = 2;
