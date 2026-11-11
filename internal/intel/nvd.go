@@ -20,7 +20,8 @@ import (
 // a CPE product given as virtualMatchString, every CVE whose configurations
 // name that product, with the version ranges NVD's analysts recorded. It is
 // read for the programs of the curated Windows program catalogue
-// (internal/winprograms), never searched by a program's name.
+// (internal/winprograms) and the vendor builds of the vendor build catalogue
+// (internal/vendorbuilds), never searched by a name.
 //
 // NVD has a backlog: a CVE NVD has not analysed has no configuration and
 // so is not returned for any product. Those CVEs are not matched; the
@@ -121,79 +122,45 @@ const (
 	nvdNoUsableCPEs = "no usable configuration" // the CVE names the product, but nothing above was usable
 )
 
-// windowsPlatform reports whether a non-vulnerable platform CPE allows
-// Windows: a Windows CPE, or any operating system ("*").
-func windowsPlatform(criteria string) bool {
-	f := winprograms.SplitCPE(criteria)
-	if len(f) < 5 {
-		return false
-	}
-	switch {
-	case f[2] == "o" && f[3] == "microsoft" && strings.HasPrefix(f[4], "windows"):
-		return true
-	case f[2] == "o" && f[3] == "*":
-		return true
-	}
-	return false
+// nvdProduct is what the NVD reader reads advisories for: a program of the
+// Windows program catalogue (internal/winprograms) or a vendor build of a
+// distribution package (internal/vendorbuilds).
+type nvdProduct interface {
+	// AdvisoryName and Ecosystem are the package name and ecosystem the
+	// advisories are stored under.
+	AdvisoryName() string
+	Ecosystem() string
+	DisplayLabel() string
+	// AdvisoryPrefix starts every advisory id read for the product.
+	AdvisoryPrefix() string
+	// CPEList is the CPE products queried; OwnsCPE says whether a CPE
+	// match names one of them, in an edition and for a platform read.
+	CPEList() []string
+	OwnsCPE(criteria string) bool
+	// PlatformAllows says whether a platform CPE of an AND configuration
+	// ("X running on Y") allows the hosts the product is installed on.
+	PlatformAllows(criteria string) bool
+	// SourceVersion reads one of NVD's versions as installed versions are
+	// read; ok is false when it cannot be.
+	SourceVersion(v string) (string, bool)
 }
 
-// nvdRecord turns one NVD CVE into an advisory for a program: the ranges of
-// the configurations that name the program's CPE products for Windows. nil
+// nvdRecord turns one NVD CVE into an advisory for a product: the ranges of
+// the configurations that name the product's CPE products for its platform. nil
 // when none does (the CVE is about another product, platform or edition, or
 // nothing usable is recorded); anomalies counts what was skipped.
-func nvdRecord(p *winprograms.Program, c nvdCVE, anomalies nvdAnomalies) *osv.Vulnerability {
+func nvdRecord(p nvdProduct, c nvdCVE, anomalies nvdAnomalies) *osv.Vulnerability {
 	if !cveID.MatchString(c.ID) || strings.EqualFold(c.VulnStatus, "Rejected") {
 		return nil
 	}
-	aff := osv.Affected{Package: osv.Package{Ecosystem: p.Ecosystem(), Name: p.ID}}
+	aff := osv.Affected{Package: osv.Package{Ecosystem: p.Ecosystem(), Name: p.AdvisoryName()}}
 	seenRange, seenVersion := map[string]bool{}, map[string]bool{}
 	owned := false
 	for _, cfg := range c.Configurations {
-		var platform []nvdNode
-		var vulnerable []nvdNode
-		for _, n := range cfg.Nodes {
-			anyVuln := false
-			for _, m := range n.CPEMatch {
-				anyVuln = anyVuln || m.Vulnerable
-			}
-			if anyVuln {
-				vulnerable = append(vulnerable, n)
-			} else {
-				platform = append(platform, n)
-			}
-		}
-		mine := false
-		for _, n := range vulnerable {
-			for _, m := range n.CPEMatch {
-				if m.Vulnerable && p.OwnsCPE(m.Criteria) {
-					mine = true
-				}
-			}
-		}
-		if !mine {
+		vulnerable, ok, mine := nvdConfiguration(p, cfg, anomalies)
+		owned = owned || mine
+		if !ok {
 			continue
-		}
-		owned = true
-		if cfg.Negate {
-			anomalies[nvdNegated]++
-			continue
-		}
-		if strings.EqualFold(cfg.Operator, "AND") && len(platform) > 0 {
-			// "Program X running on Y": only a configuration that allows
-			// Windows applies to a Windows host.
-			windows := false
-			for _, n := range platform {
-				if n.Negate {
-					continue
-				}
-				for _, m := range n.CPEMatch {
-					windows = windows || windowsPlatform(m.Criteria)
-				}
-			}
-			if !windows {
-				anomalies[nvdOtherOS]++
-				continue
-			}
 		}
 		for _, n := range vulnerable {
 			if n.Negate {
@@ -229,7 +196,7 @@ func nvdRecord(p *winprograms.Program, c nvdCVE, anomalies nvdAnomalies) *osv.Vu
 		}
 		return nil
 	}
-	v := &osv.Vulnerability{ID: nvdPrefix(p.ID) + c.ID, Aliases: []string{c.ID}, Affected: []osv.Affected{aff},
+	v := &osv.Vulnerability{ID: p.AdvisoryPrefix() + c.ID, Aliases: []string{c.ID}, Affected: []osv.Affected{aff},
 		Published: nvdTime(c.Published), Modified: nvdTime(c.LastModified)}
 	for _, d := range c.Descriptions {
 		if d.Lang == "en" {
@@ -238,7 +205,7 @@ func nvdRecord(p *winprograms.Program, c nvdCVE, anomalies nvdAnomalies) *osv.Vu
 		}
 	}
 	if v.Summary == "" {
-		v.Summary = c.ID + " in " + p.Label
+		v.Summary = c.ID + " in " + p.DisplayLabel()
 	}
 	if sev := nvdSeverity(c.Metrics); sev != nil {
 		v.Severity = []osv.Severity{*sev}
@@ -260,9 +227,60 @@ func nvdRecord(p *winprograms.Program, c nvdCVE, anomalies nvdAnomalies) *osv.Vu
 	return v
 }
 
+// nvdConfiguration reads one configuration of a CVE: its vulnerable nodes,
+// whether they apply to the product (ok), and whether the configuration
+// names the product at all (mine). A configuration that names the product
+// but does not apply is counted in anomalies.
+func nvdConfiguration(p nvdProduct, cfg nvdConfig, anomalies nvdAnomalies) (vulnerable []nvdNode, ok, mine bool) {
+	var platform []nvdNode
+	for _, n := range cfg.Nodes {
+		anyVuln := false
+		for _, m := range n.CPEMatch {
+			anyVuln = anyVuln || m.Vulnerable
+		}
+		if anyVuln {
+			vulnerable = append(vulnerable, n)
+		} else {
+			platform = append(platform, n)
+		}
+	}
+	for _, n := range vulnerable {
+		for _, m := range n.CPEMatch {
+			if m.Vulnerable && p.OwnsCPE(m.Criteria) {
+				mine = true
+			}
+		}
+	}
+	if !mine {
+		return nil, false, false
+	}
+	if cfg.Negate {
+		anomalies[nvdNegated]++
+		return nil, false, true
+	}
+	if strings.EqualFold(cfg.Operator, "AND") && len(platform) > 0 {
+		// "Program X running on Y": only a configuration that allows
+		// the product's platform applies to its hosts.
+		allowed := false
+		for _, n := range platform {
+			if n.Negate {
+				continue
+			}
+			for _, m := range n.CPEMatch {
+				allowed = allowed || p.PlatformAllows(m.Criteria)
+			}
+		}
+		if !allowed {
+			anomalies[nvdOtherOS]++
+			return nil, false, true
+		}
+	}
+	return vulnerable, true, true
+}
+
 // nvdRange reads one CPE match: a range, an exact version, or why it is
 // not used.
-func nvdRange(p *winprograms.Program, m nvdCPEMatch) (r osv.Range, exact, why string) {
+func nvdRange(p nvdProduct, m nvdCPEMatch) (r osv.Range, exact, why string) {
 	read := func(s string) (string, bool) { return p.SourceVersion(s) }
 	if m.VersionEndExcluding == "" && m.VersionEndIncluding == "" {
 		switch {
@@ -308,6 +326,7 @@ func nvdRange(p *winprograms.Program, m nvdCPEMatch) (r osv.Range, exact, why st
 	return r, "", ""
 }
 
+// nvdPrefix starts the id of a Windows program's NVD advisories.
 func nvdPrefix(program string) string { return "NVD-" + program + "-" }
 
 // nvdSeverity picks a CVSS vector: v3.1, then v3.0, then v4.0; NVD's own

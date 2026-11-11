@@ -126,6 +126,9 @@ func (l *loader) recommend(ctx context.Context, componentID int64, purlType, pur
 	in := Input{PurlType: purlType, Installed: installed, Package: name, Release: l.release, Product: l.product, Cycles: l.cycles, Now: l.now}
 	var findings int64
 	for _, r := range rows {
+		if in.VendorRepository == "" && r.VendorRepository != "" {
+			in.VendorRepository = r.VendorRepository
+		}
 		if in.SourcePackage == "" && r.SourcePackage != "" {
 			in.SourcePackage, in.SourceVersion = r.SourcePackage, r.SourceVersion
 		}

@@ -22,6 +22,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/vendorbuilds"
 	"github.com/stackurity/stackurity/internal/version"
 	"github.com/stackurity/stackurity/internal/winprograms"
 )
@@ -52,6 +53,8 @@ func VulnFeed(baseEcosystem string) string {
 		return FeedMSRC
 	case winprograms.Ecosystem:
 		return FeedWindowsPrograms
+	case vendorbuilds.Ecosystem:
+		return FeedVendorBuilds
 	}
 	return OSVFeed(baseEcosystem)
 }
@@ -72,6 +75,8 @@ func feedEcosystem(feed string) (string, bool) {
 		return "Windows", true
 	case FeedWindowsPrograms:
 		return winprograms.Ecosystem, true
+	case FeedVendorBuilds:
+		return vendorbuilds.Ecosystem, true
 	}
 	return strings.CutPrefix(feed, "osv:")
 }
@@ -169,6 +174,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedWindowsPrograms:
 		res, cursor, err = s.syncWindowsPrograms(ctx, name, feed.Cursor)
+	case name == FeedVendorBuilds:
+		res, cursor, err = s.syncVendorBuilds(ctx, name, feed.Cursor)
 	case name == FeedKEV:
 		res, cursor, err = s.syncKEV(ctx, feed.Cursor)
 	case name == FeedEPSS:

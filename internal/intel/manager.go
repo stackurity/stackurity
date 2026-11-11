@@ -106,6 +106,19 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 			}
 		}
 	}
+	if p.Types["deb"] > 0 || p.Types["rpm"] > 0 {
+		// Vendor builds of the curated catalogue (nginx.org's nginx,
+		// NodeSource's nodejs...), read from NVD only for those installed.
+		vb, err := installedVendorBuilds(ctx, s)
+		if err != nil {
+			return err
+		}
+		if len(vb) > 0 {
+			if err := ensure(FeedVendorBuilds, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
+		}
+	}
 	for d := range p.Distros {
 		for prefix, eco := range distroFeeds {
 			if !strings.HasPrefix(d, prefix+"-") {
@@ -155,6 +168,8 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		return append(ids, progs...), err
 	case feed == FeedWindowsPrograms:
 		return programComponents(ctx, s, res)
+	case feed == FeedVendorBuilds:
+		return vendorComponents(ctx, s, res)
 	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)

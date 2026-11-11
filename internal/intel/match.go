@@ -15,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
+	"github.com/stackurity/stackurity/internal/vendorbuilds"
 	"github.com/stackurity/stackurity/internal/version"
 	"github.com/stackurity/stackurity/internal/winprograms"
 )
@@ -28,6 +29,8 @@ type Evaluator struct {
 	Overlay *eoloverlay.Overlay
 	// Programs is the Windows program catalogue; nil uses the embedded one.
 	Programs *winprograms.Catalogue
+	// Vendors is the vendor build catalogue; nil uses the embedded one.
+	Vendors *vendorbuilds.Catalogue
 	// afterRead, in tests, runs once everything is read and before
 	// anything is written.
 	afterRead func()
@@ -96,11 +99,17 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		if rows, err = e.withProgramSiblings(ctx, rows); err != nil {
 			return nil, err
 		}
+		// So is a vendor build installed as several packages.
+		if rows, err = e.withVendorSiblings(ctx, rows); err != nil {
+			return nil, err
+		}
 	}
 	kernels := planKernels(rows)
 	earlierKernels := earlierReleaseKernels(rows)
 	programs := planPrograms(e.catalogue(), rows)
 	programAdvs := map[string][]store.AdvisoryMatch{}
+	vendors := planVendorBuilds(e.vendorCatalogue(), e.overlay(), rows)
+	vendorAdvs := map[string][]store.AdvisoryMatch{}
 	kernelFound := map[string]map[int64][]store.FindingInput{}
 	now := time.Now()
 	if e.Now != nil {
@@ -125,6 +134,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	}
 	// The unfixed counts in the Windows programs feed's cursor, read once.
 	programUnfixed := programsUnfixed(feedState[FeedWindowsPrograms].Cursor)
+	vendorUnfixed := programsUnfixed(feedState[FeedVendorBuilds].Cursor)
 
 	// A package's advisories are read once and dropped after the last row
 	// that needs them, so an evaluation holds the advisories of the packages
@@ -198,6 +208,14 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			unsupported("Kubernetes component reported by the API server: lifecycle is tracked, vulnerabilities are not matched")
 		case r.Type == "generic" && r.Evidence["kind"] == "managed-service":
 			unsupported("managed service: the provider patches the engine and publishes its own advisories; lifecycle is tracked")
+		case vendor != "" && vendors[r.InventoryID] != nil:
+			// A vendor build the curated catalogue lists: matched by its
+			// upstream version against the upstream product's NVD records.
+			found, err := e.evaluateVendorBuild(ctx, r, vendors[r.InventoryID], feedState, vendorAdvs, vendorUnfixed, &rc)
+			if err != nil {
+				return nil, err
+			}
+			want = append(want, found...)
 		case ok && vendor != "":
 			// A vendor's build (MongoDB's mongodb-org-server, Docker's
 			// docker-ce, PGDG's postgresql-16): the distribution's advisories
@@ -459,7 +477,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// their "not affected" says nothing about a Ksplice or FIPS build.
 	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
 	// Advisories with a fix per version line, one affected entry per line.
-	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":")
+	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":") || strings.HasPrefix(t.Ecosystem, vendorbuilds.Ecosystem+":")
 	perLine := oracle || program
 	oracleBuild, arch, signingKey := "", "", ""
 	var streams map[string]string

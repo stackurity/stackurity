@@ -454,6 +454,44 @@ func (p *Program) matchesPublisher(pub string) bool {
 // Ecosystem is the program's own ecosystem string.
 func (p *Program) Ecosystem() string { return Ecosystem + ":" + p.ID }
 
+// The NVD reader (internal/intel) reads catalogued programs and vendor
+// builds (internal/vendorbuilds) alike through these.
+
+// AdvisoryName is the package name the program's advisories are stored under.
+func (p *Program) AdvisoryName() string { return p.ID }
+
+// DisplayLabel is the program's name for people.
+func (p *Program) DisplayLabel() string { return p.Label }
+
+// CPEList is the CPE products read from NVD.
+func (p *Program) CPEList() []string {
+	if p.Source == nil {
+		return nil
+	}
+	return p.Source.CPEs
+}
+
+// AdvisoryPrefix starts the id of every advisory read from NVD for the
+// program.
+func (p *Program) AdvisoryPrefix() string { return "NVD-" + p.ID + "-" }
+
+// PlatformAllows reports whether a platform CPE of an AND configuration
+// ("program X running on Y") allows a Windows host: a Windows CPE, or any
+// operating system ("*").
+func (p *Program) PlatformAllows(criteria string) bool {
+	f := SplitCPE(criteria)
+	if len(f) < 5 {
+		return false
+	}
+	switch {
+	case f[2] == "o" && f[3] == "microsoft" && strings.HasPrefix(f[4], "windows"):
+		return true
+	case f[2] == "o" && f[3] == "*":
+		return true
+	}
+	return false
+}
+
 // NormaliseVersion reads the installed version from a registry entry.
 func (p *Program) NormaliseVersion(displayName, displayVersion string) (string, error) {
 	if p.version == nil {
@@ -502,16 +540,21 @@ func (p *Program) OwnsCPE(criteria string) bool {
 	if p.Source == nil {
 		return false
 	}
+	return CPEsOwn(p.Source.CPEs, criteria, func(ts string) bool { return strings.Contains(ts, "windows") })
+}
+
+// CPEsOwn reports whether a CPE match string names one of cpes (catalogue
+// CPEs, as Source.CPEs), in an edition it reads, for any platform ("*" or
+// "-" target_sw) or one target allows (given the lower-cased target_sw).
+func CPEsOwn(cpes []string, criteria string, target func(ts string) bool) bool {
 	f := SplitCPE(criteria)
 	if len(f) < 11 || f[2] != "a" {
 		return false
 	}
-	switch ts := strings.ToLower(f[10]); {
-	case ts == "*" || ts == "-" || strings.Contains(ts, "windows"):
-	default:
-		return false // macos, iphone_os, android, linux...
+	if ts := strings.ToLower(f[10]); ts != "*" && ts != "-" && !target(ts) {
+		return false // macos, iphone_os, android...
 	}
-	for _, c := range p.Source.CPEs {
+	for _, c := range cpes {
 		if cpeOwns(SplitCPE(c), f) {
 			return true
 		}

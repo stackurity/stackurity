@@ -396,7 +396,7 @@ var jobKinds = map[string]bool{"feed.sync": true, "image.scan": true, "integrati
 // publicFeeds name every feed source, for the public hosts.
 var publicFeeds = []string{"osv:npm", intel.FeedKEV, intel.FeedEPSS, intel.FeedEndOfLife, intel.FeedNpm, intel.FeedPackagist,
 	intel.FeedPyPI, intel.FeedGo, intel.FeedCrates, intel.FeedRubyGems, intel.FeedNuGet, intel.FeedMaven, intel.FeedPub, intel.FeedHex,
-	intel.FeedAmazonLinux, intel.FeedOracleLinux, intel.FeedMSRC, intel.FeedWindowsPrograms, intel.FeedWordPressOrg}
+	intel.FeedAmazonLinux, intel.FeedOracleLinux, intel.FeedMSRC, intel.FeedWindowsPrograms, intel.FeedVendorBuilds, intel.FeedWordPressOrg}
 
 var (
 	reURL      = regexp.MustCompile(`[A-Za-z][A-Za-z0-9+.-]*://[^\s"'<>()\[\]{},]+`)

@@ -1,0 +1,209 @@
+{
+  "schema": 1,
+  "version": "2026-11-11.1",
+  "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
+  "products": [
+    {
+      "id": "nginx",
+      "label": "nginx",
+      "packages": ["^deb/nginx$", "^rpm/nginx$"],
+      "cpes": ["cpe:2.3:a:f5:nginx", "cpe:2.3:a:f5:nginx:*:*:*:*:open_source", "cpe:2.3:a:nginx:nginx"],
+      "update": "Update it from nginx.org's repository: sudo apt-get install --only-upgrade nginx (or sudo dnf upgrade nginx).",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:f5:nginx",
+        "https://nginx.org/en/linux_packages.html",
+        "https://nginx.org/packages/mainline/ubuntu/dists/noble/nginx/binary-amd64/Packages"
+      ],
+      "verified": "2026-11-11",
+      "note": "NVD names nginx under f5:nginx (41 CVEs) and the older nginx:nginx (2); open_source is NGINX Open Source's sw_edition, plus (NGINX Plus) is not read. Most records list affected versions one by one."
+    },
+    {
+      "id": "nodejs",
+      "label": "Node.js",
+      "packages": ["^deb/nodejs$", "^rpm/nodejs$"],
+      "cpes": ["cpe:2.3:a:nodejs:node.js", "cpe:2.3:a:nodejs:node.js:*:*:*:*:lts"],
+      "update": "Update it from NodeSource's repository: sudo apt-get install --only-upgrade nodejs (or sudo dnf upgrade nodejs).",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:nodejs:node.js",
+        "https://github.com/nodesource/distributions",
+        "https://deb.nodesource.com/node_20.x/dists/nodistro/main/binary-amd64/Packages"
+      ],
+      "verified": "2026-11-11",
+      "note": "NVD marks LTS releases with sw_edition lts (169 configurations on the verified date), so it is read with the plain product."
+    },
+    {
+      "id": "postgresql",
+      "label": "PostgreSQL",
+      "packages": ["^deb/postgresql-\\d+$", "^rpm/postgresql\\d+-server$", "^deb/postgresql-client-\\d+$", "^rpm/postgresql\\d+$"],
+      "side_by_side": "major",
+      "cpes": ["cpe:2.3:a:postgresql:postgresql"],
+      "update": "Update it from the PostgreSQL project's repository (PGDG): sudo apt-get install --only-upgrade postgresql-<major> (or sudo dnf upgrade postgresql<major>-server), then restart the cluster.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:postgresql:postgresql",
+        "https://wiki.postgresql.org/wiki/Apt",
+        "https://apt.postgresql.org/pub/repos/apt/dists/noble-pgdg/main/binary-amd64/Packages"
+      ],
+      "verified": "2026-11-11",
+      "note": "Major versions install side by side and are fixed each on its own line. Versions before 10 have two-part majors (9.6); they are past end of life, which their end-of-life finding says. libpq5 from PGDG carries the newest major's version whatever server is installed, so it is not read as the server."
+    },
+    {
+      "id": "php",
+      "label": "PHP",
+      "packages": [
+        "^deb/php\\d+\\.\\d+-common$",
+        "^deb/php\\d+\\.\\d+-(cli|fpm|cgi|phpdbg|dev)$",
+        "^deb/libapache2-mod-php\\d+\\.\\d+$",
+        "^deb/php\\d+\\.\\d+-(bcmath|bz2|curl|dba|enchant|gd|gmp|imap|interbase|intl|ldap|mbstring|mysql|odbc|opcache|pgsql|pspell|readline|snmp|soap|sqlite3|sybase|tidy|xml|xsl|zip)$",
+        "^rpm/php-common$",
+        "^rpm/php-(cli|fpm|cgi|devel)$",
+        "^rpm/php\\d\\d-php-common$",
+        "^rpm/php\\d\\d-php-(cli|fpm|devel)$"
+      ],
+      "side_by_side": "major.minor",
+      "cpes": ["cpe:2.3:a:php:php"],
+      "coverage_note": "Ondřej Surý's and Remi's builds of PHP lines past PHP's end of life may carry fixes their maintainers backported, which NVD does not know of; the line's end-of-life finding is the one to act on",
+      "update": "Update it from the repository it came from (Ondřej Surý's packages, or Remi's): sudo apt-get install --only-upgrade php<line>-common (or sudo dnf upgrade php-common), then restart PHP-FPM or the web server.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:php:php",
+        "https://packages.sury.org/php/dists/bookworm/main/binary-amd64/Packages",
+        "https://rpms.remirepo.net/"
+      ],
+      "verified": "2026-11-11",
+      "note": "Only PHP itself and the extensions built from PHP's own source carry PHP's version; PECL extensions (php8.3-redis, -apcu, -imagick, -xdebug) have versions of their own and are not listed. NVD names 244 configurations for PHP on Windows only; they are not applied."
+    },
+    {
+      "id": "mongodb",
+      "label": "MongoDB",
+      "packages": ["^deb/mongodb-org-server$", "^rpm/mongodb-org-server$", "^deb/mongodb-org-mongos$", "^rpm/mongodb-org-mongos$"],
+      "cpes": ["cpe:2.3:a:mongodb:mongodb"],
+      "update": "Update it from MongoDB's repository: sudo apt-get install --only-upgrade mongodb-org-server (or sudo dnf upgrade mongodb-org-server), then restart mongod.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:mongodb:mongodb",
+        "https://repo.mongodb.org/apt/ubuntu/dists/noble/mongodb-org/8.0/multiverse/binary-amd64/Packages"
+      ],
+      "verified": "2026-11-11",
+      "note": "MongoDB Enterprise (mongodb-enterprise-server, sw_edition enterprise) is not read."
+    },
+    {
+      "id": "redis",
+      "label": "Redis",
+      "packages": ["^deb/redis-server$", "^rpm/redis$", "^deb/redis-tools$"],
+      "cpes": ["cpe:2.3:a:redis:redis"],
+      "update": "Update it from Redis's repository: sudo apt-get install --only-upgrade redis-server redis-tools, then restart redis-server.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:redis:redis",
+        "https://packages.redis.io/deb/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11"
+    },
+    {
+      "id": "mariadb",
+      "label": "MariaDB",
+      "packages": [
+        "^deb/mariadb-server$",
+        "^rpm/mariadb-server$",
+        "^deb/mariadb-server-core$",
+        "^deb/mariadb-client$",
+        "^rpm/mariadb-client$",
+        "^deb/mariadb-client-core$",
+        "^deb/mariadb-common$",
+        "^rpm/mariadb-common$"
+      ],
+      "version": "^(?:\\d+:)?(\\d+\\.\\d+\\.\\d+)(?:\\+maria~|-).*$",
+      "cpes": ["cpe:2.3:a:mariadb:mariadb"],
+      "update": "Update it from MariaDB's repository: sudo apt-get install --only-upgrade mariadb-server (or sudo dnf upgrade MariaDB-server), then restart mariadb.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:mariadb:mariadb",
+        "https://dlm.mariadb.com/repo/mariadb-server/11.4/repo/ubuntu/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11",
+      "note": "MariaDB's DEB versions are 1:<version>+maria~<release>, its RPMs (MariaDB-server) <version>-1.<release>; names are matched without regard to case."
+    },
+    {
+      "id": "mysql",
+      "label": "MySQL",
+      "packages": [
+        "^deb/mysql-community-server$",
+        "^rpm/mysql-community-server$",
+        "^deb/mysql-server$",
+        "^deb/mysql-community-server-core$",
+        "^deb/mysql-community-client$",
+        "^rpm/mysql-community-client$",
+        "^deb/mysql-client$"
+      ],
+      "cpes": ["cpe:2.3:a:oracle:mysql_server", "cpe:2.3:a:oracle:mysql"],
+      "update": "Update it from MySQL's repository: sudo apt-get install --only-upgrade mysql-community-server (or sudo dnf upgrade mysql-community-server), then restart mysqld.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:oracle:mysql_server",
+        "https://dev.mysql.com/doc/mysql-apt-repo-quick-guide/en/",
+        "https://repo.mysql.com/apt/ubuntu/dists/noble/mysql-8.4-lts/binary-amd64/Packages"
+      ],
+      "verified": "2026-11-11",
+      "note": "NVD names MySQL Server as oracle:mysql_server (348 CVEs) and, for older records, oracle:mysql; a CVE named under both is read once. Oracle's ranges end at the last affected version (\"8.0.39 and prior\")."
+    },
+    {
+      "id": "elasticsearch",
+      "label": "Elasticsearch",
+      "packages": ["^deb/elasticsearch$", "^rpm/elasticsearch$"],
+      "cpes": ["cpe:2.3:a:elastic:elasticsearch"],
+      "update": "Update it from Elastic's repository: sudo apt-get install --only-upgrade elasticsearch (or sudo dnf upgrade elasticsearch), one node at a time.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:elastic:elasticsearch",
+        "https://www.elastic.co/guide/en/elasticsearch/reference/current/deb.html"
+      ],
+      "verified": "2026-11-11",
+      "note": "Elastic's packages are versioned with the release alone (8.15.2)."
+    },
+    {
+      "id": "vault",
+      "label": "HashiCorp Vault",
+      "packages": ["^deb/vault$", "^rpm/vault$"],
+      "cpes": ["cpe:2.3:a:hashicorp:vault"],
+      "update": "Update it from HashiCorp's repository: sudo apt-get install --only-upgrade vault (or sudo dnf upgrade vault), then restart and unseal each node.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:hashicorp:vault",
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11",
+      "note": "Vault Enterprise (+ent versions, sw_edition enterprise, 178 configurations) is not read; its versions do not match the version form, so they stay coverage gaps."
+    },
+    {
+      "id": "consul",
+      "label": "HashiCorp Consul",
+      "packages": ["^deb/consul$", "^rpm/consul$"],
+      "cpes": ["cpe:2.3:a:hashicorp:consul"],
+      "update": "Update it from HashiCorp's repository: sudo apt-get install --only-upgrade consul (or sudo dnf upgrade consul), one agent at a time.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:hashicorp:consul",
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11",
+      "note": "Consul Enterprise (+ent versions) is not read."
+    },
+    {
+      "id": "nomad",
+      "label": "HashiCorp Nomad",
+      "packages": ["^deb/nomad$", "^rpm/nomad$"],
+      "cpes": ["cpe:2.3:a:hashicorp:nomad"],
+      "update": "Update it from HashiCorp's repository: sudo apt-get install --only-upgrade nomad (or sudo dnf upgrade nomad), one agent at a time.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:hashicorp:nomad",
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11",
+      "note": "Nomad Enterprise (+ent versions) is not read."
+    },
+    {
+      "id": "terraform",
+      "label": "Terraform",
+      "packages": ["^deb/terraform$", "^rpm/terraform$"],
+      "cpes": ["cpe:2.3:a:hashicorp:terraform"],
+      "update": "Update it from HashiCorp's repository: sudo apt-get install --only-upgrade terraform (or sudo dnf upgrade terraform).",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:hashicorp:terraform",
+        "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
+      ],
+      "verified": "2026-11-11"
+    }
+  ]
+}

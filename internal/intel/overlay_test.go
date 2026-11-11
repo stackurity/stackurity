@@ -351,7 +351,10 @@ func TestOverlayEvaluation(t *testing.T) {
 		note, _ := r.LifecycleNote["text"].(string)
 		switch r.Name {
 		case "mongodb-org-server":
-			if r.Coverage != store.CoverageUnsupported || !strings.Contains(r.CoverageReason, "built by MongoDB's repository (repo.mongodb.org)") {
+			// A vendor build in the vendor-builds catalogue: matched against
+			// NVD through nvd:vendor-builds (not synced here), so waiting for
+			// data rather than a coverage gap.
+			if r.Coverage == store.CoverageUnsupported || !strings.Contains(r.CoverageReason, "nvd:vendor-builds") {
 				t.Errorf("mongodb-org-server coverage = %s %q", r.Coverage, r.CoverageReason)
 			}
 			if !strings.Contains(note, "this is a build from MongoDB's repository (repo.mongodb.org), not Ubuntu 24.04's own package") {

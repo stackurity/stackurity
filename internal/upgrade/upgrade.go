@@ -24,10 +24,14 @@ const (
 	// advisory names by source version: no version of the binary can be
 	// named, so Recommended is empty and Source says what to install.
 	BasisDistroSourceFixed = "distro_source_fixed"
-	BasisLatestInLine      = "latest_in_line" // newest stable release in the major line, at or above the minimum fix
-	BasisMinimumFixed      = "minimum_fixed"  // the minimum fixed version itself (no newer stable release is known)
-	BasisSupportedLine     = "supported_line" // the installed line is end of life: newest release of the oldest supported line
-	BasisNone              = "none"           // nothing to recommend
+	// A vendor's build of a Linux package (nginx.org's nginx), matched by
+	// its upstream version against the upstream product's NVD records:
+	// Recommended is the upstream release to install from that repository.
+	BasisVendorUpstreamFixed = "vendor_upstream_fixed"
+	BasisLatestInLine        = "latest_in_line" // newest stable release in the major line, at or above the minimum fix
+	BasisMinimumFixed        = "minimum_fixed"  // the minimum fixed version itself (no newer stable release is known)
+	BasisSupportedLine       = "supported_line" // the installed line is end of life: newest release of the oldest supported line
+	BasisNone                = "none"           // nothing to recommend
 )
 
 // Release-data states.
@@ -58,10 +62,14 @@ type Input struct {
 	Package       string
 	SourcePackage string
 	SourceVersion string
-	Release       *store.Release         // nil: no release data
-	Product       string                 // endoflife.date product; "" when none
-	Cycles        []store.LifecycleCycle // the product's release lines, newest first
-	Now           time.Time
+	// VendorRepository names the vendor repository that built a Linux
+	// package matched as a vendor build (store.UpgradeIssue); its fixed
+	// versions are upstream versions.
+	VendorRepository string
+	Release          *store.Release         // nil: no release data
+	Product          string                 // endoflife.date product; "" when none
+	Cycles           []store.LifecycleCycle // the product's release lines, newest first
+	Now              time.Time
 }
 
 // Line is the support status of one release line.
@@ -211,6 +219,11 @@ func Recommend(in Input) Recommendation {
 	// 2-4. recommended version for the vulnerability fixes
 	if rec.MinimumFixed != "" {
 		switch {
+		case IsDistro(in.PurlType) && in.VendorRepository != "":
+			rec.Recommended, rec.Basis = rec.MinimumFixed, BasisVendorUpstreamFixed
+			say("%s was built by %s, which ships upstream releases, so it was matched against NVD's records for the upstream product. "+
+				"%s is the highest upstream release NVD lists as fixing the open findings: install %s %s or later from %s.",
+				in.Package, in.VendorRepository, rec.MinimumFixed, in.Package, rec.MinimumFixed, in.VendorRepository)
 		case IsDistro(in.PurlType) && in.SourcePackage != "":
 			// Recommended is cleared below, once what it fixes is known.
 			rec.Recommended, rec.Basis = rec.MinimumFixed, BasisDistroSourceFixed
