@@ -7,6 +7,7 @@ import { ConfirmHost } from "./components/ConfirmDialog";
 import { ReportingBoundary } from "./components/ErrorReports";
 import { installErrorReports } from "./clientErrors";
 import "./styles.css";
+import "./styles/ui-polish.css";
 
 installErrorReports();
 

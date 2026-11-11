@@ -94,7 +94,7 @@ export function GitHubInstallations({ status, admin, onChange }: { status: GitHu
                       Sync
                     </button>
                   )}
-                  <button type="button" className="btn btn-sm btn-danger" onClick={() => void disconnect(i)} disabled={act.pending}>
+                  <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void disconnect(i)} disabled={act.pending}>
                     Disconnect
                   </button>
                 </div>

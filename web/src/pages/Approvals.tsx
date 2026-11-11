@@ -5,7 +5,8 @@ import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Badge, IGNORE_REASON_LABEL, type Tone } from "../components/Badge";
-import { EmptyState, ErrorBox, Loading, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, Notice, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { CardSkeleton } from "../components/Skeleton";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useProject } from "../project";
 import { ignoreRulesEmpty, requestsEmpty } from "../emptyCopy";
@@ -146,7 +147,7 @@ function Requests({ status }: { status: "pending" | "all" }) {
   const [done, setDone] = useState<string | null>(null);
   const res = useLoad(() => api.get<IgnoreRequestList>("/ignore-requests", { status, limit: LIMIT, offset }), [status, offset]);
   if (res.error) return <ErrorBox error={res.error} title="Could not load requests" />;
-  if (!res.data) return <Loading />;
+  if (!res.data) return <CardSkeleton label="Loading requests…" />;
   const items = res.data.items;
   const canDecide = res.data.can_decide;
   // VEX requests are decided by organisation-wide security and admin users.
@@ -222,8 +223,10 @@ function Rules() {
       </label>
       {done && <Notice kind="success">{done}</Notice>}
       <ErrorBox error={act.error ?? res.error} title="Ignore rules" />
-      {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState {...ignoreRulesEmpty(all)} help="ignore-issues" />}
+      {!res.data && !res.error && <CardSkeleton label="Loading ignore rules…" />}
+      {res.data && res.data.items.length === 0 && (
+        <EmptyState {...ignoreRulesEmpty(all)} action={{ label: "Go to issues", to: "/fixes/issues", permitted: true }} help="ignore-issues" />
+      )}
       {res.data && res.data.items.length > 0 && (
         <ul className="approval-list">
           {res.data.items.map((r) => (
