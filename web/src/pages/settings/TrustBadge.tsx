@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type Asset, type List, type Project } from "../../api";
 import { useAction, useLoad } from "../../hooks";
+import { confirmAction } from "../../components/ConfirmDialog";
 import {
   Card,
   CardFooter,
@@ -266,11 +267,15 @@ function BadgeEditor({ badge, list, onChange }: { badge: TrustBadge; list: Trust
           <button
             className="btn danger"
             disabled={act.pending}
-            onClick={() => {
-              if (confirm("Delete this badge? Its public image will show “not active” and the trust page will go.")) {
-                void run(() => api.del(`/trust-badges/${badge.id}`));
-              }
-            }}
+            onClick={() =>
+              void confirmAction({
+                title: "Delete this badge?",
+                consequence: "Its public image will show “Stackurity badge not active” and the trust page will go. Its status history is kept.",
+                action: "Delete badge",
+              }).then(async (yes) => {
+                if (yes) await run(() => api.del(`/trust-badges/${badge.id}`));
+              })
+            }
           >
             Delete badge
           </button>
