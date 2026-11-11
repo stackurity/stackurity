@@ -155,6 +155,11 @@ func (s *Store) OutcomesExecutive(ctx context.Context, from, to time.Time, produ
 	if x.Trend, err = pgx.CollectRows(rows, pgx.RowToStructByPos[OutcomePeriod]); err != nil {
 		return nil, err
 	}
+	// Postgres keeps microseconds; report the exact bounds the caller gave
+	// so the first start is the report's From and the last end its To.
+	for i := range x.Trend {
+		x.Trend[i].Start, x.Trend[i].End = starts[i], ends[i]
+	}
 
 	rows, err = s.Pool.Query(ctx, `SELECT f.id, f.key, f.title, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false),
 		f.asset_id, a.name,
