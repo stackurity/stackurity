@@ -163,7 +163,7 @@ func (e *Evaluator) evaluateProgram(ctx context.Context, r store.EvalRow, pp *pr
 		// Lines installed side by side are fixed each on its own line: a
 		// range whose fix is on another line (NVD's "< 3.12.4" for every
 		// Python) says nothing about this one.
-		advs = sameLineOnly(p, p.Line(pp.version), advs)
+		advs = sameLineOnly(p.Line, p.Line(pp.version), advs)
 	}
 	t := osv.Target{Ecosystem: p.Ecosystem(), Name: p.ID, Version: pp.version, Compare: version.Generic}
 	row := r
@@ -279,7 +279,7 @@ func programComponents(ctx context.Context, s *store.Store, res *SyncResult) ([]
 // say whether this line was ever affected: it becomes an entry for versions
 // on no listed line (a limit with no fix, osv.UnlistedLine), so a version
 // below that fix needs validation, with no fix offered.
-func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatch) []store.AdvisoryMatch {
+func sameLineOnly(lineOf func(string) string, line string, advs []store.AdvisoryMatch) []store.AdvisoryMatch {
 	out := make([]store.AdvisoryMatch, 0, len(advs))
 	for _, a := range advs {
 		aff := a.Affected
@@ -288,7 +288,7 @@ func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatc
 		for _, r := range a.Affected.Ranges {
 			keep, fix := true, ""
 			for _, e := range r.Events {
-				if v := e.Fixed + e.LastAffected; v != "" && p.Line(v) != line {
+				if v := e.Fixed + e.LastAffected; v != "" && lineOf(v) != line {
 					keep, fix = false, v
 				}
 			}
@@ -300,7 +300,7 @@ func sameLineOnly(p *winprograms.Program, line string, advs []store.AdvisoryMatc
 			}
 		}
 		for _, v := range a.Affected.Versions {
-			if p.Line(v) == line {
+			if lineOf(v) == line {
 				aff.Versions = append(aff.Versions, v)
 			}
 		}

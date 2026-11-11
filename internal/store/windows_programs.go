@@ -29,3 +29,29 @@ func (s *Store) WindowsPrograms(ctx context.Context) ([]WindowsProgram, error) {
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[WindowsProgram])
 }
+
+// NamedPackage is one installed deb or rpm package whose name matched a
+// pattern: the component and the installed version.
+type NamedPackage struct {
+	ComponentID int64
+	Type        string
+	PurlKey     string
+	Purl        string
+	Name        string
+	Version     string
+}
+
+// PackagesNamed returns the distinct deb and rpm packages with current
+// inventory whose name matches pattern (a POSIX regular expression, without
+// regard to case), in the caller's scope: the vendor build catalogue's
+// candidates (internal/vendorbuilds NamePattern).
+func (s *Store) PackagesNamed(ctx context.Context, pattern string) ([]NamedPackage, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT DISTINCT c.id, c.type, c.purl_key, i.purl, c.name, i.version
+		FROM inventory i JOIN components c ON c.id = i.component_id
+		WHERE i.removed_at IS NULL AND c.type IN ('deb', 'rpm') AND c.name ~* $1
+		ORDER BY 1, 4, 6`, pattern)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[NamedPackage])
+}

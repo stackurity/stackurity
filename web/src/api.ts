@@ -1882,7 +1882,7 @@ export interface UpgradeRecommendation {
   installed_version: string;
   minimum_fixed_version?: string;
   recommended_version?: string;
-  /** distro_fixed, distro_source_fixed, latest_in_line, minimum_fixed, supported_line or none. */
+  /** distro_fixed, distro_source_fixed, vendor_upstream_fixed, latest_in_line, minimum_fixed, supported_line or none. */
   basis: string;
   /** distro_source_fixed: a Debian/Ubuntu binary package with a version of its own whose fix is named by its
    * source package's version. minimum_fixed_version is then the source's; recommended_version is empty. */

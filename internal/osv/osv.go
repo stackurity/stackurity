@@ -430,7 +430,8 @@ func OracleBuild(version string) string { return oraclebuild.Channel(version) }
 // in a limit with no fix, so it is told by its shape, which is all that is
 // stored of an entry.
 func UnlistedLine(ecosystem string, a Affected) bool {
-	if !(strings.HasPrefix(ecosystem, "Oracle Linux:") || strings.HasPrefix(ecosystem, "Windows programs:")) || len(a.Ranges) != 1 {
+	if !(strings.HasPrefix(ecosystem, "Oracle Linux:") || strings.HasPrefix(ecosystem, "Windows programs:") ||
+		strings.HasPrefix(ecosystem, "Vendor builds:")) || len(a.Ranges) != 1 {
 		return false
 	}
 	limit := false
