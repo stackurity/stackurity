@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/vendorbuilds"
 	"github.com/stackurity/stackurity/internal/version"
 	"github.com/stackurity/stackurity/internal/winprograms"
 )
@@ -21,7 +22,7 @@ const (
 	WindowsUpdate   = "windows_update"   // a Windows host's latest cumulative update (one KB)
 	OldKernels      = "old_kernels"      // installed kernels that are not running
 	PackageUpgrade  = "package_upgrade"  // one application dependency
-	ProgramUpdate   = "program_update"   // one installed Windows program (internal/winprograms)
+	ProgramUpdate   = "program_update"   // one installed Windows program (internal/winprograms) or vendor build (internal/vendorbuilds)
 	EndOfLife       = "end_of_life"      // non-OS software past end of life
 	ReleaseUpgrade  = "release_upgrade"  // OS end of life + OS issues with no free fix
 	NoFix           = "no_fix"           // nothing published yet
@@ -515,7 +516,12 @@ func describeProgramUpdate(g *Group) {
 	g.TargetVersion = g.ToVersion
 	g.Title = fmt.Sprintf("Update %s to %s", label, g.ToVersion)
 	g.Action = fmt.Sprintf("Update %s to %s or later.", label, g.ToVersion)
-	if p := winprograms.Default().Program(g.extra["program"]); p != nil && p.Update != "" {
+	if id, vendor := strings.CutPrefix(g.extra["program"], "vendor:"); vendor {
+		// A vendor build: its findings' versions are upstream releases.
+		if p := vendorbuilds.Default().Product(id); p != nil && p.Update != "" {
+			g.Action += " " + p.Update
+		}
+	} else if p := winprograms.Default().Program(g.extra["program"]); p != nil && p.Update != "" {
 		g.Action += " " + p.Update
 	}
 	verb := "are"

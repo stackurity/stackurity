@@ -25,8 +25,12 @@ type UpgradeIssue struct {
 	// and the source version the binary was built from (osv.SourceFixOf).
 	SourcePackage string
 	SourceVersion string
-	FindingID     int64 // the lowest id among the findings with this issue
-	Findings      int64 // open findings with this issue (one per asset and location)
+	// VendorRepository names the vendor repository that built the package
+	// when its findings were matched as a vendor build (intel
+	// evaluateVendorBuild): their fixed versions are upstream versions.
+	VendorRepository string
+	FindingID        int64 // the lowest id among the findings with this issue
+	Findings         int64 // open findings with this issue (one per asset and location)
 }
 
 // upgradeIssueLimit bounds the distinct issues read for one component.
@@ -51,9 +55,10 @@ func (s *Store) UpgradeIssues(ctx context.Context, componentID, inventoryID int6
 		CASE WHEN f.kind = 'end_of_life' THEN COALESCE(f.evidence->>'product', '') ELSE '' END,
 		CASE WHEN COALESCE(f.evidence->'match'->>'source_version', '') <> '' THEN COALESCE(f.evidence->>'osv_package', '') ELSE '' END,
 		CASE WHEN COALESCE(f.evidence->>'osv_package', '') <> '' THEN COALESCE(f.evidence->'match'->>'source_version', '') ELSE '' END,
+		COALESCE(f.evidence->>'vendor_repository', ''),
 		min(f.id), count(*)
 		FROM findings f JOIN inventory i ON i.id = f.inventory_id JOIN assets a ON a.id = f.asset_id`+w.sql()+`
-		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9 ORDER BY 1, 2, 4 LIMIT `+strconv.Itoa(upgradeIssueLimit), w.args...)
+		GROUP BY 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 ORDER BY 1, 2, 4 LIMIT `+strconv.Itoa(upgradeIssueLimit), w.args...)
 	if err != nil {
 		return nil, err
 	}

@@ -204,11 +204,14 @@ export function Pager({
   total,
   limit,
   offset,
+  unit,
   onChange,
 }: {
   total: number;
   limit: number;
   offset: number;
+  /** What is paged when it is not the rows themselves, e.g. "assets". */
+  unit?: string;
   onChange: (offset: number) => void;
 }) {
   if (total === 0) return null;
@@ -218,6 +221,7 @@ export function Pager({
     <nav className="pager" aria-label="Pagination">
       <span className="muted">
         {from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}
+        {unit ? ` ${unit}` : ""}
       </span>
       <button type="button" className="btn btn-sm" disabled={offset <= 0} onClick={() => onChange(Math.max(0, offset - limit))}>
         Previous

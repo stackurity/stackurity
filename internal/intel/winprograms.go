@@ -175,7 +175,7 @@ func (s *Syncer) syncWindowsPrograms(ctx context.Context, feed, cursor string) (
 
 // syncProgram reads one program's CVEs: every one naming its CPE products
 // (full), or those modified since the last read, and stores them.
-func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Program, full bool, lastRead, now time.Time, res *SyncResult) (int, error) {
+func (s *Syncer) syncProgram(ctx context.Context, feed string, p nvdProduct, full bool, lastRead, now time.Time, res *SyncResult) (int, error) {
 	anomalies := nvdAnomalies{}
 	byCVE := map[string]*osv.Vulnerability{}
 	listed := map[string]bool{}  // CVEs NVD returned, usable or not
@@ -184,7 +184,7 @@ func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Pr
 	if !full {
 		since = lastRead.Add(-nvdOverlap)
 	}
-	for _, cpe := range p.Source.CPEs {
+	for _, cpe := range p.CPEList() {
 		err := s.nvdQuery(ctx, cpe, since, now, func(c nvdCVE) error {
 			listed[c.ID] = true
 			open := anomalies[nvdStartOnly] + anomalies[nvdUnbounded]
@@ -200,7 +200,7 @@ func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Pr
 		}
 	}
 	if len(anomalies) > 0 {
-		s.Log.Info("NVD configurations not used", "program", p.ID, "skipped", anomalies.String())
+		s.Log.Info("NVD configurations not used", "program", p.AdvisoryName(), "skipped", anomalies.String())
 	}
 	vulns := make([]*osv.Vulnerability, 0, len(byCVE))
 	for _, v := range byCVE {
@@ -210,14 +210,14 @@ func (s *Syncer) syncProgram(ctx context.Context, feed string, p *winprograms.Pr
 	for id := range byCVE {
 		delete(unfixed, id) // read through another of its CPEs
 	}
-	return len(unfixed), s.storeProgram(ctx, feed, p, nvdPrefix(p.ID), vulns, listed, full, now, res)
+	return len(unfixed), s.storeProgram(ctx, feed, p, p.AdvisoryPrefix(), vulns, listed, full, now, res)
 }
 
 // storeProgram stores one program's advisories (ids starting with prefix)
 // and withdraws those no longer listed: on a full read, every stored one
 // the source no longer names; on an incremental read, those in listed (the
 // CVEs the source returned as changed) that are no longer usable.
-func (s *Syncer) storeProgram(ctx context.Context, feed string, p *winprograms.Program, prefix string, vulns []*osv.Vulnerability,
+func (s *Syncer) storeProgram(ctx context.Context, feed string, p nvdProduct, prefix string, vulns []*osv.Vulnerability,
 	listed map[string]bool, full bool, now time.Time, res *SyncResult) error {
 	byCVE := map[string]*osv.Vulnerability{}
 	for _, v := range vulns {
@@ -253,7 +253,7 @@ func (s *Syncer) storeProgram(ctx context.Context, feed string, p *winprograms.P
 			continue
 		}
 		gone = append(gone, &osv.Vulnerability{ID: id, Aliases: []string{cve}, Modified: now, Withdrawn: &now,
-			Summary: "the source no longer lists " + cve + " for " + p.Label})
+			Summary: "the source no longer lists " + cve + " for " + p.DisplayLabel()})
 	}
 	if len(gone) > 0 {
 		n, err := s.Store.UpsertAdvisories(ctx, feed, gone)

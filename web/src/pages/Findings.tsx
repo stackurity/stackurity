@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Asset, type Finding, type FindingSummary, type List, type FixGroup } from "../api";
+import { api, FINDING_STATES, PRIORITIES, SEVERITIES, VERIFICATIONS, type Asset, type Finding, type FindingSummary, type List, type FixGroup, type FindingAssetGroups } from "../api";
 import { useAuth } from "../auth";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { FindingActions } from "../components/Workflow";
@@ -12,6 +12,9 @@ import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetCh
 import { HistoryWindowNote } from "../components/PlanLimit";
 
 const LIMIT = 50;
+/** Grouped by asset: assets per page, and issues shown under each. */
+const ASSET_LIMIT = 20;
+const PER_ASSET = 5;
 
 /** Stored states under the names people see. */
 const STATE_FILTER_LABEL: Record<string, string> = {
@@ -104,10 +107,20 @@ export function IssuesPage() {
   const summary = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   // What was not checked, by who acts: of the asset when the list is filtered to one.
   const unchecked = useUnchecked(Number(assetId) || undefined);
-  const res = useLoad(
-    () => api.get<List<Finding>>("/findings", { ...query, status, sort: byAsset ? "asset" : undefined, limit: LIMIT, offset }),
+  // Grouped by asset pages assets, so one asset with thousands of issues
+  // takes one heading, not hundreds of pages.
+  const flat = useLoad(
+    () => (byAsset ? Promise.resolve(null) : api.get<List<Finding>>("/findings", { ...query, status, limit: LIMIT, offset })),
     [queryKey, status, offset],
   );
+  const grouped = useLoad(
+    () =>
+      byAsset
+        ? api.get<FindingAssetGroups>("/findings/by-asset", { ...query, status, per_asset: PER_ASSET, limit: ASSET_LIMIT, offset })
+        : Promise.resolve(null),
+    [queryKey, status, offset],
+  );
+  const res = byAsset ? grouped : flat;
 
   // Selection is per result set; clear it whenever the filters or page change.
   const resultKey = params.toString();
@@ -155,7 +168,8 @@ export function IssuesPage() {
     get("overdue") === "false" && "within deadline (not past the fix-by date)",
     get("due_before") && (get("due_after") ? "due by the end of today" : `due before ${new Date(get("due_before")).toLocaleString()}`),
   ].filter(Boolean);
-  const rows = res.data?.items ?? [];
+  const rows = (byAsset ? grouped.data?.items.flatMap((g) => g.findings) : flat.data?.items) ?? [];
+  const found = (byAsset ? grouped.data?.findings_total : flat.data?.total) ?? 0;
   const assetName = assetId ? rows[0]?.asset_name : undefined;
 
   return (
@@ -359,7 +373,8 @@ export function IssuesPage() {
       {!res.data && !res.error && <Loading />}
       {res.data && (
         <p className="small muted result-count" aria-live="polite">
-          {plural(res.data.total, status === "resolved" ? "fixed issue" : "issue")}
+          {plural(found, status === "resolved" ? "fixed issue" : "issue")}
+          {grouped.data ? ` on ${plural(grouped.data.total, "asset")}` : ""}
           {res.loading ? ", updating" : ""}
         </p>
       )}
@@ -390,19 +405,25 @@ export function IssuesPage() {
               </button>
             </div>
           )}
-          {byAsset ? (
-            groupByAsset(rows).map(([id, name, list]) => (
-              <Fragment key={id}>
+          {grouped.data ? (
+            grouped.data.items.map((g) => (
+              <Fragment key={g.asset_id}>
                 <h2 className="asset-group-head">
-                  <Link to={`/assets/${id}`}>{name}</Link>{" "}
-                  <Link to={`/fixes/issues?${with_({ asset_id: String(id), sort: "" }).toString()}`} className="small">
-                    only this asset
+                  <Link to={`/assets/${g.asset_id}`}>{g.asset_name}</Link>{" "}
+                  <span className="small muted">{plural(g.total, "issue")}</span>{" "}
+                  <Link to={`/fixes/issues?${with_({ asset_id: String(g.asset_id), sort: "" }).toString()}`} className="small">
+                    {g.total > g.findings.length ? `Show all ${g.total.toLocaleString()}` : "only this asset"}
                   </Link>
                 </h2>
+                {g.total > g.findings.length && (
+                  <p className="small muted">
+                    The {g.findings.length} most urgent of {plural(g.total, "issue")} on this asset.
+                  </p>
+                )}
                 <div className="only-wide">
-                  <FindingsTable rows={list} hideAsset selected={canAct("viewer") ? selected : undefined} onSelect={setSelected} />
+                  <FindingsTable rows={g.findings} hideAsset selected={canAct("viewer") ? selected : undefined} onSelect={setSelected} />
                 </div>
-                <FindingCards rows={list} hideAsset />
+                <FindingCards rows={g.findings} hideAsset />
               </Fragment>
             ))
           ) : (
@@ -413,19 +434,15 @@ export function IssuesPage() {
               <FindingCards rows={rows} />
             </>
           )}
-          <Pager total={res.data.total} limit={LIMIT} offset={offset} onChange={(o) => update({ offset: o ? String(o) : "" })} />
+          <Pager
+            total={res.data.total}
+            limit={byAsset ? ASSET_LIMIT : LIMIT}
+            offset={offset}
+            unit={byAsset ? "assets" : undefined}
+            onChange={(o) => update({ offset: o ? String(o) : "" })}
+          />
         </>
       )}
     </>
   );
-}
-
-function groupByAsset(rows: Finding[]): [number, string, Finding[]][] {
-  const out: [number, string, Finding[]][] = [];
-  for (const f of rows) {
-    const last = out[out.length - 1];
-    if (last && last[0] === f.asset_id) last[2].push(f);
-    else out.push([f.asset_id, f.asset_name, [f]]);
-  }
-  return out;
 }

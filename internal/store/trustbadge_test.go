@@ -12,6 +12,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/trustbadge"
@@ -390,5 +391,114 @@ func TestTrustBadgeCoverageLimitsFromCollectorScopes(t *testing.T) {
 	cover("lockfile:/var/www/help-centre/composer.lock", "failed", "parse error")
 	if d := decide(); d.Result != trustbadge.NotActive || d.Reason != trustbadge.ReasonCollectionErrors {
 		t.Fatalf("failed scope: %+v", d)
+	}
+}
+
+// report sends another report for the fixture's host, from collector,
+// with the given coverage (scope -> status), observed at, and marks the
+// asset processed after it. Only the fixture's own collector ("test")
+// reports the packages, whose coverage the fixture set.
+func (f *badgeFixture) report(t *testing.T, collector string, at time.Time, cov map[string]string) {
+	t.Helper()
+	b := model.NewBatch(model.Collector{ID: collector, Version: "1", Method: "agent"},
+		model.AssetRef{Kind: model.AssetHost, Name: "web1", Identifiers: []model.Identifier{{Scheme: "machine-id", Value: "web1"}}})
+	b.ObservedAt = at
+	for _, p := range []string{"pkg:pypi/requests@2.0.0", "pkg:cocoapods/Alamofire@5.0.0"} {
+		if collector != "test" {
+			break
+		}
+		b.Observations = append(b.Observations, model.Observation{Purl: p, Confidence: model.ConfidenceConfirmed})
+	}
+	b.Complete = true
+	scopes := make([]string, 0, len(cov))
+	for scope := range cov {
+		scopes = append(scopes, scope)
+	}
+	slices.Sort(scopes)
+	for _, scope := range scopes {
+		reason := ""
+		if cov[scope] != "checked" {
+			b.Complete = false
+			reason = "cannot read " + scope + ": permission denied"
+		}
+		b.Cover(scope, cov[scope], reason)
+	}
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.Ingest(f.ctx, b, 0); err != nil {
+		t.Fatal(err)
+	}
+	start, err := f.s.DBNow(f.ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.MarkEvaluated(f.ctx, f.asset, start); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func (f *badgeFixture) decide(t *testing.T) trustbadge.Decision {
+	t.Helper()
+	in, err := f.s.TrustBadgeInputs(f.ctx, f.badge)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return trustbadge.Evaluate(in, time.Now())
+}
+
+func (f *badgeFixture) scopes(t *testing.T) []string {
+	t.Helper()
+	rows, err := f.s.Pool.Query(tenant.System(f.ctx), `SELECT collector_id || ' ' || scope || ' ' || status FROM coverage
+		WHERE asset_id = $1 ORDER BY 1`, f.asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	out, err := pgx.CollectRows(rows, pgx.RowTo[string])
+	if err != nil {
+		t.Fatal(err)
+	}
+	return out
+}
+
+// A failed scope that a newer report from the same collector leaves out
+// (the agent was upgraded and no longer reads that file) no longer counts:
+// the badge is active again. A failed scope in the latest report still
+// keeps it off.
+func TestTrustBadgeIgnoresScopesTheLatestReportLeftOut(t *testing.T) {
+	f := newBadgeFixture(t)
+	t0 := time.Now().UTC().Add(-time.Hour)
+	const stale = "app-permissions:/srv/chat/web/flutter 2.js"
+	f.report(t, "test", t0, map[string]string{"os-packages": "checked", stale: "partial"})
+	// Another collector's failed scope on the same asset, reported earlier.
+	f.report(t, "other", t0, map[string]string{"lockfile:/srv/chat/composer.lock": "failed"})
+	if d := f.decide(t); d.Result != trustbadge.NotActive || d.Reason != trustbadge.ReasonCollectionErrors {
+		t.Fatalf("with failed scopes: %+v", d)
+	}
+	// The other collector's next report no longer has its failed scope.
+	f.report(t, "other", t0.Add(10*time.Minute), map[string]string{"lockfile:/srv/chat/package-lock.json": "checked"})
+
+	// A delayed older report from "test" deletes nothing newer.
+	f.report(t, "test", t0.Add(30*time.Minute), map[string]string{"os-packages": "checked", stale: "partial"})
+	f.report(t, "test", t0.Add(-30*time.Minute), map[string]string{"os-packages": "checked"})
+	if got := f.scopes(t); !slices.Contains(got, "test "+stale+" partial") {
+		t.Fatalf("an older report deleted a newer scope: %q", got)
+	}
+
+	// The upgraded agent's report leaves the unreadable file out.
+	f.report(t, "test", t0.Add(40*time.Minute), map[string]string{"os-packages": "checked"})
+	want := []string{"other lockfile:/srv/chat/package-lock.json checked", "test os-packages checked"}
+	if got := f.scopes(t); !reflect.DeepEqual(got, want) {
+		t.Fatalf("coverage = %q, want %q", got, want)
+	}
+	if d := f.decide(t); d.Result != trustbadge.Active {
+		t.Fatalf("stale scopes left out: %+v", d)
+	}
+
+	// A failed scope in the latest report still blocks the badge.
+	f.report(t, "test", t0.Add(50*time.Minute), map[string]string{"os-packages": "checked",
+		"app-permissions:/srv/help/application/config/database.local.php": "partial"})
+	if d := f.decide(t); d.Result != trustbadge.NotActive || d.Reason != trustbadge.ReasonCollectionErrors {
+		t.Fatalf("failed scope in the latest report: %+v", d)
 	}
 }

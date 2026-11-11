@@ -472,7 +472,7 @@ func TestSameLineOnly(t *testing.T) {
 		{ID: "b", Ecosystem: eco, Affected: osv.Affected{Ranges: []osv.Range{rng("3.11.0", "3.11.9"), rng("3.12.0", "3.12.4")}}},
 		{ID: "c", Ecosystem: eco, Affected: osv.Affected{Versions: []string{"3.11.2", "3.12.1"}}},
 	}
-	got := sameLineOnly(py, "3.11", advs)
+	got := sameLineOnly(py.Line, "3.11", advs)
 	var ids []string
 	for _, a := range got {
 		ids = append(ids, a.ID)

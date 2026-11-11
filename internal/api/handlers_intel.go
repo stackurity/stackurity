@@ -1,6 +1,7 @@
 package api
 
 import (
+	"fmt"
 	"net/http"
 	"net/url"
 	"slices"
@@ -14,7 +15,8 @@ import (
 	"github.com/stackurity/stackurity/internal/upgrade"
 )
 
-func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
+// findingFilter reads the filters GET /findings and GET /findings/by-asset share.
+func findingFilter(r *http.Request) (store.FindingFilter, error) {
 	q := r.URL.Query()
 	f := store.FindingFilter{
 		Kind: q.Get("kind"), Status: q.Get("status"), Verification: q.Get("verification"),
@@ -38,8 +40,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		if v := q.Get(d.name); v != "" {
 			t, err := time.Parse(time.RFC3339, v)
 			if err != nil {
-				s.fail(w, r, badRequest(d.name+" must be a time such as 2026-10-31T23:59:59Z"))
-				return
+				return f, badRequest(d.name + " must be a time such as 2026-10-31T23:59:59Z")
 			}
 			*d.to = &t
 		}
@@ -65,16 +66,14 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	case "", store.SecondCheckAgreed, store.SecondCheckDisagreed, store.SecondCheckCouldNotCheck:
 		f.SecondCheck = sc
 	default:
-		s.fail(w, r, badRequest("second_check must be agreed, disagreed or could_not_check"))
-		return
+		return f, badRequest("second_check must be agreed, disagreed or could_not_check")
 	}
 	f.AssigneeTeam = qInt(r, "assignee_team")
 	f.IncidentID = qInt(r, "incident_id")
 	if rk := q.Get("resolution_kind"); rk != "" {
 		for _, k := range strings.Split(rk, ",") {
 			if !slices.Contains(store.ResolutionKinds, k) {
-				s.fail(w, r, badRequest("resolution_kind must be one or more of "+strings.Join(store.ResolutionKinds, ", ")))
-				return
+				return f, badRequest("resolution_kind must be one or more of " + strings.Join(store.ResolutionKinds, ", "))
 			}
 			f.ResolutionKind = append(f.ResolutionKind, k)
 		}
@@ -82,8 +81,7 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("epss_min"); v != "" {
 		n, err := strconv.ParseFloat(v, 64)
 		if err != nil || !(n >= 0 && n <= 1) {
-			s.fail(w, r, badRequest("epss_min must be a probability from 0 to 1 (0.1 is 10%)"))
-			return
+			return f, badRequest("epss_min must be a probability from 0 to 1 (0.1 is 10%)")
 		}
 		f.EPSSMin = n
 	}
@@ -94,19 +92,25 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 	case "asset":
 		f.ByAsset = true
 	default:
-		s.fail(w, r, badRequest("sort must be priority or asset"))
-		return
+		return f, badRequest("sort must be priority or asset")
 	}
 	switch f.State {
 	case "", "active", "new", "acknowledged", "in_progress", "suppressed", "risk_accepted", "regressed":
 	default:
-		s.fail(w, r, badRequest("state must be active, new, acknowledged, in_progress, suppressed, risk_accepted or regressed"))
-		return
+		return f, badRequest("state must be active, new, acknowledged, in_progress, suppressed, risk_accepted or regressed")
 	}
 	switch f.Status {
 	case "", "open", "resolved", "all":
 	default:
-		s.fail(w, r, badRequest("status must be open, resolved or all"))
+		return f, badRequest("status must be open, resolved or all")
+	}
+	return f, nil
+}
+
+func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
+	f, err := findingFilter(r)
+	if err != nil {
+		s.fail(w, r, err)
 		return
 	}
 	items, total, err := s.Store.ListFindings(r.Context(), f)
@@ -115,6 +119,35 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, paged(items, total, f.Page))
+}
+
+// listFindingsByAsset pages the findings matching the GET /findings filters
+// by asset: each asset with its count and its first per_asset findings.
+func (s *Server) listFindingsByAsset(w http.ResponseWriter, r *http.Request) {
+	f, err := findingFilter(r)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	per := 5
+	if v := r.URL.Query().Get("per_asset"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > store.MaxFindingsPerAsset {
+			s.fail(w, r, badRequest(fmt.Sprintf("per_asset must be from 1 to %d", store.MaxFindingsPerAsset)))
+			return
+		}
+		per = n
+	}
+	groups, assets, findings, err := s.Store.ListFindingsByAsset(r.Context(), f, per)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	page := paged(groups, assets, f.Page)
+	writeJSON(w, 200, map[string]any{
+		"items": page.Items, "total": page.Total, "limit": page.Limit, "offset": page.Offset,
+		"findings_total": findings, "per_asset": per,
+	})
 }
 
 func (s *Server) findingSummary(w http.ResponseWriter, r *http.Request) {

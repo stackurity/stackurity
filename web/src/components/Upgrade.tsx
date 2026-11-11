@@ -6,6 +6,7 @@ import { Card, KeyValues, RelativeTime } from "./ui";
 const BASIS_LABEL: Record<string, string> = {
   distro_fixed: "the distribution's fixed build",
   distro_source_fixed: "the distribution's fixed build of the source package",
+  vendor_upstream_fixed: "the upstream release that fixes it, from the vendor's repository",
   latest_in_line: "newest stable release in the major line",
   minimum_fixed: "minimum fixed version",
   supported_line: "newest release of a supported line",

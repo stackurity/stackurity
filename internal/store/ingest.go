@@ -231,7 +231,25 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 	return err
 }
 
+// writeCoverage records the batch's coverage scopes and deletes the
+// collector's earlier scopes on the asset that the batch left out. A batch
+// lists every scope its run tried, so an omitted scope is one the collector
+// no longer reads (an agent upgrade stopped reporting it, a file was
+// removed): left in place it would count as a current gap on the trust
+// badge, the Coverage page and the coverage-gap report forever. Only rows
+// last attempted no later than this batch go, so a delayed older batch
+// cannot delete a newer one's scopes. Other collectors' scopes on the asset
+// are theirs to replace. coverage_history keeps every report.
 func writeCoverage(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *model.ObservationBatch) error {
+	scopes := make([]string, 0, len(b.Coverage))
+	for _, c := range b.Coverage {
+		scopes = append(scopes, c.Scope)
+	}
+	if _, err := tx.Exec(ctx, `DELETE FROM coverage WHERE asset_id = $1 AND collector_id = $2
+		AND NOT (scope = ANY($3::text[])) AND last_attempt <= $4`,
+		assetID, b.Collector.ID, scopes, b.ObservedAt); err != nil {
+		return err
+	}
 	for _, c := range b.Coverage {
 		if _, err := tx.Exec(ctx, `INSERT INTO coverage (asset_id, collector_id, scope, status, reason, tool_version, last_attempt, last_success)
 			VALUES ($1,$2,$3,$4,$5,$6,$7, CASE WHEN $4 = 'checked' THEN $7::timestamptz END)

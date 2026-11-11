@@ -1129,7 +1129,7 @@ stackurity.exe agent --interval 6h`,
     where: ["Security", "All issues"],
     keywords: "filter state acknowledge assign bulk priority severity verification",
     body: [
-      { p: "**Fixes ▸ All issues** lists every finding. The chips at the top are one-tap presets: **Open**, **Urgent** (P1, not snoozed or accepted), **Assigned to me**, **New this week** and **Known exploited**. Everything else is behind the **Filters** button (a sheet from the bottom on a phone). **Group by asset** sorts by asset and puts a heading over each one's issues. On a phone each issue is a card." },
+      { p: "**Fixes ▸ All issues** lists every finding. The chips at the top are one-tap presets: **Open**, **Urgent** (P1, not snoozed or accepted), **Assigned to me**, **New this week** and **Known exploited**. Everything else is behind the **Filters** button (a sheet from the bottom on a phone). **Group by asset** lists assets instead: each with how many issues it has and its five most urgent, 20 assets a page. **Show all** opens every issue of that asset. On a phone each issue is a card." },
       { h: "Filters" },
       {
         table: [

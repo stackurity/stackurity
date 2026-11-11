@@ -5175,6 +5175,284 @@
     }
    }
   },
+  "/findings/by-asset": {
+   "get": {
+    "operationId": "get_findings_by_asset",
+    "summary": "Findings grouped by asset, paged by asset: each asset's count and its most urgent findings",
+    "description": "The findings that match the `GET /findings` filters, grouped by asset and paged by asset in order of asset name. Each item is an asset: `asset_id`, `asset_name`, `asset_kind`, `total` (its findings that match) and `findings`, the first `per_asset` (1 to 50, default 5) in the `GET /findings` order. `total` at the top counts assets, `findings_total` findings; `limit` and `offset` count assets. Narrowed to the caller's projects\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "verification",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "component_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "environment",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "known_exploited",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "epss_min",
+      "in": "query",
+      "required": false,
+      "description": "Vulnerability findings whose CVE has a FIRST EPSS of at least this probability, 0 to 1 (0.1 is 10%)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "q",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "key",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "new_within",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "resolved_within",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "resolution_kind",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "priority",
+      "in": "query",
+      "required": false,
+      "description": "P1 to P4, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "state",
+      "in": "query",
+      "required": false,
+      "description": "active, new, acknowledged, in_progress, suppressed, risk_accepted or regressed",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "sos",
+      "in": "query",
+      "required": false,
+      "description": "true: SOS findings only",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "overdue",
+      "in": "query",
+      "required": false,
+      "description": "true: past their fix deadline",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "due_before",
+      "in": "query",
+      "required": false,
+      "description": "Active findings whose fix-by date is before this time (RFC 3339)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "due_after",
+      "in": "query",
+      "required": false,
+      "description": "Active findings due at or after this time (RFC 3339)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_user",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this user id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee_team",
+      "in": "query",
+      "required": false,
+      "description": "Assigned to this team id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "assignee",
+      "in": "query",
+      "required": false,
+      "description": "none: unassigned findings",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "fix_group",
+      "in": "query",
+      "required": false,
+      "description": "In this fix group (its id)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "incident_id",
+      "in": "query",
+      "required": false,
+      "description": "In this incident",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "agreed, disagreed or could_not_check",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size (default 100, at most 500)",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Items to skip",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "per_asset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/dashboard/trend": {
    "get": {
     "operationId": "get_dashboard_trend",
