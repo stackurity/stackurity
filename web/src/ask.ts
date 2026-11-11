@@ -7,6 +7,8 @@
 // Stackurity's own pages (askHref). No image, no HTML, no other link: an
 // answer cannot send anything anywhere.
 
+import { autoLink } from "./askAnswer.ts";
+
 /**
  * The version of the consent wording in consentText below. The client sends
  * this, the version of the text it actually showed, never the server's
@@ -140,7 +142,17 @@ export function noticeText(provider: string): string[] {
 }
 
 // Stackurity pages an answer may link to. Anything else is shown as text.
-const ALLOWED = [/^\/findings\/\d{1,18}$/, /^\/assets\/\d{1,18}$/, /^\/components\/\d{1,18}$/, /^\/fixes\/[A-Za-z0-9:_.-]{1,128}$/, /^\/fixes$/, /^\/fixes\/issues$/, /^\/help\/[a-z0-9-]{1,64}$/];
+const ALLOWED = [
+  /^\/findings\/\d{1,18}$/,
+  /^\/assets\/\d{1,18}$/,
+  /^\/components\/\d{1,18}$/,
+  /^\/fixes\/[A-Za-z0-9:_.-]{1,128}$/,
+  /^\/fixes$/,
+  /^\/fixes\/issues$/,
+  /^\/help\/[a-z0-9-]{1,64}$/,
+  // An advisory id, searched in Stackurity (askAnswer.ts autoLink).
+  /^\/search\?q=(?:CVE-\d{4}-\d{4,7}|GHSA(?:-[23456789cfghjmpqrvwx]{4}){3})$/i,
+];
 
 /** The path to link to, or null when the target is not one of ours. */
 export function askHref(href: string): string | null {
@@ -181,7 +193,12 @@ export function parseInline(line: string): Inline[] {
       else if (m[2].trim()) out.push({ kind: "text", text: m[2] });
       continue;
     }
-    out.push({ kind: "text", text: p });
+    // Advisory ids and "issue #12" in running text open their page; each
+    // target is checked against the same list as a written link.
+    for (const a of autoLink(p)) {
+      const to = a.kind === "link" ? askHref(a.to) : null;
+      out.push(to ? { kind: "link", text: a.text, to } : { kind: "text", text: a.text });
+    }
   }
   return out;
 }

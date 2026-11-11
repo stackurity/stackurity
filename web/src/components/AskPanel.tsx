@@ -26,9 +26,38 @@ import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackButton, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
 import type { AskPanelState } from "../askState";
+import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 
-/** Renders an answer: text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
+/**
+ * Renders an answer. One the model wrote with the known headings
+ * (askAnswer.ts) leads with its recommendation, with the reasoning,
+ * evidence, alternatives and data gaps in sections that open on a click;
+ * data gaps start open, so what Ask could not check is never hidden. Any
+ * other answer renders as plain text, lists and links, as it always has.
+ */
 export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
+  const s = structureAnswer(text);
+  if (!s) return <AnswerText text={text} onNavigate={onNavigate} />;
+  return (
+    <div className="ask-answer ask-structured">
+      {s.lead && (
+        <div className="ask-lead">
+          <span className="ask-lead-label">Recommendation</span>
+          <AnswerText text={s.lead} onNavigate={onNavigate} />
+        </div>
+      )}
+      {s.sections.map((sec, i) => (
+        <details key={sec.kind} className={`ask-sec ask-sec-${sec.kind}`} open={sec.kind === "gaps" || (!s.lead && i === 0)}>
+          <summary>{SECTION_TITLE[sec.kind]}</summary>
+          <AnswerText text={sec.body} onNavigate={onNavigate} />
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/** Text, bold, code, lists, and links to Stackurity pages only (ask.ts). */
+function AnswerText({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
   const inline = (parts: Inline[]): ReactNode[] =>
     parts.map((p, i) => {
       switch (p.kind) {
@@ -73,6 +102,42 @@ export function AskAnswer({ text, onNavigate }: { text: string; onNavigate?: () 
   );
 }
 
+/**
+ * Under each answer: what Ask read to give it (from the lookups the server
+ * reported while it answered; a conversation opened again later no longer
+ * has them), and that it changed nothing, since its tools only read.
+ */
+export function AskReadOnly({ tools, onNavigate }: { tools?: string[]; onNavigate?: () => void }) {
+  const reads = tools ? lookedAt(tools) : [];
+  return (
+    <div className="ask-ran small">
+      {reads.length > 0 && (
+        <details className="ask-ran-reads">
+          <summary>What Ask looked at ({reads.length})</summary>
+          <ul>
+            {reads.map((r) => (
+              <li key={r.label}>
+                {r.to ? (
+                  <Link to={r.to} onClick={onNavigate}>
+                    {r.label}
+                  </Link>
+                ) : (
+                  r.label
+                )}
+                {r.count > 1 && <span className="muted"> ×{r.count}</span>}
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+      <p className="ask-ran-note muted">
+        {tools && reads.length === 0 ? "Answered without looking anything up. " : ""}Changed nothing: Ask can only read your Stackurity data. Any change is
+        yours to make, on the linked pages.
+      </p>
+    </div>
+  );
+}
+
 /** The top bar's button; hidden when the server has no model provider. */
 export function AskButton({ status, onOpen }: { status: AskStatus | undefined; onOpen: () => void }) {
   if (!status || status.reason === "not_configured") return null;
@@ -89,6 +154,8 @@ interface Turn {
   text: string;
   /** An answer's sequence number, for feedback. */
   seq?: number;
+  /** The lookups Ask reported while it answered (not kept with the conversation). */
+  tools?: string[];
 }
 
 const REASONS: Record<string, string> = {
@@ -292,6 +359,7 @@ export function AskPanel({
     abort.current = ctl;
     let answer = "";
     let answerSeq = 0;
+    const tools: string[] = [];
     let closing: Turn | null = null;
     try {
       await streamQuestion(id, q, usePage ? page : null, getActiveProject(), (e) => {
@@ -307,6 +375,7 @@ export function AskPanel({
             break;
           case "tool":
             setTool(String(e.data.tool ?? "Reading"));
+            tools.push(String(e.data.tool ?? "Reading"));
             break;
           case "done":
             answerSeq = Number(e.data.answer_seq) || 0;
@@ -326,7 +395,7 @@ export function AskPanel({
       setBusy(false);
       setDraft("");
       setTool("");
-      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined }] : []), ...(closing ? [closing] : [])]);
+      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined, tools }] : []), ...(closing ? [closing] : [])]);
       reload();
     }
   };
@@ -440,6 +509,7 @@ export function AskPanel({
               ) : t.role === "assistant" ? (
                 <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
+                  <AskReadOnly tools={t.tools} onNavigate={onLinkClick} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>
               ) : (
