@@ -6,6 +6,18 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.19.9
+
+### Changed
+
+- Application scans no longer report CodeIgniter credentials files the agent may not read as unreadable application files: `database.php`, `email.php`, `mail.php`, their variants (`database.production.php`) and `*.local.php` overrides directly in `application/config` or `app/Config`. Like `wp-config.php` and `.env`, hardening rightly keeps them from other users and they hold nothing the scan reads. Other config files there (`routes.php`) and the same names elsewhere are still reported.
+
+### Fixed
+
+- **Upgrade advice for Debian and Ubuntu packages names the package to upgrade, not a version apt cannot install.** Debian and Ubuntu advisories list source package versions, and some binary packages have a version number of their own: `telnet` 0.17+2.5-3ubuntu4 is built from `inetutils` 2:2.5-3ubuntu4, fixed in inetutils 2:2.5-3ubuntu4.1. The upgrade recommendation, the finding's explanation, the Fix column, incident actions (Slack, Teams, email, Jira and the incident page) and the MCP tools offered "2:2.5-3ubuntu4.1" as telnet's target, which no package manager can act on. They now say "upgrade telnet to a build from inetutils 2:2.5-3ubuntu4.1 or later", with the `apt-get` and `dpkg-query` commands; the upgrade recommendation has the new basis `distro_source_fixed`, an empty `recommended_version` and a `source` object (see [Upgrade recommendations](docs/api.md#upgrade-recommendations)). Packages whose version is their source's are unchanged. The advice follows findings matched by source version (the previous fix), so it appears as findings are next evaluated.
+- **Debian and Ubuntu packages are matched by their source package's version.** Debian and Ubuntu advisories list source versions, but a binary package can carry a version of its own: `telnet` 0.17+2.5-3ubuntu4.2 is built from `inetutils` 2:2.5-3ubuntu4.2, and comparing its binary version with the fix 2:2.5-3ubuntu4.1 reported CVE-2026-24061 (known exploited, P1) on a host that already had the fix. The source version the agent reads from dpkg (`Source: name (version)`) is now compared, as is a version carried in an SBOM's `upstream` qualifier (`name@version`). Packages whose binary and source versions are the same, and inventory from agents that do not report a source version, are compared as before. The second check uses the source version too. Such false findings close at the next evaluation; no agent upgrade is needed.
+- Trust badge: an application's inventory that is incomplete only because of coverage limits (compiled front-end bundles that can't be fully identified, Flutter web engines no vulnerability source covers, formats not read yet) no longer makes the badge "not active". The limits are disclosed on the trust page by broad kind of software. Failed scopes, application files the agent may not read, and any other partial result still make it not active. Rule version `2026-11-11.1`.
+
 ## 0.19.8
 
 ### Security
