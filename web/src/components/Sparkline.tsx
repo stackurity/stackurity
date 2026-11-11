@@ -66,3 +66,39 @@ export function WeekBars({ weeks }: { weeks: { start: string; end: string; fixed
     </ol>
   );
 }
+
+/**
+ * Issues opened against issues fixed, per week: two thin columns a week,
+ * opened in the de-emphasis ink and fixed in the accent, on one scale.
+ * Counts are in each week's title and, for screen readers, in words.
+ */
+export function FlowBars({ weeks }: { weeks: { start: string; end: string; fixed: number; opened?: number }[] }) {
+  const hi = Math.max(1, ...weeks.map((w) => Math.max(w.fixed, w.opened ?? 0)));
+  const h = (n: number) => `${Math.max((n / hi) * 100, n > 0 ? 6 : 0)}%`;
+  return (
+    <>
+      <ol className="weekbars" aria-label="Issues opened and fixed per week">
+        {weeks.map((w) => (
+          <li
+            key={w.start}
+            className="weekbar"
+            title={`${shortDay(w.start)} to ${shortDay(w.end)}: ${(w.opened ?? 0).toLocaleString()} opened, ${w.fixed.toLocaleString()} fixed`}
+          >
+            <span className="weekbar-track weekbar-pair">
+              <span className="weekbar-fill weekbar-opened" style={{ height: h(w.opened ?? 0) }} />
+              <span className="weekbar-fill" style={{ height: h(w.fixed) }} />
+            </span>
+            <span className="weekbar-label" aria-hidden="true">{shortDay(w.end)}</span>
+            <span className="sr-only">
+              {" "}
+              week to {shortDay(w.end)}: {w.opened ?? 0} opened, {w.fixed} fixed
+            </span>
+          </li>
+        ))}
+      </ol>
+      <p className="weekbar-key small muted" aria-hidden="true">
+        <span className="weekbar-swatch weekbar-opened" /> opened <span className="weekbar-swatch" /> fixed
+      </p>
+    </>
+  );
+}

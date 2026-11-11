@@ -4,10 +4,14 @@ import assert from "node:assert/strict";
 import {
   assetNoun,
   feedFreshness,
+  fixAssets,
+  flowSummary,
   glanceTiles,
   hiddenReasons,
   quietKinds,
   needsYou,
+  postureTiles,
+  remediationSla,
   reportingCount,
   reportingRows,
   slaSplit,
@@ -267,4 +271,60 @@ test("feed freshness: never synced, waiting for the first sync, or turned off", 
   assert.equal(feedFreshness([feed("osv"), feed("new", { last_success: null, last_attempt: null, stale: true })]).state, "fresh");
   assert.equal(feedFreshness([feed("osv", { enabled: false })]).state, "never");
   assert.match(feedFreshness([]).warning, /turned off/);
+});
+
+test("Security posture: the dangerous counts first, each opening its list; unloaded data is left out, not 0", () => {
+  const t = postureTiles({
+    summary: { by_priority: { P1: 2, P2: 5 }, known_exploited: 1, overdue: 9 },
+    sla: { on_time: 3, due_today: 0, overdue: 4 },
+    reporting: { reporting: 9, total: 11, stale: 2 },
+    notReporting: "2 servers not reporting",
+    leaks: { needs_rotation: 1, still_found: 1, overdue: 1 },
+  });
+  assert.deepEqual(
+    t.map((x) => [x.key, x.value, x.of, x.to, x.tone, x.sub]),
+    [
+      ["P1", 2, undefined, "/fixes/issues?priority=P1&state=active", "crit", undefined],
+      ["P2", 5, undefined, "/fixes/issues?priority=P2&state=active", "orange", undefined],
+      ["kev", 1, undefined, "/fixes/issues?known_exploited=true", "crit", undefined],
+      // The SLA's overdue (the same as the Needs your attention row) wins over the summary's.
+      ["overdue", 4, undefined, "/fixes/issues?overdue=true", "crit", undefined],
+      ["reporting", 9, 11, "/assets?status=stale", "warn", "2 servers not reporting"],
+      ["leaks", 2, undefined, "/fixes/leaks", "crit", "1 overdue"],
+    ],
+  );
+  assert.deepEqual(postureTiles({}), []);
+  const quiet = postureTiles({ reporting: { reporting: 3, total: 3, stale: 0 } });
+  assert.deepEqual(quiet.map((x) => [x.key, x.to, x.tone, x.sub]), [["reporting", "/assets", undefined, "all reporting"]]);
+  assert.equal(postureTiles({ summary: { known_exploited: 0 } }).find((x) => x.key === "overdue"), undefined);
+});
+
+test("trends: opened against fixed says better or worse; older servers give fixed only", () => {
+  const w = (pairs: [number, number][]) => pairs.map(([opened, fixed]) => ({ opened, fixed }));
+  assert.deepEqual(flowSummary(w([[1, 4], [2, 3]])), { opened: 3, fixed: 7, direction: "better", text: "Getting better: 4 more fixed than opened in the last 2 weeks." });
+  assert.equal(flowSummary(w([[5, 1]])).text, "Getting worse: 4 more opened than fixed in the last week.");
+  assert.equal(flowSummary(w([[2, 2]])).direction, "even");
+  assert.equal(flowSummary(w([[0, 0]])).text, "Nothing opened or fixed in the last week.");
+  assert.deepEqual(flowSummary([{ fixed: 3 }, { fixed: 0 }]), { opened: null, fixed: 3, direction: null, text: "3 issues fixed in the last 2 weeks." });
+  assert.equal(flowSummary(null).text, "No history yet.");
+});
+
+test("remediation SLA: fixes within deadline out of all fixes, and the median time to fix", () => {
+  const r = remediationSla({
+    sla: [
+      { resolved: 4, resolved_within_sla: 3 },
+      { resolved: 6, resolved_within_sla: 6 },
+    ],
+    time_to_remedy: [
+      { priority: "P1", kind: "all", median_days: 1 },
+      { priority: "all", kind: "all", median_days: 2.5 },
+    ],
+  });
+  assert.deepEqual(r, { within: 9, resolved: 10, share: 0.9, medianDays: 2.5 });
+  assert.deepEqual(remediationSla(null), { within: 0, resolved: 0, share: null, medianDays: null });
+});
+
+test("a fix's assets: distinct assets of its places, or its own", () => {
+  assert.equal(fixAssets({ asset_id: 1 }), 1);
+  assert.equal(fixAssets({ asset_id: 1, places: [{ asset_id: 1 }, { asset_id: 2 }, { asset_id: 2 }] }), 2);
 });

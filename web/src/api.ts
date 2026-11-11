@@ -1053,7 +1053,8 @@ export interface DashboardTrend {
   /** excepted: open but snoozed or accepted, so outside the SLA (missing from older servers). */
   sla: { on_time: number; due_today: number; overdue: number; excepted?: number };
   open: { day: string; open: number }[];
-  fixed: { start: string; end: string; fixed: number }[];
+  /** Per week, oldest first; opened is missing from older servers. */
+  fixed: { start: string; end: string; fixed: number; opened?: number }[];
 }
 
 /** One connection, API token or stored secret on the Dashboard's credentials block. */

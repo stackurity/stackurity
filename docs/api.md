@@ -1097,7 +1097,7 @@ Counts by severity, kind, verification, priority and state, plus SOS, overdue, u
 
 **Who:** viewer
 
-The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`; and `excepted`, open findings that are snoozed or accepted and so outside the SLA), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (findings fixed, that is remediated or removed, in each of the last 4 weeks), with `checked_at` and `end_of_today`.
+The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`; and `excepted`, open findings that are snoozed or accepted and so outside the SLA), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (each of the last 4 weeks, oldest first: `fixed`, findings remediated or removed in it, and `opened`, findings first seen or reopened in it), with `checked_at` and `end_of_today`.
 
 ### `GET /findings/verify`
 
@@ -1933,7 +1933,7 @@ Names of the organisation's stored secrets (never values), and `enabled`: whethe
 
 **Who:** admin
 
-What the Dashboard's **Secrets and credentials** block shows; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
+What the Dashboard shows under **Secrets and credentials** in its Security posture band; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
 
 ### `PUT /secrets/{name}`
 

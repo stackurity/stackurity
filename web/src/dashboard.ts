@@ -491,3 +491,123 @@ export function feedFreshness(feeds: FeedLike[] | null | undefined): Freshness {
     };
   return { state: "fresh", lastSuccess, stale, failing, warning: "" };
 }
+
+/** A Security posture tile: a count, the list it opens, and "of N" or a line under it when it needs one. */
+export interface PostureTile extends GlanceTile {
+  of?: number;
+  sub?: string;
+}
+
+interface LeakCounts {
+  needs_rotation: number;
+  still_found: number;
+  overdue: number;
+}
+
+export interface PostureInput {
+  summary?: (SummaryLike & { overdue?: number }) | null;
+  sla?: DashboardTrend["sla"] | null;
+  /** From reportingCount; notReporting says what is quiet ("2 servers not reporting"). */
+  reporting?: { reporting: number; total: number; stale: number } | null;
+  notReporting?: string;
+  /** Leaked keys of critical or high severity (GET /leaks/summary). */
+  leaks?: LeakCounts | null;
+}
+
+/**
+ * Security posture: what is dangerous right now, as counts that each open
+ * their list. The most dangerous issues (P1, P2, known exploited), what is
+ * past its deadline, whether every asset reports, and leaked keys to
+ * rotate. A tile whose data did not load is left out, never shown as 0.
+ */
+export function postureTiles(i: PostureInput): PostureTile[] {
+  const tiles: PostureTile[] = [];
+  const s = i.summary;
+  if (s) {
+    const bp = s.by_priority ?? {};
+    tiles.push(
+      { key: "P1", label: "urgent issues (P1)", value: bp.P1 ?? 0, to: "/fixes/issues?priority=P1&state=active", tone: "crit" },
+      { key: "P2", label: "high-priority issues (P2)", value: bp.P2 ?? 0, to: "/fixes/issues?priority=P2&state=active", tone: "orange" },
+      { key: "kev", label: "known exploited", value: s.known_exploited, to: "/fixes/issues?known_exploited=true", tone: "crit" },
+    );
+  }
+  const overdue = i.sla ? i.sla.overdue : s?.overdue;
+  if (overdue !== undefined) tiles.push({ key: "overdue", label: "past their fix-by date", value: overdue, to: "/fixes/issues?overdue=true", tone: "crit" });
+  const r = i.reporting;
+  if (r && r.total > 0)
+    tiles.push({
+      key: "reporting",
+      label: r.total === 1 ? "asset reporting" : "assets reporting",
+      value: r.reporting,
+      of: r.total,
+      to: r.stale > 0 ? "/assets?status=stale" : "/assets",
+      // Amber, not red: a quiet asset is a gap in what we know, not a vulnerability.
+      tone: r.stale > 0 ? "warn" : undefined,
+      sub: r.stale > 0 ? (i.notReporting ?? `${r.stale.toLocaleString()} not reporting`) : "all reporting",
+    });
+  const l = i.leaks;
+  if (l) {
+    const n = l.needs_rotation + l.still_found;
+    tiles.push({
+      key: "leaks",
+      label: n === 1 ? "leaked key to rotate" : "leaked keys to rotate",
+      value: n,
+      to: "/fixes/leaks",
+      tone: "crit",
+      sub: l.overdue > 0 ? `${l.overdue.toLocaleString()} overdue` : undefined,
+    });
+  }
+  return tiles;
+}
+
+/** Whether issues are being fixed faster than they appear, over the weeks the trend has. */
+export function flowSummary(weeks: { fixed: number; opened?: number }[] | null | undefined): {
+  /** Null when the server does not say what opened (older servers). */
+  opened: number | null;
+  fixed: number;
+  /** better: more fixed than opened; worse: more opened than fixed. */
+  direction: "better" | "worse" | "even" | null;
+  text: string;
+} {
+  const w = weeks ?? [];
+  const fixed = w.reduce((a, x) => a + x.fixed, 0);
+  const span = w.length === 1 ? "the last week" : `the last ${w.length} weeks`;
+  if (w.length === 0) return { opened: null, fixed: 0, direction: null, text: "No history yet." };
+  if (w.some((x) => x.opened === undefined))
+    return { opened: null, fixed, direction: null, text: fixed === 0 ? `Nothing fixed in ${span} yet.` : `${plural(fixed, "issue")} fixed in ${span}.` };
+  const opened = w.reduce((a, x) => a + (x.opened ?? 0), 0);
+  if (opened === 0 && fixed === 0) return { opened, fixed, direction: "even", text: `Nothing opened or fixed in ${span}.` };
+  const d = fixed - opened;
+  if (d > 0) return { opened, fixed, direction: "better", text: `Getting better: ${d.toLocaleString()} more fixed than opened in ${span}.` };
+  if (d < 0) return { opened, fixed, direction: "worse", text: `Getting worse: ${(-d).toLocaleString()} more opened than fixed in ${span}.` };
+  return { opened, fixed, direction: "even", text: `As many fixed as opened in ${span}.` };
+}
+
+interface OutcomesLike {
+  sla?: { resolved: number; resolved_within_sla: number }[] | null;
+  time_to_remedy?: { priority: string; kind: string; median_days: number | null }[] | null;
+}
+
+/**
+ * The remediation SLA over the report's window, as the Outcomes report
+ * counts it: fixes made within their deadline out of all fixes, and the
+ * median time to fix. share is null when nothing was fixed.
+ */
+export function remediationSla(r: OutcomesLike | null | undefined): { within: number; resolved: number; share: number | null; medianDays: number | null } {
+  const sla = r?.sla ?? [];
+  const resolved = sla.reduce((a, s) => a + s.resolved, 0);
+  const within = sla.reduce((a, s) => a + s.resolved_within_sla, 0);
+  const all = (r?.time_to_remedy ?? []).find((t) => t.priority === "all" && t.kind === "all");
+  return { within, resolved, share: resolved === 0 ? null : within / resolved, medianDays: all?.median_days ?? null };
+}
+
+interface FixLike {
+  asset_id: number;
+  places?: { asset_id: number }[] | null;
+}
+
+/** How many assets a fix touches: its places' distinct assets, or its own asset. */
+export function fixAssets(g: FixLike): number {
+  const places = g.places ?? [];
+  return places.length > 1 ? new Set(places.map((p) => p.asset_id)).size : 1;
+}
