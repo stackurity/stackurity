@@ -8,10 +8,10 @@ One part runs on every installation: each evaluation records which refresh of ea
 
 ## When a badge is active
 
-A badge is active only when every system in its scope meets all four conditions (`internal/trustbadge`, rule version `2026-11-10.1`):
+A badge is active only when every system in its scope meets all four conditions (`internal/trustbadge`, rule version `2026-11-11.1`):
 
 1. it reported its software inventory in the last 7 days;
-2. its latest inventory was processed, complete and without collection errors (an hour's grace for processing);
+2. its latest inventory was processed without collection errors (an hour's grace for processing). A scope the collector could not fully read for an inherent reason is a coverage limit, not an error: compiled front-end bundles (identified only by licence banners, version constants and source maps), Flutter web engines (no vulnerability source covers them), formats Stackurity does not read yet, and hosts without a package database. Limits keep the badge active and are disclosed on the trust page by broad kind of software. A scope that failed, application files the agent may not read (`app-permissions`), any other partial result, or an incomplete inventory with no scope saying why, is a collection error;
 3. every vulnerability source its software was matched against is within that source's own freshness window;
 4. every component was evaluated against the latest refresh of each of its sources. A refresh of one source never counts for another.
 
@@ -30,6 +30,8 @@ A badge that is turned off, or whose scope holds no systems, is not active. A ba
 For condition 4 each evaluation records the source's cursor and last successful sync as it read them (`inventory_evaluations`, one row per component and source). Components evaluated before this release are compared by their evaluation time until they are next evaluated.
 
 ## Status history
+
+Rule versions: `2026-11-10.1` at launch; `2026-11-11.1` stops counting coverage limits as collection errors (above). Evidence stored under `2026-11-10.1` rebuilds to the decision made then.
 
 Every decision is appended to `trust_badge_status` with its evidence: the covered systems with their last report and processing result, every source used with its freshness and cursor, the grouped component states, the oldest evaluation time, the result, the reason and the rule version, and the previous result. A decision can be rebuilt from its evidence. An enabled badge gets a decision every hour, and at once when it is turned on, off or changed; a badge that is turned off gets one entry saying so.
 
