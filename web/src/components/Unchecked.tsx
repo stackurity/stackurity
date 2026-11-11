@@ -54,7 +54,7 @@ export function UncheckedBanner({ u, assetId }: { u: Unchecked | null | undefine
         ))}
       </p>
       {open === "need_you" && <NeedYou u={u} assetId={assetId} id={id("need_you")} />}
-      {open === "not_supported" && <NotSupported g={group(u, "unsupported")} id={id("not_supported")} />}
+      {open === "not_supported" && <NotSupported g={group(u, "unsupported")} assetId={assetId} id={id("not_supported")} />}
       {open === "waiting" && <Waiting g={group(u, "waiting_for_data")} id={id("waiting")} />}
       {b.noAdvisories > 0 && (
         <p className="small unchecked-foot">
@@ -169,7 +169,7 @@ export function NeedYouRows({ assetId, limit }: { assetId?: number; limit?: numb
   );
 }
 
-function NotSupported({ g, id }: { g?: UncheckedGroup; id: string }) {
+function NotSupported({ g, assetId, id }: { g?: UncheckedGroup; assetId?: number; id: string }) {
   if (!g) return null;
   return (
     <div id={id} className="unchecked-detail">
@@ -178,8 +178,53 @@ function NotSupported({ g, id }: { g?: UncheckedGroup; id: string }) {
           <li key={it.key}>{unsupportedSentence(it)}</li>
         ))}
       </ul>
+      <UnsupportedRows assetId={assetId} />
       <p className="small">Nothing for you to do; this is on our list.</p>
     </div>
+  );
+}
+
+/**
+ * Which components Stackurity doesn't support yet, each linking to its
+ * asset's Inventory tab filtered to "Not checked because: not supported",
+ * so the user sees the rows without hunting for the filter.
+ */
+function UnsupportedRows({ assetId }: { assetId?: number }) {
+  const res = useLoad(
+    () => api.get<List<InventoryRow>>(assetId ? `/assets/${assetId}/inventory` : "/inventory", { unchecked: "unsupported", limit: ROWS }),
+    [assetId],
+  );
+  const link = (asset: number) => `/assets/${asset}?tab=inventory&unchecked=unsupported`;
+  if (res.error) return <ErrorBox error={res.error} title="Could not load the components" />;
+  if (!res.data || res.data.items.length === 0) return null;
+  const byName = new Map<string, { first: InventoryRow; assets: Set<number> }>();
+  for (const r of res.data.items) {
+    const c = byName.get(r.name) ?? { first: r, assets: new Set<number>() };
+    c.assets.add(r.asset_id);
+    byName.set(r.name, c);
+  }
+  const comps = [...byName.entries()];
+  const more = Math.max(res.data.total - res.data.items.length, 0);
+  return (
+    <p className="small unchecked-rows">
+      {comps.slice(0, NAMES).map(([name, c], i) => (
+        <span key={name}>
+          {i > 0 && ", "}
+          <Link to={link(c.first.asset_id)} className="mono">
+            {name}
+          </Link>
+          {c.assets.size > 1 ? ` (on ${c.assets.size} assets)` : !assetId ? ` (${c.first.asset_name})` : ""}
+        </span>
+      ))}
+      {comps.length > NAMES && <> and {plural(comps.length - NAMES, "more")}</>}
+      {more > 0 && <> and {plural(more, "more place")}</>}
+      {assetId && (
+        <>
+          {" · "}
+          <Link to={link(assetId)}>Show them in the Inventory tab</Link>
+        </>
+      )}
+    </p>
   );
 }
 
