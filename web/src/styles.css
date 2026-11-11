@@ -4075,7 +4075,8 @@ h6.md-h {
   font-weight: 650;
   overflow-wrap: anywhere;
 }
-/* --- Dashboard: four fixed blocks, top to bottom (pages/Dashboard.tsx) */
+/* --- Dashboard: four bands, top to bottom (pages/Dashboard.tsx): Security posture,
+   Needs your attention, Recommended actions, Security trends. */
 
 .text-good {
   color: var(--good-fg);
@@ -4285,6 +4286,77 @@ h6.md-h {
 }
 .dash-updates {
   margin: var(--s2) 0 0;
+}
+/* Posture and attention weigh more than trends: larger title, firmer edge. */
+.dash-posture,
+.dash-needs {
+  border-color: var(--border-strong);
+}
+.dash-posture .dash-block-head h2,
+.dash-needs .dash-block-head h2 {
+  font-size: 18px;
+}
+.dash-band-quiet {
+  background: transparent;
+  box-shadow: none;
+}
+.dash-band-quiet .dash-block-head h2 {
+  font-size: 15px;
+}
+.dash-band-quiet .dash-block-icon {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+}
+.home-tile-of {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.home-tile-sub {
+  overflow-wrap: anywhere;
+}
+.dash-posture-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.dash-posture-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.dash-sub-link {
+  font-weight: 400;
+}
+/* Opened (de-emphasis ink) and fixed (accent) side by side in one week. */
+.weekbar-track.weekbar-pair {
+  gap: 2px;
+  width: 22px;
+}
+.weekbar-pair .weekbar-fill {
+  width: 10px;
+}
+.weekbar-fill.weekbar-opened {
+  background: var(--muted);
+}
+.weekbar-key {
+  margin: 4px 0 0;
+}
+.weekbar-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 2px;
+  background: var(--accent);
+  vertical-align: -1px;
+}
+.weekbar-swatch:first-child {
+  margin-left: 0;
+}
+.weekbar-swatch.weekbar-opened {
+  background: var(--muted);
 }
 /* The setup checklist as one line under "Needs you now". */
 .setup-compact {

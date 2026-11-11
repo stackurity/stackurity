@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { Link, Navigate } from "react-router";
 import {
   api,
+  type ApiError,
   type Asset,
   type CredentialGroup,
   type CredentialHealth,
@@ -16,6 +17,7 @@ import {
   type LeakSummary,
   type List,
   type Onboarding,
+  type OutcomesReport,
   type Overview,
   type Plan,
 } from "../api";
@@ -23,10 +25,10 @@ import { SetupChecklist } from "./Onboarding";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useLoad } from "../hooks";
-import { percent, plural } from "../format";
+import { durationDays, percent, plural } from "../format";
 import { Badge } from "../components/Badge";
 import { useUnchecked } from "../components/Unchecked";
-import { changeText, fixesFrom, FixKindIcon, FixPlaces, urgencyOf } from "../components/FixGroups";
+import { BreakdownBar, changeText, EffortPill, fixesFrom, FixKindIcon, FixPlaces, PRIO_CLASS, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
 import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
 import {
@@ -36,18 +38,21 @@ import {
   IconHelp,
   IconInbox,
   IconIssues,
-  IconKey,
   IconShield,
   IconSignalOff,
   IconTrend,
 } from "../components/Icons";
-import { Sparkline, WeekBars } from "../components/Sparkline";
+import { FlowBars, Sparkline, WeekBars } from "../components/Sparkline";
 import {
   feedFreshness,
+  fixAssets,
+  flowSummary,
   glanceTiles,
   hiddenReasons,
   needsYou,
+  postureTiles,
   quietKinds,
+  remediationSla,
   reportingCount,
   slaSplit,
   termParts,
@@ -56,6 +61,7 @@ import {
   type NeedKind,
   type Freshness,
   type NeedRow,
+  type PostureTile,
   type Term,
 } from "../dashboard";
 import { uncheckedBanner } from "../unchecked";
@@ -98,13 +104,16 @@ export function FeedWarning({ fresh }: { fresh: Freshness | null }) {
   );
 }
 
-/** A number that is a link to the list it counts. */
-function Tile({ to, value, label, tone, sub }: { to: string; value: number; label: string; tone?: "crit" | "orange" | "warn" | "good"; sub?: ReactNode }) {
+/** A number that is a link to the list it counts; "9 of 11" when it has a total. */
+function Tile({ t }: { t: PostureTile }) {
   return (
-    <Link to={to} className={`home-tile${tone && value > 0 ? ` home-tile-${tone}` : ""}`}>
-      <span className="home-tile-value">{value.toLocaleString()}</span>
-      <span className="home-tile-label">{label}</span>
-      {sub && <span className="home-tile-sub">{sub}</span>}
+    <Link to={t.to} className={`home-tile${t.tone && t.value > 0 ? ` home-tile-${t.tone}` : ""}`}>
+      <span className="home-tile-value">
+        {t.value.toLocaleString()}
+        {t.of !== undefined && <span className="home-tile-of"> of {t.of.toLocaleString()}</span>}
+      </span>
+      <span className="home-tile-label">{t.label}</span>
+      {t.sub && <span className="home-tile-sub small muted">{t.sub}</span>}
     </Link>
   );
 }
@@ -119,6 +128,7 @@ function HomeFixPlacesCard({ g, options }: { g: FixGroup; options: CheckOptions 
     <article className="home-fix" aria-labelledby={id}>
       <div className="home-fix-top">
         <Badge status={`urgency-${u.label}`} tone={u.tone} label={u.label} title={u.title} />
+        <EffortPill effort={g.effort} />
         <span className="muted small">{changeText(g)}</span>
       </div>
       <h3 className="home-fix-title" id={id}>
@@ -131,7 +141,7 @@ function HomeFixPlacesCard({ g, options }: { g: FixGroup; options: CheckOptions 
         {fixesFrom(g) && <span className="home-fix-from small muted"> {fixesFrom(g)}</span>}
       </h3>
       <p className="home-fix-where small">
-        clears {plural(g.finding_count, "issue")}
+        on {plural(fixAssets(g), "asset")} · clears {plural(g.finding_count, "issue")}
         {g.known_exploited > 0 && <strong className="text-bad"> · {g.known_exploited.toLocaleString()} known exploited</strong>}
       </p>
       <div className="home-fix-actions">
@@ -154,6 +164,7 @@ function HomeFixCard({ g, options }: { g: FixGroup; options: CheckOptions }) {
     <article className="home-fix" aria-labelledby={`hf-${g.id}`}>
       <div className="home-fix-top">
         <Badge status={`urgency-${u.label}`} tone={u.tone} label={u.label} title={u.title} />
+        <EffortPill effort={g.effort} />
         <span className="muted small">{changeText(g)}</span>
       </div>
       <h3 className="home-fix-title" id={`hf-${g.id}`}>
@@ -230,10 +241,12 @@ const NEED_ICONS: Record<NeedKind, ReactNode> = {
 };
 
 /** A block of the Dashboard: an icon, a title, an optional link, its body. */
-function Block({ id, icon, title, badge, link, children, className }: {
+function Block({ id, icon, title, description, badge, link, children, className }: {
   id: string;
   icon: ReactNode;
   title: string;
+  /** One sentence under the title: what the band is for. */
+  description?: string;
   /** A short count in words beside the title ("4 things"). */
   badge?: string;
   link?: { to: string; label: string };
@@ -256,20 +269,27 @@ function Block({ id, icon, title, badge, link, children, className }: {
           </Link>
         )}
       </div>
+      {description && <p className="small muted dash-hint">{description}</p>}
       {children}
     </section>
   );
 }
 
 /**
- * 1. Needs you now: one row per kind of thing, one action each; a green
+ * 2. Needs your attention: one row per kind of thing, one action each; a green
  * check when there is nothing. No count beside the title: a row can stand
  * for many incidents or issues, and each row says how many.
  */
 export function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; lastReport: string | null; loading: boolean }) {
   const seen = new Set<Term>();
   return (
-    <Block id="dash-needs" icon={<IconInbox />} title="Needs you now" className="dash-needs">
+    <Block
+      id="dash-needs"
+      icon={<IconInbox />}
+      title="Needs your attention"
+      description="What can't wait: SOS incidents, missed deadlines, approvals and assets that went quiet. One button each."
+      className="dash-band dash-needs"
+    >
       {loading && rows.length === 0 ? (
         <Loading />
       ) : rows.length === 0 ? (
@@ -318,109 +338,14 @@ export function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; 
   );
 }
 
-/** 3. Risk at a glance: counts by priority, what changes the order, the trend and the SLA. */
-function RiskBlock({ s, trend }: { s: FindingSummary; trend?: DashboardTrend | null }) {
-  const t = glanceTiles(s);
-  const sla = slaSplit(trend?.sla);
-  const fixed = trend?.fixed ?? [];
-  const fixedTotal = fixed.reduce((a, w) => a + w.fixed, 0);
-  const openNow = trend?.open.length ? trend.open[trend.open.length - 1].open : sum(s.by_state);
-  return (
-    <Block id="dash-risk" icon={<IconIssues />} title="Risk at a glance" link={{ to: "/fixes/issues", label: "All issues" }}>
-      <p className="dash-sub">Open issues by priority</p>
-      <div className="home-tiles dash-tiles">
-        {t.priority.map((x) => (
-          <Tile key={x.key} to={x.to} value={x.value} label={x.label} tone={x.tone} />
-        ))}
-      </div>
-      <div className="home-tiles dash-tiles">
-        {t.flags.map((x) => (
-          <Tile key={x.key} to={x.to} value={x.value} label={x.label} tone={x.tone} />
-        ))}
-      </div>
-      <div className="dash-trends">
-        <div className="dash-trend">
-          <p className="dash-sub">
-            <IconTrend size={14} /> Open issues, last 30 days
-          </p>
-          <Link to="/fixes/issues" className="dash-trend-value">
-            {openNow.toLocaleString()}
-          </Link>
-          {trend ? (
-            <Sparkline values={trend.open.map((p) => p.open)} days={trend.open.map((p) => p.day)} label={trendText(trend)} />
-          ) : (
-            <Loading />
-          )}
-          <p className="small muted">{trend ? trendText(trend) : ""}</p>
-        </div>
-        <div className="dash-trend">
-          <p className="dash-sub">Fixed per week</p>
-          <Link to="/fixes/issues?status=resolved&resolved_within=28&resolution_kind=remediated,removed" className="dash-trend-value">
-            {fixedTotal.toLocaleString()}
-          </Link>
-          {trend ? <WeekBars weeks={fixed} /> : <Loading />}
-          <p className="small muted">{fixedTotal === 0 ? "Nothing fixed in the last 4 weeks yet." : "fixed in the last 4 weeks"}</p>
-        </div>
-        <div className="dash-trend">
-          <p className="dash-sub">Open issues against fix-by dates (SLA)</p>
-          {sla.share === null ? (
-            <p className="small muted">No open issues have a fix-by date. Nothing is late.</p>
-          ) : (
-            <>
-              <p className="dash-sla-line">
-                <Link to="/fixes/issues?overdue=false" className="dash-sla-link">
-                  <span className="dash-trend-value text-good">{sla.onTime.toLocaleString()}</span> within deadline
-                </Link>
-                {" · "}
-                <Link to="/fixes/issues?overdue=true" className="dash-sla-link">
-                  <span className={`dash-trend-value${sla.overdue > 0 ? " text-bad" : ""}`}>{sla.overdue.toLocaleString()}</span> overdue
-                </Link>
-              </p>
-              <div
-                className="dash-meter"
-                role="img"
-                aria-label={`${sla.onTime.toLocaleString()} of ${sla.total.toLocaleString()} issues with a deadline (${percent(sla.share)}) are within it`}
-              >
-                <span className="dash-meter-fill" style={{ width: `${sla.share * 100}%` }} />
-              </div>
-              <p className="small muted">
-                {sla.onTime.toLocaleString()} of {sla.total.toLocaleString()} ({percent(sla.share)}) within deadline
-                {sla.dueToday > 0 && <>, {sla.dueToday.toLocaleString()} due today</>}
-                {sla.excepted > 0 && <>. Not counted: {plural(sla.excepted, "open issue")} snoozed or accepted, so no deadline applies</>}
-              </p>
-            </>
-          )}
-        </div>
-      </div>
-    </Block>
-  );
-}
-
-/** 4. Coverage health: who is reporting, and what was not checked, by who acts. */
-function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: ReturnType<typeof useUnchecked>; assets?: Asset[] }) {
-  const r = reportingCount(o.asset_status);
+/** Coverage under Security posture: what was not checked, by who acts, and updates that are not vulnerabilities. */
+function CoverageDetail({ unchecked }: { unchecked: ReturnType<typeof useUnchecked> }) {
   const b = uncheckedBanner(unchecked.data);
   // Updates available (not findings): a quiet pointer to that page.
   const updates = useLoad(() => api.get<UpdatesSummary>("/inventory/updates", { limit: 1 }), []);
   const behind = updates.data?.counts.total ?? 0;
   return (
-    <Block id="dash-coverage" icon={<IconShield />} title="Coverage health" link={{ to: "/coverage", label: "Coverage" }}>
-      <p className="dash-coverage-line">
-        <Link to="/assets" className="dash-trend-value">
-          {r.reporting.toLocaleString()}
-        </Link>{" "}
-        of {r.total.toLocaleString()} {r.total === 1 ? "asset" : "assets"} reporting
-        {r.stale > 0 ? (
-          <>
-            {" · "}
-            <Link to="/assets?status=stale" className="text-bad">
-              {notReportingText(o.not_reporting) ?? quietKinds(assets, r.stale)}
-            </Link>
-          </>
-        ) : (
-          <span className="text-good"> · all reporting</span>
-        )}
-      </p>
+    <>
       <ErrorBox error={unchecked.error} title="Could not load what was not checked" />
       {unchecked.data &&
         (b ? (
@@ -450,23 +375,75 @@ function CoverageBlock({ o, unchecked, assets }: { o: Overview; unchecked: Retur
           <Link to="/components/updates">{plural(behind, "update")} available</Link> for installed packages (not vulnerabilities).
         </p>
       )}
-    </Block>
+    </>
   );
 }
 
 /**
- * 5. Secrets and credentials (admins): connections failing, API tokens
- * expiring or unused, stored secrets not changed for a year. Only what
- * Stackurity was given, and keys found written in files (Leaked keys).
+ * 1. Security posture: what is dangerous right now, as compact counts that
+ * each open their list, then what was not checked and, for admins, the
+ * credentials Stackurity holds. State only: the work to do is in the bands
+ * below.
  */
-/** Keys found written in files: those that need rotating or are overdue, and where the rest are kept. */
-function LeakLine() {
-  const action = useLoad(() => api.get<LeakSummary>("/leaks/summary", { severity: "critical,high" }), []);
-  const kept = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "medium,low", limit: 1 }), []);
-  if (!action.data || !kept.data) return null;
-  return <LeakLineText s={action.data} kept={kept.data.total} />;
+export function PostureBand({
+  tiles,
+  loading,
+  countsError,
+  coverage,
+  leaks,
+  credentials,
+}: {
+  tiles: PostureTile[];
+  /** The counts are still loading: no tiles yet, rather than tiles that move. */
+  loading?: boolean;
+  countsError?: ApiError | null;
+  coverage: ReactNode;
+  /** The leaked-keys line, when it loaded. */
+  leaks?: ReactNode;
+  /** Admins only. */
+  credentials?: ReactNode;
+}) {
+  return (
+    <Block
+      id="dash-posture"
+      icon={<IconShield />}
+      title="Security posture"
+      description="Where things stand right now. Each number opens the list it counts."
+      className="dash-band dash-posture"
+      link={{ to: "/fixes/issues", label: "All issues" }}
+    >
+      <ErrorBox error={countsError} title="Could not load the counts" />
+      {loading && tiles.length === 0 && <Loading />}
+      {tiles.length > 0 && (
+        <div className="home-tiles dash-tiles dash-posture-tiles">
+          {tiles.map((t) => (
+            <Tile key={t.key} t={t} />
+          ))}
+        </div>
+      )}
+      <div className="dash-posture-details">
+        <div id="dash-coverage">
+          <p className="dash-sub">
+            Coverage{" "}
+            <Link to="/coverage" className="dash-sub-link">
+              Open
+            </Link>
+          </p>
+          {coverage}
+        </div>
+        {(leaks || credentials) && (
+          <div id="dash-credentials">
+            <p className="dash-sub">Secrets and credentials</p>
+            {leaks}
+            {credentials}
+          </div>
+        )}
+      </div>
+    </Block>
+  );
 }
 
+/** Keys found written in files: those that need rotating or are overdue, and where the rest are kept. */
 export function LeakLineText({ s, kept }: { s: LeakSummary; kept: number }) {
   const n = s.needs_rotation + s.still_found;
   if (n === 0) {
@@ -501,7 +478,8 @@ export function LeakLineText({ s, kept }: { s: LeakSummary; kept: number }) {
   );
 }
 
-function CredentialsBlock() {
+/** Admins: connections failing, API tokens expiring or unused, stored secrets not changed for a year. */
+function CredentialsDetail() {
   const res = useLoad(() => api.get<CredentialHealth>("/credentials/health"), []);
   const h = res.data;
   if (res.error) return <ErrorBox error={res.error} title="Could not load secrets and credentials" />;
@@ -538,43 +516,164 @@ function CredentialsBlock() {
       to: "/integrations/secrets",
     },
   ].filter((x) => x.g.total > 0);
+  return groups.length === 0 ? (
+    <p className="small">
+      <span className="text-good">
+        <IconCheckCircle size={14} /> Every connection works
+      </span>
+      , no API token expires within {h.expiring_days} days or sits unused, and every stored secret was set within the last year.{" "}
+      <Link to="/integrations/secrets">Stored credentials</Link>
+    </p>
+  ) : (
+    <ul className="dash-coverage-parts">
+      {groups.map((x) => (
+        <li key={x.key}>
+          <Link to={x.to} className={x.tone}>
+            {x.text}
+          </Link>
+          <span className="small muted"> ({x.hint})</span>
+          <span className="small muted dash-cred-names">
+            {x.g.items.map((it) => it.name).join(", ")}
+            {x.g.total > x.g.items.length && ` and ${(x.g.total - x.g.items.length).toLocaleString()} more`}
+          </span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * 4. Security trends: are we getting better or worse? Lighter than the
+ * bands above. Opened against fixed per week, the open-issue line, the
+ * remediation SLA (deadlines met on fixes, and open issues against theirs)
+ * and how the open issues spread across priorities. Only what is stored:
+ * there is no coverage history, so coverage over time is not shown.
+ */
+export function TrendsBand({
+  s,
+  trend,
+  trendError,
+  outcomes,
+}: {
+  s?: FindingSummary | null;
+  trend?: DashboardTrend | null;
+  trendError?: ApiError | null;
+  outcomes?: OutcomesReport | null;
+}) {
+  const sla = slaSplit(trend?.sla);
+  const flow = flowSummary(trend?.fixed);
+  const met = remediationSla(outcomes);
+  const openNow = trend?.open.length ? trend.open[trend.open.length - 1].open : null;
+  const flags = s ? glanceTiles(s).flags.filter((f) => f.key !== "kev") : [];
   return (
     <Block
-      id="dash-credentials"
-      icon={<IconKey />}
-      title="Secrets and credentials"
-      badge={groups.length > 0 ? plural(groups.reduce((n, x) => n + x.g.total, 0), "thing") : undefined}
-      link={{ to: "/integrations/secrets", label: "Stored credentials" }}
+      id="dash-trends"
+      icon={<IconTrend />}
+      title="Security trends"
+      description="Whether things are getting better or worse, over the last 30 days."
+      className="dash-band dash-band-quiet"
+      link={{ to: "/reports/outcomes", label: "Outcomes report" }}
     >
-      {groups.length === 0 ? (
-        <p className="small">
-          <span className="text-good">
-            <IconCheckCircle size={14} /> Every connection works
-          </span>
-          , no API token expires within {h.expiring_days} days or sits unused, and every stored secret was set within the last year.
-        </p>
-      ) : (
-        <ul className="dash-coverage-parts">
-          {groups.map((x) => (
-            <li key={x.key}>
-              <Link to={x.to} className={x.tone}>
-                {x.text}
+      <ErrorBox error={trendError} title="Could not load the trend" />
+      <div className="dash-trends">
+        <div className="dash-trend">
+          <p className="dash-sub">Opened and fixed per week</p>
+          {trend ? (
+            <>
+              {flow.opened !== null ? <FlowBars weeks={trend.fixed} /> : <WeekBars weeks={trend.fixed} />}
+              <p className={`small${flow.direction === "worse" ? " text-warn-strong" : " muted"}`}>
+                {flow.text}{" "}
+                <Link to="/fixes/issues?status=resolved&resolved_within=28&resolution_kind=remediated,removed">See what was fixed</Link>
+              </p>
+            </>
+          ) : !trendError ? (
+            <Loading />
+          ) : null}
+        </div>
+        <div className="dash-trend">
+          <p className="dash-sub">Open issues, last 30 days</p>
+          {trend && openNow !== null ? (
+            <>
+              <Link to="/fixes/issues" className="dash-trend-value">
+                {openNow.toLocaleString()}
               </Link>
-              <span className="small muted"> ({x.hint})</span>
-              <span className="small muted dash-cred-names">
-                {x.g.items.map((it) => it.name).join(", ")}
-                {x.g.total > x.g.items.length && ` and ${(x.g.total - x.g.items.length).toLocaleString()} more`}
-              </span>
-            </li>
-          ))}
-        </ul>
-      )}
-      <LeakLine />
+              <Sparkline values={trend.open.map((p) => p.open)} days={trend.open.map((p) => p.day)} label={trendText(trend)} />
+              <p className="small muted">{trendText(trend)}</p>
+            </>
+          ) : !trendError ? (
+            <Loading />
+          ) : null}
+        </div>
+        <div className="dash-trend">
+          <p className="dash-sub">Remediation SLA</p>
+          {outcomes && (
+            <p className="small">
+              {met.share === null ? (
+                <span className="muted">Nothing fixed in the last 30 days, so no deadlines met or missed yet.</span>
+              ) : (
+                <>
+                  <strong>{percent(met.share)}</strong> of fixes in the last 30 days met their deadline ({met.within.toLocaleString()} of {met.resolved.toLocaleString()})
+                  {met.medianDays !== null && <>; median time to fix {durationDays(met.medianDays)}</>}.
+                </>
+              )}
+            </p>
+          )}
+          {trend &&
+            (sla.share === null ? (
+              <p className="small muted">No open issues have a fix-by date. Nothing is late.</p>
+            ) : (
+              <>
+                <div
+                  className="dash-meter"
+                  role="img"
+                  aria-label={`${sla.onTime.toLocaleString()} of ${sla.total.toLocaleString()} issues with a deadline (${percent(sla.share)}) are within it`}
+                >
+                  <span className="dash-meter-fill" style={{ width: `${sla.share * 100}%` }} />
+                </div>
+                <p className="small muted">
+                  Open issues:{" "}
+                  <Link to="/fixes/issues?overdue=false" className="dash-sla-link">
+                    {sla.onTime.toLocaleString()} within deadline
+                  </Link>
+                  {" · "}
+                  <Link to="/fixes/issues?overdue=true" className={`dash-sla-link${sla.overdue > 0 ? " text-bad" : ""}`}>
+                    {sla.overdue.toLocaleString()} overdue
+                  </Link>
+                  {sla.dueToday > 0 && <>, {sla.dueToday.toLocaleString()} due today</>}
+                  {sla.excepted > 0 && <>. Not counted: {plural(sla.excepted, "open issue")} snoozed or accepted, so no deadline applies</>}
+                </p>
+              </>
+            ))}
+        </div>
+        {s && (
+          <div className="dash-trend">
+            <p className="dash-sub">Open issues by priority</p>
+            {sum(s.by_priority) > 0 ? (
+              <BreakdownBar counts={s.by_priority ?? null} order={["P1", "P2", "P3", "P4"]} classes={PRIO_CLASS} label="Open issues by priority" />
+            ) : (
+              <p className="small muted">No open issues.</p>
+            )}
+            <p className="small muted">
+              {flags.map((f, i) => (
+                <span key={f.key}>
+                  {i > 0 && " · "}
+                  <Link to={f.to}>{f.value.toLocaleString()}</Link> {f.label}
+                </span>
+              ))}
+            </p>
+          </div>
+        )}
+      </div>
     </Block>
   );
 }
 
-/** The Dashboard: the landing page after sign-in, four fixed blocks. */
+/**
+ * The Dashboard: the landing page after sign-in, in four bands that answer,
+ * in order, what is dangerous right now (Security posture), what needs me
+ * (Needs your attention), what the team should fix first (Recommended
+ * actions) and whether we are getting better or worse (Security trends).
+ */
 export function DashboardPage() {
   const { me, can, canAct, projectOnly } = useAuth();
   const { project } = useProject();
@@ -604,6 +703,11 @@ export function DashboardPage() {
   );
   // Feed freshness, from what the Data sources page lists (shared by every workspace).
   const feeds = useLoad(() => api.get<List<Feed>>("/feeds"), []);
+  // Keys found written in files: critical and high need rotating; the rest are mostly kept in configuration.
+  const leaks = useLoad(() => api.get<LeakSummary>("/leaks/summary", { severity: "critical,high" }), []);
+  const leaksKept = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "medium,low", limit: 1 }), []);
+  // Deadlines met on fixes and the median time to fix, as the Outcomes report counts them.
+  const outcomes = useLoad(() => api.get<{ report: OutcomesReport }>("/reports/outcomes", { days: 30 }), []);
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   useEffect(() => {
     const was = document.title;
@@ -666,6 +770,14 @@ export function DashboardPage() {
     assets: assets.data?.items,
   });
   const fresh = feeds.data ? feedFreshness(feeds.data.items) : null;
+  const reporting = reportingCount(o.asset_status);
+  const tiles = postureTiles({
+    summary: s,
+    sla: trend.data?.sla,
+    reporting,
+    notReporting: reporting.stale > 0 ? (notReportingText(o.not_reporting) ?? quietKinds(assets.data?.items, reporting.stale)) : undefined,
+    leaks: leaks.data,
+  });
   const needsLoading = !sos.data || !trend.data || !assets.data;
 
   return (
@@ -695,6 +807,14 @@ export function DashboardPage() {
       </header>
 
       <div className="dash-grid">
+        <PostureBand
+          tiles={s || fs.error ? tiles : []}
+          loading={!s && !fs.error}
+          countsError={s ? undefined : fs.error}
+          coverage={<CoverageDetail unchecked={unchecked} />}
+          leaks={leaks.data && leaksKept.data ? <LeakLineText s={leaks.data} kept={leaksKept.data.total} /> : undefined}
+          credentials={admin && !projectOnly ? <CredentialsDetail /> : undefined}
+        />
         <NeedsYouBlock rows={rows} lastReport={o.last_collection} loading={needsLoading} />
         {/* Below what is urgent, so it comes first on a phone too. */}
         {setup ? <SetupChecklist o={setup} onChange={ob.reload} compact /> : checklist}
@@ -704,10 +824,10 @@ export function DashboardPage() {
         <Block
           id="dash-fixes"
           icon={<IconActionPlan />}
-          title="Top fixes"
-          className="dash-fixes"
+          title="Recommended actions"
+          description="The fixes to do first, most urgent first. Each fix is one piece of work that clears one or more issues; an issue is one vulnerability or end-of-life component on one asset."
+          className="dash-band dash-fixes"
         >
-          <p className="small muted dash-hint">Each fix is one piece of work that clears one or more issues. An issue is one vulnerability or end-of-life component on one asset.</p>
           <ErrorBox error={plan.error ?? top.error} title="Could not load the fixes" />
           {top.data && top.data.items.length > 0 && (
             <div className="home-fixes">
@@ -752,11 +872,7 @@ export function DashboardPage() {
           )}
         </Block>
 
-        {s ? <RiskBlock s={s} trend={trend.data} /> : <ErrorBox error={fs.error} title="Could not load the counts" />}
-
-        <CoverageBlock o={o} unchecked={unchecked} assets={assets.data?.items} />
-
-        {admin && !projectOnly && <CredentialsBlock />}
+        <TrendsBand s={s} trend={trend.data} trendError={trend.error} outcomes={outcomes.data?.report} />
       </div>
     </>
   );
