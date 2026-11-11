@@ -2,7 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -15,9 +20,9 @@ import (
 func badgeEnv(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func TestTrustBadgeFromEnv(t *testing.T) {
-	// The community build is never Stackurity Cloud.
-	if trustBadgeCloud {
-		t.Fatal("trustBadgeCloud is true outside the Stackurity Cloud build")
+	// Only the Stackurity Cloud build (tags ee,cloud) turns the badge on.
+	if trustBadgeCloud != wantTrustBadgeCloud {
+		t.Fatalf("trustBadgeCloud = %v in this build, want %v", trustBadgeCloud, wantTrustBadgeCloud)
 	}
 	cases := []struct {
 		name  string
@@ -44,7 +49,8 @@ func TestTrustBadgeFromEnv(t *testing.T) {
 			if (err != nil) != c.err {
 				t.Fatalf("err = %v, want error %v", err, c.err)
 			}
-			if !c.err && got != c.want {
+			if !c.err && (got.On != c.want.On || got.Retention != c.want.Retention || got.Policy != c.want.Policy ||
+				got.PageBase != c.want.PageBase || (got.Purge != nil) != (c.want.Purge != nil)) {
 				t.Fatalf("config = %+v, want %+v", got, c.want)
 			}
 		})
@@ -127,5 +133,68 @@ func TestEvaluateTrustBadges(t *testing.T) {
 	}
 	if n != 3 || off != 1 {
 		t.Fatalf("%d decisions, %d saying off; want 3 and 1", n, off)
+	}
+}
+
+// The trust page address and the Cloudflare purge settings: read only on
+// Stackurity Cloud, the zone and token together, the page address https.
+func TestTrustBadgeCloudflareSettings(t *testing.T) {
+	cfg, err := trustBadgeFromEnv(true, badgeEnv(map[string]string{"STACKURITY_TRUST_BADGE": "on",
+		"STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE": "z1", "STACKURITY_TRUST_BADGE_CLOUDFLARE_TOKEN": "t1",
+		"STACKURITY_TRUST_PAGE_BASE": "https://example.com/trust"}))
+	if err != nil || cfg.Purge == nil || cfg.PageBase != "https://example.com/trust" {
+		t.Fatalf("cloud config %+v %v", cfg, err)
+	}
+	for name, env := range map[string]map[string]string{
+		"zone without token": {"STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE": "z1"},
+		"token without zone": {"STACKURITY_TRUST_BADGE_CLOUDFLARE_TOKEN": "t1"},
+		"plain http page":    {"STACKURITY_TRUST_PAGE_BASE": "http://example.com/trust"},
+	} {
+		if _, err := trustBadgeFromEnv(true, badgeEnv(env)); err == nil {
+			t.Errorf("%s: no error", name)
+		}
+	}
+	// Self-hosted: none of it is read, so nothing is ever purged.
+	cfg, err = trustBadgeFromEnv(false, badgeEnv(map[string]string{"STACKURITY_TRUST_BADGE": "on",
+		"STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE": "z1", "STACKURITY_TRUST_BADGE_CLOUDFLARE_TOKEN": "t1"}))
+	if err != nil || cfg.Purge != nil || cfg.On {
+		t.Errorf("self-hosted config %+v %v", cfg, err)
+	}
+}
+
+// The purger sends the URLs, 30 to a request, with the zone's token, and
+// reports Cloudflare's refusals.
+func TestCloudflarePurger(t *testing.T) {
+	var mu sync.Mutex
+	var batches [][]string
+	fail := false
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "POST" || r.URL.Path != "/zones/zone-1/purge_cache" || r.Header.Get("Authorization") != "Bearer tok" {
+			t.Errorf("request %s %s %q", r.Method, r.URL.Path, r.Header.Get("Authorization"))
+		}
+		var body struct{ Files []string }
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		mu.Lock()
+		batches = append(batches, body.Files)
+		mu.Unlock()
+		if fail {
+			w.WriteHeader(403)
+		}
+	}))
+	defer srv.Close()
+	purge := cloudflarePurger(srv.URL, "zone-1", "tok", srv.Client())
+	urls := make([]string, 45)
+	for i := range urls {
+		urls[i] = fmt.Sprintf("https://app.example/badge/b%d.svg", i)
+	}
+	if err := purge(context.Background(), urls); err != nil {
+		t.Fatal(err)
+	}
+	if len(batches) != 2 || len(batches[0]) != 30 || len(batches[1]) != 15 {
+		t.Errorf("batches %d", len(batches))
+	}
+	fail = true
+	if err := purge(context.Background(), urls[:1]); err == nil {
+		t.Error("a refused purge reported no error")
 	}
 }

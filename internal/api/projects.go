@@ -186,6 +186,19 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/ignore-requests/{id}/decision": scopedWrite,
 	"DELETE /api/v1/ignore-rules/{id}":           scopedWrite,
 
+	// Trust badges: the handlers check the caller administers every
+	// project or asset a badge covers (trust_badge.go).
+	"GET /api/v1/trust-badges":               scopedWrite,
+	"POST /api/v1/trust-badges":              scopedWrite,
+	"PUT /api/v1/trust-badges/{id}":          scopedWrite,
+	"DELETE /api/v1/trust-badges/{id}":       scopedWrite,
+	"POST /api/v1/trust-badges/{id}/terms":   scopedWrite,
+	"POST /api/v1/trust-badges/{id}/enabled": scopedWrite,
+	"PUT /api/v1/trust-badges/{id}/logo":     scopedWrite,
+	"DELETE /api/v1/trust-badges/{id}/logo":  scopedWrite,
+	"GET /api/v1/trust-badges/{id}/preview":  scopedWrite,
+	"GET /api/v1/trust-badges/{id}/history":  scopedWrite,
+
 	// Notifications of a project or an asset: the handler checks the
 	// caller's role on it (security to read, admin to change).
 	"GET /api/v1/projects/{id}/notifications":                      scopedRead,

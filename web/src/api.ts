@@ -71,6 +71,8 @@ export interface Meta {
   email_preferences?: boolean;
   /** True when passkeys work on this server (STACKURITY_BASE_URL with a domain name over https). */
   passkeys?: boolean;
+  /** True when organisations can show a trust badge (Stackurity Cloud with the badge switched on). */
+  trust_badge?: boolean;
   /** True when the dashboard reports the errors people hit to this server (off with STACKURITY_CLIENT_ERRORS=off). */
   client_errors?: boolean;
   /** Present when people can sign up and sign in with Google, Microsoft or GitHub (a hosted edition): only configured providers. */
@@ -4052,6 +4054,8 @@ export const api = {
     turnstile_token: string;
     accept_terms: true;
     email_notice_version?: string;
+    /** Where the person came from, such as badge-<slug> from a trust page (counted by the hosted edition). */
+    ref?: string;
   }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),

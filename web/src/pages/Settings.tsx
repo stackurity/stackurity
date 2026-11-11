@@ -15,6 +15,8 @@ interface Entry {
   feature?: Feature;
   /** Shown only where the server offers billing (a hosted edition). */
   billing?: boolean;
+  /** Shown only where the trust badge is offered (Stackurity Cloud). */
+  trustBadge?: boolean;
 }
 
 const GROUPS: { title: string; entries: Entry[] }[] = [
@@ -32,6 +34,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
     entries: [
       { to: "/settings/usage", label: "Usage", icon: <IconGauge />, min: "admin" },
       { to: "/settings/billing", label: "Plan and billing", icon: <IconCard />, min: "admin", billing: true },
+      { to: "/settings/trust-badge", label: "Trust badge", icon: <IconShield />, min: "admin", trustBadge: true },
       // Every edition: self-hosted servers get where their single sign-on is set up.
       { to: "/settings/sso", label: "Single sign-on", icon: <IconSignIn />, min: "admin" },
     ],
@@ -44,7 +47,8 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
 
 function useVisible() {
   const { can, meta } = useAuth();
-  return (e: Entry) => (!e.billing || Boolean(meta?.billing)) && (!e.min || can(e.min));
+  return (e: Entry) =>
+    (!e.billing || Boolean(meta?.billing)) && (!e.trustBadge || Boolean(meta?.trust_badge)) && (!e.min || can(e.min));
 }
 
 /**

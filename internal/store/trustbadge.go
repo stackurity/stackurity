@@ -36,17 +36,20 @@ type TrustBadge struct {
 	ShowKinds       bool       `json:"show_kinds"`
 	ShowLogo        bool       `json:"show_logo"`
 	Listed          bool       `json:"listed"`
+	DisplayName     string     `json:"display_name"`
+	WebsiteURL      string     `json:"website_url"`
+	HasLogo         bool       `json:"has_logo"`
 	CreatedAt       time.Time  `json:"created_at"`
 	UpdatedAt       time.Time  `json:"updated_at"`
 }
 
 const trustBadgeCols = `id, slug, enabled, scope_kind, project_ids, asset_ids, terms_version, terms_accepted_by, terms_accepted_at,
-	show_marketing, show_checked_time, show_kinds, show_logo, listed, created_at, updated_at`
+	show_marketing, show_checked_time, show_kinds, show_logo, listed, display_name, website_url, logo IS NOT NULL, created_at, updated_at`
 
 func scanTrustBadge(r pgx.Row) (TrustBadge, error) {
 	var b TrustBadge
 	err := r.Scan(&b.ID, &b.Slug, &b.Enabled, &b.ScopeKind, &b.ProjectIDs, &b.AssetIDs, &b.TermsVersion, &b.TermsAcceptedBy,
-		&b.TermsAcceptedAt, &b.ShowMarketing, &b.ShowCheckedTime, &b.ShowKinds, &b.ShowLogo, &b.Listed, &b.CreatedAt, &b.UpdatedAt)
+		&b.TermsAcceptedAt, &b.ShowMarketing, &b.ShowCheckedTime, &b.ShowKinds, &b.ShowLogo, &b.Listed, &b.DisplayName, &b.WebsiteURL, &b.HasLogo, &b.CreatedAt, &b.UpdatedAt)
 	return b, err
 }
 
@@ -73,11 +76,14 @@ func (s *Store) CreateTrustBadge(ctx context.Context, b TrustBadge, createdBy in
 	if createdBy > 0 {
 		by = &createdBy
 	}
+	if err := checkTrustBadgeText(&b); err != nil {
+		return TrustBadge{}, err
+	}
 	row := s.Pool.QueryRow(ctx, `INSERT INTO trust_badges (slug, scope_kind, project_ids, asset_ids, show_marketing,
-		  show_checked_time, show_kinds, show_logo, listed, created_by)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10) RETURNING `+trustBadgeCols,
+		  show_checked_time, show_kinds, show_logo, listed, created_by, display_name, website_url)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12) RETURNING `+trustBadgeCols,
 		b.Slug, b.ScopeKind, nonNilIDs(b.ProjectIDs), nonNilIDs(b.AssetIDs), b.ShowMarketing, b.ShowCheckedTime, b.ShowKinds,
-		b.ShowLogo, b.Listed, by)
+		b.ShowLogo, b.Listed, by, b.DisplayName, b.WebsiteURL)
 	out, err := scanTrustBadge(row)
 	if isUniqueViolation(err) {
 		return TrustBadge{}, ErrTrustBadgeSlugTaken

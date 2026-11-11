@@ -1,9 +1,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -25,11 +30,17 @@ type trustBadgeConfig struct {
 	On        bool
 	Retention time.Duration // 0: no retention purge runs
 	Policy    string
+	// PageBase is where trust pages are published
+	// (STACKURITY_TRUST_PAGE_BASE); empty is https://stackurity.ai/trust.
+	PageBase string
+	// Purge drops cached badge images and trust data at Cloudflare when
+	// STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE and _TOKEN are set; nil
+	// relies on the cache headers.
+	Purge func(ctx context.Context, urls []string) error
 }
 
 // trustBadgeFromEnv reads STACKURITY_TRUST_BADGE (on or off, default off)
-// and the retention purge settings. The badge stays off until counsel has
-// signed off the badge's legal wording (docs/trust-badge.md).
+// and the retention purge settings (docs/trust-badge.md). Off by default.
 func trustBadgeFromEnv(cloud bool, getenv func(string) string) (trustBadgeConfig, error) {
 	var c trustBadgeConfig
 	switch v := strings.TrimSpace(getenv("STACKURITY_TRUST_BADGE")); v {
@@ -43,6 +54,17 @@ func trustBadgeFromEnv(cloud bool, getenv func(string) string) (trustBadgeConfig
 		// Not Stackurity Cloud: the badge does not exist here, and its
 		// other settings are not read.
 		return trustBadgeConfig{}, nil
+	}
+	c.PageBase = strings.TrimSpace(getenv("STACKURITY_TRUST_PAGE_BASE"))
+	if c.PageBase != "" && !strings.HasPrefix(c.PageBase, "https://") {
+		return c, fmt.Errorf("STACKURITY_TRUST_PAGE_BASE must be an https:// address")
+	}
+	zone, token := strings.TrimSpace(getenv("STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE")), strings.TrimSpace(getenv("STACKURITY_TRUST_BADGE_CLOUDFLARE_TOKEN"))
+	switch {
+	case zone != "" && token != "":
+		c.Purge = cloudflarePurger(cloudflareAPI, zone, token, &http.Client{Timeout: 15 * time.Second})
+	case zone != "" || token != "":
+		return c, fmt.Errorf("STACKURITY_TRUST_BADGE_CLOUDFLARE_ZONE and STACKURITY_TRUST_BADGE_CLOUDFLARE_TOKEN are set together")
 	}
 	if v := strings.TrimSpace(getenv("STACKURITY_TRUST_BADGE_RETENTION")); v != "" {
 		d, err := parseRetention(v)
@@ -59,6 +81,36 @@ func trustBadgeFromEnv(cloud bool, getenv func(string) string) (trustBadgeConfig
 		}
 	}
 	return c, nil
+}
+
+// cloudflareAPI is Cloudflare's API; tests point it at a fake.
+var cloudflareAPI = "https://api.cloudflare.com/client/v4"
+
+// cloudflarePurger purges URLs from a Cloudflare zone's cache, 30 at a
+// time (Cloudflare's limit for a purge by URL). The token needs only the
+// zone's Cache Purge permission.
+func cloudflarePurger(api, zone, token string, client *http.Client) func(ctx context.Context, urls []string) error {
+	return func(ctx context.Context, urls []string) error {
+		for i := 0; i < len(urls); i += 30 {
+			body, _ := json.Marshal(map[string][]string{"files": urls[i:min(i+30, len(urls))]})
+			req, err := http.NewRequestWithContext(ctx, http.MethodPost, api+"/zones/"+url.PathEscape(zone)+"/purge_cache", bytes.NewReader(body))
+			if err != nil {
+				return err
+			}
+			req.Header.Set("Authorization", "Bearer "+token)
+			req.Header.Set("Content-Type", "application/json")
+			resp, err := client.Do(req)
+			if err != nil {
+				return err
+			}
+			_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
+			resp.Body.Close()
+			if resp.StatusCode/100 != 2 {
+				return fmt.Errorf("cloudflare purge: HTTP %d", resp.StatusCode)
+			}
+		}
+		return nil
+	}
 }
 
 // parseRetention reads a number of days ("400d") or a Go duration.

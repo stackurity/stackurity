@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"time"
 
@@ -67,3 +68,21 @@ func SetGitLabWebhookLimit(n int) (restore func()) {
 	limitGitLabWebhook.n = n
 	return func() { limitGitLabWebhook = old }
 }
+
+// SetTrustBadgePlan replaces the plan hook the licensed Cloud build sets,
+// and returns a function that restores it.
+func SetTrustBadgePlan(p *TrustBadgePlan) (restore func()) {
+	old := trustBadgePlan
+	if p == nil {
+		trustBadgePlan = nil
+	} else {
+		trustBadgePlan = func(*Server, context.Context) TrustBadgePlan { return *p }
+	}
+	return func() { trustBadgePlan = old }
+}
+
+// TrustBadgeImage draws the badge image as the public endpoint does.
+var TrustBadgeImage = trustBadgeImage
+
+// TrustBadgePlanOf is the trust badge plan of the workspace in ctx.
+func TrustBadgePlanOf(s *Server, ctx context.Context) TrustBadgePlan { return s.trustPlan(ctx) }

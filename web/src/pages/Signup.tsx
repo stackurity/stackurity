@@ -9,6 +9,12 @@ import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength
 import { passwordOK } from "../passwordStrength";
 import { SocialButtons } from "./Social";
 
+/** The page's ?ref= when it is a short slug-like tag; undefined otherwise. */
+export function signupRef(search = typeof window === "undefined" ? "" : window.location.search): string | undefined {
+  const ref = new URLSearchParams(search).get("ref")?.toLowerCase() ?? "";
+  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(ref) ? ref : undefined;
+}
+
 // The sign-up challenge widget, loaded only on the sign-up page.
 interface ChallengeWidget {
   render: (el: HTMLElement, opts: Record<string, unknown>) => string;
@@ -124,6 +130,9 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
         accept_terms: true,
         // Which notice about product emails was on screen.
         email_notice_version: signup.email_notice ? signup.email_notice_version : undefined,
+        // Where they came from (?ref=badge-<slug> from a trust page), counted
+        // by Stackurity Cloud's sales funnel; anything else is dropped.
+        ref: signupRef(),
       }),
     );
     if (r) setSentTo(email);

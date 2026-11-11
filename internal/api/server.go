@@ -192,6 +192,16 @@ type Server struct {
 	// keeps nothing.
 	ClientErrors bool
 	serverErrs   serverErrors
+	// TrustBadge turns the trust badge on (trust_badge.go): only on
+	// Stackurity Cloud with STACKURITY_TRUST_BADGE=on. False registers none
+	// of its routes.
+	TrustBadge bool
+	// TrustBadgePurge drops cached copies of these URLs at the CDN when a
+	// badge changes or is turned off; nil relies on the cache headers.
+	TrustBadgePurge func(ctx context.Context, urls []string) error
+	// TrustPageBase is where trust pages are published
+	// (STACKURITY_TRUST_PAGE_BASE); empty is https://stackurity.ai/trust.
+	TrustPageBase string
 	// mux is the router, for the pattern of an API path a report names.
 	mux *chi.Mux
 }
@@ -271,6 +281,8 @@ func (s *Server) Handler() http.Handler {
 	// The feedback queue's relay intake, status lookups and signed
 	// attachment downloads (feedback_queue.go).
 	s.feedbackQueueRoutes(r)
+	// The trust badge image, public (trust_badge.go; Stackurity Cloud only).
+	s.trustBadgePublicRoutes(r)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, noteWorkspace, csrfGuard, s.keyGate)
@@ -287,6 +299,8 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
 		s.mfaPublicRoutes(r)
+		// The trust page's data, public (trust_badge.go; Stackurity Cloud only).
+		s.trustBadgeAPIPublicRoutes(r)
 		// Reviewing Ask Stackurity feedback: operators and feedback review
 		// tokens, which have no user or organisation (ask_feedback.go).
 		s.askFeedbackReviewRoutes(r)
@@ -372,6 +386,7 @@ func (s *Server) Handler() http.Handler {
 			r.With(requireInstanceAdmin).Get("/updates", s.updatesStatus)
 			r.Get("/workspaces", s.listMyWorkspaces)
 			r.Post("/workspaces/{id}/activate", s.activateWorkspace)
+			s.trustBadgeAdminRoutes(r)
 			r.Route("/admin/workspaces", func(r chi.Router) {
 				r.Use(requireInstanceAdmin)
 				r.Get("/", s.adminListWorkspaces)
@@ -521,6 +536,9 @@ func (s *Server) Handler() http.Handler {
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(requireRole(auth.RoleAdmin))
+				// Trust badges: organisation admins, and project admins for
+				// badges within their projects or assets (trust_badge.go).
+				s.trustBadgeSettingsRoutes(r)
 				r.Delete("/assets/{id}", s.deleteAsset)
 				r.Post("/projects", s.createProject)
 				r.Patch("/projects/{id}", s.updateProject)

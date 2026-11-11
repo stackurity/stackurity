@@ -51,7 +51,11 @@ func newEnvWith(t *testing.T, adjust func(*api.Server)) *env {
 	gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 0)}
 	s := &api.Server{Store: st, Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Version: "test", SetupToken: "setup-123",
 		Licence: holder, Gate: gate, Health: &health.Checker{Store: st, FeedsEnabled: true}, HTTPMetrics: metrics.NewHTTP(),
-		CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) }}
+		CoverageGaps: func(ctx context.Context) (any, error) { return intel.CoverageGaps(ctx, st, nil) },
+		// Tests run as Stackurity Cloud with the trust badge on, so its
+		// routes are swept and classified; TestTrustBadgeOffServesNothing
+		// turns it off.
+		TrustBadge: true}
 	if adjust != nil {
 		adjust(s)
 	}

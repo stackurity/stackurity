@@ -66,6 +66,11 @@ var (
 	// limitPublicCVEs covers the public log of new CVEs, which the website
 	// reads every few minutes; people and crawlers get the same allowance.
 	limitPublicCVEs = rateLimit{60, time.Minute}
+	// limitTrustBadge covers the trust badge image and trust data
+	// (trust_badge.go). They sit behind the CDN, but images in READMEs
+	// are fetched through shared proxies (GitHub's camo), so the allowance
+	// is higher than for people.
+	limitTrustBadge = rateLimit{120, time.Minute}
 )
 
 // limitHit is one counter a request hits: subject (an address, an email, a

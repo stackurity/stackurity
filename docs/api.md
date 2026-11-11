@@ -2275,6 +2275,106 @@ Removes a source; its documents keep its name. Audited as `vex_source.delete`.
 
 Decisions about open issues as a VEX document ([what is exported](vex.md#exporting)). `format`: `openvex` (default) or `cyclonedx`; `notes=true` includes people's ignore notes and mitigations as impact statements (security or admin, else 403); `asset_id` for one asset, `project_id` (or the switcher) for one project, neither for every asset the caller sees. Sent as a download (`Content-Disposition`).
 
+## Trust badge
+
+Stackurity Cloud only, with `STACKURITY_TRUST_BADGE=on`: on any other server none of these routes exist (404). See [trust-badge.md](trust-badge.md). The public answers never carry an id, a count, or a package, host, repository, image or project name, and never an item the customer switched off.
+
+### `GET /badge/{file}`
+
+**Who:** Stackurity Cloud only; anyone (no sign-in; 120 requests a minute per address). Served at `/badge/<slug>.svg`, outside `/api/v1`.
+
+The badge image, about 44 px high: "Monitored by Stackurity" in brand blue while the badge is active, with the "Monitor yours, free →" line below a divider unless a paid plan switched it off; otherwise, and for an unknown or switched-off slug, the grey "Stackurity badge not active". `theme=dark` for dark backgrounds; `time=1` adds the oldest evaluation time in the scope, as a UTC time, when the customer allowed it. The SVG's title and label are "Monitored by Stackurity. Not a security certification." Cached for an hour when active, five minutes otherwise.
+
+### `GET /public/trust`
+
+**Who:** Stackurity Cloud only; anyone (no sign-in; 120 requests a minute per address)
+
+`?listed=1` (required): `{"slugs": [...]}`, the badges that are on, listed in search engines and active now, for the website's sitemap. Cached for 15 minutes.
+
+### `GET /public/trust/{slug}`
+
+**Who:** Stackurity Cloud only; anyone (no sign-in; 120 requests a minute per address)
+
+The trust page's data: `slug`, `name`, `website_url` (null unless the website and logo item is on), `logo_url` (a path under `/api/v1/public/`, null unless that item is on, a logo was uploaded and the plan allows it), `state` (`active` or `not_active`), `last_evaluated_at` (the oldest evaluation in the scope, RFC 3339; null when not active), `kinds` (`servers`, `repositories`, `images`, `applications`; null when hidden or not active), `unsupported_kinds` (broad kinds of software no available source covers, worded to follow "including some"; empty when not active), `show_marketing`, `listed` and `rule_version`. A badge is active only while its last decision is active and less than two hours old. 404 for an unknown slug or a badge that is off. Cached for 15 minutes.
+
+### `GET /public/trust/{slug}/logo`
+
+**Who:** Stackurity Cloud only; anyone (no sign-in; 120 requests a minute per address)
+
+The customer's logo (PNG, JPEG or WebP, as uploaded), when `logo_url` would name it; 404 otherwise.
+
+### `GET /trust-badges`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset a badge covers
+
+The badges the caller may manage (`badges`, each with `terms_current` and `can_manage`), `total` in the organisation, the `plan` (`hide_marketing`, `max_badges`, `logo`), the badge `terms` to accept (`version`, `text`; the text awaits counsel's sign-off), `base_url`, `trust_base` and `org_admin`.
+
+### `POST /trust-badges`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+`{"slug", "scope_kind": "projects" | "assets", "project_ids" | "asset_ids", "display_name", "website_url", "show_marketing", "show_checked_time", "show_kinds", "show_logo", "listed"}`. Makes a badge, off. The slug is 3 to 50 lower-case letters, digits and single hyphens; reserved words (`stackurity…`, `admin`, `verified`, …) are refused, a taken one is 409. Every project or asset must be the organisation's (404 otherwise); there is no organisation-wide scope. 402 `plan_limit` beyond the plan's badges (one on Free). On Free, `show_marketing` stays on. Audited as `trust_badge.create`.
+
+### `PUT /trust-badges/{id}`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers (before and after)
+
+The same body: replaces the badge's address, scope, name, website and switches. An enabled badge is decided again at once and its cached copies are purged. Audited as `trust_badge.update` with the values before and after.
+
+### `DELETE /trust-badges/{id}`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+Removes the badge; its image shows "not active" at once. Its status history stays until the retention purge. Audited as `trust_badge.delete`.
+
+### `POST /trust-badges/{id}/terms`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers; a person in the dashboard (API tokens get 403)
+
+`{"version", "accepted": true}`: accepts the badge terms. `version` must be the current one from `GET /trust-badges` (400 otherwise). Records who accepted which version and when. Audited as `trust_badge.terms.accept` with the text accepted.
+
+### `POST /trust-badges/{id}/enabled`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+`{"enabled": true | false}`. Turning on needs the current terms accepted (400 otherwise). The badge is decided at once and the decision appended to its history; turning off makes the public endpoints say so at once and purges cached copies. Audited as `trust_badge.enable` or `trust_badge.disable`.
+
+### `PUT /trust-badges/{id}/logo`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+The logo as the request body: PNG, JPEG or WebP, checked from its bytes (400 otherwise), at most 256 KiB (413). Paid plans only (402). Audited as `trust_badge.logo.set`.
+
+### `DELETE /trust-badges/{id}/logo`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+Removes the logo. Audited as `trust_badge.logo.remove`.
+
+### `GET /trust-badges/{id}/preview`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+What the public would see if the badge were on now: the rule is run live and nothing is written. `trust` (the same shape as `GET /public/trust/{slug}`), `svg_light`, `svg_dark`, `svg_time`, `reason`, `reason_text`, `failed` (the conditions that failed, in words), `systems` (how many systems the scope holds) and `states`.
+
+### `GET /trust-badges/{id}/history`
+
+**Who:** Stackurity Cloud only; admin, or an admin of every project or asset it covers
+
+The badge's decisions, newest first (`limit`, at most 500): `decided_at`, `result`, `reason`, `reason_text` and `rule_version`. Each read is audited (`trust_badge.history.read`).
+
+### `GET /admin/trust-badges`
+
+**Who:** Stackurity Cloud only; instance admin
+
+Every organisation's badges with their last decision, for Stackurity's operators. Audited as `trust_badge.admin.list`.
+
+### `GET /admin/trust-badges/{id}/history`
+
+**Who:** Stackurity Cloud only; instance admin
+
+One badge's decisions with their full evidence (the rule's inputs: systems, sources with freshness and cursors, grouped component states; and the decision), newest first, plus `reasons` (each reason in words). Each read is audited (`trust_badge.admin.history.read`).
+
 ## Intelligence
 
 ### `GET /public/cves/recent`
