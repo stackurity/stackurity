@@ -163,7 +163,12 @@ export function IssuesPage() {
       <PageHeader
         help="findings"
         title="All issues"
-        sub="Every known vulnerability and end-of-life release found in your assets, one per package. SOS first, then by priority."
+        sub={
+          <>
+            <strong>What is wrong?</strong> Every known vulnerability and end-of-life release found in your assets, one per package. SOS first,
+            then by priority.
+          </>
+        }
       />
       <HistoryWindowNote />
       <UncheckedBanner u={unchecked.data} assetId={Number(assetId) || undefined} />

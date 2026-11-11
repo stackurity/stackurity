@@ -54,7 +54,12 @@ export function AutomaticFixesPage() {
       <PageHeader
         help="remediation-overview"
         title="Automatic fixes"
-        sub="Upgrades Stackurity applies for you, for hosts and repositories, under policies you set."
+        sub={
+          <>
+            <strong>What can Stackurity safely do for me?</strong> Upgrades Stackurity applies for you, for hosts and repositories, under policies
+            you set.
+          </>
+        }
         actions={
           can("security") && (
             <Link className="btn" to="/settings/automatic-fixes">

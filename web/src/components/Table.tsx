@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 
 export interface Column<T> {
   key: string;
@@ -7,6 +7,43 @@ export interface Column<T> {
   className?: string;
   /** Right-align numeric columns. */
   numeric?: boolean;
+}
+
+/**
+ * Which sides of a box that scrolls sideways have content out of view,
+ * kept up to date as it scrolls or resizes.
+ */
+export function useSideways(wrap: RefObject<HTMLElement | null>): { left: boolean; right: boolean } {
+  const [hidden, setHidden] = useState({ left: false, right: false });
+  useEffect(() => {
+    const el = wrap.current;
+    if (!el) return;
+    const check = () => {
+      const left = el.scrollLeft > 1;
+      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
+      setHidden((h) => (h.left === left && h.right === right ? h : { left, right }));
+    };
+    check();
+    el.addEventListener("scroll", check, { passive: true });
+    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
+    ro?.observe(el);
+    if (el.firstElementChild) ro?.observe(el.firstElementChild);
+    return () => {
+      el.removeEventListener("scroll", check);
+      ro?.disconnect();
+    };
+  }, [wrap]);
+  return hidden;
+}
+
+/** The line above a table that says it scrolls sideways, while columns are out of view. */
+export function SidewaysCue({ hidden }: { hidden: { left: boolean; right: boolean } }) {
+  if (!hidden.left && !hidden.right) return null;
+  return (
+    <p className="table-more small muted" aria-hidden="true">
+      {hidden.right ? "More columns to the right: scroll the table sideways →" : "← Scroll the table back for the first columns"}
+    </p>
+  );
 }
 
 /**
@@ -47,36 +84,14 @@ export function Table<T>({
   stickyFirst?: boolean;
 }) {
   const wrap = useRef<HTMLDivElement>(null);
-  const [hidden, setHidden] = useState({ left: false, right: false });
-  useEffect(() => {
-    const el = wrap.current;
-    if (!el) return;
-    const check = () => {
-      const left = el.scrollLeft > 1;
-      const right = el.scrollLeft + el.clientWidth < el.scrollWidth - 1;
-      setHidden((h) => (h.left === left && h.right === right ? h : { left, right }));
-    };
-    check();
-    el.addEventListener("scroll", check, { passive: true });
-    const ro = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(check);
-    ro?.observe(el);
-    if (el.firstElementChild) ro?.observe(el.firstElementChild);
-    return () => {
-      el.removeEventListener("scroll", check);
-      ro?.disconnect();
-    };
-  }, []);
+  const hidden = useSideways(wrap);
   const pinEnd = columns.length > 1 && columns[columns.length - 1].key === "actions";
   const wrapCls = ["table-wrap", hidden.left ? "more-left" : "", hidden.right ? "more-right" : ""].filter(Boolean).join(" ");
   const tableCls = ["table", stickyFirst ? "table-sticky-first" : "", pinEnd ? "table-sticky-end" : ""].filter(Boolean).join(" ");
   return (
     <>
     {/* Above the table, so a long table's cue is seen before scrolling down to its end. */}
-    {(hidden.left || hidden.right) && (
-      <p className="table-more small muted" aria-hidden="true">
-        {hidden.right ? "More columns to the right: scroll the table sideways →" : "← Scroll the table back for the first columns"}
-      </p>
-    )}
+    <SidewaysCue hidden={hidden} />
     <div ref={wrap} className={wrapCls} tabIndex={0} role="region" aria-label={caption ?? "Table"}>
       <table className={tableCls}>
         {caption && <caption className="sr-only">{caption}</caption>}

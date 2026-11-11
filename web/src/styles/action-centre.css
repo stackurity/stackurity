@@ -431,21 +431,17 @@ a.ac-tile:focus-visible {
   background: var(--crit-bg, var(--bad-dot));
   color: var(--crit-fg, #fff);
 }
-.ac-effort::before {
-  content: "";
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--good-dot);
-  vertical-align: 1px;
+/* Risk: the priority chip, then SOS and known exploited. */
+.ac-risk {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
 }
-.ac-effort-medium::before {
-  background: var(--warn-dot);
+.ac-risk .ac-flag {
+  margin-right: 0;
 }
-.ac-effort-high::before {
-  background: var(--bad-dot);
+.ac-table td.num .ac-sub {
+  font-weight: 400;
 }
 .ac-due-over {
   color: var(--bad-fg);
@@ -495,10 +491,6 @@ a.ac-tile:focus-visible {
   }
   .ac-tile:nth-child(n + 5) {
     border-top: 1px solid var(--border);
-  }
-  .ac-col-effort,
-  .ac-col-status {
-    display: none;
   }
 }
 
@@ -587,8 +579,9 @@ a.ac-tile:focus-visible {
     font-size: 12px;
     color: var(--muted);
   }
-  .ac-table td.ac-col-flags,
-  .ac-table td.ac-col-effort,
+  .ac-table td.ac-col-prio .ac-flag {
+    display: none;
+  }
   .ac-table td.ac-col-owner,
   .ac-table td.ac-col-due,
   .ac-table td.ac-col-status {

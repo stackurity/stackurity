@@ -366,3 +366,39 @@ func TestProgramUpdateSideBySide(t *testing.T) {
 		t.Errorf("groups %+v %+v", g8, g9)
 	}
 }
+
+// A fix says when it needs a restart to take effect: OS updates that
+// include the kernel image, and every Windows cumulative update. Updates
+// without a kernel, kernel headers alone and application upgrades do not.
+func TestRebootRequired(t *testing.T) {
+	kinds := func(rows ...Row) map[string]*Group {
+		groups, _ := Build(rows, nil)
+		by := map[string]*Group{}
+		for _, g := range groups {
+			by[g.Kind] = g
+		}
+		return by
+	}
+	if g := kinds(host(1, Row{Component: "openssl", FixedVersion: "1.1.1f-1ubuntu2.23"}),
+		host(2, Row{Component: "linux-headers-5.4.0-190", FixedVersion: "5.4.0-192.212"}))[SecurityUpdates]; g == nil || g.Reboot {
+		t.Errorf("updates without a kernel image: %+v", g)
+	}
+	if g := kinds(host(1, Row{Component: "openssl", FixedVersion: "1.1.1f-1ubuntu2.23"}),
+		host(2, Row{Component: "linux-image-5.4.0-190-generic", FixedVersion: "5.4.0-192.212"}))[SecurityUpdates]; g == nil || !g.Reboot {
+		t.Errorf("updates with the kernel image: %+v", g)
+	}
+	if g := kinds(host(1, Row{Component: "kernel-core", PurlType: "rpm", FixedVersion: "5.14.0-427.el9"}))[SecurityUpdates]; g == nil || !g.Reboot {
+		t.Errorf("rpm kernel: %+v", g)
+	}
+	win := Row{FindingID: 1, Kind: "vulnerability", Key: "CVE-9", AssetID: 2, AssetName: "win-1", AssetKind: "host", OS: "windows",
+		IsOS: true, PurlType: "generic", Component: "windows", Version: "10.0.26100.6584", FixedVersion: "10.0.26100.6899", KB: "KB5066835", Priority: "P2"}
+	if g := kinds(win)[WindowsUpdate]; g == nil || !g.Reboot {
+		t.Errorf("windows update: %+v", g)
+	}
+	app := Row{FindingID: 1, Kind: "vulnerability", Key: "CVE-8", AssetID: 3, AssetName: "shop", AssetKind: "repository", ComponentID: 5,
+		PurlType: "npm", Component: "lodash", Version: "3.10.1", FixedVersion: "4.17.21", Priority: "P2"}
+	g := kinds(app)[PackageUpgrade]
+	if g == nil || g.Reboot || g.ChangeType != "major" {
+		t.Errorf("package upgrade: reboot %v, change type %q", g != nil && g.Reboot, g.ChangeType)
+	}
+}
