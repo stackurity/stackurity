@@ -13,13 +13,15 @@ import (
 
 // ReadRoot inventories an unpacked image with the host collectors: the OS
 // package database (dpkg, apk; rpm when the host has an rpm binary),
-// runtimes found by path (never run), host-wide libraries, and the
+// runtimes found by path (never run; versions from their files and the
+// image's ENV, such as PYTHON_VERSION), host-wide libraries, and the
 // applications discovery finds plus the image's working directory.
 func ReadRoot(ctx context.Context, root string, im *Image, version string) Reading {
 	var r Reading
 	col := linux.New(version)
 	col.Root = root
 	col.RunVersion = nil // the image's binaries are never run
+	col.ImageEnv = im.Env()
 	osBatch, err := col.Collect(ctx, "image", "")
 	if err != nil {
 		// No os-release: a scratch or distroless image with no package

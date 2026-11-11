@@ -92,9 +92,7 @@ func (f *fakeDocker) add(id string, tags []string, workdir string, layers ...[]b
 	arch := saveArchive(id, layers...)
 	info := Image{ID: id, RepoTags: tags, Size: int64(len(arch)), Os: "linux", Architecture: "amd64"}
 	if workdir != "" {
-		info.Config = &struct {
-			WorkingDir string `json:"WorkingDir"`
-		}{workdir}
+		info.Config = &ImageConfig{WorkingDir: workdir}
 	}
 	for _, tg := range tags {
 		name, _, _ := strings.Cut(tg, ":")
@@ -118,9 +116,13 @@ func (f *fakeDocker) exported(id string) int {
 type entry struct {
 	name, body, link string
 	typ              byte
+	mode             int64
 }
 
-func file(name, body string) entry   { return entry{name: name, body: body, typ: tar.TypeReg} }
+func file(name, body string) entry { return entry{name: name, body: body, typ: tar.TypeReg} }
+func exe(name, body string) entry {
+	return entry{name: name, body: body, typ: tar.TypeReg, mode: 0o755}
+}
 func link(name, target string) entry { return entry{name: name, link: target, typ: tar.TypeSymlink} }
 
 func layerTar(entries ...entry) []byte {
@@ -136,7 +138,11 @@ func layerTar(entries ...entry) []byte {
 				tw.WriteHeader(&tar.Header{Name: d, Typeflag: tar.TypeDir, Mode: 0o755})
 			}
 		}
-		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: 0o644, Linkname: e.link, Size: int64(len(e.body))}
+		mode := e.mode
+		if mode == 0 {
+			mode = 0o644
+		}
+		h := &tar.Header{Name: e.name, Typeflag: e.typ, Mode: mode, Linkname: e.link, Size: int64(len(e.body))}
 		if e.typ != tar.TypeReg {
 			h.Size = 0
 		}

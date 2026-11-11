@@ -38,6 +38,11 @@ type Collector struct {
 	RunVersion  func(ctx context.Context, bin string, args []string) ([]byte, error)
 	RunRPMOwner func(ctx context.Context, root string, paths []string) (map[string]bool, error)
 	UID         uint32 // the agent's effective uid; binaries it owns may be run
+
+	// ImageEnv is the environment a container image's configuration sets
+	// (its ENV lines), when Root is an unpacked image; nil on a host. It
+	// is read for runtime versions the image declares (PYTHON_VERSION).
+	ImageEnv map[string]string
 }
 
 func New(version string) *Collector {
