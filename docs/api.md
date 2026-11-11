@@ -1087,6 +1087,14 @@ Query:
 - `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)
 - `second_check` (`agreed`, `disagreed`, `could_not_check`), `sort`, `limit`, `offset`
 
+### `GET /findings/by-asset`
+
+**Who:** viewer
+
+The findings that match the `GET /findings` filters, grouped by asset and paged by asset in order of asset name. One asset with thousands of findings takes one group, not pages of them. Each item is an asset: `asset_id`, `asset_name`, `asset_kind`, `total` (its findings that match) and `findings`, the first `per_asset` of them in the `GET /findings` order. `total` at the top is the number of assets that match, `findings_total` the number of findings.
+
+Query: the `GET /findings` filters (not `sort`), `per_asset` (1 to 50, default 5), and `limit` and `offset`, which count assets.
+
 ### `GET /findings/summary`
 
 **Who:** viewer

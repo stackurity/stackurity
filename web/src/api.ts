@@ -43,6 +43,21 @@ export interface List<T> {
   offset?: number;
 }
 
+/** GET /findings/by-asset: one asset per item, paged by asset. */
+export interface FindingAssetGroup {
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  /** Findings of this asset that match the filters. */
+  total: number;
+  /** The first per_asset of them, in priority order. */
+  findings: Finding[];
+}
+export interface FindingAssetGroups extends List<FindingAssetGroup> {
+  findings_total: number;
+  per_asset: number;
+}
+
 export interface SSOProvider {
   label: string;
   login_url: string;

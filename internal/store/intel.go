@@ -1087,7 +1087,22 @@ var findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.mer
 	LEFT JOIN second_checks sc ON sc.finding_id = f.id
 	LEFT JOIN epss_scores ep ON f.kind = 'vulnerability' AND ep.cve = ` + findingEPSSCVE
 
-func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, int64, error) {
+// findingOrder is the order of a findings list: SOS, priority, known
+// exploited, most severe and highest scored first, then newest.
+const findingOrder = `f.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
+		  CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'unknown' THEN 1 ELSE 0 END DESC,
+		  f.score DESC NULLS LAST, f.first_seen DESC, f.id`
+
+// findingQuery is the FROM and WHERE of a findings list with its filters:
+// the count reads countFrom+countWhere, the list findingFrom+listWhere.
+type findingQuery struct {
+	args                             []any
+	countFrom, countWhere, listWhere string
+}
+
+// findingConditions builds the conditions every findings list shares
+// (ListFindings, ListFindingsByAsset), so the grouped list filters alike.
+func (s *Store) findingConditions(ctx context.Context, f FindingFilter) (findingQuery, error) {
 	w := &where{}
 	status := f.Status
 	if status == "" {
@@ -1100,7 +1115,7 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 	// shown (kept, and shown again on a plan without the window).
 	since, err := s.historySince(ctx)
 	if err != nil {
-		return nil, 0, err
+		return findingQuery{}, err
 	}
 	if since != nil {
 		w.add("(f.status <> 'resolved' OR f.resolved_at >= ?)", *since)
@@ -1211,8 +1226,17 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 		countWhere = andWhere(countWhere, fmt.Sprintf("f.kind = 'vulnerability' AND EXISTS (SELECT 1 FROM epss_scores e WHERE e.cve = "+findingEPSSCVE+" AND e.score >= $%d::real)", n))
 		listWhere = andWhere(listWhere, fmt.Sprintf("ep.score >= $%d::real", n))
 	}
+	return findingQuery{args: w.args, countFrom: countFrom, countWhere: countWhere, listWhere: listWhere}, nil
+}
+
+func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, int64, error) {
+	fq, err := s.findingConditions(ctx, f)
+	if err != nil {
+		return nil, 0, err
+	}
+	countFrom, countWhere, listWhere, args := fq.countFrom, fq.countWhere, fq.listWhere, fq.args
 	var total int64
-	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+countFrom+countWhere, w.args...).Scan(&total); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT count(*)`+countFrom+countWhere, args...).Scan(&total); err != nil {
 		return nil, 0, err
 	}
 	p := f.Page.norm()
@@ -1231,9 +1255,7 @@ func (s *Store) ListFindings(ctx context.Context, f FindingFilter) ([]Finding, i
 		order = "CASE WHEN f.sos THEN 0 ELSE 1 END, "
 	}
 	rows, err := s.Pool.Query(ctx, `SELECT `+findingCols+findingFrom+listWhere+fmt.Sprintf(`
-		ORDER BY %sf.sos DESC, f.priority, COALESCE((f.evidence->>'known_exploited')::boolean, false) DESC,
-		  CASE f.severity WHEN 'critical' THEN 5 WHEN 'high' THEN 4 WHEN 'medium' THEN 3 WHEN 'low' THEN 2 WHEN 'unknown' THEN 1 ELSE 0 END DESC,
-		  f.score DESC NULLS LAST, f.first_seen DESC, f.id LIMIT %d OFFSET %d`, order, p.Limit, p.Offset), w.args...)
+		ORDER BY %s`+findingOrder+` LIMIT %d OFFSET %d`, order, p.Limit, p.Offset), args...)
 	if err != nil {
 		return nil, 0, err
 	}
