@@ -428,6 +428,14 @@ func TestIntelEndpoints(t *testing.T) {
 	if code := view.do("GET", "/api/v1/findings?severity=critical,high", nil, nil); code != 200 {
 		t.Errorf("findings: %d", code)
 	}
+	if code := view.do("GET", "/api/v1/findings/by-asset?per_asset=5&limit=20", nil, nil); code != 200 {
+		t.Errorf("findings by asset: %d", code)
+	}
+	for _, bad := range []string{"per_asset=0", "per_asset=51", "per_asset=x", "status=bogus"} {
+		if code := view.do("GET", "/api/v1/findings/by-asset?"+bad, nil, nil); code != 400 {
+			t.Errorf("findings by asset %s: %d, want 400", bad, code)
+		}
+	}
 	if code := eng.do("POST", "/api/v1/evaluate", nil, nil); code != 202 {
 		t.Errorf("evaluate: %d", code)
 	}
