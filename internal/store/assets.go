@@ -219,6 +219,20 @@ func likeEscape(s string) string {
 	return "%" + r.Replace(s) + "%"
 }
 
+// assetSearchCond is the Assets list's q filter. It matches what the search
+// endpoint matches for assets (searchAssets): the name, any identifier
+// (machine id, hostname, image reference, repository URL...) and the
+// identifying attributes in assetMatchAttributes, so a "see all" link from
+// search lists the same assets. Every ? is the same escaped %q% pattern.
+var assetSearchCond = func() string {
+	attrs := make([]string, len(assetMatchAttributes))
+	for i, k := range assetMatchAttributes {
+		attrs[i] = "a.attributes->>'" + k + "' ILIKE ?"
+	}
+	return "(a.name ILIKE ? OR " + strings.Join(attrs, " OR ") +
+		" OR EXISTS (SELECT 1 FROM asset_identifiers ai WHERE ai.asset_id = a.id AND ai.value ILIKE ?))"
+}()
+
 func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, int64, error) {
 	w := &where{}
 	w.conds = append(w.conds, "a.merged_into IS NULL")
@@ -235,7 +249,7 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, int64, 
 		w.add("a.collection_status = ?", f.Status)
 	}
 	if f.Search != "" {
-		w.add("a.name ILIKE ?", likeEscape(f.Search))
+		w.add(assetSearchCond, likeEscape(f.Search))
 	}
 	if f.RebootRequired {
 		w.conds = append(w.conds, "a.attributes->>'reboot_required' = 'true'")

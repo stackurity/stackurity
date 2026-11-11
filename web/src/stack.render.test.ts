@@ -78,3 +78,21 @@ test("a viewer is not offered the Relations tab button", () => {
   assert.match(html, /Someone with edit permission can link it\./);
   assert.doesNotMatch(html, /suggested/);
 });
+
+test("an asset's open count is amber; red stays for known exploited and overdue", () => {
+  const member = {
+    asset_id: 3, name: "web-1", kind: "host", environment: "prod", internet_exposed: false, criticality: "",
+    collection_status: "ok", role: "self", via: "", from: 0, open: 12,
+  };
+  const members = render("MembersTable", { members: [member], root: 3 });
+  assert.match(members, /<span class="badge badge-warn"[^>]*><span class="badge-dot" aria-hidden="true"><\/span>12 open<\/span>/);
+  assert.doesNotMatch(members, /badge-(bad|crit)/);
+
+  const layers = render("LayersTable", {
+    layers: [{ layer: "os", open: 12, by_severity: null, known_exploited: 2, overdue: 1 }],
+    selected: null,
+    onSelect: noop,
+  });
+  assert.match(layers, /badge-crit[^>]*>.*2 known exploited/);
+  assert.match(layers, /badge-bad[^>]*>.*1 overdue/);
+});
