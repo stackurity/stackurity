@@ -1,0 +1,3 @@
+### Fixed
+
+- **Scopes an agent no longer reports stop counting as gaps.** A coverage scope stayed on an asset until the same scope was reported again, so a file an older agent could not read (and a newer one no longer reports) kept the trust badge "not active" for collection errors and stayed on the Coverage page and the coverage-gap report. Each report now replaces its collector's scopes on the asset: scopes the latest report leaves out are removed (the history keeps them), and a failed scope in the latest report still counts. Existing stale scopes clear on each asset's next report. See [Trust badge](docs/trust-badge.md).
