@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/model"
@@ -56,6 +57,42 @@ func TestDebian(t *testing.T) {
 	}
 	if _, ok := obs["pkg:generic/debian@12"]; !ok {
 		t.Error("os component missing")
+	}
+}
+
+// dpkg writes "Source: name (version)" when the source version differs
+// from the binary's, and "Source: name" (or nothing) when it does not.
+func TestParseDpkgStatusSourceVersion(t *testing.T) {
+	const status = `Package: telnet
+Status: install ok installed
+Architecture: amd64
+Source: inetutils (2:2.5-3ubuntu4.2)
+Version: 0.17+2.5-3ubuntu4.2
+
+Package: inetutils-telnet
+Status: install ok installed
+Architecture: amd64
+Source: inetutils
+Version: 2:2.5-3ubuntu4.2
+
+Package: curl
+Status: install ok installed
+Architecture: amd64
+Version: 8.5.0-2ubuntu10.6
+`
+	obs, err := parseDpkgStatus(strings.NewReader(status), "ubuntu", "ubuntu-24.04")
+	if err != nil || len(obs) != 3 {
+		t.Fatalf("%d observations, %v", len(obs), err)
+	}
+	for i, w := range []struct{ version, pkg, srcVersion string }{
+		{"0.17+2.5-3ubuntu4.2", "inetutils", "2:2.5-3ubuntu4.2"},
+		{"2:2.5-3ubuntu4.2", "inetutils", ""},
+		{"8.5.0-2ubuntu10.6", "", ""},
+	} {
+		o := obs[i]
+		if o.Version != w.version || o.Evidence["source_package"] != w.pkg || o.Evidence["source_version"] != w.srcVersion {
+			t.Errorf("%d: %+v", i, o)
+		}
 	}
 }
 

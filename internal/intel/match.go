@@ -725,7 +725,11 @@ func matchExplanation(r store.EvalRow, t osv.Target, rec decisive, fixed string,
 	if fixed != "" && distroBackport(t.Compare, t.Version, fixed) {
 		m["backport"] = true
 	}
-	if t.Version != r.Version && r.Version != "" && t.Compare != version.RPM {
+	if t.SourceVersion && t.Version != r.Version {
+		// Debian/Ubuntu: the advisory lists source versions, so the source
+		// package's version was compared, read from the package database.
+		m["source_version"] = t.Version
+	} else if t.Version != r.Version && r.Version != "" && t.Compare != version.RPM {
 		m["normalised"] = t.Version
 		ambiguous = append(ambiguous, "version_normalised")
 	}
