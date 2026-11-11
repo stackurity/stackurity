@@ -236,7 +236,7 @@ them.
 ### Coverage-gap report
 
 Instance administrators see what Stackurity cannot check across every
-workspace under **Settings → Coverage gaps** (`GET /api/v1/admin/coverage-gaps`):
+workspace under **Admin → Coverage gaps** (`GET /api/v1/admin/coverage-gaps`):
 files a scan found that no built-in reader or installed stack pack reads, by
 kind (`mix.lock`, `rebar.lock`, `Package.swift`, `Package.resolved`,
 `Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`,
@@ -300,7 +300,7 @@ The build decides the line, as for end of life; the product name tells Server fr
 
 **Action plan.** Cumulative updates contain every earlier fix, so a host's findings are one fix: install the newest update among them ("Install Windows update KB5126655", with the build and month), listing the updates the findings were first fixed in. Hosts that need the same update are one fix in the plan's "by fix" view.
 
-**Not evaluated, and shown as such** (coverage `unsupported` with the reason, counted under **Settings → Coverage gaps** as "Windows hosts", never shown as fully patched):
+**Not evaluated, and shown as such** (coverage `unsupported` with the reason, counted under **Admin → Coverage gaps** as "Windows hosts", never shown as fully patched):
 
 - **Hotpatching**: Windows Server 2022 Datacenter: Azure Edition always; Windows Server 2025 and Windows 11 Enterprise hosts enrolled in hotpatching while their build is a hotpatch build Microsoft lists. Hotpatch builds are not numbered like cumulative updates.
 - **Windows Server 2012 R2 and older, Windows 7, 8 and 8.1**: their updates are paid Extended Security Updates or have ended, and their builds are numbered 6.x. End of life is evaluated.

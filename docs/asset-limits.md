@@ -42,11 +42,11 @@ Every refused asset is remembered (kind, name, which collector sent it, how many
 
 - A banner tells everyone in the organisation when it is at its limit, with a link for admins.
 - **Settings → Usage** (admins) shows monitored assets against the limit, by kind, how many are stale, workloads (not counted), and the assets refused recently.
-- **Settings → Workspaces** (instance administrators) shows each organisation's usage and sets its limit.
+- **Admin → Workspaces** (instance administrators) shows each organisation's usage and sets its limit.
 
 ## Setting a limit
 
-Instance administrators set the limit under **Settings → Workspaces**, or with the API:
+Instance administrators set the limit under **Admin → Workspaces**, or with the API:
 
 ```sh
 curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
@@ -67,7 +67,7 @@ Every path that creates an asset goes through one place in the store, which runs
 - At the limit, creating a project, or taking one out of the archive, answers `402` with code `project_limit`: *this organisation has 3 of 3 projects allowed, so no new project can be made. Existing projects are kept.*
 - A lower limit never archives or deletes a project: an organisation with more projects than its limit keeps them all, and only new ones are refused. Archiving a project makes room.
 - Checked in the transaction that adds the project, under a per-organisation lock, so two admins cannot both take the last place.
-- **Settings → Usage** shows projects against the limit, and **Settings → Workspaces** shows and sets it.
+- **Settings → Usage** shows projects against the limit, and **Admin → Workspaces** shows and sets it.
 
 ```sh
 curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \

@@ -12,54 +12,85 @@ import {
   IconActionPlan,
   IconActivity,
   IconAdmin,
+  IconCheckCircle,
   IconChevron,
+  IconGauge,
   IconHelp,
   IconInbox,
   IconInventory,
+  IconIssues,
+  IconKey,
+  IconLayers,
   IconMessage,
   IconMore,
   IconOverview,
+  IconPackage,
   IconPeople,
   IconPlug,
+  IconRemediation,
   IconReports,
   IconSettings,
+  IconShield,
   IconSidebar,
 } from "./Icons";
-import { sectionOf, SectionTabsFor, useSectionHome, type Section } from "./nav";
+import { sectionOf, SectionTabsFor, useAccess } from "./nav";
+import {
+  activeItem,
+  groupOpen,
+  NAV_STORE_KEY,
+  openFor,
+  parseNavPrefs,
+  rollUp,
+  visibleNav,
+  type Badge,
+  type GroupId,
+  type ItemId,
+  type NavItem,
+  type NavPrefs,
+} from "../navModel";
 import { ErrorBox } from "./ui";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
 import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
 
-const STORE_KEY = "stackurity.nav";
-
-function readCollapsed(): boolean {
+function readPrefs(): NavPrefs {
   try {
-    const raw = window.localStorage.getItem(STORE_KEY);
-    if (raw) return Boolean(JSON.parse(raw).collapsed);
+    return parseNavPrefs(window.localStorage.getItem(NAV_STORE_KEY));
   } catch {
     // storage unavailable (private mode, blocked): fall back to defaults
+    return parseNavPrefs(null);
   }
-  return false;
 }
 
-function writeCollapsed(collapsed: boolean) {
+function writePrefs(prefs: NavPrefs) {
   try {
-    window.localStorage.setItem(STORE_KEY, JSON.stringify({ collapsed }));
+    window.localStorage.setItem(NAV_STORE_KEY, JSON.stringify(prefs));
   } catch {
     // ignore
   }
 }
 
-interface NavEntry {
-  id: Section;
-  to: string;
-  label: string;
-  icon: ReactNode;
-  badge?: { count: number; label: string; tone: "crit" | "warn" };
-}
+const ITEM_ICON: Record<ItemId, ReactNode> = {
+  dashboard: <IconOverview />,
+  fixes: <IconActionPlan />,
+  issues: <IconIssues />,
+  leaks: <IconKey />,
+  automatic: <IconRemediation />,
+  incidents: <IconActivity />,
+  checks: <IconCheckCircle />,
+  assets: <IconInventory />,
+  components: <IconPackage />,
+  projects: <IconLayers />,
+  coverage: <IconGauge />,
+  approvals: <IconShield />,
+  reports: <IconReports />,
+  integrations: <IconPlug />,
+  people: <IconPeople />,
+  settings: <IconSettings />,
+  admin: <IconAdmin />,
+};
 
-function CountBadge({ b }: { b: NonNullable<NavEntry["badge"]> }) {
+function CountBadge({ b }: { b: Badge }) {
   if (b.count <= 0) return null;
   return (
     <span className={`nav-count nav-count-${b.tone}`} title={b.label}>
@@ -83,11 +114,15 @@ function Shell() {
   const { me, meta, logout, canAct, projectOnly } = useAuth();
   const { projectId, projects } = useProject();
   const { pathname } = useLocation();
-  const [collapsed, setCollapsed] = useState(readCollapsed);
+  const [prefs, setPrefs] = useState(() => openFor(readPrefs(), pathname));
+  const collapsed = prefs.collapsed;
   const [more, setMore] = useState(false);
   const feedback = useRef<FeedbackHandle>(null);
-  useEffect(() => writeCollapsed(collapsed), [collapsed]);
+  useEffect(() => writePrefs(prefs), [prefs]);
   useEffect(() => setMore(false), [pathname]);
+  // The group of the page being shown opens, so its item is in view; it can be closed again.
+  useEffect(() => setPrefs((p) => openFor(p, pathname)), [pathname]);
+  const toggleGroup = (id: GroupId) => setPrefs((p) => ({ ...p, groups: { ...p.groups, [id]: !groupOpen(p, id) } }));
 
   // Badge counts, refreshed on navigation.
   const hasWorkspace = Boolean(me?.workspace);
@@ -145,48 +180,40 @@ function Shell() {
     [pathname, decider],
   );
 
-  // Each item opens its first tab this person may open; an item with none
-  // is hidden (People for non-admins, Admin outside instance admins).
-  // Settings configures the organisation, so members with project access
-  // only do not get it.
-  const home = useSectionHome();
-  const all: NavEntry[] = [
-    { id: "dashboard", to: "/", label: "Dashboard", icon: <IconOverview /> },
-    {
-      id: "fixes",
-      to: "/fixes",
-      label: "Fixes",
-      icon: <IconActionPlan />,
-      badge: { count: pending.data?.total ?? 0, label: "automatic fixes waiting for approval", tone: "warn" },
-    },
-    { id: "assets", to: "/assets", label: "Assets", icon: <IconInventory /> },
-    {
-      id: "activity",
-      to: "/activity",
-      label: "Activity",
-      icon: <IconActivity />,
-      // Open SOS incidents first; otherwise requests to ignore waiting (Activity, Approvals).
-      badge:
-        (sos.data?.total ?? 0) > 0 || !(approvals.data?.total ?? 0)
-          ? { count: sos.data?.total ?? 0, label: "open SOS incidents", tone: "crit" }
-          : { count: approvals.data?.total ?? 0, label: "requests to ignore issues waiting for approval", tone: "warn" },
-    },
-    { id: "reports", to: "/outcomes", label: "Reports", icon: <IconReports /> },
-    { id: "integrations", to: "/integrations", label: "Integrations", icon: <IconPlug /> },
-    { id: "people", to: "/people", label: "People", icon: <IconPeople /> },
-    { id: "settings", to: projectOnly ? "" : "/settings", label: "Settings", icon: <IconSettings /> },
-    { id: "admin", to: "/admin/workspaces", label: "Admin", icon: <IconAdmin /> },
-  ];
-  const entries = all.flatMap((n) => {
-    const to = n.to && home(n.id, n.to);
-    return to ? [{ ...n, to }] : [];
+  // Each item opens its first page this person may open; an item with none
+  // is hidden (People for non-admins, Admin outside instance admins), and so
+  // is a group left empty. Settings configures the organisation, so members
+  // with project access only do not get it.
+  const access = useAccess();
+  const groups = visibleNav(access, {
+    pending: pending.data?.total ?? 0,
+    sos: sos.data?.total ?? 0,
+    approvals: approvals.data?.total ?? 0,
   });
-  const current = sectionOf(pathname);
+  const items = groups.flatMap((g) => g.items);
+  const current = activeItem(pathname);
+  const onHelp = sectionOf(pathname) === "help";
   const showFeedback = feedbackAvailable(me);
   const version = meta ? `v${meta.version.replace(/^v/, "")}` : "";
-  // Phones show the first three items in the bar; the rest are under More.
-  const moreActive = entries.slice(3).some((n) => n.id === current) || current === "help";
-  const moreBadge = entries.slice(3).find((n) => n.badge && n.badge.count > 0)?.badge;
+  // Phones show Dashboard, Fixes and Assets in the bar; the rest, by group, under More.
+  const barItems = items.filter((n) => n.phone);
+  const sheetGroups = groups.map((g) => ({ ...g, items: g.items.filter((n) => !n.phone) })).filter((g) => g.items.length > 0);
+  const sheetItems = sheetGroups.flatMap((g) => g.items);
+  const moreActive = sheetItems.some((n) => n.id === current) || onHelp;
+  const moreBadge = rollUp(sheetItems);
+
+  const navLink = (n: NavItem) => {
+    const active = current === n.id;
+    return (
+      <li key={n.id}>
+        <Link to={n.to} className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={collapsed ? n.label : undefined}>
+          {ITEM_ICON[n.id]}
+          <span className="nav-text">{n.label}</span>
+          {n.badge && <CountBadge b={n.badge} />}
+        </Link>
+      </li>
+    );
+  };
 
   return (
     <div className={`shell${collapsed ? " shell-collapsed" : ""}`}>
@@ -202,15 +229,31 @@ function Shell() {
         </div>
         <nav aria-label="Main">
           <ul className="nav">
-            {entries.map((n) => {
-              const active = current === n.id;
+            {groups.map((g) => {
+              if (g.flat) return g.items.map(navLink);
+              // The icon rail has no room for headings: every item shows, groups apart.
+              const open = collapsed || groupOpen(prefs, g.id);
+              const hasActive = g.items.some((n) => n.id === current);
+              const total = open ? undefined : rollUp(g.items);
+              const listId = `nav-group-${g.id}`;
               return (
-                <li key={n.id}>
-                  <Link to={n.to} className={`nav-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined} title={collapsed ? n.label : undefined}>
-                    {n.icon}
-                    <span className="nav-text">{n.label}</span>
-                    {n.badge && <CountBadge b={n.badge} />}
-                  </Link>
+                <li key={g.id} className={`nav-group${hasActive ? " has-active" : ""}`}>
+                  <button
+                    type="button"
+                    className="nav-group-head"
+                    aria-expanded={open}
+                    aria-controls={listId}
+                    onClick={() => toggleGroup(g.id)}
+                  >
+                    <span className="nav-text">{g.label}</span>
+                    {total && <CountBadge b={total} />}
+                    <span className={`nav-chevron${open ? " open" : ""}`} aria-hidden="true">
+                      <IconChevron size={14} />
+                    </span>
+                  </button>
+                  <ul id={listId} className="nav nav-group-items" aria-label={g.label} hidden={!open}>
+                    {g.items.map(navLink)}
+                  </ul>
                 </li>
               );
             })}
@@ -219,8 +262,8 @@ function Shell() {
         <div className="sidebar-foot">
           <Link
             to="/help"
-            className={`nav-item${current === "help" ? " active" : ""}`}
-            aria-current={current === "help" ? "page" : undefined}
+            className={`nav-item${onHelp ? " active" : ""}`}
+            aria-current={onHelp ? "page" : undefined}
             title={collapsed ? "Help" : undefined}
           >
             <IconHelp />
@@ -230,7 +273,7 @@ function Shell() {
             type="button"
             className="nav-collapse"
             aria-pressed={collapsed}
-            onClick={() => setCollapsed((c) => !c)}
+            onClick={() => setPrefs((p) => ({ ...p, collapsed: !p.collapsed }))}
             title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             <IconSidebar />
@@ -278,11 +321,11 @@ function Shell() {
 
       {/* Phones: a bottom tab bar instead of the sidebar. */}
       <nav className="tabbar" aria-label="Main (phone)">
-        {entries.slice(0, 3).map((n) => {
+        {barItems.map((n) => {
           const active = current === n.id && !more;
           return (
             <Link key={n.id} to={n.to} className={`tabbar-item${active ? " active" : ""}`} aria-current={active ? "page" : undefined}>
-              {n.icon}
+              {ITEM_ICON[n.id]}
               <span className="tabbar-label">{n.label}</span>
               {n.badge && <CountBadge b={n.badge} />}
             </Link>
@@ -312,16 +355,25 @@ function Shell() {
               if (e.key === "Escape") setMore(false);
             }}
           >
+            {sheetGroups.map((g) => (
+              <section key={g.id} className="sheet-group" aria-labelledby={`sheet-group-${g.id}`}>
+                <h2 id={`sheet-group-${g.id}`} className="sheet-group-title">
+                  {g.label}
+                </h2>
+                <ul className="sheet-list">
+                  {g.items.map((n) => (
+                    <li key={n.id}>
+                      <Link to={n.to} className="sheet-item" aria-current={current === n.id ? "page" : undefined}>
+                        {ITEM_ICON[n.id]}
+                        <span className="sheet-item-main">{n.label}</span>
+                        {n.badge && <CountBadge b={n.badge} />}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </section>
+            ))}
             <ul className="sheet-list">
-              {entries.slice(3).map((n) => (
-                <li key={n.id}>
-                  <Link to={n.to} className="sheet-item">
-                    {n.icon}
-                    <span className="sheet-item-main">{n.label}</span>
-                    {n.badge && <CountBadge b={n.badge} />}
-                  </Link>
-                </li>
-              ))}
               <li>
                 <Link to="/help" className="sheet-item">
                   <IconHelp />
@@ -472,7 +524,7 @@ function WorkspaceSwitcher() {
 
 /**
  * The project switcher, next to the workspace: "All projects" first, then
- * each project. The choice scopes the Dashboard, Fixes, Assets and Activity, and is
+ * each project. The choice scopes the Dashboard, the Security and Environment pages and Approvals, and is
  * remembered. Shown when the workspace has projects.
  */
 function ProjectSwitcher() {

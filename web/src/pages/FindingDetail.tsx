@@ -15,6 +15,7 @@ import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } 
 import { closedReason, countsAsRemediation } from "../resolution";
 import { AskAI } from "../components/AskAI";
 import { askFromFinding } from "../askAI";
+import { GroupCrumb } from "../components/nav";
 
 const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
 const CVE_IN = /CVE-\d{4}-\d{4,}/i;
@@ -224,6 +225,7 @@ export function FindingDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <Link to="/fixes/issues">All issues</Link> <span aria-hidden="true">/</span> <span>{f.key}</span>
       </nav>
       <PageHeader help="findings"

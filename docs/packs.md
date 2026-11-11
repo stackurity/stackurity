@@ -24,7 +24,7 @@ A pack only inventories; findings come from the vulnerability sources Stackurity
 
 ## For administrators
 
-Instance administrators manage packs under **Settings → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, a `Package.resolved` or a `mix.lock`, Home names the pack that would read them. Installing a pack:
+Instance administrators manage packs under **Admin → Stack packs**. The official packs ship inside the server but stay inactive until someone installs them. When a repository holds files the core cannot read, such as a `pom.xml`, a `Package.resolved` or a `mix.lock`, Home names the pack that would read them. Installing a pack:
 
 - checks its signature (see below) and that its module compiles;
 - applies to every workspace;
@@ -53,7 +53,7 @@ A pack is a WebAssembly module run by [wazero](https://wazero.io), a runtime wri
 
 Each pack file carries an Ed25519 signature over its id, version and the SHA-256 of its manifest and module. The server accepts a pack only if a trusted key signed it, and only if that key belongs to the publisher the manifest names, so nobody can sign a pack in someone else's name. The official key is built into Stackurity. Signatures are checked again whenever a pack is loaded, so a pack altered in the database is not run.
 
-The official packs are built and signed by a maintainer with the official key, which never leaves their machine and is not used in CI: `stackurity pack build packs/<id> --key <official key> -o internal/packs/official/<id>.stkpack`. A test (`tools/releaselint`) checks that every archive was built from its `pack.json` and carries the official signature, and the release workflow refuses to release while a pack under `packs/` has no signed archive. Until its archive is added, a pack is not offered under **Settings → Stack packs** and Home does not name it. Pack tests build the sources unsigned, as `STACKURITY_PACK_ALLOW_UNSIGNED=true` does for development.
+The official packs are built and signed by a maintainer with the official key, which never leaves their machine and is not used in CI: `stackurity pack build packs/<id> --key <official key> -o internal/packs/official/<id>.stkpack`. A test (`tools/releaselint`) checks that every archive was built from its `pack.json` and carries the official signature, and the release workflow refuses to release while a pack under `packs/` has no signed archive. Until its archive is added, a pack is not offered under **Admin → Stack packs** and Home does not name it. Pack tests build the sources unsigned, as `STACKURITY_PACK_ALLOW_UNSIGNED=true` does for development.
 
 Ed25519 keys work offline and in air-gapped installs. Sigstore keyless signing with transparency logs is planned for packs published through a public registry.
 

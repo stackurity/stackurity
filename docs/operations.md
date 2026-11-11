@@ -10,7 +10,7 @@ What happens to background work when a server dies is in [reliability.md](reliab
 |---|---|---|
 | `GET /healthz` | API port | Liveness: the process answers. Never depends on the database |
 | `GET /readyz` | API port | Readiness: the database answers a ping within 2 seconds, else 503 `database_unavailable`. Container health check and Kubernetes readiness probe |
-| Platform health | **Settings → Platform health** (instance admins), `GET /api/v1/admin/health` | Problems with their errors: stale or failing feeds, background tasks that do not succeed, failed jobs, job and notification backlogs, failed notifications, failing channels |
+| Platform health | **Admin → Platform health** (instance admins), `GET /api/v1/admin/health` | Problems with their errors: stale or failing feeds, background tasks that do not succeed, failed jobs, job and notification backlogs, failed notifications, failing channels |
 | Platform incidents | The operators' workspace (`STACKURITY_PLATFORM_WORKSPACE`) | Critical platform problems as incidents, sent through that workspace's notification routes |
 | Errors people hit | **Platform health → Errors people hit**, `GET /api/v1/admin/client-errors` | Errors in the dashboard and 5xx answers of the API, counted per fingerprint and kept on this server for 90 days; a new one is a platform incident ([Error reports](install.md#error-reports)) |
 | Metrics | `STACKURITY_METRICS_ADDR` (`/metrics`, no authentication, separate listener) | Everything above as Prometheus series, plus HTTP, database pool and process metrics |
@@ -164,7 +164,7 @@ Inventory submissions fail with server errors. Agents keep their batch and retry
 
 ### StackurityHealthCritical
 
-Platform health has a critical problem: a vulnerability feed is stale, no vulnerability intelligence was ever synced, or a background task has not succeeded within three intervals. Open **Settings → Platform health**: each problem has its error. The more specific alerts usually fire as well; follow their runbooks.
+Platform health has a critical problem: a vulnerability feed is stale, no vulnerability intelligence was ever synced, or a background task has not succeeded within three intervals. Open **Admin → Platform health**: each problem has its error. The more specific alerts usually fire as well; follow their runbooks.
 
 ### StackurityVulnerabilityFeedStale
 

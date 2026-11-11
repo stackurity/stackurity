@@ -17,6 +17,7 @@ import {
 } from "../components/Remediation";
 import { Card, CodeBlock, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
+import { GroupCrumb } from "../components/nav";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
@@ -243,6 +244,7 @@ export function PlanDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <Link to="/fixes/automatic">Automatic fixes</Link> <span aria-hidden="true">/</span> <span>Plan #{plan.id}</span>
       </nav>
       <PageHeader help="remediation-overview"

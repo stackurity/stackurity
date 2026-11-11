@@ -1,71 +1,28 @@
-import type { ReactNode } from "react";
 import { Link, useLocation } from "react-router";
-import { api, type Conflict, type List, type UserRole } from "../api";
+import { api, type Conflict, type List } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
+import { groupLabel, isAllowed, sectionOf, tabActive, TABS, under, type Access, type AccessRule, type Tabbed, type TabLink } from "../navModel";
 
-/**
- * The places of the dashboard, one per sidebar item. Each page belongs to
- * one; old pages keep their paths (bookmarks and notification links) and
- * are shown as tabs of their place.
- */
-export type Section =
-  | "dashboard"
-  | "fixes"
-  | "assets"
-  | "activity"
-  | "reports"
-  | "integrations"
-  | "people"
-  | "settings"
-  | "admin"
-  | "help"
-  | "other";
+export { sectionOf, type Section } from "../navModel";
 
-const under = (path: string, ...prefixes: string[]) => prefixes.some((p) => path === p || path.startsWith(p + "/"));
-
-export function sectionOf(path: string): Section {
-  if (path === "/") return "dashboard";
-  if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
-  if (under(path, "/assets", "/components", "/coverage", "/intelligence", "/projects", "/project-notifications")) return "assets";
-  if (under(path, "/activity", "/incidents", "/checks", "/approvals")) return "activity";
-  if (under(path, "/outcomes", "/reports", "/audit")) return "reports";
-  if (under(path, "/integrations")) return "integrations";
-  if (under(path, "/people")) return "people";
-  if (under(path, "/admin", "/updates")) return "admin";
-  if (under(path, "/settings")) return "settings";
-  if (under(path, "/help")) return "help";
-  return "other";
-}
-
-interface TabLink {
-  to: string;
-  label: ReactNode;
-  /** Active when this returns true; defaults to the path or its sub-paths. */
-  match?: (path: string) => boolean;
-  /** Lowest organisation-wide role that may open it (members with project access only have none). */
-  min?: UserRole;
-  /** Lowest role, organisation-wide or on some project, that may open it. */
-  act?: UserRole;
-  /** For instance administrators, who operate this installation. */
-  instanceAdmin?: boolean;
-  /** Shown only where the server offers billing (a hosted edition). */
-  billing?: boolean;
-  /** Shown only where the server hands out free self-hosted keys (Stackurity Cloud). */
-  communityKeys?: boolean;
-  /** Shown only where the trust badge is offered (Stackurity Cloud). */
-  trustBadge?: boolean;
+/** What the signed-in person and this server allow, for isAllowed (navModel.ts). */
+export function useAccess(): Access {
+  const { can, canAct, me, meta } = useAuth();
+  return {
+    can,
+    canAct,
+    instanceAdmin: Boolean(me?.user?.instance_admin),
+    billing: Boolean(meta?.billing),
+    communityKeys: Boolean(meta?.community_keys),
+    trustBadge: Boolean(meta?.trust_badge),
+  };
 }
 
 /** Whether the signed-in person may open a tab: the same rules as the routes in App.tsx. */
-function useAllowed(): (t: Pick<TabLink, "min" | "act" | "instanceAdmin" | "billing" | "communityKeys" | "trustBadge">) => boolean {
-  const { can, canAct, me, meta } = useAuth();
-  return (t) =>
-    (!t.billing || Boolean(meta?.billing)) &&
-    (!t.communityKeys || Boolean(meta?.community_keys)) &&
-    (!t.trustBadge || Boolean(meta?.trust_badge)) &&
-    (!t.act || canAct(t.act)) &&
-    (t.instanceAdmin ? Boolean(me?.user?.instance_admin) : !t.min || can(t.min));
+function useAllowed(): (t: AccessRule) => boolean {
+  const a = useAccess();
+  return (t) => isAllowed(t, a);
 }
 
 /** Tabs that are links: each tab is its own URL, so it can be bookmarked and shared. */
@@ -75,8 +32,7 @@ export function LinkTabs({ label, tabs }: { label: string; tabs: TabLink[] }) {
     <nav className="link-tabs" aria-label={label}>
       <ul>
         {tabs.map((t) => {
-          const base = t.to.split("?")[0];
-          const active = t.match ? t.match(pathname) : under(pathname, base);
+          const active = tabActive(t, pathname);
           return (
             <li key={t.to}>
               <Link to={t.to} className={`tab${active ? " tab-active" : ""}`} aria-current={active ? "page" : undefined}>
@@ -90,105 +46,19 @@ export function LinkTabs({ label, tabs }: { label: string; tabs: TabLink[] }) {
   );
 }
 
-type Tabbed = "fixes" | "assets" | "activity" | "reports" | "integrations" | "people" | "admin";
-
-/** Pages of the Integrations tab that are not tabs themselves. */
-const INTEGRATION_PAGES = ["/integrations/sources", "/integrations/channels", "/integrations/new", "/integrations/aws", "/integrations/kubernetes"];
-
-const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
-  // What to do (default), every issue, leaked keys, and automatic fixes (Pro).
-  fixes: {
-    label: "Fixes",
-    tabs: [
-      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks")) || under(p, "/action-plan") },
-      { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
-      { to: "/fixes/leaks", label: "Leaked keys" },
-      { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
-    ],
-  },
-  // The assets themselves, the components in them, coverage and the data
-  // sources it is checked against, updates that are not security fixes, the
-  // projects that group them, and assets that might be one machine reported
-  // twice.
-  assets: {
-    label: "Assets",
-    tabs: [
-      { to: "/assets", label: "Assets", match: (p) => under(p, "/assets") && !under(p, "/assets/conflicts") },
-      { to: "/components", label: "Components", match: (p) => under(p, "/components") && !under(p, "/components/updates") },
-      { to: "/coverage", label: "Coverage" },
-      { to: "/intelligence", label: "Data sources" },
-      { to: "/components/updates", label: "Updates available" },
-      { to: "/projects", label: "Projects", min: "admin" },
-      { to: "/project-notifications", label: "Project notifications", act: "security", match: (p) => under(p, "/project-notifications") || /^\/projects\/\d+\/notifications/.test(p) },
-      { to: "/assets/conflicts", label: "Identity conflicts", min: "admin" },
-    ],
-  },
-  // What happened and what waits for a decision.
-  activity: {
-    label: "Activity",
-    tabs: [
-      { to: "/incidents", label: "Incidents" },
-      { to: "/checks", label: "Checks" },
-      { to: "/approvals", label: "Approvals" },
-    ],
-  },
-  // The records that prove it.
-  reports: {
-    label: "Reports",
-    tabs: [
-      { to: "/outcomes", label: "Outcomes" },
-      { to: "/reports", label: "Evidence report" },
-      { to: "/audit", label: "Audit log" },
-    ],
-  },
-  // Everything Stackurity connects to, and what it needs to connect.
-  integrations: {
-    label: "Integrations",
-    tabs: [
-      { to: "/integrations", label: "Integrations", min: "engineer", match: (p) => p === "/integrations" || under(p, ...INTEGRATION_PAGES) },
-      { to: "/integrations/deliveries", label: "Delivery log", min: "security" },
-      { to: "/integrations/secrets", label: "Stored credentials", min: "admin" },
-      { to: "/integrations/tokens", label: "API tokens" },
-      { to: "/integrations/ai-assistants", label: "AI assistants" },
-      { to: "/integrations/plugins", label: "Plugins", min: "admin" },
-    ],
-  },
-  people: {
-    label: "People",
-    tabs: [
-      { to: "/people", label: "Users", min: "admin", match: (p) => p === "/people" },
-      { to: "/people/teams", label: "Teams", min: "admin" },
-      { to: "/people/owners", label: "Owner rules", min: "admin" },
-    ],
-  },
-  // This installation (instance administrators).
-  admin: {
-    label: "Admin",
-    tabs: [
-      { to: "/admin/workspaces", label: "Workspaces", instanceAdmin: true },
-      { to: "/admin/health", label: "Platform health", instanceAdmin: true },
-      { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
-      { to: "/admin/trust-badges", label: "Trust badges", instanceAdmin: true, trustBadge: true },
-      { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
-      { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
-      { to: "/admin/license", label: "Licence", instanceAdmin: true },
-      { to: "/admin/self-hosted-keys", label: "Self-hosted keys", instanceAdmin: true, communityKeys: true },
-      { to: "/updates", label: "What's new", instanceAdmin: true },
-    ],
-  },
-};
-
 /**
- * Where a sidebar item goes for this person: its first tab they may open,
- * or null when they may open none (the item is then hidden). Settings and
- * the Dashboard have no tabs.
+ * The sidebar group a breadcrumb starts with ("Security /"), so deep pages
+ * say where they sit in the menu. Nothing for pages outside a group.
  */
-export function useSectionHome(): (s: Section, fallback: string) => string | null {
-  const allowed = useAllowed();
-  return (s, fallback) => {
-    if (!(s in TABS)) return fallback;
-    return TABS[s as Tabbed].tabs.find(allowed)?.to ?? null;
-  };
+export function GroupCrumb() {
+  const { pathname } = useLocation();
+  const label = groupLabel(pathname);
+  if (!label) return null;
+  return (
+    <>
+      <span className="crumb-group">{label}</span> <span aria-hidden="true">/</span>{" "}
+    </>
+  );
 }
 
 /** Assets tabs; Identity conflicts only while there are some (or while on it). */

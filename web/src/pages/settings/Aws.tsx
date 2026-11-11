@@ -21,6 +21,7 @@ import {
 } from "../../components/ui";
 import { awsEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { GroupCrumb } from "../../components/nav";
 
 /*
  * Integrations, AWS: connect an AWS account with the Stackurity
@@ -149,6 +150,7 @@ export function AwsPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>AWS</span>
       </nav>
       <PageHeader

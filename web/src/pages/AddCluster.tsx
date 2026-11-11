@@ -18,6 +18,7 @@ import {
   Tabs,
 } from "../components/ui";
 import { clusterCommands, parseNamespaces, validClusterName } from "../kubernetesInstall";
+import { GroupCrumb } from "../components/nav";
 
 /**
  * Connect a Kubernetes cluster: a one-time code and the one-line install of
@@ -28,6 +29,7 @@ export function AddClusterPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/integrations">Integrations</Link> <span aria-hidden="true">/</span> <span>Kubernetes cluster</span>
       </nav>
       <PageHeader
