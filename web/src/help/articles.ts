@@ -1137,7 +1137,17 @@ stackurity.exe agent --interval 6h`,
           "A bulk action applies to up to 500 findings at a time; the result lists any that could not change.",
         ],
       },
-      { p: "Open a finding to see why it has its priority (each factor and its points), its deadlines, history, the matched advisories and evidence, and which fix clears it (“Part of: …”)." },
+      { h: "An issue's page" },
+      { p: "Open a finding to see it in three layers, so the first screen says what to do and the evidence is one click away." },
+      {
+        table: [
+          ["Layer", "What it shows"],
+          ["**What to do** (top)", "What is wrong in one sentence, where (the asset, and other assets with the same open issue), the priority, the fix and which fix clears it (“Part of: …”), the actions (Acknowledge, Start work, Assign…), and who owns it: owner, state, the deadline that applies and, while a VEX exception waits, who must approve it."],
+          ["**Sections that open**", "**Why it matched** (open), **Upgrade recommendation** (open when it means a major upgrade), **Why this priority** (each factor and its points), **Workflow** (deadlines, the reason for a snooze or acceptance, remediation runs) and **Affected**."],
+          ["**Technical details** (closed)", "**How this was decided** (source, ecosystem, version rules, matched range), **Evidence** (every recorded fact), **Sources** (each advisory, and related advisories) and **History**."],
+        ],
+      },
+      { p: "Click a section's title, or press Enter or Space on it, to open or close it. A link to a section, such as `/findings/123#history`, opens it. Section ids: `why`, `upgrade`, `priority`, `workflow`, `affected`, `decided`, `evidence`, `sources`, `history`." },
     ],
   },
   {
@@ -1504,7 +1514,7 @@ jobs:
     keywords: "why matched evidence confirmed needs validation rejected stale second check disagreed agreed could not check proof exploit false positive missing information",
     body: [
       {
-        p: "Every issue page starts with one sentence that says why it matched, for example: “Installed 6.10.0 (from web/package-lock.json, seen 2 h ago) is in the affected range < 7.0.7 of GHSA-xxxx (osv:npm, refreshed 3 h ago), compared with SemVer rules; fixed in 7.0.7.” It names the installed version and where it was read, the advisory record and range, the version rules used, the source and when it was last refreshed, and the fix.",
+        p: "Every issue page has, under **Why it matched** (just below **What to do**), one sentence that says why it matched, for example: “Installed 6.10.0 (from web/package-lock.json, seen 2 h ago) is in the affected range < 7.0.7 of GHSA-xxxx (osv:npm, refreshed 3 h ago), compared with SemVer rules; fixed in 7.0.7.” It names the installed version and where it was read, the advisory record and range, the version rules used, the source and when it was last refreshed, and the fix.",
       },
       {
         p: "The sentence is built from the rule the matcher stored when it made the finding. It is not worked out again later, so it shows what really matched. The same explanation is in the API (`why` in `GET /findings/{id}`) and in the `explain_finding` tool for AI assistants.",

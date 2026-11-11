@@ -20,16 +20,14 @@ export function SecondCheckBadge({ check }: { check: SecondCheck | null | undefi
 
 /**
  * Why this finding matched, in one sentence, with its evidence state, what
- * is missing and the independent second check. Leads the finding page.
+ * is missing and the independent second check. On the finding page it
+ * opens the "Why it matched" section; `bare` leaves out the card and title.
  */
-export function WhyMatched({ why }: { why: FindingWhy }) {
+export function WhyMatched({ why, bare }: { why: FindingWhy; bare?: boolean }) {
   const check = why.second_check;
   const state = why.evidence_state.replace(/_/g, " ");
-  return (
-    <section className="card why" aria-labelledby="why-title">
-      <header className="card-head">
-        <h2 id="why-title">Why it matched</h2>
-      </header>
+  const body = (
+    <>
       <p className="why-sentence break">{why.sentence}</p>
       <p className="badges">
         <Badge status={why.evidence_state} tone={STATE_TONE[why.evidence_state] ?? "muted"} label={`Evidence: ${state}`} />
@@ -90,6 +88,15 @@ export function WhyMatched({ why }: { why: FindingWhy }) {
           ]}
         />
       </details>
+    </>
+  );
+  if (bare) return <div className="why">{body}</div>;
+  return (
+    <section className="card why" aria-labelledby="why-title">
+      <header className="card-head">
+        <h2 id="why-title">Why it matched</h2>
+      </header>
+      {body}
     </section>
   );
 }

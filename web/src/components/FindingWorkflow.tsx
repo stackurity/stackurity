@@ -6,7 +6,7 @@ import { useLoad } from "../hooks";
 import { absTime } from "../format";
 import { EscalationBadge, PriorityBadge, SosBadge, FindingStateBadge, IGNORE_REASON_LABEL, STATE_EXPLAINED } from "./Badge";
 import { Card, ErrorBox, KeyValues, Loading, Notice, RelativeTime } from "./ui";
-import { Assignee, DueDate, FindingActions } from "./Workflow";
+import { Assignee, DueDate } from "./Workflow";
 import { FindingRemediation } from "./RemediationSummary";
 import { closedReason, countsAsRemediation } from "../resolution";
 
@@ -59,34 +59,10 @@ function FactorTable({ f }: { f: Finding }) {
   );
 }
 
-export function WorkflowPanel({ f, onChanged, epss }: { f: Finding; onChanged: () => void; epss?: EpssDetail | null }) {
-  const active = f.status === "open" && (f.state === "new" || f.state === "acknowledged" || f.state === "in_progress");
-  const closedByDecision = f.state === "suppressed" || f.state === "risk_accepted";
+/** Urgent workflow facts that belong at the top of the page: SOS, and an issue that came back after a fix. */
+export function WorkflowAlerts({ f }: { f: Finding }) {
   return (
-    <Card
-      title={
-        <span className="badges">
-          Workflow <FindingStateBadge f={f} detail />
-          <PriorityBadge priority={f.priority} score={f.priority_score} />
-          {f.sos && <SosBadge rule={f.sos_rule} />}
-          <EscalationBadge level={f.escalation_level} />
-        </span>
-      }
-    >
-      {f.status !== "open" && <p className="hint">This finding is resolved; workflow actions no longer apply.</p>}
-      {f.status === "open" && f.state && STATE_EXPLAINED[f.state] && !f.until_fix && <p className="hint">{STATE_EXPLAINED[f.state]}.</p>}
-      {f.status === "open" && f.until_fix && closedByDecision && (
-        <p className="hint">It comes back on its own when a free fixed version exists, or on the date below at the latest.</p>
-      )}
-      {f.status === "open" && f.regressed_at && (
-        <Notice kind="warn">
-          <strong>Came back after a fix</strong> <RelativeTime iso={f.regressed_at} />. It was fixed on this asset and a later check found it
-          again. See the history below.
-        </Notice>
-      )}
-      {f.verification === "rejected" && f.ignore_reason === "false_positive" && (
-        <p className="hint">Marked a false positive: verification is rejected until someone reopens it.</p>
-      )}
+    <>
       {f.sos && (
         <div className="alert sos-banner" role="alert">
           <strong>SOS{f.sos_rule ? ` — ${f.sos_rule}` : ""}:</strong> this finding matches{" "}
@@ -94,69 +70,105 @@ export function WorkflowPanel({ f, onChanged, epss }: { f: Finding; onChanged: (
           urgent attention.
         </div>
       )}
-      <div className="grid-2 tight">
-        <div>
-          <KeyValues
-            entries={[
-              ["assignee", <Assignee email={f.assignee_email} team={f.assignee_team} />],
-              [
-                "acknowledge by",
-                active && f.state === "new" ? (
-                  <DueDate iso={f.ack_due} label="Acknowledge by" />
-                ) : f.acknowledged_at ? (
-                  <span>
-                    acknowledged <RelativeTime iso={f.acknowledged_at} />
-                  </span>
-                ) : (
-                  <span className="muted">—</span>
-                ),
-              ],
-              ["fix by", active ? <DueDate iso={f.fix_due} overdue={f.overdue} label="Fix by" /> : <span className="muted">—</span>],
-              ...(closedByDecision
-                ? ([
-                    ...(f.ignore_reason ? ([["why", IGNORE_REASON_LABEL[f.ignore_reason] ?? f.ignore_reason]] as [string, ReactNode][]) : []),
-                    ["reason", <span className="break">{f.state_reason || <span className="muted">none given</span>}</span>],
-                    ["mitigation", <span className="break">{f.mitigation || <span className="muted">none recorded</span>}</span>],
-                    [
-                      "until",
-                      f.suppressed_until ? (
-                        <span title={absTime(f.suppressed_until)}>
-                          {f.until_fix ? "a fix ships, at the latest " : ""}
-                          {absTime(f.suppressed_until)}
-                        </span>
-                      ) : f.until_fix ? (
-                        "a fix ships"
-                      ) : (
-                        "no expiry"
-                      ),
-                    ],
-                  ] as [string, ReactNode][])
-                : []),
-              ...(f.incident_id
-                ? ([["incident", <Link to={`/incidents/${f.incident_id}`}>Incident #{f.incident_id}</Link>]] as [string, ReactNode][])
-                : []),
-            ]}
-          />
-          {f.kind === "vulnerability" && <FindingRemediation f={f} />}
-          {f.status === "open" && <FindingActions target={{ type: "finding", id: f.id }} state={f.state} onDone={onChanged} />}
-        </div>
-        <div>
-          <h3 className="h-sm">Why this priority</h3>
-          <FactorTable f={f} />
-          {epss && <p className="small">{epss.text}</p>}
-          <p className="hint">
-            Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>
-            {f.priority_policy_version ? (
-              <>
-                {" "}
-                (version <code>{f.priority_policy_version}</code>)
-              </>
-            ) : null}
-            .
-          </p>
-        </div>
-      </div>
-    </Card>
+      {f.status === "open" && f.regressed_at && (
+        <Notice kind="warn">
+          <strong>Came back after a fix</strong> <RelativeTime iso={f.regressed_at} />. It was fixed on this asset and a later check found it
+          again. See the history under Technical details.
+        </Notice>
+      )}
+    </>
+  );
+}
+
+/** The badges that sum up the workflow: state, priority, SOS and escalation. */
+export function WorkflowBadges({ f }: { f: Finding }) {
+  return (
+    <>
+      <FindingStateBadge f={f} detail />
+      <PriorityBadge priority={f.priority} score={f.priority_score} />
+      {f.sos && <SosBadge rule={f.sos_rule} />}
+      <EscalationBadge level={f.escalation_level} />
+    </>
+  );
+}
+
+/** Deadlines, the decision behind a snooze or acceptance, the incident and remediation runs. */
+export function WorkflowDetails({ f }: { f: Finding }) {
+  const active = f.status === "open" && (f.state === "new" || f.state === "acknowledged" || f.state === "in_progress");
+  const closedByDecision = f.state === "suppressed" || f.state === "risk_accepted";
+  return (
+    <>
+      {f.status !== "open" && <p className="hint">This finding is resolved; workflow actions no longer apply.</p>}
+      {f.status === "open" && f.state && STATE_EXPLAINED[f.state] && !f.until_fix && <p className="hint">{STATE_EXPLAINED[f.state]}.</p>}
+      {f.status === "open" && f.until_fix && closedByDecision && (
+        <p className="hint">It comes back on its own when a free fixed version exists, or on the date below at the latest.</p>
+      )}
+      {f.verification === "rejected" && f.ignore_reason === "false_positive" && (
+        <p className="hint">Marked a false positive: verification is rejected until someone reopens it.</p>
+      )}
+      <KeyValues
+        entries={[
+          ["assignee", <Assignee email={f.assignee_email} team={f.assignee_team} />],
+          [
+            "acknowledge by",
+            active && f.state === "new" ? (
+              <DueDate iso={f.ack_due} label="Acknowledge by" />
+            ) : f.acknowledged_at ? (
+              <span>
+                acknowledged <RelativeTime iso={f.acknowledged_at} />
+              </span>
+            ) : (
+              <span className="muted">—</span>
+            ),
+          ],
+          ["fix by", active ? <DueDate iso={f.fix_due} overdue={f.overdue} label="Fix by" /> : <span className="muted">—</span>],
+          ...(closedByDecision
+            ? ([
+                ...(f.ignore_reason ? ([["why", IGNORE_REASON_LABEL[f.ignore_reason] ?? f.ignore_reason]] as [string, ReactNode][]) : []),
+                ["reason", <span className="break">{f.state_reason || <span className="muted">none given</span>}</span>],
+                ["mitigation", <span className="break">{f.mitigation || <span className="muted">none recorded</span>}</span>],
+                [
+                  "until",
+                  f.suppressed_until ? (
+                    <span title={absTime(f.suppressed_until)}>
+                      {f.until_fix ? "a fix ships, at the latest " : ""}
+                      {absTime(f.suppressed_until)}
+                    </span>
+                  ) : f.until_fix ? (
+                    "a fix ships"
+                  ) : (
+                    "no expiry"
+                  ),
+                ],
+              ] as [string, ReactNode][])
+            : []),
+          ...(f.incident_id
+            ? ([["incident", <Link to={`/incidents/${f.incident_id}`}>Incident #{f.incident_id}</Link>]] as [string, ReactNode][])
+            : []),
+        ]}
+      />
+      {f.kind === "vulnerability" && <FindingRemediation f={f} />}
+    </>
+  );
+}
+
+/** Why this priority: each factor and its points, EPSS, and the risk policy version. */
+export function PriorityWhy({ f, epss }: { f: Finding; epss?: EpssDetail | null }) {
+  return (
+    <>
+      <FactorTable f={f} />
+      {epss && <p className="small">{epss.text}</p>}
+      <p className="hint">
+        Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>
+        {f.priority_policy_version ? (
+          <>
+            {" "}
+            (version <code>{f.priority_policy_version}</code>)
+          </>
+        ) : null}
+        .
+      </p>
+    </>
   );
 }
 
@@ -192,7 +204,8 @@ function eventNote(e: FindingEvent): string {
   return e.note;
 }
 
-export function FindingHistory({ id, tick }: { id: number; tick: number }) {
+/** Every action and automatic change on the finding, newest first. `bare` leaves out the card. */
+export function FindingHistory({ id, tick, bare }: { id: number; tick: number; bare?: boolean }) {
   const res = useLoad(() => api.get<List<FindingEvent>>(`/findings/${id}/events`), [id, tick]);
   // Events carry only IDs; resolve names where the viewer may list them.
   // Older events may lack user_email/team_name; fall back to lookups.
@@ -202,8 +215,8 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
   const userName = (uid: number) =>
     uid === me?.user?.id ? (me.user.email ?? "you") : (users.data?.items.find((u) => u.id === uid)?.email ?? `user #${uid}`);
   const teamName = (tid: number) => teams.data?.items.find((t) => t.id === tid)?.name ?? `team #${tid}`;
-  return (
-    <Card title="History">
+  const body = (
+    <>
       <ErrorBox error={res.error} title="Could not load history" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <p className="muted">No activity yet.</p>}
@@ -244,6 +257,7 @@ export function FindingHistory({ id, tick }: { id: number; tick: number }) {
           })}
         </ol>
       )}
-    </Card>
+    </>
   );
+  return bare ? body : <Card title="History">{body}</Card>;
 }

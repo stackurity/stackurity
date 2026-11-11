@@ -114,11 +114,15 @@ function rangesByAdvisory(ranges: unknown): Map<string, string[]> {
   return out;
 }
 
+function Box({ bare, children }: { bare?: boolean; children: ReactNode }) {
+  return bare ? <>{children}</> : <Card title="How this was decided">{children}</Card>;
+}
+
 /**
  * Which source, ecosystem, version rule and range produced the verdict, and
  * how far the evidence can be trusted.
  */
-export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) {
+export function Provenance({ f, matched, bare }: { f: Finding; matched: Advisory[]; bare?: boolean }) {
   const ev = f.evidence ?? {};
   const state = evidenceState(f);
   const head = (
@@ -128,7 +132,7 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
   );
   if (f.kind === "end_of_life") {
     return (
-      <Card title="How this was decided">
+      <Box bare={bare}>
         {head}
         <ul className="ref-list">
           <li>
@@ -146,14 +150,14 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
             {ev.eol_date ? <>, end of life on {String(ev.eol_date)}</> : null}.
           </li>
         </ul>
-      </Card>
+      </Box>
     );
   }
   if (isBehind(f)) {
     // No advisory: endoflife.date's latest release of the line decided it.
     const b = behindFacts(f);
     return (
-      <Card title="How this was decided">
+      <Box bare={bare}>
         {head}
         <ul className="ref-list">
           <li>
@@ -183,7 +187,7 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
           {b.product} point releases on a supported release line are its security and maintenance releases. Vulnerability (CVE) matching
           for {b.product} core is not available yet, so the missing releases are reported instead of the vulnerabilities they fix.
         </p>
-      </Card>
+      </Box>
     );
   }
   const ranges = rangesByAdvisory(ev.matched_ranges);
@@ -191,7 +195,7 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
   const feedOf = new Map(matched.map((a) => [a.id, a.feed]));
   const ecos = Array.isArray(ev.osv_ecosystems) ? ev.osv_ecosystems.map(String) : [];
   return (
-    <Card title="How this was decided">
+    <Box bare={bare}>
       {head}
       <p className="small">
         Installed <span className="mono">{String(ev.installed ?? f.version)}</span> of <span className="mono">{String(ev.osv_package ?? f.component_name)}</span>
@@ -247,6 +251,6 @@ export function Provenance({ f, matched }: { f: Finding; matched: Advisory[] }) 
           </table>
         </div>
       )}
-    </Card>
+    </Box>
   );
 }
