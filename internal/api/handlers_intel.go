@@ -52,8 +52,7 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 	if a := q.Get("assignee"); a == "me" || a == "mine" {
 		p := principal(r)
 		if p == nil || p.User == nil {
-			s.fail(w, r, badRequest("assignee="+a+" needs a signed-in user"))
-			return
+			return f, badRequest("assignee=" + a + " needs a signed-in user")
 		}
 		if a == "me" {
 			f.AssigneeUser = p.User.ID
