@@ -150,6 +150,10 @@ func TestSaysNotFound(t *testing.T) {
 		"I'm not sure what you mean by \"the old one\". Which asset?":                true,
 		"web-1 runs openssl 3.0.2; upgrade it to 3.0.15.":                            false,
 		strings.Repeat("web-1 needs openssl 3.0.15. ", 40) + "I couldn't find db-9.": false,
+		// What it could not find, in the section for it, is not a failed answer.
+		"Upgrade openssl on web-1.\n\n## Data gaps\nI couldn't find a recent report from web-2.": false,
+		"Upgrade openssl on web-1.\n\n**Data gaps**\nI could not find db-9.":                     false,
+		"I couldn't find web-9.\n\n## Data gaps\nweb-9 may not report yet.":                      true,
 	} {
 		if got := SaysNotFound(s); got != want {
 			t.Errorf("SaysNotFound(%.50q) = %v", s, got)

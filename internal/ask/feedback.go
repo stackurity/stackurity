@@ -82,8 +82,17 @@ var notFoundPhrases = []string{
 // question or find what it was asked for. Only the first 600 characters
 // count: a long answer that mentions one thing it could not find is still
 // an answer.
+//
+// The "## Data gaps" section the prompt asks for is where an answer says
+// what it could not find on purpose, so it does not count either: only a
+// lead that cannot answer is a reason to try again on a stronger model.
 func SaysNotFound(answer string) bool {
 	a := strings.ToLower(strings.ReplaceAll(answer, "’", "'"))
+	for _, h := range []string{"## data gaps", "**data gaps"} {
+		if i := strings.Index(a, h); i >= 0 {
+			a = a[:i]
+		}
+	}
 	if len(a) > 600 {
 		a = a[:600]
 	}
