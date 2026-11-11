@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -340,5 +341,54 @@ func TestTrustBadgeHistoryIsAppendOnly(t *testing.T) {
 	var role string
 	if err := f.s.Pool.QueryRow(sys, `SELECT current_user`).Scan(&role); err != nil || role != "stackurity_app" {
 		t.Fatalf("role after purge = %q, %v", role, err)
+	}
+}
+
+// The loader classifies collector coverage: production's Ghost (bundles only
+// partly identifiable) stays active and discloses the limit; files the
+// agent may not read make the badge not active.
+func TestTrustBadgeCoverageLimitsFromCollectorScopes(t *testing.T) {
+	f := newBadgeFixture(t)
+	sys := tenant.System(f.ctx)
+	cover := func(scope, status, reason string) {
+		t.Helper()
+		if _, err := f.s.Pool.Exec(sys, `INSERT INTO coverage (asset_id, collector_id, scope, status, reason, last_attempt, workspace_id)
+			SELECT id, 'linux-apps', $2, $3, $4, now(), workspace_id FROM assets WHERE id = $1
+			ON CONFLICT (asset_id, collector_id, scope) DO UPDATE SET status = EXCLUDED.status, reason = EXCLUDED.reason`,
+			f.asset, scope, status, reason); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, err := f.s.Pool.Exec(sys, `UPDATE collections SET complete = false WHERE asset_id = $1`, f.asset); err != nil {
+		t.Fatal(err)
+	}
+	decide := func() trustbadge.Decision {
+		t.Helper()
+		in, err := f.s.TrustBadgeInputs(f.ctx, f.badge)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return trustbadge.Evaluate(in, time.Now())
+	}
+	// Incomplete, and no scope says why: an error.
+	if d := decide(); d.Reason != trustbadge.ReasonCollectionErrors {
+		t.Fatalf("unexplained: %+v", d)
+	}
+	cover("web-assets:/var/www/ghost/versions/6.52.0", "checked", "")
+	cover("bundles:/var/www/ghost/versions/6.52.0", "partial",
+		"compiled front-end bundles: 8 component(s) identified by licence banner, version constant or source map; other code compiled in is not identifiable")
+	d := decide()
+	if d.Result != trustbadge.Active || !slices.Contains(d.UnsupportedKinds, "compiled front-end bundles") {
+		t.Fatalf("ghost: %+v", d)
+	}
+	cover("app-permissions:/var/www/help-centre", "partial",
+		"cannot read /var/www/help-centre/application/config/database.local.php: permission denied (agent runs as stackurity)")
+	if d := decide(); d.Result != trustbadge.NotActive || d.Reason != trustbadge.ReasonCollectionErrors {
+		t.Fatalf("unreadable files: %+v", d)
+	}
+	cover("app-permissions:/var/www/help-centre", "checked", "")
+	cover("lockfile:/var/www/help-centre/composer.lock", "failed", "parse error")
+	if d := decide(); d.Result != trustbadge.NotActive || d.Reason != trustbadge.ReasonCollectionErrors {
+		t.Fatalf("failed scope: %+v", d)
 	}
 }
