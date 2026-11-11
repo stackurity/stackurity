@@ -157,6 +157,32 @@ type SearchResults struct {
 	Members         []SearchMember    `json:"members"`
 	// More names the groups that had more matches than the limit.
 	More map[string]bool `json:"more"`
+	// Summary counts every match, not only the ones returned; only when
+	// asked for (the results page, not the dropdown).
+	Summary *SearchSummary `json:"summary,omitempty"`
+}
+
+// SearchSummary is the overview at the top of the results page. Every count
+// covers all matches, whatever the limit.
+type SearchSummary struct {
+	// Components counts installed packages matching the query as the
+	// components group does; Versions the distinct versions of them installed
+	// (only the version asked for, when one was given); InstalledAssets the
+	// assets with one installed.
+	Components      int64 `json:"components"`
+	Versions        int64 `json:"versions"`
+	InstalledAssets int64 `json:"installed_assets"`
+	// ComponentQuery is the package name alone (no version, type or
+	// namespace), for the Components list's name search.
+	ComponentQuery string `json:"component_query"`
+	// FindingsQuery is the text the finding counts match, the way the
+	// Issues list's search does (package, key, title or asset name): the
+	// package name when the query gave a version, else the query.
+	FindingsQuery  string `json:"findings_query"`
+	OpenFindings   int64  `json:"open_findings"`
+	AffectedAssets int64  `json:"affected_assets"` // assets with one of those open findings
+	Critical       int64  `json:"critical"`        // of them, critical severity
+	Urgent         int64  `json:"urgent"`          // of them, priority P1
 }
 
 // NormalizeSearch trims a query and checks its length.
@@ -186,6 +212,8 @@ type SearchOptions struct {
 	// ProjectOnly leaves out teams and people, as for a member with
 	// project access only (an assistant connected to one project).
 	ProjectOnly bool
+	// Summary adds the counts of every match (SearchResults.Summary).
+	Summary bool
 }
 
 // Search runs the global search in the caller's workspace, without members.
@@ -246,6 +274,11 @@ func (s *Store) SearchWith(ctx context.Context, query string, opt SearchOptions)
 				return fmt.Errorf("members: %w", err)
 			}
 			res.More["members"] = more
+		}
+		if opt.Summary {
+			if res.Summary, err = searchSummary(ctx, tx, q); err != nil {
+				return fmt.Errorf("summary: %w", err)
+			}
 		}
 		return nil
 	})
@@ -469,13 +502,56 @@ func startsVersion(s string) bool {
 	return s != "" && s[0] >= '0' && s[0] <= '9'
 }
 
+// searchComponentWhere matches installed components as searchComponents does;
+// $1 is the substring pattern of the name, $2 the type and $3 the namespace
+// (empty for any).
+const searchComponentWhere = `EXISTS (SELECT 1 FROM inventory i WHERE i.component_id = c.id AND i.removed_at IS NULL)
+	  AND (c.name ILIKE $1 OR (c.namespace || '/' || c.name) ILIKE $1)
+	  AND ($2 = '' OR c.type = $2) AND ($3 = '' OR lower(c.namespace) = lower($3))`
+
+// searchVersionMatch matches the version asked for ($4, with $5 its prefix
+// pattern): exactly, or as a prefix that ends at a version part, so "3.0.2"
+// finds the Debian build 3.0.2-0ubuntu1.
+const searchVersionMatch = `($4 = '' OR i.version = $4 OR (i.version LIKE $5 AND substr(i.version, length($4) + 1, 1) !~ '[0-9]'))`
+
+// searchSummary counts every match for the results page's overview: the
+// components and where they are installed, and the open findings the Issues
+// list finds for the same text, so each figure equals the list it links to.
+func searchSummary(ctx context.Context, tx pgx.Tx, q string) (*SearchSummary, error) {
+	pq := parsePackageQuery(q)
+	_, _, fullLike := patterns(pq.Full)
+	_, verPrefix, _ := patterns(pq.Version)
+	sum := &SearchSummary{ComponentQuery: pq.Name, FindingsQuery: q}
+	if pq.Version != "" || strings.HasPrefix(strings.ToLower(q), "pkg:") {
+		sum.FindingsQuery = pq.Name
+	}
+	err := tx.QueryRow(ctx, `WITH c AS (SELECT c.id FROM components c WHERE `+searchComponentWhere+`),
+		i AS (SELECT i.component_id, i.version, i.asset_id FROM inventory i JOIN c ON c.id = i.component_id
+		  JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL
+		  WHERE i.removed_at IS NULL AND `+searchVersionMatch+`)
+		SELECT (SELECT count(*) FROM c), (SELECT count(*) FROM (SELECT DISTINCT component_id, version FROM i) v),
+		  (SELECT count(DISTINCT asset_id) FROM i)`,
+		fullLike, pq.Type, pq.Namespace, pq.Version, verPrefix).Scan(&sum.Components, &sum.Versions, &sum.InstalledAssets)
+	if err != nil {
+		return nil, err
+	}
+	// The same conditions as ListFindings with Search set and status open.
+	err = tx.QueryRow(ctx, `SELECT count(*), count(DISTINCT f.asset_id),
+		  count(*) FILTER (WHERE f.severity = 'critical'), count(*) FILTER (WHERE f.priority = 'P1')
+		FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL JOIN components c ON c.id = f.component_id
+		WHERE f.status = 'open' AND (c.name ILIKE $1 OR f.key ILIKE $1 OR f.title ILIKE $1 OR a.name ILIKE $1)`,
+		likeEscape(sum.FindingsQuery)).Scan(&sum.OpenFindings, &sum.AffectedAssets, &sum.Critical, &sum.Urgent)
+	if err != nil {
+		return nil, err
+	}
+	return sum, nil
+}
+
 func searchComponents(ctx context.Context, tx pgx.Tx, q string, limit int) ([]SearchComponent, bool, error) {
 	pq := parsePackageQuery(q)
 	full, fullPrefix, fullLike := patterns(pq.Full)
 	_, verPrefix, _ := patterns(pq.Version)
-	// $4 matches the version asked for: exactly, or as a prefix that ends at
-	// a version part, so "3.0.2" finds the Debian build 3.0.2-0ubuntu1.
-	const ver = `($4 = '' OR i.version = $4 OR (i.version LIKE $5 AND substr(i.version, length($4) + 1, 1) !~ '[0-9]'))`
+	const ver = searchVersionMatch
 	rows, err := tx.Query(ctx, `SELECT c.id, c.purl_key, c.type, c.namespace, c.name,
 		  CASE WHEN lower(c.name) = $1 OR lower(c.namespace || '/' || c.name) = $1 THEN 0
 		    WHEN c.name ILIKE $2 OR (c.namespace || '/' || c.name) ILIKE $2 THEN 1 ELSE 2 END AS rank,

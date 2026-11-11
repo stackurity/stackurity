@@ -844,7 +844,7 @@ Distinct environments, asset kinds and component types, for filters.
 
 **Who:** viewer
 
-Searches the current workspace for one query (`q`, `limit`). See [Search](#search).
+Searches the current workspace for one query (`q`, `limit`, `summary`). See [Search](#search).
 
 ### `GET /assets`
 
@@ -3047,6 +3047,15 @@ An invitation lets someone join the organisation with what they may see: an orga
 ## Search
 
 `GET /search?q=lodash@4.17.20&limit=10` looks one query up everywhere at once and returns the matches grouped by type. `q` is trimmed and must be 2 to 200 characters; `%`, `_` and `\` match themselves. `limit` (default 10, max 50) applies to each group, and `more` says which groups had more matches.
+
+With `summary=1` the response also has `summary`, counts of every match whatever the limit (the dashboard's results page shows them as its overview):
+
+```json
+"summary": {"components": 3, "versions": 7, "installed_assets": 42, "component_query": "openssl",
+            "findings_query": "openssl", "open_findings": 118, "affected_assets": 31, "critical": 4, "urgent": 2}
+```
+
+`components` counts the installed packages matched as for the **components** group, `versions` their distinct installed versions and `installed_assets` the assets they are on (both only at the version asked for, when the query gives one). `component_query` is the package name alone. The finding counts are for open findings that `GET /findings?q=<findings_query>` lists (package name, key, title or asset name containing the text): all of them, those on `affected_assets` distinct assets, those of `critical` severity and those at priority P1 (`urgent`). `findings_query` is the package name when the query gives a version or is a purl, otherwise the query.
 
 ```json
 {"query": "...", "vulnerabilities": [...], "findings": [...], "assets": [...], "components": [...], "teams": [...], "members": [...],
