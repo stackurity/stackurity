@@ -16,6 +16,7 @@
     "react/purity": "off",
     "react/use-memo": "off",
     "react/preserve-manual-memoization": "off",
+    "react/immutability": "off",
     // Style preferences, not defects.
     "unicorn/prefer-string-starts-ends-with": "off",
     "unicorn/no-useless-fallback-in-spread": "off"
