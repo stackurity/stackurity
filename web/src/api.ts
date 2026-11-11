@@ -4054,6 +4054,8 @@ export const api = {
     turnstile_token: string;
     accept_terms: true;
     email_notice_version?: string;
+    /** Where the person came from, such as badge-<slug> from a trust page (counted by the hosted edition). */
+    ref?: string;
   }) =>
     request<{ status: string }>("POST", "/signup", b, { quiet401: true }),
   verifySignup: (token: string) => request<{ workspace_id: number }>("POST", "/signup/verify", { token }, { quiet401: true }),

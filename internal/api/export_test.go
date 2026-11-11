@@ -83,3 +83,6 @@ func SetTrustBadgePlan(p *TrustBadgePlan) (restore func()) {
 
 // TrustBadgeImage draws the badge image as the public endpoint does.
 var TrustBadgeImage = trustBadgeImage
+
+// TrustBadgePlanOf is the trust badge plan of the workspace in ctx.
+func TrustBadgePlanOf(s *Server, ctx context.Context) TrustBadgePlan { return s.trustPlan(ctx) }
