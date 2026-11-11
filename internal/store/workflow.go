@@ -604,10 +604,13 @@ const MaxComponentFixes = 20
 // and the assets where it has no fixed version: detail.component_fixes.
 // The component is shown as detail.components shows it (namespace/name, the
 // namespace naming the distribution for OS packages) and its purl type says
-// whether the namespace is one.
+// whether the namespace is one. source_package is set for a Debian or Ubuntu
+// binary package with a version of its own whose fixed versions are its
+// source package's (osv.SourceFix): the advice then names that source.
 const componentFixCols = `c.type AS purl_type, CASE WHEN c.namespace = '' THEN c.name ELSE c.namespace || '/' || c.name END AS component,
 	COALESCE(array_agg(DISTINCT f.fixed_version) FILTER (WHERE f.fixed_version <> ''), '{}') AS fixed_versions,
-	count(DISTINCT f.asset_id) AS assets, count(DISTINCT f.asset_id) FILTER (WHERE f.fixed_version = '') AS unfixed`
+	count(DISTINCT f.asset_id) AS assets, count(DISTINCT f.asset_id) FILTER (WHERE f.fixed_version = '') AS unfixed,
+	COALESCE(max(f.evidence->>'osv_package') FILTER (WHERE COALESCE(f.evidence->'match'->>'source_version', '') <> ''), '') AS source_package`
 
 // componentFixesAgg folds the componentFixCols rows of table into one
 // detail object per partition: {component_fixes: [...], component_count: n},
@@ -615,7 +618,8 @@ const componentFixCols = `c.type AS purl_type, CASE WHEN c.namespace = '' THEN c
 func componentFixesAgg(partition, table string) string {
 	return `SELECT ` + partition + `, jsonb_build_object(
 		  'component_fixes', jsonb_agg(jsonb_build_object('component', component, 'type', purl_type,
-		    'fixed_versions', to_jsonb(fixed_versions), 'assets', assets, 'unfixed', unfixed) ORDER BY rn)
+		    'fixed_versions', to_jsonb(fixed_versions), 'assets', assets, 'unfixed', unfixed)
+		    || CASE WHEN source_package <> '' THEN jsonb_build_object('source_package', source_package) ELSE '{}'::jsonb END ORDER BY rn)
 		    FILTER (WHERE rn <= ` + strconv.Itoa(MaxComponentFixes) + `),
 		  'component_count', count(*)) AS detail
 		FROM (SELECT *, row_number() OVER (PARTITION BY ` + partition + ` ORDER BY assets DESC, component, purl_type) AS rn

@@ -68,6 +68,25 @@ func TestComponentFixAction(t *testing.T) {
 			"debian/openssl: upgrade to 3.0.15-1~deb12u1 or later where it is published (2 assets); no fixed version yet on the other 1 asset, watch the advisory"},
 		{"no fix, application", []map[string]any{{"component": "left-pad", "type": "npm", "fixed_versions": []string{}, "assets": 1, "unfixed": 1}}, 1,
 			"left-pad: no fixed version is published yet, watch the advisory and consider mitigations (1 asset)"},
+		// Debian/Ubuntu binary packages whose fix is named by their source
+		// package's version: apt has no telnet 2:2.5-3ubuntu4.1, so the
+		// advice names the source build; a binary whose version is the
+		// source's keeps its own line.
+		{"source version", []map[string]any{{"component": "ubuntu/telnet", "type": "deb", "fixed_versions": []string{"2:2.5-3ubuntu4.1"},
+			"assets": 2, "unfixed": 0, "source_package": "inetutils"}}, 1,
+			"Upgrade ubuntu/telnet to a build from inetutils 2:2.5-3ubuntu4.1 or later (2 assets)"},
+		{"source and binary versions", []map[string]any{
+			{"component": "ubuntu/telnet", "type": "deb", "fixed_versions": []string{"2:2.5-3ubuntu4.1"}, "assets": 2, "unfixed": 0, "source_package": "inetutils"},
+			{"component": "ubuntu/inetutils-telnetd", "type": "deb", "fixed_versions": []string{"2:2.5-3ubuntu4.1"}, "assets": 1, "unfixed": 0}}, 2,
+			"ubuntu/telnet: upgrade to a build from inetutils 2:2.5-3ubuntu4.1 or later (2 assets); " +
+				"ubuntu/inetutils-telnetd: upgrade to 2:2.5-3ubuntu4.1 or later (1 asset)"},
+		{"source version, release lines", []map[string]any{{"component": "ubuntu/telnet", "type": "deb",
+			"fixed_versions": []string{"2:2.4-2ubuntu0.1", "2:2.5-3ubuntu4.1"}, "assets": 3, "unfixed": 0, "source_package": "inetutils"}}, 1,
+			"ubuntu/telnet: upgrade to a build from inetutils at the version for each asset's release: 2:2.4-2ubuntu0.1 / 2:2.5-3ubuntu4.1 or later " +
+				"(each asset's fixed version is in Stackurity) (3 assets)"},
+		{"source version, partly fixed", []map[string]any{{"component": "ubuntu/telnet", "type": "deb", "fixed_versions": []string{"2:2.5-3ubuntu4.1"},
+			"assets": 3, "unfixed": 1, "source_package": "inetutils"}}, 1,
+			"ubuntu/telnet: upgrade to a build from inetutils 2:2.5-3ubuntu4.1 or later where it is published (2 assets); no fixed version yet on the other 1 asset, watch the advisory"},
 		{"more than shown", []map[string]any{{"component": "lodash", "type": "npm", "fixed_versions": []string{"4.17.21"}, "assets": 3, "unfixed": 0}}, 4,
 			"lodash: upgrade to 4.17.21 or later (3 assets); 3 components more: see the incident"},
 	} {

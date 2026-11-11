@@ -1530,6 +1530,9 @@ export interface FindingEvidence {
   // kernels: the installed kernel version this finding covers and its packages
   kernel_release?: string;
   kernel_packages?: string[];
+  /** How the match was made (internal/intel matchExplanation). source_version: the source
+   * package's version was compared (Debian/Ubuntu binary with a version of its own). */
+  match?: { rule?: string; source_version?: string; [k: string]: unknown };
   // end_of_life on a distribution package whose finding stands
   distribution?: LifecycleNote;
   [k: string]: unknown;
@@ -1899,8 +1902,11 @@ export interface UpgradeRecommendation {
   installed_version: string;
   minimum_fixed_version?: string;
   recommended_version?: string;
-  /** distro_fixed, latest_in_line, minimum_fixed, supported_line or none. */
+  /** distro_fixed, distro_source_fixed, latest_in_line, minimum_fixed, supported_line or none. */
   basis: string;
+  /** distro_source_fixed: a Debian/Ubuntu binary package with a version of its own whose fix is named by its
+   * source package's version. minimum_fixed_version is then the source's; recommended_version is empty. */
+  source?: { package: string; source_package: string; installed_source_version: string; fixed_source_version?: string } | null;
   change_type?: string;
   requires_major: boolean;
   requires_subscription?: string;

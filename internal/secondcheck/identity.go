@@ -250,11 +250,29 @@ func deriveTarget(rawPurl, invVersion string, ev map[string]string) (target, err
 		add(p.name)
 		add(p.qualifiers["upstream"])
 		add(ev["source_package"])
+		// Records list source versions. A binary package may carry its own
+		// version (telnet 0.17+2.5-3ubuntu4.2 from inetutils
+		// 2:2.5-3ubuntu4.2); the source version, when reported, is the one
+		// to compare. dpkg omits it when it equals the binary's.
+		hasSource, srcVersion := false, ""
+		for _, src := range []string{p.qualifiers["upstream"], ev["source_package"]} {
+			if name, ver := debSource(src); name != "" {
+				add(name)
+				hasSource = true
+				if srcVersion == "" {
+					srcVersion = ver
+				}
+			}
+		}
+		if v := ev["source_version"]; v != "" {
+			srcVersion = v
+		}
+		if hasSource && srcVersion != "" {
+			t.version = srcVersion
+		}
 		t.kernel = isKernelBinary(p.name)
 		for _, src := range []string{p.qualifiers["upstream"], ev["source_package"]} {
-			if i := strings.IndexByte(src, ' '); i > 0 {
-				src = src[:i]
-			}
+			src, _ = debSource(src)
 			if k, ok := kernelSourceName(t.ecosystem, src); ok {
 				add(k)
 				t.kernel, t.kernelSource = true, true
@@ -450,4 +468,18 @@ func (t target) recordApplies(eco string) (applies, paid bool) {
 		return stream == major || stream == mm, false
 	}
 	return eco == t.ecosystem, false
+}
+
+// debSource reads a Debian source package reference: "inetutils",
+// "inetutils (2:2.5-3ubuntu4.2)" as dpkg writes it, or
+// "inetutils@2:2.5-3ubuntu4.2" as Syft writes the upstream qualifier.
+func debSource(s string) (name, ver string) {
+	s = strings.TrimSpace(s)
+	if n, v, ok := strings.Cut(s, " "); ok {
+		return n, strings.TrimSpace(strings.Trim(strings.TrimSpace(v), "()"))
+	}
+	if n, v, ok := strings.Cut(s, "@"); ok && n != "" {
+		return n, v
+	}
+	return s, ""
 }
