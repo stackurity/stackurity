@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -159,11 +160,10 @@ func (s *Store) TrustBadgeInputs(ctx context.Context, b TrustBadge) (trustbadge.
 	if b.ScopeKind == "assets" {
 		in.ScopeIDs = nonNilIDs(b.AssetIDs)
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.kind, col.received_at, COALESCE(col.complete, false), cv.failed, a.evaluated_at
+	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.kind, col.received_at, COALESCE(col.complete, false), a.evaluated_at
 		FROM assets a
 		LEFT JOIN LATERAL (SELECT received_at, complete FROM collections c WHERE c.asset_id = a.id
 		  ORDER BY received_at DESC, id DESC LIMIT 1) col ON true
-		CROSS JOIN LATERAL (SELECT count(*) AS failed FROM coverage WHERE asset_id = a.id AND status = 'failed') cv
 		WHERE a.merged_into IS NULL AND (
 		  ($1 = 'projects' AND a.id IN (SELECT asset_id FROM project_assets WHERE project_id = ANY($2)))
 		  OR ($1 = 'assets' AND a.id = ANY($2)))
@@ -174,7 +174,7 @@ func (s *Store) TrustBadgeInputs(ctx context.Context, b TrustBadge) (trustbadge.
 	ids := []int64{}
 	for rows.Next() {
 		var a trustbadge.Asset
-		if err := rows.Scan(&a.ID, &a.Kind, &a.LastReport, &a.LatestComplete, &a.FailedScopes, &a.ProcessedAt); err != nil {
+		if err := rows.Scan(&a.ID, &a.Kind, &a.LastReport, &a.LatestComplete, &a.ProcessedAt); err != nil {
 			rows.Close()
 			return in, err
 		}
@@ -187,6 +187,9 @@ func (s *Store) TrustBadgeInputs(ctx context.Context, b TrustBadge) (trustbadge.
 	}
 	if len(ids) == 0 {
 		return in, nil
+	}
+	if err := s.trustBadgeScopes(ctx, ids, in.Assets); err != nil {
+		return in, err
 	}
 	// Rows grouped by what the rule reads: class, broad kind, source and
 	// the source refresh the evaluation used. Each row of inventory is one
@@ -423,4 +426,58 @@ func (s *Store) TrustBadgePurges(ctx context.Context) ([]TrustBadgePurge, error)
 		out = append(out, p)
 	}
 	return out, rows.Err()
+}
+
+// trustBadgeScopes classifies each asset's collector coverage scopes that
+// are not checked (trustbadge.ScopeClass): failed ones are counted in
+// FailedScopes, coverage limits give LimitKinds, and an incomplete latest
+// inventory is explained when every such scope is a limit or had nothing to
+// read. assets is in the order of ids.
+func (s *Store) trustBadgeScopes(ctx context.Context, ids []int64, assets []trustbadge.Asset) error {
+	rows, err := s.Pool.Query(ctx, `SELECT asset_id, scope, status FROM coverage
+		WHERE asset_id = ANY($1) AND status <> 'checked' ORDER BY asset_id, scope`, ids)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	at := make(map[int64]int, len(ids))
+	for i, id := range ids {
+		at[id] = i
+	}
+	seen := make([]bool, len(assets))
+	kinds := make([]map[string]bool, len(assets))
+	for rows.Next() {
+		var id int64
+		var scope, status string
+		if err := rows.Scan(&id, &scope, &status); err != nil {
+			return err
+		}
+		i, ok := at[id]
+		if !ok {
+			continue
+		}
+		seen[i] = true
+		switch class, kind := trustbadge.ScopeClass(scope, status); class {
+		case trustbadge.ScopeFailed:
+			assets[i].FailedScopes++
+		case trustbadge.ScopeLimit:
+			if kinds[i] == nil {
+				kinds[i] = map[string]bool{}
+			}
+			kinds[i][kind] = true
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	for i := range assets {
+		for k := range kinds[i] {
+			assets[i].LimitKinds = append(assets[i].LimitKinds, k)
+		}
+		sort.Strings(assets[i].LimitKinds)
+		// A complete inventory needs no explaining; an incomplete one with
+		// no scope saying why stays an error.
+		assets[i].IncompleteExplained = !assets[i].LatestComplete && seen[i] && assets[i].FailedScopes == 0
+	}
+	return nil
 }

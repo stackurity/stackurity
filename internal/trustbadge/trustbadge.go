@@ -10,7 +10,13 @@
 // conditions:
 //
 //	(a) it reported its software inventory in the last 7 days;
-//	(b) its latest inventory was processed, without collection errors;
+//	(b) its latest inventory was processed, without collection errors. A
+//	    scope the collector could not fully read for an inherent reason (a
+//	    compiled bundle whose contents are not identifiable, a Flutter
+//	    engine no source covers, a format not read yet) is a coverage
+//	    limit, disclosed like unsupported software, not an error. A scope
+//	    that failed, files the agent may not read, or any other partial
+//	    result is an error (ScopeClass);
 //	(c) every vulnerability source its components were matched against is
 //	    within that source's own freshness window (stale_after);
 //	(d) every component was evaluated against the latest refresh of each of
@@ -28,12 +34,18 @@ package trustbadge
 
 import (
 	"sort"
+	"strings"
 	"time"
 )
 
 // RuleVersion names this rule. It is stored with every decision; change it
 // whenever the rule's meaning changes.
-const RuleVersion = "2026-11-10.1"
+//
+// 2026-11-11.1: coverage limits in a system's latest inventory (ScopeClass)
+// no longer count as collection errors; they are disclosed by broad kind.
+// Evidence from 2026-11-10.1 rebuilds to the same decision: it carries no
+// limit fields, so an incomplete inventory there still counts as an error.
+const RuleVersion = "2026-11-11.1"
 
 // ReportWindow is condition (a): how recently each covered system must have
 // reported its inventory.
@@ -131,8 +143,17 @@ type Asset struct {
 	LastReport *time.Time `json:"last_report"`
 	// LatestComplete: the latest inventory was a complete collection.
 	LatestComplete bool `json:"latest_complete"`
-	// FailedScopes counts collector scopes whose last attempt failed.
+	// FailedScopes counts collector scopes whose last attempt failed, or
+	// that ScopeClass counts as failed (unreadable files, other partial
+	// results).
 	FailedScopes int64 `json:"failed_scopes"`
+	// LimitKinds are the broad kinds of software of its coverage-limit
+	// scopes (ScopeClass), disclosed like unsupported software.
+	LimitKinds []string `json:"limit_kinds,omitempty"`
+	// IncompleteExplained: the collector reported every scope that kept the
+	// latest inventory from being complete, and each is a coverage limit or
+	// had nothing to read. Then LatestComplete false is not an error.
+	IncompleteExplained bool `json:"incomplete_explained,omitempty"`
 	// ProcessedAt is when an evaluation of the asset last finished.
 	ProcessedAt *time.Time `json:"processed_at"`
 }
@@ -204,13 +225,19 @@ func Evaluate(in Inputs, now time.Time) Decision {
 	if len(in.Assets) == 0 {
 		failed[ReasonEmptyScope] = true
 	}
+	kinds := map[string]bool{}
 	for _, a := range in.Assets {
 		if a.LastReport == nil || now.Sub(*a.LastReport) > ReportWindow {
 			failed[ReasonNotReporting] = true
 			continue
 		}
-		if !a.LatestComplete || a.FailedScopes > 0 {
+		if a.FailedScopes > 0 || (!a.LatestComplete && !a.IncompleteExplained) {
 			failed[ReasonCollectionErrors] = true
+		}
+		for _, k := range a.LimitKinds {
+			if k != "" {
+				kinds[k] = true
+			}
 		}
 		if a.ProcessedAt == nil || a.ProcessedAt.Before(*a.LastReport) {
 			if now.Sub(*a.LastReport) <= ProcessingGrace {
@@ -220,7 +247,6 @@ func Evaluate(in Inputs, now time.Time) Decision {
 			}
 		}
 	}
-	kinds := map[string]bool{}
 	for _, p := range in.Pairs {
 		state, reason := pairState(p, in.Sources, now)
 		d.States[state] += p.Count
@@ -315,4 +341,60 @@ func pairState(p Pair, sources map[string]Source, now time.Time) (string, string
 	}
 	// A class this rule does not know is never treated as fine.
 	return StateFailed, ReasonEvaluationFailed
+}
+
+// Classes of a collector coverage scope (ScopeClass).
+const (
+	ScopeOK     = "ok"     // checked, or nothing to read (skipped)
+	ScopeLimit  = "limit"  // an inherent coverage limit: disclosed, not an error
+	ScopeFailed = "failed" // a check that should have completed did not
+)
+
+// limitScopes are the scope kinds (the scope up to its first ':') whose
+// partial result is inherent to what the files are, not a failed read:
+// compiled bundles are identified only by licence banners, version
+// constants and source maps, and no vulnerability source covers a Flutter
+// engine. Each maps to the broad kind of software the trust page names
+// ("including some …").
+var limitScopes = map[string]string{
+	"bundles":       "compiled front-end bundles",
+	"bundle-limits": "compiled front-end bundles",
+	"source-maps":   "compiled front-end bundles",
+	"flutter":       "Flutter web engines",
+}
+
+// permissionScope is apps.PermissionScope without its ':': files the
+// agent's user may not read. The workspace can fix it (grant read access),
+// so it is never a coverage limit. The coverage page counts the same
+// scopes as unreadable files (store/unchecked.go).
+const permissionScope = "app-permissions"
+
+// ScopeClass classifies one collector coverage scope by its status, and
+// for a coverage limit names its broad kind of software. Unknown partial
+// results are failures: a limit must be listed here to keep a badge active.
+func ScopeClass(scope, status string) (class, kind string) {
+	k, _, _ := strings.Cut(scope, ":")
+	switch status {
+	case "checked", "skipped":
+		return ScopeOK, ""
+	case "failed":
+		return ScopeFailed, ""
+	}
+	if k == permissionScope {
+		return ScopeFailed, ""
+	}
+	switch status {
+	case "partial":
+		if kind, ok := limitScopes[k]; ok {
+			return ScopeLimit, kind
+		}
+	case "unsupported":
+		// A format or kind of system Stackurity does not read yet (an
+		// unparsed lockfile, a host without a package database).
+		if k == "os-packages" {
+			return ScopeLimit, "systems without a package database"
+		}
+		return ScopeLimit, "files in formats Stackurity does not read yet"
+	}
+	return ScopeFailed, ""
 }
