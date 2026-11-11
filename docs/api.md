@@ -3168,6 +3168,12 @@ Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended
 - `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
 - `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
 - `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.
+- `executive`: what the executive summary on Reports ▸ Outcomes adds, counted with the same rules:
+  - `trend`: the window in periods of `period_days` (7, or 28 for windows over 91 days; the first period may be shorter), oldest first, each with `opened` (findings first seen or reopened in it, each once) and `fixed` (remediated or removed and still resolved, so the periods add up to `resolved`).
+  - `overdue_top`: up to `overdue_limit` (10) active findings past their fix-by date, P1 first and then the oldest fix-by date, with `title`, `priority`, `known_exploited`, the asset, the owner (`owner_kind` `user`, `team` or empty when unassigned, `owner_id`, `owner_name`), `first_seen` and `fix_due`. The total is `open.overdue`.
+  - `by_owner`: active findings per assignee (`kind`, `id`, `name`; empty `kind` is unassigned) with `open`, `overdue` and `urgent` (P1 or P2), most overdue first, at most 15; `owners_total` counts them all. A finding assigned to a person and a team counts under the person.
+  - `impact`: assets with an active P1 or P2 finding (`urgent_assets`), and of those `production` (environment in the risk policy's `production_environments`, any case), `exposed` (the internet exposure risk scoring uses) and `exposed_production`, with `environment_known` and `exposure_known` saying for how many that was recorded.
+  - `exceptions`: `pending` requests to ignore waiting for a decision about issues all on assets the caller can see, with `pending_since` (the oldest); `expired`, findings whose snooze or acceptance ran out in the window, and `expired_still_open`, those still open and active.
 
 Every rate comes with the counts it is computed from and is `null` when there is nothing to divide by.
 

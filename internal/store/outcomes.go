@@ -37,6 +37,9 @@ type OutcomesReport struct {
 	Reopened       OutcomeReopened       `json:"reopened"`
 	Open           OutcomeOpen           `json:"open"`
 	Remediation    *OutcomeRemedies      `json:"remediation"` // nil when no plan or action falls in the window
+	// Executive is the executive view's figures (OutcomesExecutive), set
+	// by GET /reports/outcomes.
+	Executive *OutcomeExecutive `json:"executive,omitempty"`
 }
 
 // OutcomeTiming is the time from detection (or the last reopening) to

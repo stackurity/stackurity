@@ -1562,10 +1562,31 @@ jobs:
     id: "remediation-outcomes",
     title: "Remediation outcomes and why an issue closed",
     section: "Daily work",
-    summary: "What counts as remediation in Outcomes and the evidence report, and what does not.",
+    summary: "The executive summary and the detailed view of Outcomes, and what counts as remediation there and in the evidence report.",
     where: ["Reports", "Outcomes"],
-    keywords: "outcomes remediation time to remedy mttr sla resolved closed withdrawn advisory changed superseded not counted",
+    keywords:
+      "outcomes remediation time to remedy mttr sla resolved closed withdrawn advisory changed superseded not counted executive summary management cto ciso print trend overdue owner team accountability business impact exceptions",
     body: [
+      { h: "Executive summary and Detailed", id: "views" },
+      {
+        p: "**Reports ▸ Outcomes** opens on the **Executive summary**, a short page for managers, CTOs and CISOs. **Detailed** has the full tables: time to remedy, how findings closed, SLA by priority, reopened findings and automatic remediation. Your choice is remembered in this browser. **Print** gives a clean one- or two-page copy of the view on screen, without the menus and filters.",
+      },
+      {
+        table: [
+          ["Executive summary", "What it shows"],
+          ["**Security posture**", "Open P1 (urgent) and P2 (high) issues, known exploited ones, issues past their fix-by date, and how many assets are reporting. The same counts as the Dashboard."],
+          ["**Business impact**", "How many assets have a P1 or P2 issue, and how many of them are production or internet-facing. A line appears only when the environment or exposure is recorded on the assets; an asset with nothing recorded is said, never counted as safe."],
+          ["**Fixing on time (SLA)**", "How many fixes in the period were made by their fix-by date, and how many open issues are past it now."],
+          ["**Remediation trend**", "Issues found or reopened against issues fixed, per week (per 4 weeks for windows over 90 days). The fixed issues add up to **Remediated** in the Detailed view."],
+          ["**Overdue risks**", "The ten most overdue issues, P1 first, with the asset, the owner, how long each has been open and how late it is."],
+          ["**Team accountability**", "Open, P1 or P2, and overdue issues per person or team they are assigned to, with Unassigned on its own row. Each number opens that list."],
+          ["**Exceptions**", "Requests to ignore issues waiting for approval, snoozes and acceptances that ran out in the period, and how many issues are snoozed or accepted now."],
+        ],
+      },
+      {
+        note: "Both views count the same way, as the Dashboard and the evidence report do, and both end with **How these numbers are counted**. Incident response times (time to acknowledge and resolve an incident) are not shown: incidents do not record when they were acknowledged.",
+      },
+      { h: "What counts as remediation", id: "remediation" },
       {
         p: "Every resolved issue records why it closed. Only a change on the asset is remediation: **Outcomes** and the **Evidence report** count those in resolved, time to remedy and SLA, and list the rest apart with a link to them.",
       },

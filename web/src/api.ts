@@ -2014,6 +2014,64 @@ export interface OutcomesReport {
     rollback_actions: Record<string, number> | null;
     recent_failures: OutcomeFailure[] | null;
   } | null;
+  /** The executive view's figures, counted with the report's own rules (missing from older servers). */
+  executive?: OutcomeExecutive;
+}
+
+/** One period of the executive trend: findings first seen or reopened, and fixed (remediated or removed, still resolved). */
+export interface OutcomePeriod {
+  start: string;
+  end: string;
+  opened: number;
+  fixed: number;
+}
+
+/** An active issue past its fix-by date. owner_kind is empty when nobody is assigned. */
+export interface OutcomeOverdue {
+  finding_id: number;
+  key: string;
+  title: string;
+  priority: string;
+  known_exploited: boolean;
+  asset_id: number;
+  asset_name: string;
+  owner_kind: "user" | "team" | "";
+  owner_id: number;
+  owner_name: string;
+  first_seen: string;
+  fix_due: string;
+}
+
+/** One assignee's active issues now. kind is empty for unassigned issues. */
+export interface OutcomeOwner {
+  kind: "user" | "team" | "";
+  id: number;
+  name: string;
+  open: number;
+  overdue: number;
+  /** P1 or P2. */
+  urgent: number;
+}
+
+/** Assets with an active P1 or P2 issue, and how many are production or internet-facing (where that is recorded). */
+export interface OutcomeImpact {
+  urgent_assets: number;
+  environment_known: number;
+  production: number;
+  exposure_known: number;
+  exposed: number;
+  exposed_production: number;
+}
+
+export interface OutcomeExecutive {
+  period_days: number;
+  trend: OutcomePeriod[];
+  overdue_top: OutcomeOverdue[];
+  overdue_limit: number;
+  by_owner: OutcomeOwner[];
+  owners_total: number;
+  impact: OutcomeImpact;
+  exceptions: { pending: number; pending_since: string | null; expired: number; expired_still_open: number };
 }
 
 export interface Feed {

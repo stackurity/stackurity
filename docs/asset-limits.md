@@ -140,7 +140,7 @@ curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
 
 `report_mode` is `full` (the default) or `trial`. In trial mode reports and exports are shortened and watermarked, not refused:
 
-- **Evidence report** (`GET /reports/evidence`, licensed build), **outcomes report** (`GET /reports/outcomes`): every list of rows (exceptions, replica drift, reopened findings, failed remediation actions) keeps its first 10 rows. Summary counts stay complete. The answer carries `trial`: `watermark`, `rows_per_list`, `omitted` (rows left out, per list) and `notes` ("exceptions: trial: 5 more not shown").
+- **Evidence report** (`GET /reports/evidence`, licensed build), **outcomes report** (`GET /reports/outcomes`): every list of rows (exceptions, replica drift, reopened findings, failed remediation actions, and the outcomes executive summary's overdue issues and owners) keeps its first 10 rows. Summary counts stay complete. The answer carries `trial`: `watermark`, `rows_per_list`, `omitted` (rows left out, per list) and `notes` ("exceptions: trial: 5 more not shown").
 - **SBOM export** (`GET /assets/{id}/sbom`): the first 10 components, with metadata properties `stackurity:report_mode` = `trial`, `stackurity:watermark` and `stackurity:trial_note`, and the header `X-Stackurity-Report-Mode: trial`.
 - The dashboard shows the watermark as a banner on report pages (also when printed), and under each shortened list how many more there are. The JSON a report page downloads is the API's answer, watermark included.
 

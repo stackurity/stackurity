@@ -1,23 +1,42 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 import {
   api,
   EVIDENCE_STATE_LABEL,
   PRIORITIES,
+  type FindingSummary,
   type OutcomeFailure,
+  type OutcomeOverdue,
+  type OutcomeOwner,
+  type OutcomePeriod,
   type OutcomeReopen,
   type OutcomeSLA,
   type OutcomesReport,
   type OutcomeTiming,
+  type Overview,
   type ReportTrial,
 } from "../api";
+import { useProject } from "../project";
+import { reportingCount } from "../dashboard";
+import {
+  daysSince,
+  impactLines,
+  ownerLabel,
+  ownerLink,
+  periodLabel,
+  readOutcomesView,
+  saveOutcomesView,
+  slaSentence,
+  trendSummary,
+  type OutcomesView,
+} from "../outcomesExec";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { absTime, dayCount, durationDays, humanize, percent, plural } from "../format";
 import { NOT_REMEDIATION_KINDS } from "../resolution";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { Card, EmptyState, ErrorBox, GoodToKnow, Loading, PageHeader, StatTile } from "../components/ui";
+import { Card, EmptyState, ErrorBox, GoodToKnow, Loading, PageHeader, StatTile, Tabs } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
 
 const WINDOWS = [30, 90, 180, 365] as const;
@@ -82,20 +101,45 @@ export function OutcomesPage() {
     setParams(next, { replace: true });
   };
   const r = res.data?.report;
+  const { project } = useProject();
+  // Executive summary first; each viewer's last choice is remembered.
+  const [view, setView] = useState<OutcomesView>(() => readOutcomesView());
+  const pick = (v: OutcomesView) => {
+    setView(v);
+    saveOutcomesView(v);
+  };
   return (
-    <>
+    <div className={view === "executive" ? "outcomes-exec-page" : undefined}>
       <PageHeader
         help="remediation-outcomes"
         title="Remediation outcomes"
         sub={
           r ? (
             <>
+              {project && <>{project.name} · </>}
               Last {dayCount(res.data!.days)} ({r.from.slice(0, 10)} to {r.to.slice(0, 10)}) · generated {absTime(r.generated_at)}
             </>
           ) : undefined
         }
+        actions={
+          <button type="button" className="btn" onClick={() => window.print()} disabled={!r}>
+            Print
+          </button>
+        }
       />
-      <form className="filters" onSubmit={(e) => e.preventDefault()}>
+      <div className="no-print">
+        <Tabs<OutcomesView>
+          label="Report view"
+          idPrefix="outcomes-"
+          tabs={[
+            { id: "executive", label: "Executive summary" },
+            { id: "detailed", label: "Detailed" },
+          ]}
+          value={view}
+          onChange={pick}
+        />
+      </div>
+      <form className="filters no-print" onSubmit={(e) => e.preventDefault()}>
         <ProjectFilter id="out-project" />
         <div className="field">
           <label htmlFor="out-days">Window</label>
@@ -112,8 +156,40 @@ export function OutcomesPage() {
       <ErrorBox error={res.error} title="Could not build the report" />
       <TrialBanner trial={res.data?.trial} />
       {!r && !res.error && <Loading />}
-      {r && <OutcomesBody r={r} days={res.data!.days} trial={res.data?.trial} />}
-    </>
+      {r && (
+        <div role="tabpanel" id={`outcomes-panel-${view}`} aria-labelledby={`outcomes-tab-${view}`}>
+          {view === "executive" ? (
+            <ExecutiveSummary r={r} days={res.data!.days} trial={res.data?.trial} />
+          ) : (
+            <OutcomesBody r={r} days={res.data!.days} trial={res.data?.trial} />
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * How the numbers are counted, the same in both views; the executive view
+ * adds what its extra figures mean.
+ */
+function CountingNote({ extra }: { extra?: ReactNode }) {
+  return (
+    <GoodToKnow title="How these numbers are counted">
+      <ul>
+        <li>
+          A finding counts as remediated only when something changed on the asset: the component was upgraded, fixed or removed, and it is
+          still resolved. Findings that closed with nothing changed, such as a withdrawn advisory, are listed apart and never counted.
+        </li>
+        <li>Time to remedy runs from detection, or from the last reopening, to resolution.</li>
+        <li>
+          SLA compares each fix with that issue&apos;s fix-by date, the deadline people saw: it starts from the{" "}
+          <Link to="/settings/risk-policy">risk policy</Link>&apos;s days for its priority and follows patch windows, carried-over deadlines
+          and priority changes. Fixes that had no fix-by date are counted apart.
+        </li>
+        {extra}
+      </ul>
+    </GoodToKnow>
   );
 }
 
@@ -214,20 +290,7 @@ function OutcomesBody({ r, days: windowDays, trial }: { r: OutcomesReport; days:
           Resolutions and reopenings are recorded from {absTime(r.events_since!)}; reopen counts before then are not known.
         </p>
       )}
-      <GoodToKnow title="How these numbers are counted">
-        <ul>
-          <li>
-            A finding counts as remediated only when something changed on the asset: the component was upgraded, fixed or removed, and it is
-            still resolved. Findings that closed with nothing changed, such as a withdrawn advisory, are listed apart and never counted.
-          </li>
-          <li>Time to remedy runs from detection, or from the last reopening, to resolution.</li>
-          <li>
-            SLA compares each fix with that issue&apos;s fix-by date, the deadline people saw: it starts from the{" "}
-            <Link to="/settings/risk-policy">risk policy</Link>&apos;s days for its priority and follows patch windows, carried-over deadlines
-            and priority changes. Fixes that had no fix-by date are counted apart.
-          </li>
-        </ul>
-      </GoodToKnow>
+      <CountingNote />
       </Card>
 
       {r.resolved === 0 ? (
@@ -347,5 +410,245 @@ function RemediationOutcomes({ r, trial }: { r: OutcomesReport; trial?: ReportTr
       {(m.recent_failures?.length ?? 0) > 0 && <Table caption="Recent failures" columns={failCols} rows={m.recent_failures ?? []} rowKey={(f) => f.action_id} />}
       <TrialMore trial={trial} list="recent_failures" />
     </Card>
+  );
+}
+
+/**
+ * The executive summary: where things stand, whether fixes land on time, the
+ * trend, what is overdue and who owns it, in words a non-engineer can read
+ * and print. Every number is one the server counted for the Dashboard or the
+ * detailed view; nothing is recounted here.
+ */
+export function ExecutiveSummary({ r, days: windowDays, trial }: { r: OutcomesReport; days: number; trial?: ReportTrial }) {
+  const fs = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
+  const ov = useLoad(() => api.get<Overview>("/overview"), []);
+  const x = r.executive;
+  const bp = fs.data?.by_priority ?? {};
+  const reporting = ov.data ? reportingCount(ov.data.asset_status) : null;
+  const sla = r.sla ?? [];
+  const trend = trendSummary(x?.trend);
+  const impact = impactLines(x?.impact);
+  const urgentSla = sla.filter((s) => s.priority === "P1" || s.priority === "P2");
+
+  const overdueCols: Column<OutcomeOverdue>[] = [
+    {
+      key: "p",
+      header: "Priority",
+      cell: (o) => (
+        <span className="exec-prio">
+          <PriorityBadge priority={o.priority} />
+          {o.known_exploited && <Badge status="kev" tone="crit" label="known exploited" />}
+        </span>
+      ),
+    },
+    {
+      key: "i",
+      header: "Issue",
+      cell: (o) => (
+        <Link to={`/findings/${o.finding_id}`} className="break">
+          {o.title || o.key}
+          {o.title && <span className="mono small muted"> {o.key}</span>}
+        </Link>
+      ),
+    },
+    { key: "a", header: "Asset", cell: (o) => <Link to={`/assets/${o.asset_id}`}>{o.asset_name}</Link> },
+    { key: "o", header: "Owner", cell: (o) => (o.owner_kind ? ownerLabel({ kind: o.owner_kind, name: o.owner_name }) : <span className="muted">Unassigned</span>) },
+    { key: "age", header: "Open for", numeric: true, cell: (o) => durationDays(daysSince(o.first_seen)) },
+    { key: "late", header: "Overdue by", numeric: true, cell: (o) => <strong className="text-bad">{durationDays(daysSince(o.fix_due))}</strong> },
+  ];
+  const ownerCols: Column<OutcomeOwner>[] = [
+    {
+      key: "o",
+      header: "Owner",
+      cell: (o) => (
+        <Link to={ownerLink(o)} className={o.kind ? undefined : "muted"}>
+          {ownerLabel(o)}
+          {o.kind === "team" && <span className="muted small"> (team)</span>}
+        </Link>
+      ),
+    },
+    { key: "open", header: "Open", numeric: true, cell: (o) => n(o.open) },
+    { key: "u", header: "P1 or P2", numeric: true, cell: (o) => n(o.urgent) },
+    {
+      key: "late",
+      header: "Overdue",
+      numeric: true,
+      cell: (o) =>
+        o.overdue > 0 ? (
+          <Link to={ownerLink(o, true)}>
+            <strong className="text-bad">{n(o.overdue)}</strong>
+          </Link>
+        ) : (
+          n(o.overdue)
+        ),
+    },
+  ];
+  const trendCols: Column<OutcomePeriod>[] = [
+    { key: "p", header: x?.period_days === 28 ? "4 weeks" : "Week", cell: (p) => periodLabel(p) },
+    { key: "o", header: "Found or reopened", numeric: true, cell: (p) => n(p.opened) },
+    { key: "f", header: "Fixed", numeric: true, cell: (p) => n(p.fixed) },
+  ];
+
+  return (
+    <div className="outcomes-exec">
+      <Card title="Security posture" description="Where things stand now, across the assets you can see.">
+        <ErrorBox error={fs.error ?? ov.error} title="Could not load the current counts" />
+        <div className="tiles exec-tiles">
+          <StatTile label="P1 urgent" value={fs.data ? n(bp.P1) : "…"} tone={(bp.P1 ?? 0) > 0 ? "bad" : undefined} sub="open, not snoozed or accepted" />
+          <StatTile label="P2 high" value={fs.data ? n(bp.P2) : "…"} sub="open, not snoozed or accepted" />
+          <StatTile
+            label="Known exploited"
+            value={fs.data ? n(fs.data.known_exploited) : "…"}
+            tone={(fs.data?.known_exploited ?? 0) > 0 ? "crit" : undefined}
+            sub="known to be used in attacks"
+          />
+          <StatTile label="Overdue now" value={n(r.open.overdue)} tone={r.open.overdue > 0 ? "bad" : undefined} sub={`past the fix-by date, of ${n(r.open.active)} open`} />
+          <StatTile
+            label="Assets reporting"
+            value={reporting ? share(reporting.reporting, reporting.total) : "…"}
+            sub={reporting && reporting.stale > 0 ? `${plural(reporting.stale, "asset")} stopped reporting: not checked` : "coverage of the estate"}
+          />
+        </div>
+        {impact.length > 0 && (
+          <>
+            <h3 className="exec-h">Business impact</h3>
+            <ul className="exec-lines">
+              {impact.map((line) => (
+                <li key={line}>{line}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </Card>
+
+      <div className="grid-2 exec-grid">
+        <Card title="Fixing on time (SLA)" description="Whether fixes in this period were made by each issue's fix-by date, the deadline people saw.">
+          <p className="exec-lead">{slaSentence(sla)}</p>
+          <p>
+            {r.open.overdue > 0 ? (
+              <>
+                <Link to="/fixes/issues?overdue=true&state=active">
+                  <strong className="text-bad">{plural(r.open.overdue, "open issue")}</strong>
+                </Link>{" "}
+                {r.open.overdue === 1 ? "is" : "are"} past {r.open.overdue === 1 ? "its" : "their"} fix-by date now.
+              </>
+            ) : (
+              "No open issue is past its fix-by date."
+            )}
+          </p>
+          {urgentSla.some((s) => s.resolved > 0 || s.open_active > 0) && (
+            <ul className="exec-lines small">
+              {urgentSla.map((s) => (
+                <li key={s.priority}>
+                  <PriorityBadge priority={s.priority} /> fixed in time: {share(s.resolved_within_sla, s.resolved)} · overdue now: {n(s.open_overdue)}
+                </li>
+              ))}
+            </ul>
+          )}
+        </Card>
+
+        <Card title="Remediation trend" description={`Issues found or reopened against issues fixed, over the last ${dayCount(windowDays)}.`}>
+          {!x ? (
+            <p className="muted">This server does not report the trend yet. The Detailed view has the totals.</p>
+          ) : (
+            <>
+              <p className="exec-lead">
+                {trend.direction === "worse" ? <strong>{trend.text}</strong> : trend.text}
+              </p>
+              {trend.direction !== null && <Table caption="Found and fixed per period" columns={trendCols} rows={x.trend} rowKey={(p) => p.start} />}
+            </>
+          )}
+        </Card>
+      </div>
+
+      {x && (
+        <Card title="Overdue risks" description="The most overdue issues now, most urgent first, with who owns each one and how long it has been open.">
+          {x.overdue_top.length === 0 ? (
+            <p className="muted">Nothing is past its fix-by date.</p>
+          ) : (
+            <>
+              <Table caption="Most overdue issues" columns={overdueCols} rows={x.overdue_top} rowKey={(o) => o.finding_id} />
+              {r.open.overdue > x.overdue_top.length && (
+                <p className="small">
+                  {x.overdue_top.length} of {n(r.open.overdue)} shown. <Link to="/fixes/issues?overdue=true&state=active">See every overdue issue</Link>.
+                </p>
+              )}
+              <TrialMore trial={trial} list="overdue_top" />
+            </>
+          )}
+        </Card>
+      )}
+
+      {x && (
+        <div className="grid-2 exec-grid">
+          <Card title="Team accountability" description="Open and overdue issues by the person or team they are assigned to.">
+            {x.by_owner.length === 0 ? (
+              <p className="muted">No open issues.</p>
+            ) : (
+              <>
+                <Table caption="Open and overdue issues by owner" columns={ownerCols} rows={x.by_owner} rowKey={(o) => `${o.kind}-${o.id}`} />
+                {x.owners_total > x.by_owner.length && (
+                  <p className="small muted">
+                    The {x.by_owner.length} owners with the most overdue issues are shown, of {n(x.owners_total)}.
+                  </p>
+                )}
+                <TrialMore trial={trial} list="by_owner" />
+              </>
+            )}
+          </Card>
+
+          <Card title="Exceptions" description="Issues people chose not to fix for now: requests waiting for a decision, and exceptions that ran out.">
+            <ul className="exec-lines">
+              <li>
+                {x.exceptions.pending > 0 ? (
+                  <>
+                    <Link to="/approvals">
+                      <strong>{plural(x.exceptions.pending, "request")}</strong>
+                    </Link>{" "}
+                    to ignore issues {x.exceptions.pending === 1 ? "is" : "are"} waiting for approval
+                    {x.exceptions.pending_since && <>, the oldest since {absTime(x.exceptions.pending_since)}</>}.
+                  </>
+                ) : (
+                  "No request to ignore issues is waiting for approval."
+                )}
+              </li>
+              <li>
+                {x.exceptions.expired > 0 ? (
+                  <>
+                    {plural(x.exceptions.expired, "snoozed or accepted issue")} ran out in this period and went back for review;{" "}
+                    {n(x.exceptions.expired_still_open)} {x.exceptions.expired_still_open === 1 ? "is" : "are"} still open.
+                  </>
+                ) : (
+                  "No snooze or acceptance ran out in this period."
+                )}
+              </li>
+              <li>
+                {plural(r.open.excepted, "open issue")} {r.open.excepted === 1 ? "is" : "are"} snoozed or accepted now, so no fix-by date
+                applies.
+              </li>
+            </ul>
+          </Card>
+        </div>
+      )}
+
+      <CountingNote
+        extra={
+          <>
+            <li>
+              Open, P1 and P2 count issues nobody snoozed or accepted, as on the Dashboard; overdue means past the fix-by date. Known exploited
+              and assets reporting are the Dashboard&apos;s own counts.
+            </li>
+            <li>
+              The trend&apos;s fixed issues are the remediated ones above, so they add up to the Detailed view&apos;s Remediated total. Found or
+              reopened counts each issue first seen or reopened in a period once.
+            </li>
+            <li>
+              Owner is the person or team an issue is assigned to; an issue assigned to both counts under the person. Production means the
+              environments the risk policy treats as production, and internet-facing is what was set on the asset or seen by a collector.
+            </li>
+          </>
+        }
+      />
+    </div>
   );
 }
