@@ -1,0 +1,264 @@
+/* Shared table and list helpers: row density, active-filter chips, skeleton
+   placeholders, truncated names. Loaded after styles.css (main.tsx). See
+   web/UI-PATTERNS.md. */
+
+/* --- row density (components/Density.tsx). Default adds no class, so a
+   table looks exactly as it did; the others change row padding and text
+   size only, through these variables. */
+
+.table-wrap.density-comfortable {
+  --cell-py: 13px;
+  --cell-px: 14px;
+  --cell-fs: 14.5px;
+}
+.table-wrap.density-compact {
+  --cell-py: 4px;
+  --cell-px: 10px;
+  --cell-fs: 13px;
+}
+.table-wrap:is(.density-comfortable, .density-compact) > .table > * > tr:not(.expanded) > :is(td, th) {
+  padding: var(--cell-py) var(--cell-px);
+}
+.table-wrap:is(.density-comfortable, .density-compact) > .table > tbody > tr:not(.expanded) > td {
+  font-size: var(--cell-fs);
+}
+
+.table-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  margin: 0 0 var(--s2);
+}
+.table-toolbar-main {
+  flex: 1 1 20rem;
+  min-width: 0;
+}
+.density-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.density-label {
+  margin-right: 4px;
+}
+.density-option {
+  font: inherit;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text-2);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  padding: 2px 9px;
+  min-height: 26px;
+  cursor: pointer;
+}
+.density-option:first-of-type {
+  border-radius: var(--radius-sm) 0 0 var(--radius-sm);
+}
+.density-option:last-of-type {
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.density-option + .density-option {
+  margin-left: -3px;
+}
+.density-option:hover {
+  background: var(--surface-2);
+}
+.density-option.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--text);
+  position: relative;
+}
+@media print {
+  .density-control {
+    display: none;
+  }
+}
+
+/* --- active filters as chips (components/FilterChips.tsx) */
+
+.filter-chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.filter-chips ul {
+  display: contents;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.filter-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  max-width: 100%;
+  padding: 2px 2px 2px 10px;
+  border: 1px solid var(--accent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text);
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.filter-chip > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.filter-chip-remove {
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+}
+.filter-chip-remove:hover {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+  color: var(--text);
+}
+
+/* --- skeleton placeholders (components/Skeleton.tsx) */
+
+.skeleton-bar {
+  display: block;
+  height: 0.8em;
+  width: 60%;
+  margin: 0.35em 0;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--surface-3) 0%, var(--surface-2) 50%, var(--surface-3) 100%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+.skeleton-table th .skeleton-bar {
+  width: 45%;
+  height: 0.7em;
+}
+.skeleton-table tr:nth-child(3n + 1) td:nth-child(odd) .skeleton-bar,
+.skeleton-cards .skeleton-card:nth-child(3n + 1) .skeleton-bar {
+  width: 72%;
+}
+.skeleton-table tr:nth-child(3n + 2) td .skeleton-bar,
+.skeleton-cards .skeleton-card:nth-child(3n + 2) .skeleton-bar {
+  width: 50%;
+}
+.skeleton-table td:first-child .skeleton-bar {
+  width: 80%;
+}
+.skeleton-cards {
+  display: grid;
+  gap: var(--s2);
+  margin-bottom: var(--s4);
+}
+.skeleton-card {
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.skeleton-card .skeleton-title {
+  height: 1em;
+  width: 40%;
+}
+@keyframes skeleton-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-bar {
+    animation: none;
+    background: var(--surface-3);
+  }
+}
+
+/* --- long names and identifiers (components/Truncate.tsx): the start
+   gives way to an ellipsis, the end (a version, a file name) stays. */
+
+.trunc {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  min-width: 0;
+  vertical-align: bottom;
+}
+.trunc-text {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 100%;
+  white-space: nowrap;
+}
+.trunc-head {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 2ch;
+}
+.trunc-tail {
+  flex: none;
+}
+/* With keyboard focus the whole value shows, wrapping if it must. */
+.trunc-text:focus-visible {
+  display: inline;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.trunc-text:focus-visible .trunc-head {
+  overflow: visible;
+}
+.table td .trunc {
+  max-width: min(34rem, 60vw);
+}
+.copy-value {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  min-width: 22px;
+  height: 22px;
+  padding: 0 3px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  opacity: 0;
+  align-self: center;
+}
+.trunc:hover .copy-value,
+.trunc:focus-within .copy-value,
+.copy-value:focus-visible {
+  opacity: 1;
+}
+.copy-value:hover {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text);
+}
+/* Touch screens have no hover: the button stays visible. */
+@media (hover: none) {
+  .copy-value {
+    opacity: 1;
+  }
+}
+@media print {
+  .copy-value {
+    display: none;
+  }
+}

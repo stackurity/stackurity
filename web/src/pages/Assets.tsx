@@ -9,7 +9,11 @@ import { assetKindLabel } from "../format";
 import { AssetKindBadge, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { InventorySummary } from "./InventorySummary";
-import { Code, EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { Code, EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { FilterChips, TableToolbar } from "../components/FilterChips";
+import { TableSkeleton } from "../components/Skeleton";
+import { TruncatedName } from "../components/Truncate";
+import { activeFilters, withoutFilter, withoutFilters, type FilterDef } from "../filterChips";
 
 const LIMIT = 50;
 
@@ -66,6 +70,20 @@ export function AssetsPage() {
   );
 
   const filtered = Boolean(kind || environment || status || team || qParam || reboot || exposed || unfiled);
+  const filterDefs: FilterDef[] = [
+    { key: "q", label: "Name contains" },
+    { key: "kind", label: "Kind", format: assetKindLabel },
+    { key: "environment", label: "Environment" },
+    { key: "status", label: "Reporting", format: (v) => ASSET_STATUS_LABEL[v] ?? v },
+    { key: "owner_team_id", label: "Owner team", format: (v) => teams.data?.items.find((t) => String(t.id) === v)?.name ?? `team #${v}` },
+    { key: "exposed", label: "Exposure", format: (v) => (v === "true" ? "exposed" : "not exposed") },
+    { key: "reboot_required", label: "Reboot pending", flag: true },
+    { key: "unfiled", label: "Not in a project", flag: true },
+  ];
+  const clearFilters = () => {
+    setQ("");
+    setParams(withoutFilters(params, filterDefs), { replace: true });
+  };
 
   const columns: Column<Asset>[] = [
     {
@@ -89,7 +107,7 @@ export function AssetsPage() {
                     : "";
         return (
           <>
-            <Link to={`/assets/${a.id}`}>{a.name}</Link>
+            <TruncatedName value={a.name} to={`/assets/${a.id}`} />
             {at.reboot_required === "true" && (
               <>
                 {" "}
@@ -233,29 +251,34 @@ export function AssetsPage() {
             <input type="checkbox" checked={unfiled} onChange={(e) => update({ unfiled: e.target.checked ? "true" : "" })} /> Not in a project
           </label>
         )}
-        {filtered && (
-          <button
-            type="button"
-            className="btn btn-link"
-            onClick={() => {
-              setQ("");
-              setParams(new URLSearchParams(), { replace: true });
-            }}
-          >
-            Clear filters
-          </button>
-        )}
       </form>
+      <TableToolbar>
+        <FilterChips
+          filters={activeFilters(params, filterDefs)}
+          onRemove={(key) => {
+            if (key === "q") setQ("");
+            setParams(withoutFilter(params, key), { replace: true });
+          }}
+          onClear={clearFilters}
+        />
+      </TableToolbar>
 
       <ErrorBox error={res.error} title="Could not load assets" />
-      {!res.data && !res.error && <Loading />}
+      {!res.data && !res.error && <TableSkeleton columns={projects.length > 0 ? 8 : 7} label="Loading assets…" />}
       {res.data && res.data.items.length === 0 && (
         filtered ? (
-          <EmptyState title="No assets match these filters">
-            <p>Try clearing a filter.</p>
-          </EmptyState>
+          <EmptyState
+            title="No assets match these filters"
+            why="No asset has every filter that is on. Remove one above, or clear them all."
+            action={{ label: "Clear filters", permitted: true, onClick: clearFilters }}
+          />
         ) : (
-          <EmptyState title="No assets yet" help="add-server" helpLabel="Add a server">
+          <EmptyState
+            title="No assets yet"
+            help="add-server"
+            helpLabel="How adding a server works"
+            action={{ label: "Add server", to: "/assets/add", permitted: can("admin"), otherwise: "An administrator can add servers." }}
+          >
             <p>
               Run <Code>stackurity agent --once</Code> on a host or <Code>stackurity scan DIR</Code> in CI, or add a Git
               repository under Integrations.

@@ -40,8 +40,8 @@ import { AddToSlackButton, parseAddresses, RouteQuestions, SmtpProviderPicker, S
  * 1 name a project, 2 add an asset, 3 the first check, with its numbers as
  * they arrive, 4 the result: what was found and the top fix, 5 alerts,
  * 6 invite people. Each step can be skipped; the Dashboard keeps a checklist
- * (which also asks to connect an AI assistant) until every step is done or
- * it is hidden.
+ * (components/SetupProgress.tsx, with more steps than the flow) until an
+ * admin hides it.
  */
 
 type Step = SetupStep;
@@ -92,8 +92,10 @@ export function OnboardingPage() {
     const ok = await act.run(() => api.put("/onboarding", { state: "skipped" }));
     if (ok !== undefined) navigate(project ? `/?project=${project.id}` : "/");
   };
+  // The flow ends, but the Dashboard's checklist stays for the steps it
+  // does not cover (owners, the risk policy) until an admin hides it.
   const finish = async () => {
-    await act.run(() => api.put("/onboarding", { state: "done" }));
+    await act.run(() => api.put("/onboarding", { state: "skipped" }));
     if (project) choose(project.id);
     navigate(project ? `/?project=${project.id}` : "/");
   };
@@ -979,74 +981,5 @@ function InviteStep({ project, onFinish, pending }: { project: Project; onFinish
   );
 }
 
-/**
- * The Dashboard's checklist while setup is not done: what is left, each a link back
- * into the flow. Admins only.
- */
-export function SetupChecklist({ o, onChange, compact }: { o: Onboarding; onChange: () => void; compact?: boolean }) {
-  const act = useAction();
-  const { me } = useAuth();
-  // Each item is one click to the screen that does it. A project comes
-  // first only while there is none: adding a server needs one.
-  const items: { done: boolean; text: string; to: string }[] = [
-    ...(o.steps.project ? [] : [{ done: false, text: "Create a project", to: "/get-started?step=project" }]),
-    { done: o.steps.asset, text: "Add a server or repo for its first check", to: o.steps.project ? "/get-started?step=asset" : "/assets/add" },
-    { done: Boolean(o.steps.assistant), text: "Connect an AI assistant", to: "/integrations/ai-assistants" },
-    { done: o.steps.notifications, text: "Choose where alerts about new issues go", to: "/integrations" },
-    { done: o.steps.invite, text: "Invite your team", to: "/people" },
-    // Recommended for admins: their account can change everything. A
-    // passkey is offered first there; they come back here once it is set up.
-    { done: Boolean(me?.user?.mfa_enabled), text: "Set up two-factor (a passkey takes a minute)", to: "/account?return=%2F#mfa" },
-  ];
-  const left = items.filter((i) => !i.done).length;
-  const hide = async () => {
-    const ok = await act.run(() => api.put("/onboarding", { state: "done" }));
-    if (ok !== undefined) onChange();
-  };
-  const list = (
-    <ul className="setup-list">
-      {items.map((i) => (
-        <li key={i.text} className={i.done ? "done" : undefined}>
-          <span className="onboard-dot" aria-hidden="true">
-            {i.done ? "✓" : ""}
-          </span>
-          {i.done ? (
-            <span>
-              {i.text}
-              <span className="sr-only"> (done)</span>
-            </span>
-          ) : (
-            <Link to={i.to}>{i.text}</Link>
-          )}
-        </li>
-      ))}
-    </ul>
-  );
-  // On the Dashboard it is one line under what needs you, opened on demand.
-  if (compact)
-    return (
-      <details className="setup-compact">
-        <summary>
-          <span className="onboard-dot" aria-hidden="true" />
-          {plural(left, "setup step")} left
-        </summary>
-        <ErrorBox error={act.error} title="Could not hide the checklist" />
-        {list}
-        <button type="button" className="btn btn-link btn-sm" onClick={hide} disabled={act.pending}>
-          Hide the checklist
-        </button>
-      </details>
-    );
-  return (
-    <section className="card setup-checklist" aria-labelledby="setup-h">
-      <div className="card-head">
-        <h2 id="setup-h">Finish setting up ({plural(left, "step")} left)</h2>
-        <button type="button" className="btn btn-link" onClick={hide} disabled={act.pending}>
-          Hide
-        </button>
-      </div>
-      <ErrorBox error={act.error} title="Could not hide the checklist" />
-      {list}
-    </section>
-  );
-}
+/** The Dashboard's checklist, in its own file so the Dashboard can show it without the flow. */
+export { SetupChecklist } from "../components/SetupProgress";

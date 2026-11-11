@@ -42,11 +42,11 @@ Every refused asset is remembered (kind, name, which collector sent it, how many
 
 - A banner tells everyone in the organisation when it is at its limit, with a link for admins.
 - **Settings → Usage** (admins) shows monitored assets against the limit, by kind, how many are stale, workloads (not counted), and the assets refused recently.
-- **Settings → Workspaces** (instance administrators) shows each organisation's usage and sets its limit.
+- **Admin → Workspaces** (instance administrators) shows each organisation's usage and sets its limit.
 
 ## Setting a limit
 
-Instance administrators set the limit under **Settings → Workspaces**, or with the API:
+Instance administrators set the limit under **Admin → Workspaces**, or with the API:
 
 ```sh
 curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
@@ -67,7 +67,7 @@ Every path that creates an asset goes through one place in the store, which runs
 - At the limit, creating a project, or taking one out of the archive, answers `402` with code `project_limit`: *this organisation has 3 of 3 projects allowed, so no new project can be made. Existing projects are kept.*
 - A lower limit never archives or deletes a project: an organisation with more projects than its limit keeps them all, and only new ones are refused. Archiving a project makes room.
 - Checked in the transaction that adds the project, under a per-organisation lock, so two admins cannot both take the last place.
-- **Settings → Usage** shows projects against the limit, and **Settings → Workspaces** shows and sets it.
+- **Settings → Usage** shows projects against the limit, and **Admin → Workspaces** shows and sets it.
 
 ```sh
 curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
@@ -140,7 +140,7 @@ curl -X PATCH https://stackurity.example/api/v1/admin/workspaces/2 \
 
 `report_mode` is `full` (the default) or `trial`. In trial mode reports and exports are shortened and watermarked, not refused:
 
-- **Evidence report** (`GET /reports/evidence`, licensed build), **outcomes report** (`GET /reports/outcomes`): every list of rows (exceptions, replica drift, reopened findings, failed remediation actions) keeps its first 10 rows. Summary counts stay complete. The answer carries `trial`: `watermark`, `rows_per_list`, `omitted` (rows left out, per list) and `notes` ("exceptions: trial: 5 more not shown").
+- **Evidence report** (`GET /reports/evidence`, licensed build), **outcomes report** (`GET /reports/outcomes`): every list of rows (exceptions, replica drift, reopened findings, failed remediation actions, and the outcomes executive summary's overdue issues and owners) keeps its first 10 rows. Summary counts stay complete. The answer carries `trial`: `watermark`, `rows_per_list`, `omitted` (rows left out, per list) and `notes` ("exceptions: trial: 5 more not shown").
 - **SBOM export** (`GET /assets/{id}/sbom`): the first 10 components, with metadata properties `stackurity:report_mode` = `trial`, `stackurity:watermark` and `stackurity:trial_note`, and the header `X-Stackurity-Report-Mode: trial`.
 - The dashboard shows the watermark as a banner on report pages (also when printed), and under each shortened list how many more there are. The JSON a report page downloads is the API's answer, watermark included.
 

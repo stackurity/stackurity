@@ -76,6 +76,8 @@
   --p4-border: #cbd5e1;
 
   --danger: #c4261b;
+  /* A solid destructive button's fill: white text on it stays 4.5:1 in both themes. */
+  --danger-solid: #c4261b;
   --radius: 8px;
   --radius-sm: 6px;
   --shadow-sm: 0 1px 2px rgba(17, 24, 39, 0.06);
@@ -148,6 +150,7 @@
     --p4-border: #475569;
 
     --danger: #ff7a70;
+    --danger-solid: #c4261b;
     --shadow-sm: none;
     --shadow: 0 1px 0 rgba(0, 0, 0, 0.3);
     --table-edge: rgba(0, 0, 0, 0.6);
@@ -395,13 +398,19 @@ code,
   white-space: nowrap;
 }
 .nav-group {
-  margin-top: 2px;
+  margin-top: var(--s2);
 }
+/* A group heading: a quiet label that opens and closes its items. */
 .nav-group-head {
+  padding: 4px 10px;
+  font-size: 11.5px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sidebar-muted);
 }
 .nav-group.has-active > .nav-group-head {
-  color: #ffffff;
+  color: var(--sidebar-text);
 }
 .nav-chevron {
   display: inline-flex;
@@ -462,6 +471,15 @@ code,
 .shell-collapsed .nav-item,
 .shell-collapsed .nav-collapse {
   justify-content: center;
+}
+/* The icon rail shows every item; a line keeps the groups apart. */
+.shell-collapsed .nav-group-head {
+  display: none;
+}
+.shell-collapsed .nav-group {
+  margin-top: var(--s1);
+  padding-top: var(--s1);
+  border-top: 1px solid var(--sidebar-line);
 }
 .shell-collapsed .nav-count {
   position: absolute;
@@ -539,6 +557,26 @@ code,
   .sidebar .nav-collapse {
     justify-content: center;
   }
+  /* The icon rail shows every item; a line keeps the groups apart. */
+  .sidebar .nav-group-head {
+    display: none;
+  }
+  .sidebar .nav-group-items[hidden] {
+    display: block;
+  }
+  .sidebar .nav-group {
+    margin-top: var(--s1);
+    padding-top: var(--s1);
+    border-top: 1px solid var(--sidebar-line);
+  }
+  .sidebar .nav-count {
+    position: absolute;
+    top: 0;
+    right: 2px;
+    min-width: 16px;
+    line-height: 15px;
+    font-size: 10px;
+  }
   .sidebar .brand {
     justify-content: center;
     padding-left: 0;
@@ -613,6 +651,9 @@ code,
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: var(--s2);
+}
+.crumb-group {
+  font-weight: 600;
 }
 
 .card {
@@ -790,6 +831,7 @@ code,
 .badge-good {
   background: var(--good-bg);
   color: var(--good-fg);
+  border-color: color-mix(in srgb, var(--good-dot) 45%, transparent);
 }
 .badge-good .badge-dot {
   background: var(--good-dot);
@@ -822,6 +864,7 @@ code,
 .badge-info {
   background: var(--info-bg);
   color: var(--info-fg);
+  border-color: var(--border);
 }
 .badge-info .badge-dot {
   background: var(--info-dot);
@@ -1321,12 +1364,12 @@ select:disabled {
   border-color: var(--accent-hover);
 }
 .btn-danger {
-  background: var(--danger);
-  border-color: var(--danger);
+  background: var(--danger-solid);
+  border-color: var(--danger-solid);
   color: #fff;
 }
 .btn-danger:hover {
-  background: var(--danger);
+  background: var(--danger-solid);
   filter: brightness(1.08);
 }
 .btn-link,
@@ -1671,8 +1714,9 @@ details.json pre {
 .advisory {
   margin-bottom: 12px;
 }
+/* Dimmed with colour, not opacity: muted text at 75% opacity fell below 4.5:1. */
 .advisory.withdrawn {
-  opacity: 0.75;
+  color: var(--text-2);
   border-style: dashed;
 }
 .ref-list {
@@ -2493,6 +2537,37 @@ details.json pre {
   margin-bottom: 16px;
 }
 
+/* Outcomes, executive summary: short, readable, printable on one or two pages. */
+.outcomes-exec .exec-tiles {
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  margin-bottom: var(--s4);
+}
+.outcomes-exec .exec-h {
+  font-size: 0.95rem;
+  margin: 0 0 var(--s2);
+}
+.outcomes-exec .exec-lines {
+  margin: 0 0 var(--s2);
+  padding-left: 1.2em;
+}
+.outcomes-exec .exec-lines li + li {
+  margin-top: 4px;
+}
+.outcomes-exec .exec-lead {
+  font-size: 1rem;
+  margin: 0 0 var(--s2);
+}
+.outcomes-exec .exec-prio {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+@media (max-width: 760px) {
+  .outcomes-exec .exec-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 @media print {
   /* Always print with the light palette, whatever the screen theme. */
   :root {
@@ -2556,6 +2631,36 @@ details.json pre {
   }
   .table-wrap {
     overflow: visible;
+    max-height: none;
+  }
+  /* Outcomes' executive summary: one or two pages, no controls. */
+  .outcomes-exec-page {
+    font-size: 10.5pt;
+  }
+  .outcomes-exec-page .page-head {
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .card {
+    padding: 10px 12px;
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .exec-tiles {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 6px;
+  }
+  .outcomes-exec .tile {
+    padding: 6px 8px;
+  }
+  .outcomes-exec .exec-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .outcomes-exec .table td,
+  .outcomes-exec .table th {
+    padding: 3px 6px;
+  }
+  .outcomes-exec .table-wrap {
     max-height: none;
   }
   a {
@@ -3640,6 +3745,18 @@ h6.md-h {
     margin: 0 0 var(--s3);
     padding: 0;
   }
+  .sheet-group-title {
+    margin: var(--s2) 0 0;
+    padding: 0 var(--s2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sheet-group .sheet-list {
+    margin-bottom: var(--s1);
+  }
   .sheet-item {
     display: flex;
     align-items: center;
@@ -4075,7 +4192,8 @@ h6.md-h {
   font-weight: 650;
   overflow-wrap: anywhere;
 }
-/* --- Dashboard: four fixed blocks, top to bottom (pages/Dashboard.tsx) */
+/* --- Dashboard: four bands, top to bottom (pages/Dashboard.tsx): Security posture,
+   Needs your attention, Recommended actions, Security trends. */
 
 .text-good {
   color: var(--good-fg);
@@ -4286,6 +4404,77 @@ h6.md-h {
 .dash-updates {
   margin: var(--s2) 0 0;
 }
+/* Posture and attention weigh more than trends: larger title, firmer edge. */
+.dash-posture,
+.dash-needs {
+  border-color: var(--border-strong);
+}
+.dash-posture .dash-block-head h2,
+.dash-needs .dash-block-head h2 {
+  font-size: 18px;
+}
+.dash-band-quiet {
+  background: transparent;
+  box-shadow: none;
+}
+.dash-band-quiet .dash-block-head h2 {
+  font-size: 15px;
+}
+.dash-band-quiet .dash-block-icon {
+  width: 26px;
+  height: 26px;
+  background: transparent;
+}
+.home-tile-of {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.home-tile-sub {
+  overflow-wrap: anywhere;
+}
+.dash-posture-tiles {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.dash-posture-details {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+.dash-sub-link {
+  font-weight: 400;
+}
+/* Opened (de-emphasis ink) and fixed (accent) side by side in one week. */
+.weekbar-track.weekbar-pair {
+  gap: 2px;
+  width: 22px;
+}
+.weekbar-pair .weekbar-fill {
+  width: 10px;
+}
+.weekbar-fill.weekbar-opened {
+  background: var(--muted);
+}
+.weekbar-key {
+  margin: 4px 0 0;
+}
+.weekbar-swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  margin-left: 6px;
+  border-radius: 2px;
+  background: var(--accent);
+  vertical-align: -1px;
+}
+.weekbar-swatch:first-child {
+  margin-left: 0;
+}
+.weekbar-swatch.weekbar-opened {
+  background: var(--muted);
+}
 /* The setup checklist as one line under "Needs you now". */
 .setup-compact {
   padding: var(--s2) var(--s4);
@@ -4295,8 +4484,9 @@ h6.md-h {
 }
 .setup-compact summary {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: var(--s2);
+  gap: var(--s2) var(--s3);
   min-height: 32px;
   cursor: pointer;
   font-weight: 600;
@@ -4448,6 +4638,23 @@ h6.md-h {
 .fix-what .hint {
   margin: var(--s2) 0 0;
 }
+/* A fix's expected impact: short label and value pairs that wrap on narrow screens. */
+.fix-impact {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s5);
+  margin: var(--s3) 0 0;
+}
+.fix-impact dt {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.fix-impact dd {
+  margin: 0;
+}
 .fix-found-in {
   margin: var(--s2) 0 2px;
 }
@@ -4515,6 +4722,68 @@ h6.md-h {
 }
 .asset-details[open] > summary {
   margin-bottom: var(--s3);
+}
+/* A card that opens and closes (DisclosureCard): the finding page's sections. */
+.disclosure > summary {
+  cursor: pointer;
+  list-style: none;
+  margin-bottom: 0;
+  min-height: 44px;
+  position: relative;
+  padding-left: 22px;
+}
+.disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.disclosure > summary::before {
+  content: "";
+  position: absolute;
+  left: 2px;
+  top: 7px;
+  width: 7px;
+  height: 7px;
+  border-right: 2px solid var(--muted);
+  border-bottom: 2px solid var(--muted);
+  transform: rotate(-45deg);
+  transition: transform 0.15s ease;
+}
+.disclosure[open] > summary::before {
+  transform: rotate(45deg);
+}
+.disclosure > summary:hover h2 {
+  color: var(--link);
+}
+.disclosure > summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 4px;
+  border-radius: var(--radius);
+}
+.disclosure[open] > summary {
+  margin-bottom: var(--s3);
+}
+.disclosure > summary h2 {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.disclosure-badges {
+  font-weight: normal;
+}
+.disclosure-body > .advisory {
+  box-shadow: none;
+}
+.finding-what {
+  font-size: 15px;
+  margin: 0 0 var(--s3);
+}
+.finding-glance {
+  margin-bottom: var(--s3);
+}
+@media (prefers-reduced-motion: reduce) {
+  .disclosure > summary::before {
+    transition: none;
+  }
 }
 .danger-zone {
   margin-top: var(--s5);
@@ -4938,7 +5207,7 @@ h6.md-h {
   color: var(--accent-strong);
 }
 .onboard-steps li.done .onboard-dot,
-.setup-list li.done .onboard-dot {
+.setup-row.done .onboard-dot {
   border-color: var(--good-fg);
   background: var(--good-bg);
   color: var(--good-fg);
@@ -5142,27 +5411,74 @@ h6.md-h {
   margin: 0;
   font-size: 1.05rem;
 }
+/* Setup steps: tick, why and what you get, the button on the right. */
 .setup-list {
   list-style: none;
   margin: var(--s2) 0 0;
   padding: 0;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--s2) var(--s4);
 }
-.setup-list li {
+.setup-row {
   display: flex;
-  align-items: center;
-  gap: var(--s2);
-  min-height: 44px;
+  align-items: flex-start;
+  gap: var(--s3);
+  padding: var(--s3) 0;
+  border-top: 1px solid var(--border);
 }
-.setup-list li.done {
+.setup-row:first-child {
+  border-top: 0;
+}
+.setup-row-text {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.setup-row-why {
+  color: var(--text);
+}
+.setup-row-after,
+.setup-row-locked {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.setup-row.done strong,
+.setup-row.done .setup-row-why {
   color: var(--muted);
 }
-.setup-list a {
+.setup-row > .btn {
+  flex: none;
+  align-self: center;
+}
+.setup-progress {
   display: inline-flex;
   align-items: center;
-  min-height: 44px;
+  gap: var(--s2);
+  font-weight: 400;
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+.setup-checklist > .setup-progress {
+  display: flex;
+  margin-top: var(--s2);
+}
+.setup-progress-track {
+  display: inline-block;
+  width: 160px;
+  max-width: 40vw;
+  height: 8px;
+  background: var(--surface-3);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.setup-progress-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  border-radius: 999px;
+}
+.setup-progress-fill.complete {
+  background: var(--good-dot);
 }
 .confirm-card {
   border-color: var(--accent);
@@ -5190,8 +5506,12 @@ h6.md-h {
   .onboard-steps li.current {
     flex: 4;
   }
-  .setup-list {
-    grid-template-columns: 1fr;
+  .setup-row {
+    flex-wrap: wrap;
+  }
+  .setup-row > .btn {
+    margin-left: calc(28px + var(--s3));
+    align-self: flex-start;
   }
   .onboard .btn-sm,
   .setup-checklist .btn,
@@ -6731,6 +7051,56 @@ a.cov-chip:hover {
 }
 .ask-tool {
   margin: 0;
+}
+/* A structured answer: the recommendation, then sections that open on a click. */
+.ask-lead {
+  padding: 8px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+}
+.ask-lead-label {
+  display: block;
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text-2);
+  margin-bottom: 2px;
+}
+.ask-lead .ask-answer > :last-child {
+  margin-bottom: 0;
+}
+.ask-sec {
+  border-top: 1px solid var(--border);
+  padding: 4px 0;
+}
+.ask-sec > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text-2);
+  padding: 2px 0;
+}
+.ask-sec[open] > summary {
+  margin-bottom: 4px;
+}
+.ask-sec-gaps > summary {
+  color: var(--warn-fg);
+}
+.ask-ran {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px dashed var(--border);
+}
+.ask-ran-reads > summary {
+  cursor: pointer;
+  color: var(--text-2);
+}
+.ask-ran-reads ul {
+  margin: 4px 0;
+  padding-left: 18px;
+}
+.ask-ran-note {
+  margin: 2px 0 0;
 }
 .ask-form {
   border-top: 1px solid var(--border);

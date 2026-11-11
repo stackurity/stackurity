@@ -22,7 +22,8 @@ func (s *Server) search(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	// Ask Stackurity's model never gets colleagues' names and addresses.
 	members := p.Role.AtLeast(auth.RoleEngineer) && !p.Ask
-	res, err := s.Store.SearchWith(r.Context(), q, store.SearchOptions{Limit: limit, Members: members, ProjectOnly: p.boundToProject()})
+	res, err := s.Store.SearchWith(r.Context(), q, store.SearchOptions{Limit: limit, Members: members, ProjectOnly: p.boundToProject(),
+		Summary: r.URL.Query().Get("summary") == "1"})
 	if err != nil {
 		s.fail(w, r, err)
 		return

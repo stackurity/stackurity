@@ -175,7 +175,8 @@ func (s *Server) fixApplied(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) listChecks(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
-	f := store.CheckFilter{AssetID: qInt(r, "asset_id"), FixGroup: q.Get("fix_group"), Open: q.Get("open") == "true", Page: page(r)}
+	f := store.CheckFilter{AssetID: qInt(r, "asset_id"), FixGroup: q.Get("fix_group"), Open: q.Get("open") == "true",
+		Failed: q.Get("failed") == "true", Page: page(r)}
 	items, total, err := s.Store.ListChecks(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)

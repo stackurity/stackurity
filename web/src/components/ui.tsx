@@ -1,6 +1,6 @@
 import { Link } from "react-router";
 import { IconFilter, IconHelp, IconInbox } from "./Icons";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type MouseEvent, type ReactNode } from "react";
 import { ApiError } from "../api";
 import type { JobState } from "../hooks";
 import type { Tone } from "./Badge";
@@ -217,16 +217,24 @@ export function Pager({
   if (total === 0) return null;
   const from = offset + 1;
   const to = Math.min(offset + limit, total);
+  // The pager sits under the list. Without this the window stays at the
+  // bottom after a page change, where the new page can look like the old one
+  // (an asset with hundreds of similar kernel CVEs, grouped by asset).
+  const go = (e: MouseEvent<HTMLButtonElement>, next: number) => {
+    onChange(next);
+    const list = e.currentTarget.closest("nav")?.parentElement;
+    if (list && list.getBoundingClientRect().top < 0) list.scrollIntoView({ block: "start" });
+  };
   return (
     <nav className="pager" aria-label="Pagination">
       <span className="muted">
         {from.toLocaleString()}–{to.toLocaleString()} of {total.toLocaleString()}
         {unit ? ` ${unit}` : ""}
       </span>
-      <button type="button" className="btn btn-sm" disabled={offset <= 0} onClick={() => onChange(Math.max(0, offset - limit))}>
+      <button type="button" className="btn btn-sm" disabled={offset <= 0} onClick={(e) => go(e, Math.max(0, offset - limit))}>
         Previous
       </button>
-      <button type="button" className="btn btn-sm" disabled={to >= total} onClick={() => onChange(offset + limit)}>
+      <button type="button" className="btn btn-sm" disabled={to >= total} onClick={(e) => go(e, offset + limit)}>
         Next
       </button>
     </nav>
@@ -311,6 +319,49 @@ export function Card({
       )}
       {children}
     </section>
+  );
+}
+
+/**
+ * A card that opens and closes (native <details>, so it works by keyboard
+ * and find-in-page). The summary shows the title, a one-line description
+ * and any badges, so a closed card still says what is inside. `forceOpen`
+ * opens it (a link to its id); the person can close it again.
+ */
+export function DisclosureCard({
+  id,
+  title,
+  description,
+  badges,
+  defaultOpen = false,
+  forceOpen = false,
+  children,
+}: {
+  id: string;
+  title: ReactNode;
+  description?: ReactNode;
+  badges?: ReactNode;
+  defaultOpen?: boolean;
+  forceOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen || forceOpen);
+  useEffect(() => {
+    if (forceOpen) setOpen(true);
+  }, [forceOpen]);
+  return (
+    <details className="card disclosure" id={id} open={open} onToggle={(e) => setOpen(e.currentTarget.open)}>
+      <summary className="card-head card-head-desc">
+        <div className="card-head-text">
+          <h2>
+            {title}
+            {badges && <span className="badges disclosure-badges">{badges}</span>}
+          </h2>
+          {description && <p className="card-desc">{description}</p>}
+        </div>
+      </summary>
+      <div className="disclosure-body">{children}</div>
+    </details>
   );
 }
 

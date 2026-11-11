@@ -863,8 +863,16 @@ type CheckFilter struct {
 	AssetID  int64
 	FixGroup string
 	Open     bool
+	// Failed keeps checks from the last FailedCheckDays that did not clear
+	// their fix (still open, partly fixed, incomplete or expired) and are
+	// the latest check of that fix on that asset: a newer check, passed or
+	// waiting, replaces them.
+	Failed bool
 	Page
 }
+
+// FailedCheckDays is how far back CheckFilter.Failed looks.
+const FailedCheckDays = 30
 
 func (s *Store) ListChecks(ctx context.Context, f CheckFilter) ([]Check, int64, error) {
 	w := &where{}
@@ -876,6 +884,12 @@ func (s *Store) ListChecks(ctx context.Context, f CheckFilter) ([]Check, int64, 
 	}
 	if f.Open {
 		w.conds = append(w.conds, "k.completed_at IS NULL")
+	}
+	if f.Failed {
+		w.conds = append(w.conds, fmt.Sprintf(`k.outcome IN ('still_open', 'partly_fixed', 'incomplete', 'expired')
+			AND k.completed_at > now() - interval '%d days'
+			AND NOT EXISTS (SELECT 1 FROM checks k2 WHERE k2.asset_id = k.asset_id AND k2.fix_group = k.fix_group
+			  AND (k2.requested_at, k2.id) > (k.requested_at, k.id))`, FailedCheckDays))
 	}
 	var total int64
 	if err := s.Pool.QueryRow(ctx, `SELECT count(*) FROM checks k`+w.sql(), w.args...).Scan(&total); err != nil {

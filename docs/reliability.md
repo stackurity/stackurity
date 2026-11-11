@@ -11,7 +11,7 @@ In short: work resumes or fails visibly, data from the last good run stays avail
 - Jobs live in the database and are claimed one at a time. A running job renews its lock every 5 minutes.
 - If the server dies, the job is claimed again 30 minutes after the last renewal (the lock timeout), by any replica. The interrupted attempt is recorded as the job's last error: `attempt 2 of 5 was interrupted: worker <id> stopped renewing its lock (crashed, killed or lost the database)`.
 - A job that fails with an error is retried with exponential backoff (1 minute, then 2, 4 and so on).
-- After `max_attempts` (5) the job is marked failed, whether its attempts ended in errors or in crashes: a job that kills its server every time does not run forever. Failed jobs are listed under **Settings → Platform health** with their last error, raise a "jobs failed" problem there, and are counted in `stackurity_jobs{state="failed"}`.
+- After `max_attempts` (5) the job is marked failed, whether its attempts ended in errors or in crashes: a job that kills its server every time does not run forever. Failed jobs are listed under **Admin → Platform health** with their last error, raise a "jobs failed" problem there, and are counted in `stackurity_jobs{state="failed"}`.
 - Handlers are idempotent, so a job that ran (fully or partly) before the crash can safely run again.
 
 ### Intelligence feeds

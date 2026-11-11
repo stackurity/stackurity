@@ -24,6 +24,14 @@ func TestSearchAPI(t *testing.T) {
 	if code := view.do("GET", "/api/v1/search?q=bash", nil, &res); code != 200 || len(res.Components) != 1 || res.More == nil {
 		t.Errorf("viewer search: %d %+v", code, res)
 	}
+	if res.Summary != nil {
+		t.Errorf("summary without summary=1: %+v", res.Summary)
+	}
+	var withSum store.SearchResults
+	if code := view.do("GET", "/api/v1/search?q=bash&summary=1", nil, &withSum); code != 200 || withSum.Summary == nil ||
+		withSum.Summary.Components != 1 || withSum.Summary.InstalledAssets != 1 {
+		t.Errorf("search summary: %d %+v", code, withSum.Summary)
+	}
 	for _, q := range []string{"", "a", strings.Repeat("x", 201)} {
 		if code := view.do("GET", "/api/v1/search?q="+url.QueryEscape(q), nil, nil); code != 400 {
 			t.Errorf("q=%q: %d", q, code)

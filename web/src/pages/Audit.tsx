@@ -5,16 +5,25 @@ import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { JsonDetail } from "../components/JsonDetail";
 import { Table, type Column } from "../components/Table";
-import { EmptyState, ErrorBox, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { FilterChips, TableToolbar } from "../components/FilterChips";
+import { TableSkeleton } from "../components/Skeleton";
+import { activeFilters, type FilterDef } from "../filterChips";
 import { auditEmpty } from "../emptyCopy";
 
 const LIMIT = 50;
+const FILTERS: FilterDef[] = [{ key: "object_type", label: "Object type", format: (v) => v.replace(/_/g, " ") }];
 
 export function AuditPage() {
   const [offset, setOffset] = useState(0);
   const [params] = useSearchParams();
   const [objectType, setObjectType] = useState(params.get("object_type") ?? "");
   const res = useLoad(() => api.get<List<AuditEvent>>("/audit", { limit: LIMIT, offset, object_type: objectType }), [offset, objectType]);
+
+  const chooseType = (t: string) => {
+    setObjectType(t);
+    setOffset(0);
+  };
 
   const columns: Column<AuditEvent>[] = [
     { key: "at", header: "Time", cell: (e) => <RelativeTime iso={e.at} /> },
@@ -46,10 +55,7 @@ export function AuditPage() {
           <select
             id="au-type"
             value={objectType}
-            onChange={(e) => {
-              setObjectType(e.target.value);
-              setOffset(0);
-            }}
+            onChange={(e) => chooseType(e.target.value)}
           >
             <option value="">All</option>
             {["asset", "user", "team", "token", "integration", "identity_conflict", "settings", "remediation_policy"].map((t) => (
@@ -60,9 +66,20 @@ export function AuditPage() {
           </select>
         </div>
       </div>
+      <TableToolbar>
+        <FilterChips
+          filters={activeFilters(new URLSearchParams({ object_type: objectType }), FILTERS)}
+          onRemove={() => chooseType("")}
+          onClear={() => chooseType("")}
+        />
+      </TableToolbar>
       <ErrorBox error={res.error} title="Could not load audit log" />
-      {!res.data && !res.error && <Loading />}
-      {res.data && res.data.items.length === 0 && <EmptyState {...auditEmpty(Boolean(objectType))} />}
+      {!res.data && !res.error && <TableSkeleton columns={5} label="Loading audit events…" />}
+      {res.data && res.data.items.length === 0 && (
+        <EmptyState {...auditEmpty(Boolean(objectType))}
+          {...(objectType ? { action: { label: "Show every event", permitted: true, onClick: () => chooseType("") } } : {})}
+        />
+      )}
       {res.data && res.data.items.length > 0 && (
         <>
           <Table caption="Audit events" columns={columns} rows={res.data.items} rowKey={(e) => e.id} />

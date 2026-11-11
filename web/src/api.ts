@@ -1068,7 +1068,8 @@ export interface DashboardTrend {
   /** excepted: open but snoozed or accepted, so outside the SLA (missing from older servers). */
   sla: { on_time: number; due_today: number; overdue: number; excepted?: number };
   open: { day: string; open: number }[];
-  fixed: { start: string; end: string; fixed: number }[];
+  /** Per week, oldest first; opened is missing from older servers. */
+  fixed: { start: string; end: string; fixed: number; opened?: number }[];
 }
 
 /** One connection, API token or stored secret on the Dashboard's credentials block. */
@@ -1791,6 +1792,25 @@ export interface SearchResults {
   teams: SearchTeam[];
   members: SearchMember[];
   more: Partial<Record<"vulnerabilities" | "findings" | "assets" | "components" | "teams" | "members", boolean>>;
+  /** Counts of every match, with `summary=1` (the results page). */
+  summary?: SearchSummary;
+}
+
+/** The overview of a search: every match counted, whatever the limit. */
+export interface SearchSummary {
+  /** Installed packages matching, their distinct installed versions (the version asked for, if any) and the assets with one. */
+  components: number;
+  versions: number;
+  installed_assets: number;
+  /** The package name alone, for the Components list's search. */
+  component_query: string;
+  /** The text the finding counts match, as the Issues list's search does. */
+  findings_query: string;
+  open_findings: number;
+  affected_assets: number;
+  critical: number;
+  /** Priority P1. */
+  urgent: number;
 }
 
 export const SEARCH_MIN_LENGTH = 2;
@@ -2035,6 +2055,64 @@ export interface OutcomesReport {
     rollback_actions: Record<string, number> | null;
     recent_failures: OutcomeFailure[] | null;
   } | null;
+  /** The executive view's figures, counted with the report's own rules (missing from older servers). */
+  executive?: OutcomeExecutive;
+}
+
+/** One period of the executive trend: findings first seen or reopened, and fixed (remediated or removed, still resolved). */
+export interface OutcomePeriod {
+  start: string;
+  end: string;
+  opened: number;
+  fixed: number;
+}
+
+/** An active issue past its fix-by date. owner_kind is empty when nobody is assigned. */
+export interface OutcomeOverdue {
+  finding_id: number;
+  key: string;
+  title: string;
+  priority: string;
+  known_exploited: boolean;
+  asset_id: number;
+  asset_name: string;
+  owner_kind: "user" | "team" | "";
+  owner_id: number;
+  owner_name: string;
+  first_seen: string;
+  fix_due: string;
+}
+
+/** One assignee's active issues now. kind is empty for unassigned issues. */
+export interface OutcomeOwner {
+  kind: "user" | "team" | "";
+  id: number;
+  name: string;
+  open: number;
+  overdue: number;
+  /** P1 or P2. */
+  urgent: number;
+}
+
+/** Assets with an active P1 or P2 issue, and how many are production or internet-facing (where that is recorded). */
+export interface OutcomeImpact {
+  urgent_assets: number;
+  environment_known: number;
+  production: number;
+  exposure_known: number;
+  exposed: number;
+  exposed_production: number;
+}
+
+export interface OutcomeExecutive {
+  period_days: number;
+  trend: OutcomePeriod[];
+  overdue_top: OutcomeOverdue[];
+  overdue_limit: number;
+  by_owner: OutcomeOwner[];
+  owners_total: number;
+  impact: OutcomeImpact;
+  exceptions: { pending: number; pending_since: string | null; expired: number; expired_still_open: number };
 }
 
 export interface Feed {
@@ -3490,6 +3568,8 @@ export interface FixGroup {
   requires_major?: boolean;
   recommended_yanked?: boolean;
   rationale?: string[] | null;
+  /** True when the change takes effect only after a restart (a Windows cumulative update, or OS updates with a kernel image). */
+  reboot?: boolean;
   /** No-fix groups: per application package, what can be done without a fixed version. */
   no_fix_advice?: NoFixAdvice | null;
 }
@@ -3575,6 +3655,8 @@ export interface FixGroupSummary {
   overdue?: number;
   /** Fixes with a known exploited issue. */
   exploited?: number;
+  /** P1 and P2 issues across all the fixes: what one fix's P1 and P2 issues are a share of. */
+  urgent_findings?: number;
 }
 
 /** GET /fix-groups/work: where the work on one fix group stands. */
@@ -3588,6 +3670,8 @@ export interface FixWork {
   owners: string[] | null;
   unassigned: number;
   mine: number;
+  /** Open issues in a pending request to ignore them, waiting for security to decide. */
+  awaiting_approval?: number;
 }
 
 /** GET/POST /saved-views: a person's own named filter on a page. */

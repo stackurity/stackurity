@@ -495,7 +495,7 @@ func jobProblems(kinds []store.JobKindHealth) []Problem {
 			p.Title = fmt.Sprintf("%d %s job(s) failed in the last 24 hours", k.Failed, k.Kind)
 			p.Detail = "They ran out of retries; the latest errors are listed below."
 			p.NextStep = "Fix the cause in the latest error, then run the work again (Refresh a feed, Run an integration, Re-evaluate). " +
-				"Settings > Background jobs lists each failed job."
+				"Settings → Jobs lists each failed job."
 		case k.RetriedOften > 0:
 			p.Title = fmt.Sprintf("%d %s job(s) are being retried repeatedly", k.RetriedOften, k.Kind)
 			p.Detail = "Each failed attempt is retried with a growing delay; after five attempts the job is marked failed."

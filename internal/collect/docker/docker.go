@@ -232,21 +232,7 @@ func (s *Scanner) imageBatch(ctx context.Context, col model.Collector, host mode
 		"containers": clip(strings.Join(im.containers, ", ")),
 		"source":     "docker",
 	}
-	if len(im.info.RepoTags) > 0 {
-		attrs["tags"] = clip(strings.Join(im.info.RepoTags, ", "))
-	}
-	for _, d := range im.info.RepoDigests {
-		if _, dg, ok := strings.Cut(d, "@"); ok {
-			attrs["digest"] = dg
-			break
-		}
-	}
-	if im.info.Os != "" && im.info.Architecture != "" {
-		attrs["platform"] = im.info.Os + "/" + im.info.Architecture
-		if im.info.Variant != "" {
-			attrs["platform"] += "/" + im.info.Variant
-		}
-	}
+	infoAttributes(attrs, im.info)
 	b := model.NewBatch(col, model.AssetRef{
 		Kind:        model.AssetImage,
 		Name:        ref + " on " + host.Name,
@@ -258,12 +244,40 @@ func (s *Scanner) imageBatch(ctx context.Context, col model.Collector, host mode
 	scope := "image:" + ref
 
 	r, ok := s.reading(ctx, im, scope, read)
+	fill(b, scope, r, ok)
+	return b
+}
+
+// infoAttributes adds what Docker (or the archive) says about the image:
+// its tags, digest and platform.
+func infoAttributes(attrs map[string]string, info *Image) {
+	if len(info.RepoTags) > 0 {
+		attrs["tags"] = clip(strings.Join(info.RepoTags, ", "))
+	}
+	for _, d := range info.RepoDigests {
+		if _, dg, ok := strings.Cut(d, "@"); ok {
+			attrs["digest"] = dg
+			break
+		}
+	}
+	if info.Os != "" && info.Architecture != "" {
+		attrs["platform"] = info.Os + "/" + info.Architecture
+		if info.Variant != "" {
+			attrs["platform"] += "/" + info.Variant
+		}
+	}
+}
+
+// fill adds an image's reading to its batch. When the image could not be
+// read (ok false) the batch only carries the coverage saying why and stays
+// incomplete: nothing it reported before is taken as gone.
+func fill(b *model.ObservationBatch, scope string, r Reading, ok bool) {
 	if !ok {
 		b.Coverage = r.Coverage
-		return b // incomplete: nothing it reported before is taken as gone
+		return
 	}
 	for k, v := range r.Attributes {
-		attrs[k] = v
+		b.Asset.Attributes[k] = v
 	}
 	b.Observations = append(b.Observations, r.Observations...)
 	b.Coverage = append([]model.CoverageItem{{Scope: scope, Status: "checked"}}, r.Coverage...)
@@ -274,7 +288,6 @@ func (s *Scanner) imageBatch(ctx context.Context, col model.Collector, host mode
 			b.Complete = false
 		}
 	}
-	return b
 }
 
 // reading returns the image's contents, from the cache when the image ID

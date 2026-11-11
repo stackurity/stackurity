@@ -44,18 +44,25 @@ const (
 // extractImage reads a docker save archive from r and builds the image's
 // filesystem under work/rootfs, which it returns.
 func extractImage(ctx context.Context, r io.Reader, work string, maxBytes int64, arch string) (string, error) {
-	x := &extractor{work: work, maxBytes: maxBytes, layers: map[string]*layer{}, small: map[string][]byte{}}
-	if err := os.MkdirAll(filepath.Join(work, "layers"), 0o700); err != nil {
-		return "", err
-	}
+	x := newExtractor(work, maxBytes)
 	if err := x.read(ctx, r); err != nil {
 		return "", err
 	}
+	return x.build(ctx, arch)
+}
+
+func newExtractor(work string, maxBytes int64) *extractor {
+	return &extractor{work: work, maxBytes: maxBytes, layers: map[string]*layer{}, small: map[string][]byte{}}
+}
+
+// build applies the image's layers, bottom first, to work/rootfs and
+// returns it.
+func (x *extractor) build(ctx context.Context, arch string) (string, error) {
 	order, err := x.layerOrder(arch)
 	if err != nil {
 		return "", err
 	}
-	root := filepath.Join(work, "rootfs")
+	root := filepath.Join(x.work, "rootfs")
 	if err := os.Mkdir(root, 0o700); err != nil {
 		return "", err
 	}
@@ -85,6 +92,12 @@ type extractor struct {
 	layers   map[string]*layer // by the name in the outer archive
 	small    map[string][]byte
 	smallSum int
+	// drain: once the size limit is reached, read the rest of the archive
+	// for its metadata only (no more layers) and keep the error in
+	// tooLarge, so that the image can still be named. The agent's Docker
+	// export stops at the limit instead.
+	drain    bool
+	tooLarge error
 }
 
 type layer struct {
@@ -94,6 +107,9 @@ type layer struct {
 }
 
 func (x *extractor) read(ctx context.Context, r io.Reader) error {
+	if err := os.MkdirAll(filepath.Join(x.work, "layers"), 0o700); err != nil {
+		return err
+	}
 	tr := tar.NewReader(r)
 	for {
 		if err := ctx.Err(); err != nil {
@@ -114,6 +130,9 @@ func (x *extractor) read(ctx context.Context, r io.Reader) error {
 		head, _ := br.Peek(512)
 		var body io.Reader = br
 		var gz *gzip.Reader
+		if x.tooLarge != nil && (bytes.HasPrefix(head, []byte{0x1f, 0x8b}) || isTar(head)) {
+			continue // a layer past the limit: not read
+		}
 		switch {
 		case bytes.HasPrefix(head, []byte{0x1f, 0x8b}):
 			if gz, err = gzip.NewReader(br); err != nil {
@@ -141,6 +160,10 @@ func (x *extractor) read(ctx context.Context, r io.Reader) error {
 		err = x.extractLayer(ctx, body, l)
 		if gz != nil {
 			gz.Close()
+		}
+		if err != nil && x.drain && errors.Is(err, limits.ErrTooLarge) {
+			x.tooLarge = err
+			continue
 		}
 		if err != nil {
 			return fmt.Errorf("layer %s: %w", name, err)
@@ -477,58 +500,105 @@ func resolveIn(links map[string]string, dir, target string) (string, bool) {
 // layerOrder returns the archive names of the image's layers, bottom
 // first, from manifest.json (docker save), or from an OCI index.
 func (x *extractor) layerOrder(arch string) ([]string, error) {
+	m, err := x.manifest(arch)
+	if err != nil {
+		return nil, err
+	}
+	return m.layers, nil
+}
+
+// archiveManifest is the part of an archive's manifest the reader uses.
+type archiveManifest struct {
+	layers []string // archive names, bottom first
+	config string   // archive name of the image config
+	tags   []string
+}
+
+// manifest reads the image's manifest from manifest.json (docker save), or
+// from an OCI index, picking the manifest for arch from a multi-platform
+// index (the first one when none matches).
+func (x *extractor) manifest(arch string) (archiveManifest, error) {
 	if b, ok := x.small["manifest.json"]; ok {
 		var m []struct {
-			Layers []string `json:"Layers"`
+			Config   string   `json:"Config"`
+			RepoTags []string `json:"RepoTags"`
+			Layers   []string `json:"Layers"`
 		}
 		if err := json.Unmarshal(b, &m); err != nil {
-			return nil, fmt.Errorf("manifest.json: %w", err)
+			return archiveManifest{}, fmt.Errorf("manifest.json: %w", err)
 		}
 		if len(m) == 0 {
-			return nil, errors.New("manifest.json lists no image")
+			return archiveManifest{}, errors.New("manifest.json lists no image")
 		}
-		return m[0].Layers, nil
+		return archiveManifest{layers: m[0].Layers, config: m[0].Config, tags: m[0].RepoTags}, nil
 	}
 	b, ok := x.small["index.json"]
 	if !ok {
-		return nil, errors.New("image archive has no manifest.json or index.json")
+		return archiveManifest{}, errors.New("image archive has no manifest.json or index.json")
 	}
+	var tags []string
 	for range 4 { // an index may point to another index
 		var idx struct {
 			MediaType string `json:"mediaType"`
 			Manifests []struct {
-				MediaType string `json:"mediaType"`
-				Digest    string `json:"digest"`
-				Platform  *struct {
+				MediaType   string            `json:"mediaType"`
+				Digest      string            `json:"digest"`
+				Annotations map[string]string `json:"annotations"`
+				Platform    *struct {
 					Architecture string `json:"architecture"`
 				} `json:"platform"`
 			} `json:"manifests"`
+			Config *struct {
+				Digest string `json:"digest"`
+			} `json:"config"`
 			Layers []struct {
 				Digest string `json:"digest"`
 			} `json:"layers"`
 		}
 		if err := json.Unmarshal(b, &idx); err != nil {
-			return nil, fmt.Errorf("OCI index: %w", err)
+			return archiveManifest{}, fmt.Errorf("OCI index: %w", err)
 		}
 		if len(idx.Layers) > 0 || len(idx.Manifests) == 0 {
-			var out []string
+			out := archiveManifest{tags: tags}
 			for _, l := range idx.Layers {
-				out = append(out, blobPath(l.Digest))
+				out.layers = append(out.layers, blobPath(l.Digest))
+			}
+			if idx.Config != nil {
+				out.config = blobPath(idx.Config.Digest)
 			}
 			return out, nil
 		}
-		pick := idx.Manifests[0].Digest
-		for _, m := range idx.Manifests {
+		pick := 0
+		for i, m := range idx.Manifests {
 			if m.Platform != nil && m.Platform.Architecture == arch {
-				pick = m.Digest
+				pick = i
 				break
 			}
 		}
-		if b, ok = x.small[blobPath(pick)]; !ok {
-			return nil, fmt.Errorf("image archive does not contain manifest %s", pick)
+		if t := ociName(idx.Manifests[pick].Annotations); t != "" && len(tags) == 0 {
+			tags = []string{t}
+		}
+		digest := idx.Manifests[pick].Digest
+		if b, ok = x.small[blobPath(digest)]; !ok {
+			return archiveManifest{}, fmt.Errorf("image archive does not contain manifest %s", digest)
 		}
 	}
-	return nil, errors.New("OCI index nested too deeply")
+	return archiveManifest{}, errors.New("OCI index nested too deeply")
+}
+
+// ociName is the image name an OCI index records for a manifest, in the
+// short form Docker shows as a tag (docker.io/library/nginx:1 is nginx:1).
+// A bare tag with no repository ("latest") is not a name.
+func ociName(ann map[string]string) string {
+	n := ann["io.containerd.image.name"]
+	if n == "" {
+		n = ann["org.opencontainers.image.ref.name"]
+	}
+	if !strings.ContainsAny(n, ":/@") {
+		return ""
+	}
+	n = strings.TrimPrefix(n, "docker.io/")
+	return strings.TrimPrefix(n, "library/")
 }
 
 func blobPath(digest string) string {

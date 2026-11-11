@@ -28,3 +28,39 @@ Written for anyone changing a page in `web/src`. The reader we design for is sem
 | `GoodToKnow` | Side notes. |
 
 The reference example is `RequireMfaCard` in `src/pages/TwoFactor.tsx` (People → Users → Two-factor sign-in).
+
+## Lists and tables
+
+The list pages (Assets, Components, Incidents, Audit) are the reference.
+
+| Component | Use |
+|---|---|
+| `Table` (`components/Table.tsx`) | Every data table. Row spacing follows the viewer's choice (below); Default is the table as it always was. |
+| `TableToolbar` (`components/FilterChips.tsx`) | The line between a list's filters and its table: the filters on, and the row-spacing control. |
+| `DensityControl` (`components/Density.tsx`) | Comfortable / Default / Compact. Remembered per viewer in this browser (`tableDensity.ts`); changes row padding and text size only. `TableToolbar` already includes it. |
+| `FilterChips` | Each filter on as a chip with × to remove it, plus Clear all. Describe the page's query parameters once as `FilterDef`s and build the chips with `activeFilters()` (`filterChips.ts`); `withoutFilter()` / `withoutFilters()` give the URL after removing one or all, back on the first page. Give ids a readable value (`format`: a team id to its name). Don't add a second "Clear filters" link in the form. |
+| `TableSkeleton`, `CardSkeleton` (`components/Skeleton.tsx`) | While a table or a list of cards loads, instead of `Loading`. Pass a `label` ("Loading assets…") and roughly the real number of columns. Keep `Loading` for forms and single values. The shimmer stops under prefers-reduced-motion. |
+| `TruncatedName` (`components/Truncate.tsx`) | A long asset name or package identifier in a cell. The start gives way to an ellipsis; the end that tells rows apart (a version, a file name) stays (`truncate.ts`). The full value is the hover title, shows whole on keyboard focus, and has a copy button. |
+
+## Colour, badges and buttons
+
+**Red is for real urgency or a destructive action, nothing else.**
+
+- Badge tones (`components/Badge.tsx`). `crit` (solid red): known exploited, SOS, regressed, fix overdue, a security release. `bad` (red outline): high severity, failures and stale data that need someone now (failed, stale, stopped reporting, end of life, withdrawn). `warn` (amber): needs a look but is not on fire (medium severity, New, To do, partial, exposed, pending). `info` (grey): neutral facts and work in progress. `good` (green): done, fixed, confirmed. `muted` (hollow dot): low, off, ended, not applicable. Priority has its own P1 to P4 tokens; severity uses `SeverityBadge`.
+- Use the badge components (`Badge`, `SeverityBadge`, `PriorityBadge`, `FindingStateBadge`, …), never a hand-written `badge badge-…` span. The text always says the state; colour is a second cue.
+- A workflow state is not urgency: New is amber, not red. Urgency comes from priority, SOS and missed deadlines.
+- Buttons: `btn btn-primary` for the one main action of a card or page; plain `btn` for every other action (secondary); `btn btn-link` for low-weight actions such as Clear all. Destructive: `btn-link-danger` for a remove, revoke or disconnect in a row or list (ask first with `confirmAction` when it cannot be undone); solid `btn-danger` only for the final button of a confirmation (`ConfirmDialog` with `destructive`, or the submit of a delete form). Never a solid red button in a table row.
+- Secondary text (`.muted`, `.small`, table headers) uses `--muted` or `--text-2`, which are at least 4.5:1 on every surface in both themes (`contrast.test.ts` checks it). Don't dim text with `opacity`: it drops below 4.5:1. Use `--text-2` or `--muted` instead.
+
+## Empty states
+
+An `EmptyState` always offers the next useful thing to do. With filters on, that is Clear filters (an `onClick` action). With nothing yet, it is the page that fills the list (Add server, Go to assets), shown only to someone whose role can use it, with `otherwise` saying who can. The copy lives in `emptyCopy.ts`.
+
+## Feedback after an action
+
+There is no toast. Say what happened next to where it happened:
+
+- Success: `Notice kind="success"` above the list or form the action changed, in one sentence that names the thing ("Request #12 decided.", "Rule #4 ended: 3 issues back to new."). It is a `role="status"` region, so screen readers announce it. The reference is the Approvals page.
+- Failure: `ErrorBox` with a `title` that says what failed ("Could not decide"). It explains the error in plain words and keeps the code for support.
+- Settings: `SaveBar` says "You have unsaved changes." and then "Saved.".
+- Copy: the button's own text says "Copied" for two seconds (`CopyBox`, `CopyValue`).

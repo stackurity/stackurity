@@ -38,6 +38,11 @@ type Collector struct {
 	RunVersion  func(ctx context.Context, bin string, args []string) ([]byte, error)
 	RunRPMOwner func(ctx context.Context, root string, paths []string) (map[string]bool, error)
 	UID         uint32 // the agent's effective uid; binaries it owns may be run
+
+	// ImageEnv is the environment a container image's configuration sets
+	// (its ENV lines), when Root is an unpacked image; nil on a host. It
+	// is read for runtime versions the image declares (PYTHON_VERSION).
+	ImageEnv map[string]string
 }
 
 func New(version string) *Collector {
@@ -185,6 +190,17 @@ func (c *Collector) OwnedFunc() func(string) bool {
 	return func(p string) bool {
 		return strings.HasPrefix(p, "/usr/lib/") || strings.HasPrefix(p, "/usr/lib64/")
 	}
+}
+
+// ListedOwnedFunc reports whether dpkg or apk installed a host path, from
+// their file lists only. It is nil when the root has neither list (an rpm
+// root, or none at all), where OwnedFunc would guess by directory.
+func (c *Collector) ListedOwnedFunc() func(string) bool {
+	owned, err := c.ownedFiles()
+	if err != nil || owned == nil {
+		return nil
+	}
+	return func(p string) bool { return owned[p] || owned[usrMerge(p)] }
 }
 
 func hasRPMDB(c *Collector) bool {

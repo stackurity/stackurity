@@ -20,6 +20,7 @@ import { Table } from "../../components/Table";
 import { Card, CheckCard, EmptyState, ErrorBox, FieldGroup, GoodToKnow, KeyValues, Loading, Notice, PageHeader, Pager, RelativeTime } from "../../components/ui";
 import { vexEmpty } from "../../emptyCopy";
 import { PlanLimitNote } from "../../components/PlanLimit";
+import { GroupCrumb } from "../../components/nav";
 
 const LIMIT = 50;
 
@@ -375,6 +376,7 @@ export function VexDocumentPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/settings/vex">VEX</Link> <span aria-hidden="true">/</span> <span>{d.filename || d.doc_id || `Document ${d.id}`}</span>
       </nav>
       <PageHeader title={d.filename || d.doc_id || `Document ${d.id}`} sub={`${d.matched} of ${plural(d.statements, "statement")} matched`} />

@@ -7,7 +7,8 @@ import { displayPurl, minutesLabel } from "../format";
 import { Badge, type Tone } from "../components/Badge";
 import { ROW_COVERAGE_LABELS } from "../components/Coverage";
 import { Table, type Column } from "../components/Table";
-import { EmptyState, ErrorBox, GoodToKnow, JobStatus, Loading, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, GoodToKnow, JobStatus, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { TableSkeleton } from "../components/Skeleton";
 import { confirmAction } from "../components/ConfirmDialog";
 
 function feedStatus(f: Feed): { label: string; tone: Tone; title: string } {
@@ -169,7 +170,7 @@ export function IntelligencePage() {
         </div>
       )}
       <ErrorBox error={feeds.error} title="Could not load feeds" />
-      {!feeds.data && !feeds.error && <Loading />}
+      {!feeds.data && !feeds.error && <TableSkeleton label="Loading feeds…" />}
       {feeds.data && feeds.data.items.length === 0 && <EmptyState title="No feeds configured" />}
       {feeds.data && feeds.data.items.length > 0 && (
         <Table
@@ -201,7 +202,7 @@ export function IntelligencePage() {
           </ul>
         </GoodToKnow>
         <ErrorBox error={gaps.error} title="Could not load evaluation gaps" />
-        {!gaps.data && !gaps.error && <Loading />}
+        {!gaps.data && !gaps.error && <TableSkeleton columns={4} label="Loading evaluation gaps…" />}
         {gaps.data && gaps.data.items.length === 0 && (
           <EmptyState title="No evaluation gaps">
             <p>Every inventoried component with a supported ecosystem was evaluated.</p>

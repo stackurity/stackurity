@@ -124,9 +124,10 @@ function table(props: Record<string, unknown> = {}) {
 
 test("the table shows one dense row per fix with what the team needs", () => {
   const html = table();
-  for (const col of ["Priority", "Fix", "Where", "Issues cleared", "Exploited", "Effort", "Owner", "Due", "Status"]) {
-    assert.match(html, new RegExp(`<button[^>]*class="ac-sort"[^>]*>${col}</button>`), col);
-  }
+  // What changes, where, why it matters, its impact, who, by when, and where it stands: in that order.
+  const cols = ["Recommended action", "Affected assets", "Risk", "Issues resolved", "Owner", "Deadline", "Status"];
+  const heads = [...html.matchAll(/<button[^>]*class="ac-sort"[^>]*>([^<]+)<\/button>/g)].map((m) => m[1]);
+  assert.deepEqual(heads, cols);
   assert.equal((html.match(/<tr /g) ?? []).length, 3, "three rows");
   // Fix: title, linking to the fix, and its type.
   assert.match(html, /href="\/fixes\/1%3Apackage_upgrade%3Adjango"[^>]*>Upgrade django 3.2.0 → 5.2.17</);
@@ -142,9 +143,50 @@ test("the table shows one dense row per fix with what the team needs", () => {
   // Status from the work.
   assert.match(html, /ac-status-regressed[^>]*>Regressed</);
   assert.match(html, /ac-status-in_progress[^>]*>In progress</);
-  assert.match(html, /ac-status-open[^>]*>Open</);
+  assert.match(html, /ac-status-open[^>]*>Not started</);
   assert.match(html, />Unassigned</);
   assert.match(html, /aria-label="Select every fix on this page"/);
+});
+
+test("the risk column holds the priority and the flags; notes under an action say what needs care", () => {
+  const html = table({
+    rows: [{ g: { ...django, change_type: "major" }, work: null, status: "open", rank: 0 }, { g: { ...openssl, reboot: true }, work: null, status: "open", rank: 1 }],
+  });
+  assert.match(html, /class="ac-risk"><span class="ac-prio ac-prio-P1"[^>]*>P1<\/span><span class="ac-flag"[^>]*>KEV 2</);
+  assert.match(html, /class="ac-sub">Package upgrade · production · major upgrade</);
+  assert.match(html, /class="ac-sub">Security updates · production · restart needed</);
+  assert.match(html, />None set</, "no deadline is said, not left blank");
+  assert.doesNotMatch(html, /ac-due-over/, "nothing overdue: no red");
+});
+
+test("issues resolved shows the share of all open P1 and P2 issues when measured", () => {
+  // django: 2 P1 + 12 P2 of 28 open P1/P2.
+  assert.match(table({ urgentTotal: 28 }), /class="ac-col-issues num">14<span class="ac-sub"[^>]*>50% of P1\/P2</);
+  assert.doesNotMatch(table(), /of P1\/P2/, "not measured: not shown");
+});
+
+test("a pending request to ignore shows as Waiting for approval", () => {
+  const w = AC.workOf(openssl, new Map([[openssl.id, { ...work[1], in_progress: 0, awaiting_approval: 3 }]]));
+  assert.equal(AC.fixStatus(openssl, w), "approval");
+  assert.equal(AC.STATUS_LABEL.approval, "Waiting for approval");
+  // A regression still comes first.
+  assert.equal(AC.fixStatus(openssl, { ...w, regressed: 1 }), "regressed");
+});
+
+test("the fix page lists the expected impact, only what the data says", () => {
+  const html = (g: FixGroup, urgentTotal?: number) => renderToStaticMarkup(h(Page.ImpactList, { g, urgentTotal }));
+  const d = html({ ...django, unique_issues: 9, change_type: "major" }, 28);
+  assert.match(d, /<dt>Resolves<\/dt><dd>9 vulnerabilities \(14 issues\)<span class="muted"> · 50% of all open P1 and P2 issues/);
+  assert.match(d, /<dt>Affected assets<\/dt><dd>1</);
+  assert.match(d, /<dt>Known exploited addressed<\/dt><dd>2 issues</);
+  assert.match(d, /<dt>Major upgrade<\/dt><dd>Yes: possible breaking changes/);
+  assert.doesNotMatch(d, /Restart needed/);
+  const o = html({ ...openssl, reboot: true });
+  assert.match(o, /<dt>Major upgrade<\/dt><dd>No</);
+  assert.match(o, /<dt>Restart needed<\/dt><dd>Yes/);
+  assert.match(o, /<dt>Known exploited addressed<\/dt><dd>None known</);
+  assert.doesNotMatch(html({ ...django }), /Major upgrade/, "not known: left out");
+  assert.equal(html({ ...django, kind: "no_fix" }), "");
 });
 
 test("people who cannot act get no checkboxes", () => {
@@ -165,7 +207,7 @@ test("sorting: issues biggest first, due earliest first, ties keep the urgent or
   assert.deepEqual(AC.parseSort("-issues"), { key: "issues", desc: true });
   assert.deepEqual(AC.parseSort("bogus"), { key: null, desc: false });
   const html = table({ rows: AC.sortRows(rows(), "issues", true), sort: { key: "issues", desc: true } });
-  assert.match(html, /aria-sort="descending"[^>]*><button[^>]*data-active="true"[^>]*>Issues cleared/);
+  assert.match(html, /aria-sort="descending"[^>]*><button[^>]*data-active="true"[^>]*>Issues resolved/);
 });
 
 test("a waiting check shows as Waiting for check", () => {
@@ -241,6 +283,7 @@ test("the table is the default; Detailed keeps the cards and the address keeps t
   assert.match(html, /aria-label="Show"/);
   assert.match(html, /href="\/fixes\?q=django"[^>]*>All fixes</);
   assert.match(html, />Filters</);
+  assert.match(html, /class="page-sub"><strong>What should I do\?<\/strong>/);
   const cards = page("/fixes?bucket=focus&view=cards");
   assert.match(cards, /aria-current="true" href="\/fixes\?bucket=focus&amp;view=cards"[^>]*>Detailed</);
   assert.match(cards, /href="\/fixes\?bucket=focus"[^>]*>Table</);

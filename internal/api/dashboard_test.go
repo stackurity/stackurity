@@ -81,6 +81,14 @@ func TestDashboardTrend(t *testing.T) {
 	if len(tr.Fixed) != store.TrendWeeks || tr.Fixed[store.TrendWeeks-1].Fixed != 1 || tr.Fixed[0].Fixed != 0 {
 		t.Errorf("fixed per week: %+v", tr.Fixed)
 	}
+	// a, b and c opened 10 days ago (the third week), d 20 days ago (the second).
+	var opened []int64
+	for _, w := range tr.Fixed {
+		opened = append(opened, w.Opened)
+	}
+	if fmt.Sprint(opened) != "[0 1 3 0]" {
+		t.Errorf("opened per week: %v", opened)
+	}
 
 	// "Due today" deep-links to the findings due by the end of today.
 	var list struct{ Total int64 }

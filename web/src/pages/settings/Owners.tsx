@@ -80,7 +80,7 @@ export function OwnersPage() {
           <button type="button" className="btn btn-sm" onClick={() => setEditing(editing === r.id ? null : r.id)}>
             Edit
           </button>
-          <button type="button" className="btn btn-sm btn-danger" onClick={() => void remove(r)}>
+          <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void remove(r)}>
             Delete
           </button>
         </div>

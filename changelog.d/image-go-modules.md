@@ -1,0 +1,3 @@
+### Added
+
+- **Go binaries in container images are read for their modules.** With `--docker`, the agent reads the build information the Go toolchain records in each executable in an image (never running it) and reports the dependency modules (after `replace` directives), the main module when it has a version, and the toolchain as `pkg:golang/stdlib`, each at the binary's path. Go module and Go standard library advisories now match images such as Stackurity's own, which previously showed only OS packages. Binaries dpkg or apk installed are left to their package; the walk is bounded and reports `partial` coverage (`go-binaries`) when it stops early. See [Docker containers](docs/install.md#docker-containers).

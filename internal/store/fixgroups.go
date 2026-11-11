@@ -174,8 +174,15 @@ type FixGroupFilter struct {
 	Exploited bool
 	// AssigneeUser keeps groups with an open issue assigned to this user.
 	AssigneeUser int64
+	// AssigneeMine keeps groups with an open issue assigned to this user
+	// or to a team they are a member of (My work).
+	AssigneeMine int64
 	Page
 }
+
+// mineSQL is true for a finding f assigned to the user ? or to one of
+// their teams.
+const mineSQL = `(f.assignee_user_id = ? OR f.assignee_team_id IN (SELECT tm.team_id FROM team_members tm WHERE tm.user_id = ?))`
 
 // overdueGroupSQL is true for a fix group g with an active issue past its
 // fix deadline (the same test as a finding's overdue flag).
@@ -243,6 +250,9 @@ func (s *Store) ListFixGroups(ctx context.Context, f FixGroupFilter) ([]json.Raw
 	}
 	if f.AssigneeUser > 0 {
 		w.add("EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND f.status = 'open' AND f.assignee_user_id = ?)", f.AssigneeUser)
+	}
+	if f.AssigneeMine > 0 {
+		w.add("EXISTS (SELECT 1 FROM findings f WHERE f.fix_group = g.id AND f.status = 'open' AND "+mineSQL+")", f.AssigneeMine)
 	}
 	if f.ByFix {
 		return s.listFixGroupsByFix(ctx, w, f.Page.norm())
@@ -373,6 +383,9 @@ type FixPlanSummary struct {
 	Overdue int64 `json:"overdue"`
 	// Exploited counts fixes with a known exploited issue.
 	Exploited int64 `json:"exploited"`
+	// UrgentFindings counts the P1 and P2 findings of all the fixes: what
+	// a fix's own P1 and P2 findings are a share of (its risk reduction).
+	UrgentFindings int64 `json:"urgent_findings"`
 }
 
 // SummarizeFixPlan counts fixes and their findings. With byFix, the same fix
@@ -385,7 +398,8 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool)
 	}
 	key := groupKeySQL(byFix)
 	rows, err := s.Pool.Query(ctx, `SELECT g.kind, count(DISTINCT `+key+`), sum((g.data->>'finding_count')::int),
-		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+key+` END)
+		count(DISTINCT CASE WHEN (g.data->>'sos')::boolean THEN `+key+` END),
+		COALESCE(sum(COALESCE((g.data->'by_priority'->>'P1')::int, 0) + COALESCE((g.data->'by_priority'->>'P2')::int, 0)), 0)
 		FROM fix_groups g`+w.sql()+` GROUP BY g.kind`, w.args...)
 	if err != nil {
 		return nil, err
@@ -393,10 +407,11 @@ func (s *Store) SummarizeFixPlan(ctx context.Context, assetID int64, byFix bool)
 	defer rows.Close()
 	for rows.Next() {
 		var k string
-		var groups, findings, sos int64
-		if err := rows.Scan(&k, &groups, &findings, &sos); err != nil {
+		var groups, findings, sos, urgent int64
+		if err := rows.Scan(&k, &groups, &findings, &sos, &urgent); err != nil {
 			return nil, err
 		}
+		sum.UrgentFindings += urgent
 		sum.ByKind[k] = map[string]int64{"groups": groups, "findings": findings}
 		sum.Groups += groups
 		sum.Findings += findings

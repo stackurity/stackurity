@@ -358,7 +358,7 @@ Work from a copy where you can: take a `pg_dump` of the database and keep the se
 
 ### Contain
 
-- **Disable the affected workspace** (or the one the access came from): **Settings → Workspaces**, or `PATCH /api/v1/admin/workspaces/{id}` with `{"disabled": true}` as an instance admin. Its tokens and sessions are refused on their next request and its periodic work (alerts, integrations, evaluations) stops; its data stays for the investigation.
+- **Disable the affected workspace** (or the one the access came from): **Admin → Workspaces**, or `PATCH /api/v1/admin/workspaces/{id}` with `{"disabled": true}` as an instance admin. Its tokens and sessions are refused on their next request and its periodic work (alerts, integrations, evaluations) stops; its data stays for the investigation.
 - **Revoke credentials:** the tokens involved (`DELETE /api/v1/tokens/{id}`, audited as `token.revoke`), and the sessions of the users involved (disable the user, or `DELETE FROM sessions WHERE user_id = ...;`). In an emergency, `UPDATE api_tokens SET revoked_at = now() WHERE workspace_id = ... AND revoked_at IS NULL;`.
 - **Block the route** at the reverse proxy if the leak is through one endpoint and a fix is not yet available.
 - **Rotate what may have leaked:** if integration or channel settings were exposed, rotate the underlying credentials (Git tokens, webhook URLs, bot tokens, Jira tokens) at their providers, then update the secrets in Stackurity.

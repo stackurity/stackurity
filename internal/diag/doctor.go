@@ -254,7 +254,7 @@ func checkLicence(ctx context.Context, st *store.Store, cfg Config) Result {
 	case s.Err != nil:
 		res.Status, res.Title = Warn, fmt.Sprintf("The licence key (from %s) does not verify, so the server runs as Community", s.From)
 		res.Detail = s.Err.Error()
-		res.Next = "Install the key you were sent again (stackurity admin set-license, or Settings → Licence), or remove the one that does not verify."
+		res.Next = "Install the key you were sent again (stackurity admin set-license, or Admin → Licence), or remove the one that does not verify."
 	case l == nil:
 		res.Title = "Community edition, no licence key"
 	case s.Status.State == license.StateActive:
@@ -268,7 +268,7 @@ func checkLicence(ctx context.Context, st *store.Store, cfg Config) Result {
 	case s.Status.State == license.StateGrace:
 		res.Status = Warn
 		res.Title = fmt.Sprintf("The %s licence expired on %s; paid features stop on %s", l.Edition, l.ExpiresAt.Format("2006-01-02"), s.Status.GraceEnds.Format("2006-01-02"))
-		res.Next = "Renew the licence and install the new key (stackurity admin set-license, or Settings → Licence)."
+		res.Next = "Renew the licence and install the new key (stackurity admin set-license, or Admin → Licence)."
 	default:
 		res.Status = Warn
 		res.Title = fmt.Sprintf("The %s licence expired on %s: running as Community", l.Edition, l.ExpiresAt.Format("2006-01-02"))
@@ -279,7 +279,7 @@ func checkLicence(ctx context.Context, st *store.Store, cfg Config) Result {
 		// A key is needed and none verifies: the dashboard and API wait
 		// for one once the grace period ends (agents and scans keep
 		// uploading). A key that does not verify keeps its title.
-		res.Next = "Enter a free Community key or a licence under Settings → Licence, or with stackurity admin set-license " +
+		res.Next = "Enter a free Community key or a licence under Admin → Licence, or with stackurity admin set-license " +
 			"(an air-gapped server can get its key on any other computer)."
 		var title, detail string
 		if s.Key.State == license.KeyGraceTime {

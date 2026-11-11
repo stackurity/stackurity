@@ -334,3 +334,66 @@ func TestSearchMembers(t *testing.T) {
 		t.Errorf("a non-member was found: %+v", res.Members)
 	}
 }
+
+// TestSearchSummary checks that the overview counts every match, not only the
+// returned ones, and that its finding counts equal the Issues list's search
+// for the same text.
+func TestSearchSummary(t *testing.T) {
+	ctx, s, _ := searchFixture(t)
+
+	res, err := s.Search(ctx, "lodash", 10)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Summary != nil {
+		t.Errorf("summary without asking: %+v", res.Summary)
+	}
+
+	// A limit of one returns one component; the summary still counts both.
+	res, err = s.SearchWith(ctx, "lodash", store.SearchOptions{Limit: 1, Summary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(res.Components) != 1 || !res.More["components"] {
+		t.Fatalf("components group: %+v %v", res.Components, res.More)
+	}
+	sum := res.Summary
+	if sum == nil || sum.Components != 2 || sum.Versions != 3 || sum.InstalledAssets != 2 || sum.FindingsQuery != "lodash" || sum.ComponentQuery != "lodash" ||
+		sum.OpenFindings != 1 || sum.AffectedAssets != 1 {
+		t.Fatalf("lodash summary: %+v", sum)
+	}
+	count := func(f store.FindingFilter) int64 {
+		t.Helper()
+		f.Search, f.Page = "lodash", store.Page{Limit: 1}
+		_, n, err := s.ListFindings(ctx, f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	if open, crit, p1 := count(store.FindingFilter{}), count(store.FindingFilter{Severity: []string{"critical"}}),
+		count(store.FindingFilter{Priority: []string{"P1"}}); sum.OpenFindings != open || sum.Critical != crit || sum.Urgent != p1 {
+		t.Errorf("summary %+v, Issues list: %d open, %d critical, %d P1", sum, open, crit, p1)
+	}
+
+	// A version narrows the installed versions and assets; findings are
+	// counted for the package name, as the Issues list searches.
+	for _, q := range []string{"lodash@4.17.20", "pkg:npm/lodash@4.17.20"} {
+		res, err = s.SearchWith(ctx, q, store.SearchOptions{Summary: true})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sum := res.Summary; sum.Versions != 1 || sum.InstalledAssets != 1 || sum.FindingsQuery != "lodash" || sum.OpenFindings != 1 {
+			t.Errorf("%s summary: %+v", q, sum)
+		}
+	}
+
+	// Nothing matching is zero, not missing.
+	res, err = s.SearchWith(ctx, "nothing-here", store.SearchOptions{Summary: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if sum := res.Summary; sum == nil || *sum != (store.SearchSummary{ComponentQuery: "nothing-here", FindingsQuery: "nothing-here"}) {
+		t.Errorf("no matches: %+v", sum)
+	}
+}

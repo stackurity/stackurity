@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { Link, useLocation, useParams, useSearchParams } from "react-router";
 import {
   api,
@@ -18,6 +18,7 @@ import {
   type SavedView,
 } from "../api";
 import { useAuth } from "../auth";
+import { fixImpact, shareText } from "../fixImpact";
 import { useAction, useDebounced, useFacets, useLoad } from "../hooks";
 import { assetKindLabel, plural } from "../format";
 import { FindingCards, FindingsTable } from "../components/Findings";
@@ -46,6 +47,7 @@ import { CheckBadge, CheckResultText } from "../components/CheckAgain";
 import { fixPlaces, FixVerify, useCheckOptions } from "../components/FixVerify";
 import { ActionSummary, BulkBar, FixTable, fixStatus, parseSort, sortRows, ViewsMenu, workOf, type Row, type SortKey } from "../components/ActionCentre";
 import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
+import { GroupCrumb } from "../components/nav";
 
 const LIMIT = 20;
 
@@ -187,7 +189,17 @@ export function FixesPage() {
       <PageHeader
         help="action-plan"
         title="Fixes"
-        sub="Each fix is one change, such as an upgrade, that clears one or more issues. Most urgent first; open a fix for the steps."
+        sub={
+          <>
+            <strong>What should I do?</strong> Each fix is one change, such as an upgrade, that clears one or more issues. Most urgent first;
+            open a fix for the steps.
+          </>
+        }
+        actions={
+          <Link className="btn" to="/fixes/mine" title="Your issues, overdue work, approvals waiting for you, failed checks and open incidents on one page">
+            My work
+          </Link>
+        }
       />
       <ErrorBox error={summary.error} title="Could not load the summary" />
       {s && (
@@ -282,6 +294,7 @@ export function FixesPage() {
             <select id="ap-assignee" value={assignee} onChange={(e) => update({ assignee: e.target.value })}>
               <option value="">Anyone</option>
               <option value="me">Me</option>
+              <option value="mine">Me and my teams</option>
             </select>
           </div>
           <div className="field">
@@ -317,6 +330,7 @@ export function FixesPage() {
           onSort={(key, desc) => update({ sort: key ? `${desc ? "-" : ""}${key}` : "" })}
           selectable={canAct("engineer")}
           onChanged={summary.reload}
+          urgentTotal={s?.urgent_findings}
         />
       )}
     </div>
@@ -330,12 +344,14 @@ function FixTableView({
   onSort,
   selectable,
   onChanged,
+  urgentTotal,
 }: {
   filters: Record<string, string>;
   sort: { key: SortKey | null; desc: boolean };
   onSort: (key: SortKey | null, desc: boolean) => void;
   selectable: boolean;
   onChanged: () => void;
+  urgentTotal?: number;
 }) {
   const [offset, setOffset] = useState(0);
   const [selected, setSelected] = useState<Set<string>>(new Set());
@@ -400,7 +416,7 @@ function FixTableView({
       {res.data && items.length > 0 && (
         <>
           {selectable && chosen.length > 0 && <BulkBar rows={chosen} options={checkOptions} onClear={() => setSelected(new Set())} onDone={reload} />}
-          <FixTable rows={sorted} sort={sort} onSort={onSort} selected={selected} onSelect={select} selectable={selectable} />
+          <FixTable rows={sorted} sort={sort} onSort={onSort} selected={selected} onSelect={select} selectable={selectable} urgentTotal={urgentTotal} />
           <div className="ac-foot">
             <span>
               {plural(res.data.total, "fix", "fixes")}
@@ -433,6 +449,8 @@ export function FixGroupDetailPage() {
     [id, offset],
   );
   const checkOptions = useCheckOptions(res.data ? fixPlaces(res.data.group).map((p) => p.group_id) : []);
+  // All open P1 and P2 issues, for this fix's share of them.
+  const summary = useLoad(() => api.get<FixGroupSummary>("/fix-groups/summary"), []);
   const initialPanel =
     hash === "#assign" ? "assign" : hash === "#snooze" || linkAction === "snooze" ? "suppress" : hash === "#accept" ? "accept_risk" : undefined;
   const clearAction = () => {
@@ -475,6 +493,7 @@ export function FixGroupDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <span>{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
       </nav>
       <PageHeader
@@ -517,6 +536,7 @@ export function FixGroupDetailPage() {
           {why}
         </p>
         {FIX_KIND_HELP[g.kind] && <p className="hint">{FIX_KIND_HELP[g.kind]}</p>}
+        <ImpactList g={g} urgentTotal={summary.data?.urgent_findings} />
         <OwnerSplit owners={res.data.owners} />
       </section>
 
@@ -668,6 +688,40 @@ export function FixGroupDetailPage() {
 }
 
 /**
+ * What the fix is expected to change, as short facts. Only what the data
+ * says: a fact it does not cover is left out, not shown as "no".
+ */
+export function ImpactList({ g, urgentTotal }: { g: FixGroup; urgentTotal?: number }) {
+  if (g.kind === "no_fix") return null;
+  const i = fixImpact(g, urgentTotal);
+  const facts: [string, ReactNode][] = [
+    [
+      "Resolves",
+      <>
+        {i.vulnerabilities !== null && i.vulnerabilities !== i.issues
+          ? `${plural(i.vulnerabilities, "vulnerability", "vulnerabilities")} (${plural(i.issues, "issue")})`
+          : plural(i.issues, "issue")}
+        {i.urgentShare !== null && <span className="muted"> · {shareText(i.urgentShare)} of all open P1 and P2 issues</span>}
+      </>,
+    ],
+    ["Affected assets", i.assets.toLocaleString()],
+    ["Known exploited addressed", i.exploited > 0 ? plural(i.exploited, "issue") : "None known"],
+  ];
+  if (i.major !== null) facts.push(["Major upgrade", i.major ? "Yes: possible breaking changes, test it first" : "No"]);
+  if (i.reboot) facts.push(["Restart needed", "Yes: the change takes effect after a restart"]);
+  return (
+    <dl className="fix-impact small" aria-label="Expected impact">
+      {facts.map(([k, v]) => (
+        <div key={k}>
+          <dt>{k}</dt>
+          <dd>{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+/**
  * Assign to me, from a notification: one tap to confirm, after sign-in.
  */
 function AssignToMe({ group, onDone, onCancel }: { group: FixGroup; onDone: () => void; onCancel: () => void }) {
@@ -727,6 +781,7 @@ function FixDone({ id }: { id: string }) {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link>
       </nav>
       <PageHeader help="check-again" title={c ? (c.fix_title || "This fix") + " is done" : "Fix"} sub={c ? c.asset_name : undefined} />

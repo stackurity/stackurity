@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -61,16 +62,22 @@ type Container struct {
 
 // Image is the part of GET /images/{id}/json the agent uses.
 type Image struct {
-	ID           string   `json:"Id"`
-	RepoTags     []string `json:"RepoTags"`
-	RepoDigests  []string `json:"RepoDigests"`
-	Size         int64    `json:"Size"`
-	Os           string   `json:"Os"`
-	Architecture string   `json:"Architecture"`
-	Variant      string   `json:"Variant"`
-	Config       *struct {
-		WorkingDir string `json:"WorkingDir"`
-	} `json:"Config"`
+	ID           string       `json:"Id"`
+	RepoTags     []string     `json:"RepoTags"`
+	RepoDigests  []string     `json:"RepoDigests"`
+	Size         int64        `json:"Size"`
+	Os           string       `json:"Os"`
+	Architecture string       `json:"Architecture"`
+	Variant      string       `json:"Variant"`
+	Config       *ImageConfig `json:"Config"`
+}
+
+// ImageConfig is the part of an image's configuration the agent reads.
+type ImageConfig struct {
+	WorkingDir string `json:"WorkingDir"`
+	// Env is the image's ENV, "KEY=value" each. Runtime versions an image
+	// declares are read from it (the official python images' PYTHON_VERSION).
+	Env []string `json:"Env"`
 }
 
 // WorkingDir is the image's working directory, or "".
@@ -79,6 +86,21 @@ func (im *Image) WorkingDir() string {
 		return ""
 	}
 	return im.Config.WorkingDir
+}
+
+// Env is the image's configured environment, the last value of each name;
+// nil when the image has none.
+func (im *Image) Env() map[string]string {
+	if im.Config == nil || len(im.Config.Env) == 0 {
+		return nil
+	}
+	out := map[string]string{}
+	for _, kv := range im.Config.Env {
+		if k, v, ok := strings.Cut(kv, "="); ok && k != "" {
+			out[k] = v
+		}
+	}
+	return out
 }
 
 var imageIDRE = regexp.MustCompile(`^sha256:[a-f0-9]{64}$`)

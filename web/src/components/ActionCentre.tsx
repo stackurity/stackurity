@@ -1,4 +1,4 @@
-import { useState, type FormEvent, type ReactNode } from "react";
+import { useRef, useState, type FormEvent, type ReactNode } from "react";
 import { Link, useNavigate } from "react-router";
 import { api, PRIORITIES, type FixGroup, type FixGroupSummary, type FixWork, type SavedView } from "../api";
 import { absTime, plural, relTime } from "../format";
@@ -7,6 +7,8 @@ import { FIX_KIND_LABEL } from "./FixGroups";
 import { fixPlaces, type CheckOptions } from "./FixVerify";
 import { FindingActions, GROUP_ACTION_MAX } from "./Workflow";
 import { ErrorBox, Notice } from "./ui";
+import { SidewaysCue, useSideways } from "./Table";
+import { impactNotes, shareText, urgentShare } from "../fixImpact";
 import "../styles/action-centre.css";
 
 /*
@@ -26,6 +28,8 @@ export interface Work {
   owners: string[];
   unassigned: number;
   mine: number;
+  /** Open issues in a pending request to ignore them. */
+  awaitingApproval: number;
 }
 
 /** Adds up the work of a fix's places (one place: its own group). */
@@ -46,14 +50,16 @@ export function workOf(g: FixGroup, byGroup: Map<string, FixWork>): Work | null 
     owners,
     unassigned: ws.reduce((a, w) => a + w.unassigned, 0),
     mine: ws.reduce((a, w) => a + w.mine, 0),
+    awaitingApproval: ws.reduce((a, w) => a + (w.awaiting_approval ?? 0), 0),
   };
 }
 
-export type FixStatus = "open" | "in_progress" | "checking" | "regressed";
+export type FixStatus = "open" | "in_progress" | "approval" | "checking" | "regressed";
 
 export const STATUS_LABEL: Record<FixStatus, string> = {
-  open: "Open",
+  open: "Not started",
   in_progress: "In progress",
+  approval: "Waiting for approval",
   checking: "Waiting for check",
   regressed: "Regressed",
 };
@@ -61,11 +67,15 @@ export const STATUS_LABEL: Record<FixStatus, string> = {
 const STATUS_HELP: Record<FixStatus, string> = {
   open: "Nobody has started on it yet",
   in_progress: "Someone started work, or said they applied it",
+  approval: "Someone asked to ignore some of its issues; a security user has yet to decide",
   checking: "A check was asked for and is waiting for a fresh report",
   regressed: "Some of its issues were fixed before and came back",
 };
 
-/** One word for where a fix stands: a waiting check first, then a regression, then work started. */
+/**
+ * One phrase for where a fix stands: a waiting check first, then a
+ * regression, then a request waiting for approval, then work started.
+ */
 export function fixStatus(g: FixGroup, work: Work | null, options?: CheckOptions): FixStatus {
   const checking = fixPlaces(g).some((p) => {
     const c = options?.byGroup.get(p.group_id)?.last_check;
@@ -73,6 +83,7 @@ export function fixStatus(g: FixGroup, work: Work | null, options?: CheckOptions
   });
   if (checking) return "checking";
   if (work && work.regressed > 0) return "regressed";
+  if (work && work.awaitingApproval > 0) return "approval";
   if (work && work.inProgress > 0) return "in_progress";
   return "open";
 }
@@ -84,8 +95,9 @@ export function whereText(g: FixGroup): string {
 }
 
 const EFFORT_RANK: Record<string, number> = { low: 0, medium: 1, high: 2 };
-const STATUS_RANK: Record<FixStatus, number> = { regressed: 0, open: 1, in_progress: 2, checking: 3 };
+const STATUS_RANK: Record<FixStatus, number> = { regressed: 0, open: 1, approval: 2, in_progress: 3, checking: 4 };
 
+/** Sort keys; flags and effort have no column any more but still sort a saved address. */
 export type SortKey = "priority" | "fix" | "where" | "issues" | "flags" | "effort" | "owner" | "due" | "status";
 export const SORT_KEYS: SortKey[] = ["priority", "fix", "where", "issues", "flags", "effort", "owner", "due", "status"];
 
@@ -150,8 +162,9 @@ export function PriorityChip({ p }: { p: string }) {
   );
 }
 
+/** The fix deadline: red only when an issue is past it. */
 function DueCell({ w }: { w: Work | null }) {
-  if (!w?.due) return <span className="ac-muted">—</span>;
+  if (!w?.due) return <span className="ac-muted">None set</span>;
   const over = w.overdue > 0;
   return (
     <time dateTime={w.due} title={`Fix by ${absTime(w.due)}${over ? `: ${plural(w.overdue, "issue")} overdue` : ""}`} className={over ? "ac-due-over" : undefined}>
@@ -172,9 +185,30 @@ function OwnerCell({ w }: { w: Work | null }) {
   );
 }
 
-/** A fix's type and what changes, under its title: "Package upgrade · production". */
+/**
+ * Under a recommended action: its kind, the environment, and what needs care
+ * ("Package upgrade · production · major upgrade · restart needed").
+ */
 function subText(g: FixGroup): string {
-  return [FIX_KIND_LABEL[g.kind] ?? g.kind, g.places && g.places.length > 1 ? "" : g.environment].filter(Boolean).join(" · ");
+  return [FIX_KIND_LABEL[g.kind] ?? g.kind, g.places && g.places.length > 1 ? "" : g.environment, ...impactNotes(g)].filter(Boolean).join(" · ");
+}
+
+function RiskCell({ g }: { g: FixGroup }) {
+  return (
+    <span className="ac-risk">
+      <PriorityChip p={g.top_priority} />
+      {g.sos && (
+        <span className="ac-flag ac-flag-sos" title="Matches an SOS rule in the risk policy">
+          SOS
+        </span>
+      )}
+      {g.known_exploited > 0 && (
+        <span className="ac-flag" title={`${plural(g.known_exploited, "issue")} in the CISA Known Exploited Vulnerabilities catalogue`}>
+          KEV {g.known_exploited}
+        </span>
+      )}
+    </span>
+  );
 }
 
 /**
@@ -188,6 +222,7 @@ export function FixTable({
   selected,
   onSelect,
   selectable,
+  urgentTotal,
 }: {
   rows: Row[];
   sort: { key: SortKey | null; desc: boolean };
@@ -195,8 +230,12 @@ export function FixTable({
   selected: Set<string>;
   onSelect: (ids: string[], on: boolean) => void;
   selectable: boolean;
+  /** All open P1 and P2 issues (GET /fix-groups/summary), for each fix's share of them. */
+  urgentTotal?: number;
 }) {
   const navigate = useNavigate();
+  const wrap = useRef<HTMLDivElement>(null);
+  const hidden = useSideways(wrap);
   const head = (key: SortKey, label: string, className?: string, numeric?: boolean) => {
     const active = sort.key === key;
     const next = () => {
@@ -220,7 +259,9 @@ export function FixTable({
   const allOn = rows.length > 0 && rows.every((r) => selected.has(r.g.id));
   const open = (g: FixGroup) => navigate(`/fixes/${encodeURIComponent(g.id)}`);
   return (
-    <div className="ac-table-wrap">
+    <>
+    <SidewaysCue hidden={hidden} />
+    <div ref={wrap} className="ac-table-wrap">
       <table className="ac-table">
         <caption className="sr-only">Fixes, {sort.key ? `sorted by ${sort.key}` : "most urgent first"}</caption>
         <thead>
@@ -230,14 +271,12 @@ export function FixTable({
                 <input type="checkbox" aria-label="Select every fix on this page" checked={allOn} onChange={(e) => onSelect(rows.map((r) => r.g.id), e.target.checked)} />
               </th>
             )}
-            {head("priority", "Priority", "ac-col-prio")}
-            {head("fix", "Fix", "ac-col-fix")}
-            {head("where", "Where", "ac-col-where")}
-            {head("issues", "Issues cleared", "ac-col-issues", true)}
-            {head("flags", "Exploited", "ac-col-flags")}
-            {head("effort", "Effort", "ac-col-effort")}
+            {head("fix", "Recommended action", "ac-col-fix")}
+            {head("where", "Affected assets", "ac-col-where")}
+            {head("priority", "Risk", "ac-col-prio")}
+            {head("issues", "Issues resolved", "ac-col-issues", true)}
             {head("owner", "Owner", "ac-col-owner")}
-            {head("due", "Due", "ac-col-due")}
+            {head("due", "Deadline", "ac-col-due")}
             {head("status", "Status", "ac-col-status")}
           </tr>
         </thead>
@@ -245,6 +284,7 @@ export function FixTable({
           {rows.map(({ g, work, status }) => {
             const on = selected.has(g.id);
             const places = g.places && g.places.length > 1 ? g.places : null;
+            const share = urgentShare(g, urgentTotal);
             return (
               <tr
                 key={g.id}
@@ -260,9 +300,6 @@ export function FixTable({
                     <input type="checkbox" aria-label={`Select ${g.title}`} checked={on} onChange={(e) => onSelect([g.id], e.target.checked)} />
                   </td>
                 )}
-                <td className="ac-col-prio">
-                  <PriorityChip p={g.top_priority} />
-                </td>
                 <td className="ac-col-fix">
                   <Link className="ac-fix-title" to={`/fixes/${encodeURIComponent(g.id)}`} title={g.title} onClick={(e) => e.stopPropagation()}>
                     {g.title}
@@ -275,24 +312,19 @@ export function FixTable({
                     {work?.overdue ? <span className="ac-due-over"> · overdue</span> : null}
                     {g.known_exploited > 0 ? " · known exploited" : ""}
                     {g.sos ? " · SOS" : ""}
+                    {work ? ` · ${work.mine > 0 ? "you" : (work.owners[0] ?? "unassigned")}` : ""}
                   </span>
                 </td>
-                <td className="ac-col-issues num">{g.finding_count.toLocaleString()}</td>
-                <td className="ac-col-flags">
-                  {g.sos && (
-                    <span className="ac-flag ac-flag-sos" title="Matches an SOS rule in the risk policy">
-                      SOS
-                    </span>
-                  )}
-                  {g.known_exploited > 0 && (
-                    <span className="ac-flag" title={`${plural(g.known_exploited, "issue")} in the CISA Known Exploited Vulnerabilities catalogue`}>
-                      KEV {g.known_exploited}
-                    </span>
-                  )}
-                  {!g.sos && g.known_exploited === 0 && <span className="ac-muted">—</span>}
+                <td className="ac-col-prio">
+                  <RiskCell g={g} />
                 </td>
-                <td className="ac-col-effort">
-                  <span className={`ac-effort ac-effort-${g.effort}`}>{g.effort ? g.effort[0].toUpperCase() + g.effort.slice(1) : "—"}</span>
+                <td className="ac-col-issues num">
+                  {g.finding_count.toLocaleString()}
+                  {share !== null && (
+                    <span className="ac-sub" title={`Clears ${shareText(share)} of all open P1 and P2 issues`}>
+                      {shareText(share)} of P1/P2
+                    </span>
+                  )}
                 </td>
                 <td className="ac-col-owner">
                   <OwnerCell w={work} />
@@ -311,6 +343,7 @@ export function FixTable({
         </tbody>
       </table>
     </div>
+    </>
   );
 }
 
@@ -462,6 +495,11 @@ export function ViewsMenu({
           <li>
             <Link to={to("")} onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")} aria-current={here === "" ? "true" : undefined}>
               All open fixes<span className="ac-view-hint">Most urgent first</span>
+            </Link>
+          </li>
+          <li>
+            <Link to="/fixes/mine" onClick={(e) => e.currentTarget.closest("details")?.removeAttribute("open")}>
+              My work<span className="ac-view-hint">Your issues, approvals and what failed, on one page</span>
             </Link>
           </li>
           {BUILTIN_VIEWS.map((v) => (

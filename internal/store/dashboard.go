@@ -41,11 +41,13 @@ type TrendPoint struct {
 	Open int64     `json:"open"`
 }
 
-// WeekFixed is the findings fixed (remediated or removed) in a week.
+// WeekFixed is the findings fixed (remediated or removed) in a week, and
+// those opened in it: first seen then, or reopened after a fix.
 type WeekFixed struct {
-	Start time.Time `json:"start"`
-	End   time.Time `json:"end"`
-	Fixed int64     `json:"fixed"`
+	Start  time.Time `json:"start"`
+	End    time.Time `json:"end"`
+	Fixed  int64     `json:"fixed"`
+	Opened int64     `json:"opened"`
 }
 
 // DashboardTrend is GET /dashboard/trend.
@@ -120,7 +122,14 @@ func (s *Store) SummarizeTrend(ctx context.Context, endOfToday time.Time) (*Dash
 		  (SELECT count(DISTINCT e.finding_id) FROM finding_events e JOIN findings f ON f.id = e.finding_id
 		    JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 		    WHERE e.action = 'resolved' AND e.at > w.start AND e.at <= w.start + interval '7 days'
-		      AND COALESCE(e.detail->>'resolution_kind', f.resolution_kind) IN ('remediated', 'removed'))
+		      AND COALESCE(e.detail->>'resolution_kind', f.resolution_kind) IN ('remediated', 'removed')),
+		  (SELECT count(DISTINCT o.id) FROM (
+		      SELECT f.id FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		      WHERE f.first_seen > w.start AND f.first_seen <= w.start + interval '7 days'
+		      UNION ALL
+		      SELECT e.finding_id FROM finding_events e JOIN findings f ON f.id = e.finding_id
+		        JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
+		      WHERE e.action = 'reopened' AND e.at > w.start AND e.at <= w.start + interval '7 days') o)
 		FROM (SELECT $1::timestamptz - make_interval(days => 7 * (k + 1)) AS start FROM generate_series(0, $2::int - 1) k) w
 		ORDER BY w.start`, t.CheckedAt, TrendWeeks)
 	if err != nil {
@@ -128,7 +137,7 @@ func (s *Store) SummarizeTrend(ctx context.Context, endOfToday time.Time) (*Dash
 	}
 	for wrows.Next() {
 		var w WeekFixed
-		if err := wrows.Scan(&w.Start, &w.End, &w.Fixed); err != nil {
+		if err := wrows.Scan(&w.Start, &w.End, &w.Fixed, &w.Opened); err != nil {
 			wrows.Close()
 			return nil, err
 		}

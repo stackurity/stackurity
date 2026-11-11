@@ -11,6 +11,7 @@ import { LineStatus, RecommendedVersion, UpgradeDetails } from "../components/Up
 import { EvidencePanel, LatestCell } from "./AssetDetail";
 import { coverageText, RowCoverageNote } from "../components/Coverage";
 import { VersionChips } from "./Components";
+import { GroupCrumb } from "../components/nav";
 
 const LIMIT = 100;
 
@@ -82,6 +83,7 @@ export function ComponentDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/components">Components</Link> <span aria-hidden="true">/</span> <span>{componentName(c.namespace, c.name)}</span>
       </nav>
       <PageHeader help="components" title={componentName(c.namespace, c.name)} sub={<span className="mono break">{c.type === "generic" ? displayPurl(c.purl_key) : c.purl_key}</span>} />

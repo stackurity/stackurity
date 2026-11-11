@@ -7,19 +7,23 @@ import (
 	"path/filepath"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
+	"github.com/stackurity/stackurity/internal/collect/gobin"
 	"github.com/stackurity/stackurity/internal/collect/linux"
 	"github.com/stackurity/stackurity/internal/model"
 )
 
 // ReadRoot inventories an unpacked image with the host collectors: the OS
 // package database (dpkg, apk; rpm when the host has an rpm binary),
-// runtimes found by path (never run), host-wide libraries, and the
-// applications discovery finds plus the image's working directory.
+// runtimes found by path (never run; versions from their files and the
+// image's ENV, such as PYTHON_VERSION), host-wide libraries, the
+// applications discovery finds plus the image's working directory, and the
+// Go modules compiled into its executables (read, never run).
 func ReadRoot(ctx context.Context, root string, im *Image, version string) Reading {
 	var r Reading
 	col := linux.New(version)
 	col.Root = root
 	col.RunVersion = nil // the image's binaries are never run
+	col.ImageEnv = im.Env()
 	osBatch, err := col.Collect(ctx, "image", "")
 	if err != nil {
 		// No os-release: a scratch or distroless image with no package
@@ -72,6 +76,13 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 		r.Observations = append(r.Observations, app.Observations...)
 		r.Coverage = append(r.Coverage, app.Coverage...)
 	}
+	// Go binaries dpkg or apk installed are left to the package's entry
+	// (see gobin.Scanner.Owned). Only their file lists count: guessing by
+	// directory would hide a binary no package installed.
+	gb := &gobin.Scanner{Root: root, Owned: col.ListedOwnedFunc()}
+	goObs, goCov := gb.Scan(ctx)
+	r.Observations = append(r.Observations, goObs...)
+	r.Coverage = append(r.Coverage, goCov...)
 	if !full {
 		r.Coverage = append(r.Coverage, model.CoverageItem{Scope: "apps", Status: "partial",
 			Reason: "application discovery stopped at its limits; some applications in the image may not have been read"})

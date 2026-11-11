@@ -58,9 +58,10 @@ func TestOutcomesLeaveOutWithdrawnAdvisories(t *testing.T) {
 				Total  int64            `json:"total"`
 				ByKind map[string]int64 `json:"by_kind"`
 			} `json:"closed_not_remediation"`
-			TimeToRemedy []store.OutcomeTiming `json:"time_to_remedy"`
-			SLA          []store.OutcomeSLA    `json:"sla"`
-			Causes       []store.OutcomeCause  `json:"causes"`
+			TimeToRemedy []store.OutcomeTiming   `json:"time_to_remedy"`
+			SLA          []store.OutcomeSLA      `json:"sla"`
+			Causes       []store.OutcomeCause    `json:"causes"`
+			Executive    *store.OutcomeExecutive `json:"executive"`
 		} `json:"report"`
 	}
 	if code := view.do("GET", "/api/v1/reports/outcomes?days=30", nil, &out); code != 200 {
@@ -81,6 +82,16 @@ func TestOutcomesLeaveOutWithdrawnAdvisories(t *testing.T) {
 	for _, c := range r.Causes {
 		if c.Remediation || c.Evidence != "intelligence" {
 			t.Errorf("cause %+v", c)
+		}
+	}
+	// The executive view counts fixes as the report does: closures that
+	// are not remediation are not fixed in its trend either.
+	if r.Executive == nil || r.Executive.PeriodDays != 7 || len(r.Executive.Trend) == 0 {
+		t.Fatalf("executive = %+v", r.Executive)
+	}
+	for _, p := range r.Executive.Trend {
+		if p.Fixed != 0 {
+			t.Errorf("trend counts a closure that is not remediation: %+v", r.Executive.Trend)
 		}
 	}
 

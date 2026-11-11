@@ -844,7 +844,7 @@ Distinct environments, asset kinds and component types, for filters.
 
 **Who:** viewer
 
-Searches the current workspace for one query (`q`, `limit`). See [Search](#search).
+Searches the current workspace for one query (`q`, `limit`, `summary`). See [Search](#search).
 
 ### `GET /assets`
 
@@ -1083,7 +1083,7 @@ Query:
 - `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true` (or `false`: active and not past the fix-by date), `due_after` and `due_before` (RFC 3339: active findings due at or after, or before, that time)
 - `epss_min` (0 to 1; `0.1` is 10%): vulnerability findings one of whose CVEs has at least that EPSS
 - `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
-- `assignee_user`, `assignee_team`, `assignee=none` (unassigned)
+- `assignee_user`, `assignee_team`, `assignee=none` (unassigned), `assignee=me` (the caller), `assignee=mine` (the caller or a team they are a member of)
 - `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)
 - `second_check` (`agreed`, `disagreed`, `could_not_check`), `sort`, `limit`, `offset`
 
@@ -1105,7 +1105,7 @@ Counts by severity, kind, verification, priority and state, plus SOS, overdue, u
 
 **Who:** viewer
 
-The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`; and `excepted`, open findings that are snoozed or accepted and so outside the SLA), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (findings fixed, that is remediated or removed, in each of the last 4 weeks), with `checked_at` and `end_of_today`.
+The Dashboard's SLA split and trend for the assets the caller may see. Query: `tz`, an IANA time zone where "today" ends (default UTC). Returns `sla` (active findings: `on_time`, including those with no fix-by date; `due_today`; `overdue`; and `excepted`, open findings that are snoozed or accepted and so outside the SLA), `open` (open findings at this time of day for each of the last 30 days, oldest first, worked back from today's count through the matcher's resolved and reopened events; a deleted asset's findings go with it, so it drops out of past days too) and `fixed` (each of the last 4 weeks, oldest first: `fixed`, findings remediated or removed in it, and `opened`, findings first seen or reopened in it), with `checked_at` and `end_of_today`.
 
 ### `GET /findings/verify`
 
@@ -1201,7 +1201,7 @@ Fixes (fix groups), most urgent first, paged. Query: `asset_id`, `kind`, `enviro
 
 - `bucket`: `focus` (a fix exists, SOS or P1, on a production asset or one with no environment), `no_fix`, `old_kernels`, `non_production` or `lower_priority`. Every group is in exactly one, checked in that order.
 - `priority`: `P1` to `P4`, several separated by commas: the fix's most urgent issue.
-- `overdue=true`: fixes with an active issue past its fix deadline (the risk policy's SLA or patch calendar). `exploited=true`: fixes with a known exploited issue. `assignee=me`: fixes with an open issue assigned to the caller.
+- `overdue=true`: fixes with an active issue past its fix deadline (the risk policy's SLA or patch calendar). `exploited=true`: fixes with a known exploited issue. `assignee=me`: fixes with an open issue assigned to the caller; `assignee=mine`: to the caller or a team they are a member of.
 - `group_by`: `fix` (the same change in several places is one entry with `places`, each with its group, asset, app directory and finding count) or `asset` (one entry per asset). The default is the workspace's setting (`GET /settings/fix-grouping`).
 
 A `no_fix` group with application packages (npm, PyPI, Composer and the like; not operating system packages) carries `no_fix_advice`: what can be done about each package without a fixed version, from stored data only. Its `action` says the same in one paragraph.
@@ -1217,13 +1217,13 @@ A `no_fix` group with application packages (npm, PyPI, Composer and the like; no
 
 **Who:** viewer
 
-Groups and findings per kind, plus `focus` (focus groups, their findings and assets) and `hidden` (groups and findings per other bucket). Query: `asset_id`, `group_by` as for `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. `by_priority` counts fixes by their most urgent issue (a fix in several places counts once, at its most urgent place), `overdue` the fixes with an active issue past its fix deadline, and `exploited` those with a known exploited issue.
+Groups and findings per kind, plus `focus` (focus groups, their findings and assets) and `hidden` (groups and findings per other bucket). Query: `asset_id`, `group_by` as for `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. `by_priority` counts fixes by their most urgent issue (a fix in several places counts once, at its most urgent place), `overdue` the fixes with an active issue past its fix deadline, and `exploited` those with a known exploited issue. `urgent_findings` counts the P1 and P2 findings of all the fixes (under the same `asset_id`), so a fix's own P1 and P2 findings (`by_priority`) can be shown as a share of them.
 
 ### `GET /fix-groups/work`
 
 **Who:** viewer
 
-Where the work on each listed fix stands, for the Fixes table. `ids`: up to 500 fix group ids (a fix in several places has one per place), separated by commas. One item per group with open issues the caller can see: `group_id`, `active` (open and not snoozed or accepted), `due` (the earliest fix deadline of an active issue, or null), `overdue`, `in_progress` ("applied, waiting for a check" or being worked on), `regressed`, `owners` (who open issues are assigned to: a user's email or a team's name, most issues first, at most five), `unassigned` and `mine` (assigned to the caller).
+Where the work on each listed fix stands, for the Fixes table. `ids`: up to 500 fix group ids (a fix in several places has one per place), separated by commas. One item per group with open issues the caller can see: `group_id`, `active` (open and not snoozed or accepted), `due` (the earliest fix deadline of an active issue, or null), `overdue`, `in_progress` ("applied, waiting for a check" or being worked on), `regressed`, `owners` (who open issues are assigned to: a user's email or a team's name, most issues first, at most five), `unassigned`, `mine` (assigned to the caller) and `awaiting_approval` (open issues in a pending request to ignore them, which security has yet to decide).
 
 ### `GET /fix-groups/{id}`
 
@@ -1247,7 +1247,7 @@ One fix group with its findings, paged.
 
 **Who:** viewer
 
-Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet).
+Checks, newest first, paged. Query: `asset_id`, `fix_group`, `open=true` (not done yet), `failed=true` (finished in the last 30 days without clearing the fix: still open, partly fixed, incomplete or expired, and still the latest check of that fix on that asset).
 
 ### `GET /checks/options`
 
@@ -1941,7 +1941,7 @@ Names of the organisation's stored secrets (never values), and `enabled`: whethe
 
 **Who:** admin
 
-What the Dashboard's **Secrets and credentials** block shows; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
+What the Dashboard shows under **Secrets and credentials** in its Security posture band; values are never read. `failing`: enabled integrations whose latest run failed, channels whose latest delivery failed and AWS connections that failed (`kind` `integration`, `channel` or `aws`, `detail` with the error, `at` the last success). `expiring`: API tokens, not revoked, that expire within `expiring_days` (14) or expired within the last 14 days (`at` the expiry). `unused`: API tokens older than `unused_days` (90) not used for 90 days (`at` the last use, absent when never used). `old`: stored secrets last set more than `old_days` (365) ago (`at` when). Each group has `total` and its first 5 `items`. Tokens of CI jobs are left out.
 
 ### `PUT /secrets/{name}`
 
@@ -3037,7 +3037,7 @@ In trial report mode every report and export carries a watermark ([asset-limits.
 
 ## Onboarding
 
-A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping sets `skipped`: the dashboard then shows a checklist on the Dashboard until every step is done or someone hides it (`done`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
+A new organisation's admins see the first-run flow while `GET /onboarding` says `show_flow`: the state is `new` and there are no assets. Organisations with assets never see it (migration `0033` marks them `done`). Skipping or finishing the flow sets `skipped`: the Dashboard then shows a setup checklist until an admin hides it (`done`); the state no longer becomes `done` by itself when these steps are done, because the checklist has more steps (owner rules from `GET /owner-rules`, a saved risk policy from `GET /risk-policy`, servers and repositories from `GET /overview`). The steps are read from data, so doing them elsewhere counts: an active project; an asset (in the flow's project, when one is chosen); an enabled route (for that project, or for every asset); an invitation not withdrawn, or a second member.
 
 Assets added through the flow land in its project: the install command's enrollment code, the CI token and the SBOM upload all carry `project_id`.
 
@@ -3055,6 +3055,15 @@ An invitation lets someone join the organisation with what they may see: an orga
 ## Search
 
 `GET /search?q=lodash@4.17.20&limit=10` looks one query up everywhere at once and returns the matches grouped by type. `q` is trimmed and must be 2 to 200 characters; `%`, `_` and `\` match themselves. `limit` (default 10, max 50) applies to each group, and `more` says which groups had more matches.
+
+With `summary=1` the response also has `summary`, counts of every match whatever the limit (the dashboard's results page shows them as its overview):
+
+```json
+"summary": {"components": 3, "versions": 7, "installed_assets": 42, "component_query": "openssl",
+            "findings_query": "openssl", "open_findings": 118, "affected_assets": 31, "critical": 4, "urgent": 2}
+```
+
+`components` counts the installed packages matched as for the **components** group, `versions` their distinct installed versions and `installed_assets` the assets they are on (both only at the version asked for, when the query gives one). `component_query` is the package name alone. The finding counts are for open findings that `GET /findings?q=<findings_query>` lists (package name, key, title or asset name containing the text): all of them, those on `affected_assets` distinct assets, those of `critical` severity and those at priority P1 (`urgent`). `findings_query` is the package name when the query gives a version or is a purl, otherwise the query.
 
 ```json
 {"query": "...", "vulnerabilities": [...], "findings": [...], "assets": [...], "components": [...], "teams": [...], "members": [...],
@@ -3164,7 +3173,7 @@ Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason
 - `lifecycle`, `target_lifecycle` and `supported_line`: release lines with `status` `supported`, `security_only` or `end_of_life`.
 - `fixes` and `unfixed`: the finding keys the recommended version resolves and those it does not. `rationale` gives the reasons in plain language.
 
-Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `target_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `to_version` stays the minimum fixed version. `target_version` is the version the `title` and `action` name: the recommended version when it is a newer stable release in the minimum fix's own major line ("Upgrade ip-address 10.1.0 → 10.7.5", with 10.7.4 in `to_version`), otherwise `to_version`. A major upgrade or a withdrawn release never heads the title; the action then mentions the recommendation. Below 1.0 the recommendation heads the title only within the same minor line (0.33 to 0.33.x, not 0.34). `GET /fix-groups/summary` takes `group_by` like `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. A group's `needs` (`ubuntu-pro`, `SUSE LTSS`) says a paid channel also publishes fixes for some of its findings; it is informational, and `action` is always the free path.
+Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended_version`, `target_version`, `change_type`, `requires_major`, `recommended_yanked` and `rationale`; `change_type` is set from the installed and fixed versions even without release data; `to_version` stays the minimum fixed version. `target_version` is the version the `title` and `action` name: the recommended version when it is a newer stable release in the minimum fix's own major line ("Upgrade ip-address 10.1.0 → 10.7.5", with 10.7.4 in `to_version`), otherwise `to_version`. A major upgrade or a withdrawn release never heads the title; the action then mentions the recommendation. Below 1.0 the recommendation heads the title only within the same minor line (0.33 to 0.33.x, not 0.34). `GET /fix-groups/summary` takes `group_by` like `GET /fix-groups`: grouped by fix, a fix needed in several places counts once. `reboot: true` marks a fix that takes effect only after a restart: a Windows cumulative update, or security updates that include a kernel image (absent means neither, not that no service restarts). A group's `needs` (`ubuntu-pro`, `SUSE LTSS`) says a paid channel also publishes fixes for some of its findings; it is informational, and `action` is always the free path.
 
 ## Remediation outcomes
 
@@ -3178,6 +3187,12 @@ Package upgrade groups in the action plan (`GET /fix-groups`) carry `recommended
 - `reopened`: reopenings and distinct findings in the window, and of the resolutions recorded in the window how many were later reopened. `events_since` is when resolutions and reopenings started being recorded.
 - `open`: active, overdue, excepted (suppressed or accepted) and on stale assets, now.
 - `remediation`: plans by status and actions by status created in the window, the success rate (verified out of verified, failed and rolled back), rollback actions and recent failures; `null` when there were none.
+- `executive`: what the executive summary on Reports ▸ Outcomes adds, counted with the same rules:
+  - `trend`: the window in periods of `period_days` (7, or 28 for windows over 91 days; the first period may be shorter), oldest first, each with `opened` (findings first seen or reopened in it, each once) and `fixed` (remediated or removed and still resolved, so the periods add up to `resolved`).
+  - `overdue_top`: up to `overdue_limit` (10) active findings past their fix-by date, P1 first and then the oldest fix-by date, with `title`, `priority`, `known_exploited`, the asset, the owner (`owner_kind` `user`, `team` or empty when unassigned, `owner_id`, `owner_name`), `first_seen` and `fix_due`. The total is `open.overdue`.
+  - `by_owner`: active findings per assignee (`kind`, `id`, `name`; empty `kind` is unassigned) with `open`, `overdue` and `urgent` (P1 or P2), most overdue first, at most 15; `owners_total` counts them all. A finding assigned to a person and a team counts under the person.
+  - `impact`: assets with an active P1 or P2 finding (`urgent_assets`), and of those `production` (environment in the risk policy's `production_environments`, any case), `exposed` (the internet exposure risk scoring uses) and `exposed_production`, with `environment_known` and `exposure_known` saying for how many that was recorded.
+  - `exceptions`: `pending` requests to ignore waiting for a decision about issues all on assets the caller can see, with `pending_since` (the oldest); `expired`, findings whose snooze or acceptance ran out in the window, and `expired_still_open`, those still open and active.
 
 Every rate comes with the counts it is computed from and is `null` when there is nothing to divide by.
 
