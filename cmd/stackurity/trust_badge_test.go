@@ -20,9 +20,9 @@ import (
 func badgeEnv(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func TestTrustBadgeFromEnv(t *testing.T) {
-	// The community build is never Stackurity Cloud.
-	if trustBadgeCloud {
-		t.Fatal("trustBadgeCloud is true outside the Stackurity Cloud build")
+	// Only the Stackurity Cloud build (tags ee,cloud) turns the badge on.
+	if trustBadgeCloud != wantTrustBadgeCloud {
+		t.Fatalf("trustBadgeCloud = %v in this build, want %v", trustBadgeCloud, wantTrustBadgeCloud)
 	}
 	cases := []struct {
 		name  string
