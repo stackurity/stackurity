@@ -55,7 +55,7 @@ export const ARTICLES: Article[] = [
     title: "Connect an AI assistant",
     section: "Getting started",
     summary: "Ask Claude, ChatGPT, Cursor, VS Code, Windsurf, Gemini CLI or Replit what is installed, what is vulnerable and what to upgrade.",
-    where: ["Integrations", "AI assistants"],
+    where: ["Administration", "Integrations", "AI assistants"],
     keywords: "ask stackurity in-app assistant chat panel ai assistant claude chatgpt cursor vs code copilot claude code windsurf gemini cli replit mcp connector model context protocol oauth connected assistants allow changes",
     body: [
       {
@@ -112,17 +112,13 @@ export const ARTICLES: Article[] = [
         table: [
           ["Place", "What it holds"],
           ["Dashboard", "The landing page after you sign in, in four bands: **Security posture** (urgent and high-priority issues, known exploited, issues past their fix-by date, assets reporting, leaked keys to rotate, what was not checked and, for admins, secrets and credentials), **Needs your attention** (open SOS incidents, issues overdue or due today, approvals waiting, assets that stopped reporting; one button each), **Recommended actions** (the fixes to do first) and **Security trends** (issues opened against fixed per week, the 30-day open-issue line, deadlines met, and open issues by priority). Every number opens the list it counts."],
-          ["Fixes", "Every fix, one card per change, most urgent first. **All issues** lists each finding with filters; **Automatic fixes** shows the upgrades Stackurity applies for you (Pro)."],
-          ["Assets", "Servers, repositories, images and cloud services, with their **Components**, **Coverage** and **Projects** (admins), and **Identity conflicts** when there are some."],
-          ["Activity", "Incidents, checks (Check again and their results) and approvals."],
-          ["Reports", "Remediation outcomes, the evidence report and the audit log."],
-          ["Integrations", "Everything Stackurity connects to, the delivery log, secrets, API tokens, AI assistants, plugins and data sources (the vulnerability feeds)."],
-          ["People", "Users, teams and owner rules (admins)."],
-          ["Settings", "Risk policy, fix grouping, VEX, automatic fix policies, plan and usage, single sign-on and jobs."],
-          ["Admin", "For instance administrators: workspaces, platform health, coverage gaps, stack packs, the licence and what's new."],
+          ["Security", "What to do and what is wrong. **Fixes**: every fix, one card per change, most urgent first. **All issues**: each finding with filters. **Leaked keys**, **Automatic fixes** (the upgrades Stackurity applies for you, Pro), **Incidents** and **Checks** (Check again and their results)."],
+          ["Environment", "What you run. **Assets** (servers, repositories, images and cloud services, and **Identity conflicts** when there are some), **Components** (and updates available), **Projects** and **Coverage** (with **Data sources**, the vulnerability feeds)."],
+          ["Governance", "What was decided and proved. **Approvals** (requests to ignore issues) and **Reports and audit**: remediation outcomes, the evidence report and the audit log."],
+          ["Administration", "How Stackurity is set up. **Integrations** (everything Stackurity connects to, the delivery log, stored credentials, API tokens, AI assistants and plugins), **People** (users, teams and owner rules), **Settings** (risk policy, fix grouping, VEX, automatic fix policies, plan and usage, single sign-on and jobs) and **Admin** (for instance administrators: workspaces, platform health, coverage gaps, stack packs, the licence and what's new)."],
         ],
       },
-      { p: "Each place shows only what your role can open: People needs the admin role, Admin is for instance administrators. On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (the other places, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
+      { p: "The sidebar shows only what your role can open: People and Projects need the admin role (security users get their projects' notifications), Admin is for instance administrators. Each group heading opens and closes its items; the group of the page you are on opens by itself, and a closed group shows a count when something inside waits for you. **Collapse** at the bottom narrows the sidebar to icons. On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (the other places by group, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
@@ -151,7 +147,7 @@ export const ARTICLES: Article[] = [
       },
       { p: "Recommended actions also says how many issues it does not show and why (no fix in the standard updates yet, kernels that are not running, assets that are not production, lower priority, snoozed or ignored). Every number is a link to the list it counts. \"No fix in the standard updates\" means no fixed version is published yet, or the vendor publishes it only in a paid support subscription such as Ubuntu Pro; the fix page says what to do meanwhile." },
       { p: "Words with a dotted underline (SOS, incident, issue, fix) show their meaning when you point at them; the [Glossary](help:glossary) has the rest. Under the title, **vulnerability data updated** says when the newest data source last synced. A warning appears there when a source is out of date or failing; open [Data sources](/intelligence) to see which (see [Coverage, Intelligence feeds and gaps](help:coverage-intelligence))." },
-      { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Activity**) daily and acknowledge new ones, so escalations don't fire." },
+      { p: "For alerts, someone on the team should check [Incidents](/incidents) (under **Security**) daily and acknowledge new ones, so escalations don't fire." },
     ],
   },
   {
@@ -242,7 +238,7 @@ export const ARTICLES: Article[] = [
     title: "Add a server",
     section: "Adding servers and sources",
     summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server or Mac. Admins only.",
-    where: ["Assets", "Add server"],
+    where: ["Environment", "Assets", "Add server"],
     keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding",
     body: [
       {
@@ -327,7 +323,7 @@ sudo userdel stackurity`,
     title: "Add many servers",
     section: "Adding servers and sources",
     summary: "Create a fleet code for up to 1,000 servers and install with cloud-init, Ansible, Terraform or an SSH loop. List DigitalOcean droplets and see which are not covered. Admins only.",
-    where: ["Assets", "Add server", "For many servers"],
+    where: ["Environment", "Assets", "Add server", "For many servers"],
     keywords: "fleet many servers bulk rollout cloud-init user data ansible playbook terraform user_data ssh loop digitalocean droplets tag enrollment code",
     body: [
       {
@@ -371,7 +367,7 @@ sudo userdel stackurity`,
     title: "Add a Linux server manually",
     section: "Adding servers and sources",
     summary: "Create a collector token, install the agent binary, run it as a systemd service. Repeat for each server.",
-    where: ["Integrations", "API tokens"],
+    where: ["Administration", "Integrations", "API tokens"],
     keywords: "add server second server more servers agent install host token systemd collector manual",
     body: [
       { note: "Most servers are easier to add with a one-time install command: see [Add a server](help:add-server). Use these steps when you can't run the installer." },
@@ -500,7 +496,7 @@ WantedBy=multi-user.target`,
     title: "Add a Windows server",
     section: "Adding servers and sources",
     summary: "One PowerShell command installs the read-only agent as a Windows service. It reads the OS build and installed programs from the registry.",
-    where: ["Assets", "Add server"],
+    where: ["Environment", "Assets", "Add server"],
     keywords: "windows powershell service install command enroll registry irm iex administrator uninstall scheduled task",
     body: [
       {
@@ -533,7 +529,7 @@ WantedBy=multi-user.target`,
       {
         list: [
           "To upgrade, run the same command without the code part, in PowerShell as administrator.",
-          "To remove the agent, its service and its token, run the command below. Then delete the host under **Assets** and revoke its token under **Settings ▸ API tokens** if you no longer need them.",
+          "To remove the agent, its service and its token, run the command below. Then delete the host under **Assets** and revoke its token under **Integrations ▸ API tokens** if you no longer need them.",
         ],
       },
       { code: "$env:STACKURITY_UNINSTALL = '1'; irm https://stackurity.example.com/install/agent.ps1 | iex", label: "Remove the agent" },
@@ -560,7 +556,7 @@ stackurity.exe agent --interval 6h`,
     title: "Add a Mac",
     section: "Adding servers and sources",
     summary: "Developer laptops and macOS build servers: a LaunchDaemon that reads the macOS version, applications, Homebrew and runtimes.",
-    where: ["Assets", "Add server"],
+    where: ["Environment", "Assets", "Add server"],
     keywords: "mac macos macbook laptop apple homebrew brew launchd launchdaemon mdm jamf kandji intune applications",
     body: [
       {
@@ -598,7 +594,7 @@ stackurity.exe agent --interval 6h`,
       },
       { h: "Remove it" },
       { code: "curl -fsSL https://stackurity.example.com/install/agent-macos.sh | sudo STACKURITY_UNINSTALL=1 sh", label: "Uninstall" },
-      { p: "Then delete the Mac under **Assets** and revoke its token under **Settings ▸ API tokens** if you no longer want its history." },
+      { p: "Then delete the Mac under **Assets** and revoke its token under **Integrations ▸ API tokens** if you no longer want its history." },
     ],
   },
   {
@@ -606,7 +602,7 @@ stackurity.exe agent --interval 6h`,
     title: "Add a repository (Git integration or CI scan)",
     section: "Adding servers and sources",
     summary: "Read lockfiles from a repository, either by letting the server clone it or by scanning in CI.",
-    where: ["Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "git github gitlab lockfile npm composer repository ci",
     body: [
       { note: "On GitLab, where your server offers it, [Connect GitLab](help:gitlab) covers a whole group in one step: no token or CI step." },
@@ -644,7 +640,7 @@ stackurity.exe agent --interval 6h`,
     title: "Connect GitLab (a group's projects in one step)",
     section: "Adding servers and sources",
     summary: "Scan every project of a GitLab group, subgroups included: authorise on GitLab, pick the group, no token to paste.",
-    where: ["Integrations", "Git repository"],
+    where: ["Administration", "Integrations", "Git repository"],
     keywords: "gitlab group project subgroup oauth access token webhook push self-managed private repository",
     body: [
       { p: "Where your Stackurity server offers Connect GitLab (Stackurity Cloud does), you don't need to create a token or add a CI step to scan your GitLab projects." },
@@ -691,7 +687,7 @@ stackurity.exe agent --interval 6h`,
     title: "Scan in CI without a stored secret (GitHub Actions, GitLab)",
     section: "Adding servers and sources",
     summary: "Trust a repository once; its pipelines prove who they are with the CI provider's ID token instead of a stored collector token.",
-    where: ["Integrations", "CI pipeline"],
+    where: ["Administration", "Integrations", "CI pipeline"],
     keywords: "oidc openid connect id token keyless secretless github actions gitlab id_tokens id-token write trust ci token STACKURITY_ID_TOKEN",
     body: [
       {
@@ -745,7 +741,7 @@ stackurity.exe agent --interval 6h`,
     title: "Install on GitHub (the Stackurity GitHub App)",
     section: "Adding servers and sources",
     summary: "Cover your GitHub repositories in one click: pick them on GitHub, no token to create or renew.",
-    where: ["Integrations", "Git repository"],
+    where: ["Administration", "Integrations", "Git repository"],
     keywords: "github app install repositories token organisation private repository webhook push",
     body: [
       { p: "Where your Stackurity server has the GitHub App (Stackurity Cloud does), you don't need a token or a CI step to scan your GitHub repositories." },
@@ -839,7 +835,7 @@ stackurity.exe agent --interval 6h`,
     section: "Adding servers and sources",
     summary: "Vendors' statements that a vulnerability does or does not affect their product, approved before they hide anything; your own decisions as OpenVEX or CycloneDX VEX.",
     keywords: "vex openvex cyclonedx not affected false positive mitigated cosign attestation",
-    where: ["Settings", "VEX"],
+    where: ["Administration", "Settings", "VEX"],
     body: [
       { code: "stackurity vex import vendor.openvex.json --source 3", label: "Import" },
       {
@@ -860,7 +856,7 @@ stackurity.exe agent --interval 6h`,
     title: "Scan a container image",
     section: "Adding servers and sources",
     summary: "The server reads an image straight from its registry with the bundled Syft; nothing in the image runs.",
-    where: ["Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "docker image registry ghcr syft",
     body: [
       {
@@ -880,7 +876,7 @@ stackurity.exe agent --interval 6h`,
     title: "Connect a container registry",
     section: "Adding servers and sources",
     summary: "Scan the recent tags of every repository in GitHub Container Registry, Docker Hub, Amazon ECR or your own registry, and pick up new ones on a schedule.",
-    where: ["Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "registry ghcr docker hub ecr harbor gitlab quay oci repositories tags latest semver",
     body: [
       {
@@ -909,7 +905,7 @@ stackurity.exe agent --interval 6h`,
     title: "Connect AWS",
     section: "Adding servers and sources",
     summary: "Connect an AWS account with one CloudFormation stack: RDS, Aurora, ElastiCache, EKS, Lambda and OpenSearch versions, and optionally the agent on EC2 through SSM.",
-    where: ["Integrations", "AWS"],
+    where: ["Administration", "Integrations", "AWS"],
     keywords: "aws amazon cloudformation launch stack quick create iam role external id rds aurora lambda eks elasticache opensearch plugin managed service ssm ec2 run command agent install",
     body: [
       {
@@ -953,7 +949,7 @@ stackurity.exe agent --interval 6h`,
     title: "Google Cloud managed services",
     section: "Adding servers and sources",
     summary: "Track Cloud SQL, Memorystore, GKE, Cloud Run functions, Cloud Run and App Engine versions with the gcp-managed plugin, without a service account key.",
-    where: ["Settings", "Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "gcp google cloud sql memorystore gke cloud run functions app engine workload identity federation plugin managed service",
     body: [
       {
@@ -974,7 +970,7 @@ stackurity.exe agent --interval 6h`,
     title: "Azure managed services",
     section: "Adding servers and sources",
     summary: "Track Azure Database for MySQL and PostgreSQL, Azure Cache for Redis, AKS, App Service and Functions versions with the azure-managed plugin, without a secret in your tenant.",
-    where: ["Settings", "Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "azure entra aks app service functions mysql postgresql redis subscription consent plugin managed service",
     body: [
       {
@@ -997,7 +993,7 @@ stackurity.exe agent --interval 6h`,
     title: "Kubernetes clusters",
     section: "Adding servers and sources",
     summary: "Connect a cluster with one command: a read-only reporter in the cluster sends its workloads, the images they run, their exposure and the cluster and node versions.",
-    where: ["Integrations", "Kubernetes cluster"],
+    where: ["Administration", "Integrations", "Kubernetes cluster"],
     keywords: "kubernetes k8s cluster workload deployment pod eks gke aks kind exposure nodeport loadbalancer ingress helm kubectl reporter enroll",
     body: [
       {
@@ -1043,7 +1039,7 @@ stackurity.exe agent --interval 6h`,
     title: "Fixes",
     section: "Daily work",
     summary: "Findings grouped by the one change that resolves them, most urgent first, and what each fix page tells you.",
-    where: ["Fixes"],
+    where: ["Security", "Fixes"],
     keywords: "fix group actions action plan security updates release upgrade kernels needs you hidden snooze",
     body: [
       { p: "**Fixes** answers “what should we do?”. Each fix is one change, such as an upgrade, with the number of issues it clears. The page was called Action plan before 0.6; old links still work." },
@@ -1097,7 +1093,7 @@ stackurity.exe agent --interval 6h`,
     title: "All issues: filters, states and bulk actions",
     section: "Daily work",
     summary: "Every individual finding, with workflow state, assignee and deadlines.",
-    where: ["Fixes", "All issues"],
+    where: ["Security", "All issues"],
     keywords: "filter state acknowledge assign bulk priority severity verification",
     body: [
       { p: "**Fixes ▸ All issues** lists every finding. The chips at the top are one-tap presets: **Open**, **Urgent** (P1, not snoozed or accepted), **Assigned to me**, **New this week** and **Known exploited**. Everything else is behind the **Filters** button (a sheet from the bottom on a phone). **Group by asset** sorts by asset and puts a heading over each one's issues. On a phone each issue is a card." },
@@ -1155,7 +1151,7 @@ stackurity.exe agent --interval 6h`,
     title: "Snooze and ignore",
     section: "Daily work",
     summary: "Hide an issue until a date or until a fix ships, or ignore it with a reason, a scope and an expiry.",
-    where: ["Fixes", "All issues"],
+    where: ["Security", "All issues"],
     keywords: "snooze suppress accept risk exception mitigation expiry false positive until fix",
     body: [
       { p: "Two ways to put an issue aside. Both need the **security** or **admin** role, a reason, and an end. Other roles use **Ask to ignore**, and security decides in the [approval inbox](help:approvals)." },
@@ -1186,7 +1182,7 @@ stackurity.exe agent --interval 6h`,
     title: "Ignore issues: reason, scope and expiry",
     section: "Daily work",
     summary: "Accepted risk, false positive, mitigated or no fix; on this asset or every asset; until a date, a fix, or never.",
-    where: ["Fixes", "Ignore"],
+    where: ["Security", "Fixes", "Ignore"],
     keywords: "ignore accept risk false positive mitigated no fix everywhere scope expiry rule rejected",
     body: [
       { h: "Reason" },
@@ -1214,7 +1210,7 @@ stackurity.exe agent --interval 6h`,
           "**Never**: for false positives only. Other reasons need an end, so someone looks again.",
         ],
       },
-      { p: "When an ignore ends, its issues return to new with an event in their history. Each ignore is a rule, listed under [Activity ▸ Approvals ▸ Ignore rules](/approvals?tab=rules), where security can end it early. Reopening one issue takes it out of its rule for good." },
+      { p: "When an ignore ends, its issues return to new with an event in their history. Each ignore is a rule, listed under [Governance ▸ Approvals ▸ Ignore rules](/approvals?tab=rules), where security can end it early. Reopening one issue takes it out of its rule for good." },
     ],
   },
   {
@@ -1222,13 +1218,13 @@ stackurity.exe agent --interval 6h`,
     title: "The approval inbox",
     section: "Daily work",
     summary: "Engineers and viewers ask to ignore issues; security and admin users approve or decline.",
-    where: ["Activity", "Approvals"],
+    where: ["Governance", "Approvals"],
     keywords: "approve decline request ignore inbox approval",
     body: [
       { p: "Only the **security** and **admin** roles can snooze or ignore issues. Everyone else sees **Ask to ignore…** on an issue, a selection or a fix. The request records who asked, the reason, the scope and the expiry. Nothing changes until someone decides." },
       {
         steps: [
-          "Open [Activity ▸ Approvals](/approvals). Security and admin users see every request; a count on **Activity** says how many wait.",
+          "Open [Governance ▸ Approvals](/approvals). Security and admin users see every request; a count on **Approvals** says how many wait.",
           "Read the request: the issues, why, where and until when.",
           "**Approve** ignores the issues that are still open, as if you had done it. **Decline** leaves them as they are. Add a note either way.",
         ],
@@ -1241,7 +1237,7 @@ stackurity.exe agent --interval 6h`,
     title: "Check again",
     section: "Daily work",
     summary: "Ask for a fresh report now, and see whether a fix passed, partly fixed or is still open.",
-    where: ["Fixes", "Check again"],
+    where: ["Security", "Fixes", "Check again"],
     keywords: "check again verify applied poll agent rescan passed partly fixed still open",
     body: [
       { p: "Issues close only on fresh evidence: a new report from the asset that no longer has them. **Check again** asks for that report now instead of waiting for the next one." },
@@ -1265,7 +1261,7 @@ stackurity.exe agent --interval 6h`,
           ["No report", "No report arrived within 7 days."],
         ],
       },
-      { p: "A check of a whole asset also says how many issues are new. Every check is listed under [Activity ▸ Checks](/checks)." },
+      { p: "A check of a whole asset also says how many issues are new. Every check is listed under [Security ▸ Checks](/checks)." },
       { h: "I applied this" },
       { p: "On a fix page, **I applied this** says you made the change. Its issues go to **In progress** (“applied, waiting for a check”) and a check is requested. It never closes an issue by itself: only the fresh report does." },
     ],
@@ -1275,7 +1271,7 @@ stackurity.exe agent --interval 6h`,
     title: "Regressed issues",
     section: "Daily work",
     summary: "An issue that was fixed on an asset and came back.",
-    where: ["Fixes", "All issues"],
+    where: ["Security", "All issues"],
     keywords: "regressed came back reopened downgrade reinstall",
     body: [
       { p: "An issue is **Regressed** when it was fixed on an asset (the component was upgraded or removed) and a later report has it again on the same asset: the same component and advisory, for example after a downgrade, a restored backup or a reinstalled package." },
@@ -1295,7 +1291,7 @@ stackurity.exe agent --interval 6h`,
     title: "Incidents",
     section: "Daily work",
     summary: "Findings grouped by vulnerability and owner team, plus system problems. Notifications are sent per incident.",
-    where: ["Activity", "Incidents"],
+    where: ["Security", "Incidents"],
     keywords: "incident alert escalation ack overdue",
     body: [
       {
@@ -1316,7 +1312,7 @@ stackurity.exe agent --interval 6h`,
     title: "Servers and scans that stop reporting",
     section: "Daily work",
     summary: "What Stackurity expects of each asset, what “hasn't reported” means, and how to fix it. Your services may be fine.",
-    where: ["Assets", "Incidents"],
+    where: ["Environment", "Assets"],
     keywords: "stale stopped reporting not reporting agent offline scanned once one-off as of cadence schedule ci pipeline quiet",
     body: [
       {
@@ -1408,7 +1404,7 @@ jobs:
     title: "Assets: filters, tabs, reboot and drift",
     section: "Daily work",
     summary: "Everything Stackurity knows about each server, repository, image or service.",
-    where: ["Assets"],
+    where: ["Environment", "Assets"],
     keywords: "asset reboot pending drift replica relations coverage collections ownership",
     body: [
       { h: "Filters" },
@@ -1438,7 +1434,7 @@ jobs:
     title: "Components",
     section: "Daily work",
     summary: "Every package across all assets, with where each version is used.",
-    where: ["Assets", "Components"],
+    where: ["Environment", "Components"],
     body: [
       {
         steps: [
@@ -1453,7 +1449,7 @@ jobs:
     title: "Updates available",
     section: "Daily work",
     summary: "Packages behind their latest stable release, with or without a known vulnerability.",
-    where: ["Assets", "Updates available"],
+    where: ["Environment", "Components", "Updates available"],
     keywords: "outdated newer release latest stable patch minor major upgrade behind dependencies bootstrap npm",
     body: [
       {
@@ -1480,7 +1476,7 @@ jobs:
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
     summary: "Make sure “no findings” really means nothing was found.",
-    where: ["Assets", "Data sources"],
+    where: ["Environment", "Coverage", "Data sources"],
     keywords: "feeds osv kev endoflife stale evaluation gap coverage state checked request support ecosystem not checked needs you unsupported resolves on its own no published advisories awaiting verification refresh re-evaluate",
     body: [
       {
@@ -1510,7 +1506,7 @@ jobs:
     title: "How Stackurity knows",
     section: "Daily work",
     summary: "Why each finding matched, the evidence states, the independent second check, and what a match does not prove.",
-    where: ["Fixes", "All issues", "an issue"],
+    where: ["Security", "All issues", "an issue"],
     keywords: "why matched evidence confirmed needs validation rejected stale second check disagreed agreed could not check proof exploit false positive missing information",
     body: [
       {
@@ -1553,7 +1549,7 @@ jobs:
     title: "Evidence report",
     section: "Daily work",
     summary: "A printable patch-management summary for a period, for audits and management.",
-    where: ["Reports", "Evidence report"],
+    where: ["Governance", "Reports and audit", "Evidence report"],
     keywords: "audit report compliance print pdf sla",
     body: [
       {
@@ -1573,7 +1569,7 @@ jobs:
     title: "Remediation outcomes and why an issue closed",
     section: "Daily work",
     summary: "What counts as remediation in Outcomes and the evidence report, and what does not.",
-    where: ["Reports", "Outcomes"],
+    where: ["Governance", "Reports and audit", "Outcomes"],
     keywords: "outcomes remediation time to remedy mttr sla resolved closed withdrawn advisory changed superseded not counted",
     body: [
       {
@@ -1602,7 +1598,7 @@ jobs:
     title: "How remediation works (and why Plans is empty)",
     section: "Remediation",
     summary: "Remediation is off until an admin creates an enabled policy and enrols hosts. Plans then appear for approval.",
-    where: ["Fixes", "Automatic fixes"],
+    where: ["Security", "Automatic fixes"],
     keywords: "remediation plans empty approve lifecycle safety automatic",
     body: [
       {
@@ -1645,7 +1641,7 @@ jobs:
     title: "Remediation policies, field by field",
     section: "Remediation",
     summary: "What a policy is, every field, and a worked example for staging and production.",
-    where: ["Settings", "Automatic fixes"],
+    where: ["Administration", "Settings", "Automatic fixes"],
     keywords: "policy field scope change types approval window canary soak health rollback example staging production",
     body: [
       {
@@ -1693,7 +1689,7 @@ jobs:
     title: "Enable remediation on a host",
     section: "Remediation",
     summary: "Mint a host-bound token, write the allowlist, and run the agent as root with --remediate.",
-    where: ["Assets", "(host)", "Automatic fixes"],
+    where: ["Environment", "Assets", "(host)", "Automatic fixes"],
     keywords: "enable remediation host token allowlist root remediate",
     body: [
       { warn: "The remediation agent runs as **root** so it can use the package manager. Hosts you don't enrol keep the unprivileged, read-only agent." },
@@ -1780,7 +1776,7 @@ jobs:
     title: "Risk policy: priorities, deadlines and SOS",
     section: "Settings and administration",
     summary: "How the P1–P4 score is built, the deadlines per priority, exception limits and SOS rules.",
-    where: ["Settings", "Risk policy"],
+    where: ["Administration", "Settings", "Risk policy"],
     keywords: "priority score weights thresholds sla deadlines sos rules exception max days epss exploit prediction first patch calendar patch tuesday window due dates maintenance",
     body: [
       { p: "Everyone can view the risk policy; only admins can change it. Changes apply on the next notification cycle (within a few minutes). **Reset to default** restores the values below." },
@@ -1830,7 +1826,7 @@ jobs:
     title: "Notifications: integrations, triggers, summaries",
     section: "Settings and administration",
     summary: "A few messages that bring people to the dashboard: urgent alerts, daily or weekly summaries, overdue reminders. Slack, Teams, email, webhooks, Jira, PagerDuty or ServiceNow.",
-    where: ["Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "integrations trigger events rule slack teams email webhook jira issue ticket route channel project asset inherited turn off edit for this project group gitlab urgent summary daily weekly overdue escalation quiet hours digest rate limit connected first scan slack app add to slack add to teams teams app bot code workflows connect jira atlassian oauth reconnect interactivity signing secret link slack account assign snooze smtp ses sendgrid postmark mailgun zeptomail gmail confirm held quota",
     body: [
       {
@@ -2025,7 +2021,7 @@ jobs:
     title: "Users, teams and roles",
     section: "Settings and administration",
     summary: "Who can see and change what, and adding someone with exactly the access they need.",
-    where: ["People", "Users"],
+    where: ["Administration", "People", "Users"],
     keywords: "role viewer engineer security admin team password permission view edit decide phone add user scope specific all projects assets",
     body: [
       {
@@ -2072,7 +2068,7 @@ jobs:
     title: "Projects and access",
     section: "Settings and administration",
     summary: "Group assets into projects and give people access to chosen projects only.",
-    where: ["Assets", "Projects"],
+    where: ["Environment", "Projects"],
     keywords: "project client agency site contractor access grant switcher unfiled team role permission",
     body: [
       {
@@ -2100,7 +2096,7 @@ jobs:
       },
       { h: "The project switcher" },
       {
-        p: "When the workspace has projects, the menu next to its name at the top left chooses **All projects** or one project. The choice scopes the Dashboard, Fixes, Assets and Activity, is kept in the address (so a link opens the same view) and is remembered for next time. On a phone it takes the workspace's place in the top bar.",
+        p: "When the workspace has projects, the menu next to its name at the top left chooses **All projects** or one project. The choice scopes the Dashboard, the Security and Environment pages and Approvals, is kept in the address (so a link opens the same view) and is remembered for next time. On a phone it takes the workspace's place in the top bar.",
       },
       { h: "Setting it up (admins)" },
       {
@@ -2123,7 +2119,7 @@ jobs:
     title: "API tokens",
     section: "Settings and administration",
     summary: "Personal tokens for scripts, and collector tokens for agents and CI.",
-    where: ["Integrations", "API tokens"],
+    where: ["Administration", "Integrations", "API tokens"],
     keywords: "token collector bearer ci script revoke",
     body: [
       {
@@ -2142,7 +2138,7 @@ jobs:
     title: "Integrations and plugins",
     section: "Settings and administration",
     summary: "Scheduled server-side collection: Git repositories, container images and plugins.",
-    where: ["Integrations"],
+    where: ["Administration", "Integrations"],
     keywords: "integration run now schedule plugin",
     body: [
       {
@@ -2160,14 +2156,14 @@ jobs:
     title: "Identity conflicts, jobs and the audit log",
     section: "Settings and administration",
     summary: "Merge duplicate assets, watch background work, and see who changed what.",
-    where: ["Settings"],
+    where: ["Administration", "Settings"],
     keywords: "conflict merge duplicate jobs queue audit log history",
     body: [
       {
         list: [
           "**Identity conflicts** (admin): when a report's identifiers match more than one asset (e.g. a cloned VM image reused a machine-id), pick the asset to keep; the others are merged into it.",
           "**Jobs** (admin): the background queue (integration runs, feed syncs, evaluations), with attempts and errors. Read-only.",
-          "**Audit log** (everyone, under **Activity**): sign-ins and every change, with the actor and details. Filter by object type.",
+          "**Audit log** (everyone, under **Governance ▸ Reports and audit**): sign-ins and every change, with the actor and details. Filter by object type.",
         ],
       },
     ],
@@ -2177,7 +2173,7 @@ jobs:
     title: "This server's free key",
     section: "Settings and administration",
     summary: "Each self-hosted server needs a free key, checked offline. Get it in one click, or paste one.",
-    where: ["Settings", "Licence"],
+    where: ["Administration", "Admin", "Licence"],
     keywords: "free key community key licence license get a free key activate air-gapped offline STACKURITY_BASE_URL",
     body: [
       {
@@ -2186,7 +2182,7 @@ jobs:
       { h: "Get a free key (one click)" },
       {
         steps: [
-          "Sign in as an instance administrator. Where the dashboard asks for the key (or under **Settings → Licence**), click **Get a free key**.",
+          "Sign in as an instance administrator. Where the dashboard asks for the key (or under **Admin → Licence**), click **Get a free key**.",
           "Stackurity Cloud opens in the same tab. Sign in, or sign up if you have no account.",
           "Check that the address it shows is your server, then click **Send the key**.",
           "Your browser comes back to this server with the key, which is checked and installed. Click **Continue to the dashboard**.",
@@ -2209,7 +2205,7 @@ jobs:
     title: "Owner rules: who issues are assigned to",
     section: "Settings and administration",
     summary: "Assign new issues automatically by project, asset and part of the tech stack, without changing what people assigned.",
-    where: ["People", "Owner rules"],
+    where: ["Administration", "People", "Owner rules"],
     keywords: "owner owners assign assignee auto-assign rule team person project asset stack layer package ownership",
     body: [
       {

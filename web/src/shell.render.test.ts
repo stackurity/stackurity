@@ -51,7 +51,7 @@ test("Data sources is an Assets page; Integrations keeps its own pages", () => {
 });
 
 test("tab labels: Data sources follows Coverage; the credentials tab is not called Secrets", () => {
-  const src = readFileSync(new URL("./components/nav.tsx", import.meta.url), "utf8");
+  const src = readFileSync(new URL("./navModel.ts", import.meta.url), "utf8");
   assert.match(src, /label: "Coverage" \},\n\s*\{ to: "\/intelligence", label: "Data sources" \}/);
   assert.match(src, /\{ to: "\/integrations\/secrets", label: "Stored credentials"/);
   assert.doesNotMatch(src, /label: "Secrets"/);

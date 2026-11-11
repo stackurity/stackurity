@@ -55,7 +55,7 @@ function useVisible() {
  * Settings: the switches for how this workspace checks and decides, as two
  * panes: every section on the left, the open one on the right. Pages people
  * use day to day have their own place in the sidebar (Integrations, People,
- * Assets ▸ Projects, Reports, Admin).
+ * Projects, Reports and audit, Admin).
  */
 export function SettingsLayout() {
   const { me, has } = useAuth();
@@ -94,7 +94,7 @@ export function SettingsLayout() {
           );
         })}
         <p className="small muted settings-nav-note">
-          Integrations, People and Projects (under Assets) are in the main sidebar; the audit log is under Reports.
+          Integrations and People are under Administration in the main sidebar, Projects under Environment, and the audit log under Governance ▸ Reports and audit.
         </p>
       </nav>
       <div className="settings-main">

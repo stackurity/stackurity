@@ -24,6 +24,7 @@ import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
 import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
 import { AgentFacts } from "../components/AgentFacts";
+import { GroupCrumb } from "../components/nav";
 
 type Mode = "one" | "fleet" | "digitalocean";
 
@@ -121,6 +122,7 @@ export function AddServerPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>Add server</span>
       </nav>
       <PageHeader

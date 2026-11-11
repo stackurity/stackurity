@@ -29,7 +29,7 @@ function Counts({ c }: { c: Check }) {
   return <span className="small">{parts.join(", ")}</span>;
 }
 
-/** Activity > Checks: every check again, newest first, with its result. */
+/** Security > Checks: every check again, newest first, with its result. */
 export function ChecksPage() {
   const { canAct } = useAuth();
   const [offset, setOffset] = useState(0);

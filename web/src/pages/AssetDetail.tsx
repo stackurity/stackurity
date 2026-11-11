@@ -70,6 +70,7 @@ import { AssetDimensions } from "../components/AssetDimensions";
 import { coverageDimension, reportingDimension, securityDimension } from "../assetDimensions";
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
+import { GroupCrumb } from "../components/nav";
 
 type Tab = "action-plan" | "stack" | "findings" | "leaks" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
 const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
@@ -193,6 +194,7 @@ export function AssetDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/assets">Assets</Link> <span aria-hidden="true">/</span> <span>{a.name}</span>
       </nav>
       <PageHeader help="assets"

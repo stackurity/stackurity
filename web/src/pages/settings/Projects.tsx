@@ -24,6 +24,7 @@ import { PasswordChecklist } from "../../components/PasswordStrength";
 import { passwordOK } from "../../passwordStrength";
 import { PROJECTS_EMPTY } from "../../emptyCopy";
 import { confirmAction, promptText } from "../../components/ConfirmDialog";
+import { GroupCrumb } from "../../components/nav";
 
 /*
  * Assets, Projects (admins). Projects group assets; people and
@@ -530,6 +531,7 @@ export function ProjectDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/projects">Projects and access</Link>
       </nav>
       <PageHeader
@@ -683,6 +685,7 @@ export function ProjectNotificationsPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         {can("admin") ? <Link to={`/projects/${p.id}`}>{p.name}</Link> : <Link to="/project-notifications">Notifications</Link>}
       </nav>
       <PageHeader help="projects" title={`${p.name}: notifications`} sub="What this project's people are told, and where." />

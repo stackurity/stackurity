@@ -46,6 +46,7 @@ import { CheckBadge, CheckResultText } from "../components/CheckAgain";
 import { fixPlaces, FixVerify, useCheckOptions } from "../components/FixVerify";
 import { ActionSummary, BulkBar, FixTable, fixStatus, parseSort, sortRows, ViewsMenu, workOf, type Row, type SortKey } from "../components/ActionCentre";
 import { Card, EmptyState, ErrorBox, FilterPanel, Loading, Notice, PageHeader, Pager, PresetChips, RelativeTime } from "../components/ui";
+import { GroupCrumb } from "../components/nav";
 
 const LIMIT = 20;
 
@@ -475,6 +476,7 @@ export function FixGroupDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link> <span aria-hidden="true">/</span> <span>{FIX_KIND_LABEL[g.kind] ?? g.kind}</span>
       </nav>
       <PageHeader
@@ -727,6 +729,7 @@ function FixDone({ id }: { id: string }) {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/fixes">Fixes</Link>
       </nav>
       <PageHeader help="check-again" title={c ? (c.fix_title || "This fix") + " is done" : "Fix"} sub={c ? c.asset_name : undefined} />

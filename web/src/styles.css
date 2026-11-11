@@ -395,13 +395,19 @@ code,
   white-space: nowrap;
 }
 .nav-group {
-  margin-top: 2px;
+  margin-top: var(--s2);
 }
+/* A group heading: a quiet label that opens and closes its items. */
 .nav-group-head {
+  padding: 4px 10px;
+  font-size: 11.5px;
   font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--sidebar-muted);
 }
 .nav-group.has-active > .nav-group-head {
-  color: #ffffff;
+  color: var(--sidebar-text);
 }
 .nav-chevron {
   display: inline-flex;
@@ -462,6 +468,15 @@ code,
 .shell-collapsed .nav-item,
 .shell-collapsed .nav-collapse {
   justify-content: center;
+}
+/* The icon rail shows every item; a line keeps the groups apart. */
+.shell-collapsed .nav-group-head {
+  display: none;
+}
+.shell-collapsed .nav-group {
+  margin-top: var(--s1);
+  padding-top: var(--s1);
+  border-top: 1px solid var(--sidebar-line);
 }
 .shell-collapsed .nav-count {
   position: absolute;
@@ -539,6 +554,26 @@ code,
   .sidebar .nav-collapse {
     justify-content: center;
   }
+  /* The icon rail shows every item; a line keeps the groups apart. */
+  .sidebar .nav-group-head {
+    display: none;
+  }
+  .sidebar .nav-group-items[hidden] {
+    display: block;
+  }
+  .sidebar .nav-group {
+    margin-top: var(--s1);
+    padding-top: var(--s1);
+    border-top: 1px solid var(--sidebar-line);
+  }
+  .sidebar .nav-count {
+    position: absolute;
+    top: 0;
+    right: 2px;
+    min-width: 16px;
+    line-height: 15px;
+    font-size: 10px;
+  }
   .sidebar .brand {
     justify-content: center;
     padding-left: 0;
@@ -613,6 +648,9 @@ code,
   font-size: 12.5px;
   color: var(--muted);
   margin-bottom: var(--s2);
+}
+.crumb-group {
+  font-weight: 600;
 }
 
 .card {
@@ -3639,6 +3677,18 @@ h6.md-h {
     list-style: none;
     margin: 0 0 var(--s3);
     padding: 0;
+  }
+  .sheet-group-title {
+    margin: var(--s2) 0 0;
+    padding: 0 var(--s2);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+  .sheet-group .sheet-list {
+    margin-bottom: var(--s1);
   }
   .sheet-item {
     display: flex;

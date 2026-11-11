@@ -14,6 +14,7 @@ import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } 
 import { INCIDENT_KIND_LABEL } from "./Incidents";
 import { fixedVersionRows, fixLines, lineComponents } from "../incidentFix";
 import { plural } from "../format";
+import { GroupCrumb } from "../components/nav";
 
 function chips(xs: string[] | undefined, mono = false): ReactNode {
   if (!xs || xs.length === 0) return <span className="muted">—</span>;
@@ -221,6 +222,7 @@ export function IncidentDetailPage() {
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
+        <GroupCrumb />
         <Link to="/incidents">Incidents</Link> <span aria-hidden="true">/</span> <span>#{inc.id}</span>
       </nav>
       <PageHeader help="incidents"
