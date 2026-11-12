@@ -142,10 +142,15 @@ export function BreakdownBar({ counts, order, classes, label }: { counts: Record
 
 const COMMAND_RE = /^(sudo\s|apt(-get)?\s|dnf\s|yum\s|apk\s|zypper\s|npm\s|yarn\s|pnpm\s|composer\s|pip\s|do-release-upgrade|pro\s|snap\s|brew\s|winget\s)/;
 
+/** True when a fix group's action is a command to run, not a sentence. */
+export function isCommand(action: string): boolean {
+  return COMMAND_RE.test(action.trim());
+}
+
 /** The action as a copyable command when it is one, otherwise as text. */
 export function ActionInstruction({ action }: { action: string }) {
   if (!action) return null;
-  if (COMMAND_RE.test(action.trim())) return <CodeBlock label="Command" text={action.trim()} />;
+  if (isCommand(action)) return <CodeBlock label="Command" text={action.trim()} />;
   return <p className="fix-action">{action}</p>;
 }
 

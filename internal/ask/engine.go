@@ -607,6 +607,9 @@ func toolLabel(u ToolUse) string {
 	case "list_assets":
 		return "Listing assets"
 	case "action_plan", "remediation_plan":
+		if id("asset_id") == "" {
+			return "Reading the fixes for every asset"
+		}
 		return "Reading the fixes" + id("asset_id")
 	case "asset_stack":
 		return "Reading asset" + id("asset_id")
@@ -622,6 +625,12 @@ func toolLabel(u ToolUse) string {
 		return "Checking what changed"
 	case "updates_available":
 		return "Checking available updates"
+	case "account_overview":
+		return "Reading your account"
+	case "integrations_status":
+		return "Checking integrations"
+	case "notification_settings":
+		return "Reading notification rules"
 	}
 	if u.Name == ConnectTool {
 		return "Preparing a connection"
