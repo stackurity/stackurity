@@ -273,6 +273,10 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if p.Restricted {
 		out["access"] = "projects"
 	}
+	// Admin → Feedback, on the server that runs the feedback queue.
+	if s.FeedbackQueue != nil && p.User != nil && p.User.InstanceAdmin {
+		out["feedback_queue"] = true
+	}
 	if p.SSORequired != nil {
 		out["sso_required"] = p.SSORequired
 	}

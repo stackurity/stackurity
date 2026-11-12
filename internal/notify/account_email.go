@@ -112,6 +112,20 @@ func FeedbackUpdateEmail(subject, body string, at time.Time) Message {
 	return Message{Event: "feedback_update", Title: subject, At: at, Summary: strings.Split(strings.TrimSpace(body), "\n\n")}
 }
 
+// FeedbackApprovalEmail tells the people who approve feedback changes
+// (STACKURITY_FEEDBACK_APPROVERS) that an item waits for them. reason is
+// the agent's or the team's note; link opens the item under Admin →
+// Feedback.
+func FeedbackApprovalEmail(ref, reason, link string, at time.Time) Message {
+	sum := []string{"The feedback agent held " + ref + " for your approval instead of building it."}
+	if r := strings.TrimSpace(reason); r != "" {
+		sum = append(sum, "Why it needs you: "+r)
+	}
+	sum = append(sum, "Approve it and the agent builds it on its next run, or decline it with a reason the sender will read.")
+	return Message{Event: "feedback_approval", Title: "Approval needed: feedback " + ref, At: at, Summary: sum,
+		Link: link, LinkLabel: "Review " + ref}
+}
+
 // AskSpendEmail tells an organisation's administrators that Ask
 // Stackurity used level percent (80 or 100) of the month's budget.
 func AskSpendEmail(level int, at time.Time) Message {

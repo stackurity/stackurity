@@ -119,7 +119,7 @@ Ends the session; audited as `auth.logout`.
 
 **Who:** any signed-in user or token
 
-The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled` `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), `mfa_recovery_accepted` (whether a recovery code lets this session go on), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`). On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
+The caller: `user`, `role`, `workspace`, `workspaces`, `edition` and `features`, `access` (`organisation` or `projects`), `project_role`, `projects`, `default_project_id`, `read_only`, `report_mode`, `feedback_enabled`, `feedback_queue` (only for instance administrators of the server that runs the feedback queue: shows Admin → Feedback), `password_change_required` (an administrator set a temporary password: until it is changed with `POST /auth/password`, other routes answer 403 `password_change_required`) `mfa_enrolment_required` (the organisation requires a second factor that this account does not have: until one is set up, other routes answer 403 `mfa_enrolment_required`), `mfa_step_up_required` (the account has one, but this session was not signed in with it: until it is confirmed with `POST /auth/mfa/step-up`, other routes answer 403 `mfa_step_up_required`), `mfa_accepted` (the methods that count there), `mfa_recovery_accepted` (whether a recovery code lets this session go on), and `invite_only` (people join by invitation, as on Stackurity Cloud: `POST /users` answers 403 `invite_only`, and the dashboard offers Invite instead of Add user). Each user has `mfa_enabled` and `mfa_methods` (`passkey`, `totp`, `email`). On a self-hosted server, `license_key` says whether it has its [free key](install.md#the-free-key): `state` (`installed`, `grace` with `grace_ends`, or `required`), `upgraded`, and `signup_url`.
 
 ### `PUT /auth/default-project`
 
@@ -435,7 +435,13 @@ Sends feedback to the Stackurity team: `kind` (`issue`, `feature`, `question`; `
 
 **Who:** any signed-in user
 
-What the caller sent from this installation, newest first: `ref`, `kind`, `summary` (the first line), `attachments`, `status` (`received`, `reviewing`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note` (the team's note, e.g. why it won't be changed), `fixed_in`, `status_at`, `created_at`. Statuses of open items older than five minutes are asked again from the feedback service, sending only each item's reference and status token; `check_failed` is true when that did not work.
+What the caller sent from this installation, newest first: `ref`, `kind`, `summary` (the first line), `attachments`, `status` (`received`, `reviewing`, `needs_info`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note` (the team's note, e.g. why it won't be changed), `fixed_in`, `status_at`, `created_at`, and `thread`: the team's questions and updates and the caller's replies (`at`, `from` `agent`, `team` or `sender`, `kind` `comment`, `question` or `reply`, `body`; the newest 20). Statuses of open items older than five minutes are asked again from the feedback service, sending only each item's reference and status token; `check_failed` is true when that did not work.
+
+### `POST /feedback/mine/{ref}/reply`
+
+**Who:** any signed-in user, for an item they sent (20 replies an hour)
+
+`{"message"}` (1 to 2000 characters): answers the team's questions, or adds a detail, on an open item. It goes to the feedback service with the item's status token, through the same `/status` address as the status checks. An item waiting for the caller's details (`needs_info`) goes back to the team's queue. 200 with the item as in `GET /feedback/mine`; 409 `reply_refused` when the item is closed or has 30 replies; 404 for an item the caller did not send.
 
 ## Saved views
 
@@ -473,19 +479,19 @@ Only on the server that runs the Stackurity team's queue (`STACKURITY_FEEDBACK_Q
 
 **Who:** the website relay, with `X-Stackurity-Feedback-Key`
 
-`{"items": [{"ref", "token"}]}` (up to 50). Each item's public `status` (as in `GET /feedback/mine`), `resolution` once the team decided, `fixed_in` and `updated_at`; `unknown` when the reference and token do not match.
+`{"items": [{"ref", "token"}]}` (up to 50). Each item's public `status` (as in `GET /feedback/mine`), `resolution` once the team decided, `fixed_in`, `updated_at` and `comments` (the newest 20 of the thread, each body cut to 1500 characters; left out when the answer would pass 56 KB, and the installation keeps the thread it had); `unknown` when the reference and token do not match. One item may carry `reply` (1 to 2000 characters, 30 an hour per sender address): the sender's answer, stored in the thread (`replied: true`), which puts a `needs_info` item back to `new`; `reply_error` says why it was not (closed, too many replies).
 
 ### `GET /admin/feedback`
 
 **Who:** instance admin, or a feedback triage token
 
-Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, `needs_owner`, `fixed`, `released`, `wont_fix`, `duplicate`), `before` (a reference) and `limit` (up to 200). Also `counts` per status and `storage` (`used_bytes`, `max_bytes`).
+Items newest first: `status` (comma-separated: `new`, `triaged`, `in_progress`, `needs_owner`, `needs_info`, `fixed`, `released`, `wont_fix`, `duplicate`), `before` (a reference), `limit` (up to 200) and `order=attention` (needs approval first, then waiting for the sender, then new). Each item has `owner_reason`, `approved_at`, `approved_by`, `approval_note` and `comment_count`. Also `counts` per status and `storage` (`used_bytes`, `max_bytes`).
 
 ### `GET /admin/feedback/email-templates`
 
 **Who:** instance admin, or a feedback triage token
 
-The emails a sender gets when their item is released or will not be fixed, rendered with sample text (`name`, `subject`, `body`), and `enabled` (`STACKURITY_FEEDBACK_EMAILS=on` and mail configured). For approving the wording before turning them on.
+The emails a sender gets, rendered with sample text (`name`, `subject`, `body`, `approved`): when their item is released or will not be fixed (`enabled`: `STACKURITY_FEEDBACK_EMAILS=on` and mail configured), and the feedback agent's received and needs-more-details emails (`agent_enabled`: `STACKURITY_FEEDBACK_AGENT_EMAILS=on`). For approving the wording before turning them on.
 
 ### `GET /admin/feedback/scan/pending`
 
@@ -503,13 +509,31 @@ Attachments waiting for the virus scan (`STACKURITY_FEEDBACK_SCAN=required`): `i
 
 **Who:** instance admin, or a feedback triage token
 
-`{id}` is `FB-123` or `123`. The `item` (with `triage_notes`, `contact_email`, `source`, `version`, `edition`, `page`, `browser`, `viewport`, `link`, timestamps), its `attachments` (name, type, size, `scan`, `purged_at`) and `events`.
+`{id}` is `FB-123` or `123`. The `item` (with `triage_notes`, `owner_reason`, the approval, `contact_email`, `source`, `version`, `edition`, `page`, `browser`, `viewport`, `link`, timestamps), its `attachments` (name, type, size, `scan`, `purged_at`), `events` and `comments` (the thread the sender reads: `at`, `author_kind` `agent`, `team` or `sender`, `author`, `kind`, `body`).
 
 ### `PATCH /admin/feedback/{id}`
 
 **Who:** instance admin, or a feedback triage token
 
-Moving an item to `released` or `wont_fix` emails the sender once, if they left an address and `STACKURITY_FEEDBACK_EMAILS=on`. Any of `status`, `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Every change is kept in the item's `events`.
+Moving an item to `released` or `wont_fix` emails the sender once, if they left an address and `STACKURITY_FEEDBACK_EMAILS=on`. Any of `status` (not `needs_info`: ask with a comment, below), `resolution` (shown to the sender; required for `wont_fix`), `triage_notes` (replaces) or `note` (appends a dated paragraph with who wrote it), `owner_reason` (why it needs the owner; internal), `link` (a pull request or issue under `https://github.com/stackurity/`), `duplicate_of` (a reference; required for `duplicate`), `fixed_in` (a version). Moving an item to `needs_owner` emails `STACKURITY_FEEDBACK_APPROVERS`. Every change is kept in the item's `events`.
+
+### `POST /admin/feedback/{id}/comments`
+
+**Who:** instance admin, or a feedback triage token
+
+`{"body", "ask"}`: adds a comment (1 to 5000 characters) to the thread the sender reads in My feedback, from the agent (a triage token) or the team (an administrator). With `"ask": true` it is a question: the item moves to `needs_info` and, with `STACKURITY_FEEDBACK_AGENT_EMAILS=on`, the sender is emailed the questions (409 on a closed item). 201 with the `item` and its `comments`.
+
+### `POST /admin/feedback/{id}/approve`
+
+**Who:** instance admin signed in to the dashboard (not an API token or a triage token)
+
+`{"note"}` (optional, for the agent): approves an item that waits for the owner (`needs_owner`). It moves to `triaged` with `approved_at` and `approved_by`, and the feedback agent builds it on its next run. 409 when the item is not `needs_owner`. Recorded as an `approved` event.
+
+### `POST /admin/feedback/{id}/decline`
+
+**Who:** instance admin signed in to the dashboard (not an API token or a triage token)
+
+`{"resolution"}` (required; the sender reads it): declines an item that waits for the owner. It is closed as `wont_fix`, and the sender gets the won't-fix email under the same conditions as `PATCH`. 409 when the item is not `needs_owner`. Recorded as a `declined` event.
 
 ### `DELETE /admin/feedback/{id}`
 

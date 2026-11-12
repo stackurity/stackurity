@@ -93,7 +93,7 @@ func TestFeedbackSenderEmail(t *testing.T) {
 		Enabled   bool
 		Templates []struct{ Name, Subject, Body string }
 	}
-	if code := ops.do("GET", "/api/v1/admin/feedback/email-templates", nil, &tpl); code != 200 || len(tpl.Templates) != 2 || !tpl.Enabled {
+	if code := ops.do("GET", "/api/v1/admin/feedback/email-templates", nil, &tpl); code != 200 || len(tpl.Templates) != 4 || !tpl.Enabled {
 		t.Fatalf("preview: %d %+v", code, tpl)
 	}
 	e.user("admin@x.io", auth.RoleAdmin)

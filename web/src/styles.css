@@ -7919,3 +7919,49 @@ a.cov-chip:hover {
 .scope-rule-form > .field-group:first-child > .field-group-desc {
   margin-top: 0;
 }
+
+/* My feedback: the conversation on an item (pages/MyFeedback.tsx) and
+   Admin → Feedback (pages/admin/Feedback.tsx). */
+.feedback-thread {
+  margin-top: var(--s2);
+}
+.feedback-thread > summary {
+  cursor: pointer;
+  font-size: 13px;
+}
+.feedback-comments {
+  list-style: none;
+  margin: var(--s2) 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+.feedback-comment {
+  padding: var(--s2);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+}
+.feedback-comment-mine {
+  border-left: 3px solid var(--border-strong);
+}
+.feedback-comment-body {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.feedback-reply {
+  margin-top: var(--s2);
+}
+.feedback-reply textarea {
+  width: 100%;
+}
+.feedback-queue-description {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0;
+}
+.feedback-queue-reason {
+  margin: var(--s2) 0;
+}

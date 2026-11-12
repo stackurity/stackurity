@@ -70,6 +70,14 @@ type FeedbackQueue struct {
 	// or will not be fixed (STACKURITY_FEEDBACK_EMAILS=on); off by default
 	// until the owner approves the wording.
 	Emails bool
+	// AgentEmails sends the feedback agent's emails to the sender: received
+	// (on intake) and needs_info (with the questions)
+	// (STACKURITY_FEEDBACK_AGENT_EMAILS=on); off until the owner approves
+	// their wording.
+	AgentEmails bool
+	// Approvers are emailed when an item needs the owner's approval
+	// (STACKURITY_FEEDBACK_APPROVERS); empty sends nothing.
+	Approvers []string
 
 	once     sync.Once
 	linkKey  []byte
@@ -169,8 +177,14 @@ func (s *Server) feedbackTriageRoutes(r chi.Router) {
 	r.Get("/{id}", s.getFeedbackQueueItem)
 	r.Patch("/{id}", s.updateFeedbackQueueItem)
 	r.Post("/{id}/attachments/{aid}/link", s.feedbackAttachmentLink)
+	// The thread the sender reads (feedback_agent.go).
+	r.Post("/{id}/comments", s.addFeedbackComment)
 	// Deleting (spam, abuse) is for instance administrators only.
 	r.With(requireInstanceAdmin).Delete("/{id}", s.deleteFeedbackQueueItem)
+	// The owner's decision on an item that needs them: an instance
+	// administrator signed in to the dashboard, never a token.
+	r.With(requireInstanceAdminSession).Post("/{id}/approve", s.approveFeedback)
+	r.With(requireInstanceAdminSession).Post("/{id}/decline", s.declineFeedback)
 }
 
 // Feedback token scopes.
@@ -456,6 +470,15 @@ func (s *Server) feedbackIntake(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.Log.Info("feedback received", "ref", store.FeedbackRef(id), "kind", item.Kind, "source", item.Source, "attachments", len(item.Attachments))
+	if item.ContactEmail != "" && q.AgentEmails {
+		// After the answer: the relay waits at most 15 seconds, and mail
+		// can be slow.
+		go func(ctx context.Context) {
+			if it, _, _, err := s.Store.GetFeedbackItem(ctx, id); err == nil {
+				s.emailFeedbackReceived(ctx, it)
+			}
+		}(context.WithoutCancel(r.Context()))
+	}
 	reply := map[string]any{
 		"ref": store.FeedbackRef(id), "token": secret, "kind": item.Kind, "source": item.Source,
 		"version": item.Version, "edition": item.Edition, "attachments": len(item.Attachments),
@@ -575,10 +598,7 @@ func (s *Server) feedbackQueueStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Items []struct {
-			Ref   string `json:"ref"`
-			Token string `json:"token"`
-		} `json:"items"`
+		Items []feedbackStatusItem `json:"items"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -586,6 +606,19 @@ func (s *Server) feedbackQueueStatus(w http.ResponseWriter, r *http.Request) {
 	}
 	if len(req.Items) > 50 {
 		writeError(w, 400, "bad_request", "at most 50 items")
+		return
+	}
+	replies := 0
+	for _, it := range req.Items {
+		if it.Reply != "" {
+			replies++
+		}
+	}
+	if replies > 1 {
+		writeError(w, 400, "bad_request", "send one reply at a time")
+		return
+	}
+	if replies == 1 && s.limited(w, r, "too many replies; try again in an hour", limitHit{"feedback-reply-ip", relaySender(r), limitFeedbackReplyIP}) {
 		return
 	}
 	out := make([]any, 0, len(req.Items))
@@ -596,6 +629,16 @@ func (s *Server) feedbackQueueStatus(w http.ResponseWriter, r *http.Request) {
 			out = append(out, unknown)
 			continue
 		}
+		var replied bool
+		var problem string
+		if it.Reply != "" {
+			var err error
+			replied, problem, err = s.feedbackSenderReply(r.Context(), id, it)
+			if err != nil && !errors.Is(err, store.ErrNotFound) {
+				s.fail(w, r, err)
+				return
+			}
+		}
 		st, err := s.Store.FeedbackStatusByToken(r.Context(), id, auth.HashToken(it.Token))
 		if errors.Is(err, store.ErrNotFound) {
 			out = append(out, unknown)
@@ -605,8 +648,13 @@ func (s *Server) feedbackQueueStatus(w http.ResponseWriter, r *http.Request) {
 			s.fail(w, r, err)
 			return
 		}
+		st.Replied, st.ReplyError = replied, problem
+		if replied {
+			s.Log.Info("feedback sender replied", "ref", st.Ref)
+		}
 		out = append(out, st)
 	}
+	fitThreads(out)
 	writeJSON(w, 200, map[string]any{"items": out})
 }
 
@@ -635,6 +683,9 @@ func (s *Server) listFeedbackQueue(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		f.Limit, _ = strconv.Atoi(v)
 	}
+	// order=attention: needs approval first, then needs the sender's
+	// details, then new.
+	f.Attention = r.URL.Query().Get("order") == "attention"
 	items, err := s.Store.ListFeedbackItems(r.Context(), f)
 	if err != nil {
 		s.fail(w, r, err)
@@ -685,7 +736,12 @@ func (s *Server) getFeedbackQueueItem(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	writeJSON(w, 200, map[string]any{"item": it, "attachments": atts, "events": events})
+	comments, err := s.Store.ListFeedbackComments(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"item": it, "attachments": atts, "events": events, "comments": comments})
 }
 
 // feedbackLink is a pull request or issue in one of the project's
@@ -709,16 +765,21 @@ func (s *Server) updateFeedbackQueueItem(w http.ResponseWriter, r *http.Request)
 		Link        *string `json:"link"`
 		DuplicateOf *string `json:"duplicate_of"`
 		FixedIn     *string `json:"fixed_in"`
+		OwnerReason *string `json:"owner_reason"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
 		return
 	}
 	p := store.FeedbackPatch{Status: req.Status, Resolution: req.Resolution, TriageNotes: req.TriageNotes, AppendNote: req.Note,
-		Link: req.Link, FixedIn: req.FixedIn}
+		Link: req.Link, FixedIn: req.FixedIn, OwnerReason: req.OwnerReason}
 	switch {
 	case req.Status != nil && !validFeedbackStatus(*req.Status):
 		err = badRequest("status must be one of " + strings.Join(store.FeedbackStatuses, ", "))
+	case req.Status != nil && *req.Status == store.FeedbackNeedsInfo:
+		err = badRequest(`ask the sender with POST /admin/feedback/{id}/comments {"body":"…","ask":true}, which sets needs_info`)
+	case req.OwnerReason != nil && utf8.RuneCountInString(*req.OwnerReason) > 2000:
+		err = badRequest("owner_reason is limited to 2000 characters")
 	case req.Resolution != nil && utf8.RuneCountInString(*req.Resolution) > 2000:
 		err = badRequest("the resolution is limited to 2000 characters")
 	case req.Note != nil && utf8.RuneCountInString(*req.Note) > 5000:
@@ -749,6 +810,9 @@ func (s *Server) updateFeedbackQueueItem(w http.ResponseWriter, r *http.Request)
 	}
 	if before.Status != after.Status && (after.Status == store.FeedbackReleased || after.Status == store.FeedbackWontFix) {
 		s.emailFeedbackSender(r.Context(), after)
+	}
+	if before.Status != after.Status && after.Status == store.FeedbackNeedsOwner {
+		s.emailFeedbackApprovers(r.Context(), after)
 	}
 	writeJSON(w, 200, after)
 }
@@ -793,9 +857,14 @@ func (s *Server) feedbackEmailTemplates(w http.ResponseWriter, r *http.Request) 
 	}
 	sample := feedback.EmailData{Ref: "FB-123", Summary: "The Fixes page loses the asset filter after I open a fix and go back",
 		Resolution: "The filter is now kept when you go back.", Version: "0.15.0"}
-	var out []map[string]string
+	var out []map[string]any
 	for _, name := range feedback.EmailTemplates() {
 		d := sample
+		d.Source, d.Attachments = "cloud", 1
+		if name == "needs_info" {
+			d.Questions = "1. Which page were you on: Fixes or Issues?\n2. Did the filter come back after reloading the page?"
+			d.Link = strings.TrimRight(s.BaseURL, "/") + "/feedback"
+		}
 		if name == "wont_fix" {
 			d.Resolution = "Exports stay in the API (GET /fixes?format=csv) so they follow your project access; the dashboard will not get a separate button."
 		}
@@ -804,9 +873,10 @@ func (s *Server) feedbackEmailTemplates(w http.ResponseWriter, r *http.Request) 
 			s.fail(w, r, err)
 			return
 		}
-		out = append(out, map[string]string{"name": name, "subject": m.Subject, "body": m.Body})
+		out = append(out, map[string]any{"name": name, "subject": m.Subject, "body": m.Body, "approved": feedback.EmailApproved(name)})
 	}
-	writeJSON(w, 200, map[string]any{"enabled": s.FeedbackQueue.Emails && s.AccountMail != nil, "templates": out})
+	writeJSON(w, 200, map[string]any{"enabled": s.FeedbackQueue.Emails && s.AccountMail != nil,
+		"agent_enabled": s.FeedbackQueue.AgentEmails && s.AccountMail != nil, "templates": out})
 }
 
 func (s *Server) deleteFeedbackQueueItem(w http.ResponseWriter, r *http.Request) {

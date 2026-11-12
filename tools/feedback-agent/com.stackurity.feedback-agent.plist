@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  The feedback agent on the owner's Mac, every ten minutes
+  (docs/feedback-queue.md#the-feedback-agent). Replace HOME_DIR with the home
+  folder (/Users/you), copy to ~/Library/LaunchAgents/ and load it with
+  launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackurity.feedback-agent.plist
+  A run that is still going when the next starts exits at once (lock file).
+-->
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.stackurity.feedback-agent</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>HOME_DIR/.local/bin/stackurity-feedback-agent</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>600</integer>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>LowPriorityIO</key>
+  <true/>
+  <key>Nice</key>
+  <integer>10</integer>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>HOME_DIR/.local/bin:/opt/homebrew/bin:/usr/local/go/bin:/usr/local/bin:/usr/bin:/bin</string>
+    <key>STACKURITY_FEEDBACK_TOKEN_FILE</key>
+    <string>HOME_DIR/.config/stackurity/feedback-agent-token</string>
+    <key>FEEDBACK_AGENT_REPO</key>
+    <string>HOME_DIR/code/stackurity-feedback</string>
+    <key>FEEDBACK_AGENT_WORK</key>
+    <string>HOME_DIR/code/feedback-agent-runs</string>
+    <key>FEEDBACK_AGENT_SLACK_WEBHOOK_FILE</key>
+    <string>HOME_DIR/.config/stackurity/feedback-agent-slack-webhook</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>HOME_DIR/code/feedback-agent-runs/agent.log</string>
+  <key>StandardErrorPath</key>
+  <string>HOME_DIR/code/feedback-agent-runs/agent.log</string>
+</dict>
+</plist>

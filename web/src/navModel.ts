@@ -54,6 +54,8 @@ export interface AccessRule {
   communityKeys?: boolean;
   /** Shown only where the trust badge is offered (Stackurity Cloud). */
   trustBadge?: boolean;
+  /** Shown only on the server that runs the Stackurity team's feedback queue. */
+  feedbackQueue?: boolean;
 }
 
 /** What the signed-in person and this server allow (from useAuth). */
@@ -64,6 +66,8 @@ export interface Access {
   billing: boolean;
   communityKeys: boolean;
   trustBadge: boolean;
+  /** This server runs the feedback queue (GET /auth/me feedback_queue). */
+  feedbackQueue?: boolean;
 }
 
 export function isAllowed(t: AccessRule, a: Access): boolean {
@@ -71,6 +75,7 @@ export function isAllowed(t: AccessRule, a: Access): boolean {
     (!t.billing || a.billing) &&
     (!t.communityKeys || a.communityKeys) &&
     (!t.trustBadge || a.trustBadge) &&
+    (!t.feedbackQueue || Boolean(a.feedbackQueue)) &&
     (!t.act || a.canAct(t.act)) &&
     (t.instanceAdmin ? a.instanceAdmin : !t.min || a.can(t.min))
   );
@@ -165,6 +170,7 @@ export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
       { to: "/admin/trust-badges", label: "Trust badges", instanceAdmin: true, trustBadge: true },
       { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
+      { to: "/admin/feedback", label: "Feedback", instanceAdmin: true, feedbackQueue: true },
       { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", instanceAdmin: true },
       { to: "/admin/self-hosted-keys", label: "Self-hosted keys", instanceAdmin: true, communityKeys: true },
