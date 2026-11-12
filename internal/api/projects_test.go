@@ -110,6 +110,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/integrations/gitlab/connections/{id}/authorize":   "org",
 	"POST /api/v1/integrations/gitlab/connections/{id}/sync":        "org",
 	"DELETE /api/v1/integrations/gitlab/connections/{id}":           "org",
+	"PATCH /api/v1/integrations/gitlab/connections/{id}":            "org",
 	"POST /api/v1/integrations/pagerduty/connect":                   "org",
 	"POST /api/v1/integrations/pagerduty/oauth":                     "org",
 	"POST /api/v1/integrations/pagerduty/services":                  "org",

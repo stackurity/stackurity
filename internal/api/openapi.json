@@ -12553,7 +12553,7 @@
    "post": {
     "operationId": "post_integrations_gitlab_connections",
     "summary": "Connect a GitLab group",
-    "description": "`{\"pick\", \"group_id\"}`. The caller's GitLab account must be a member (Reporter or above) of the group (403 `gitlab_group`); a group connected elsewhere, or above or below one, is refused (409 `gitlab_group_taken`). 201: `connection`, `needs_readonly`, `notes`, `return_to`\n\nRole: admin",
+    "description": "`{\"pick\", \"group_id\", \"project_id\"}`: `project_id` is the Stackurity project the group's assets are added to (0 for none; left out, the project chosen in the switcher). The caller's GitLab account must be a member (Reporter or above) of the group (403 `gitlab_group`); a group connected elsewhere, or above or below one, is refused (409 `gitlab_group_taken`). 201: `connection`, `needs_readonly`, `notes`, `return_to`\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -12677,6 +12677,53 @@
    }
   },
   "/integrations/gitlab/connections/{id}": {
+   "patch": {
+    "operationId": "patch_integrations_gitlab_connection",
+    "summary": "Choose a connected group's Stackurity project",
+    "description": "`{\"project_id\"}`: the Stackurity project the group's assets are added to when first scanned (0 for none). The group's assets already scanned that are in no project are added to it now (`assets_added`); assets already in a project stay. 200: `connection`, `assets_added`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    },
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    }
+   },
    "delete": {
     "operationId": "delete_integrations_gitlab_connection",
     "summary": "Disconnect a GitLab group",

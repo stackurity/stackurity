@@ -173,6 +173,18 @@ export interface Receives {
   none: boolean;
 }
 
+/**
+ * The rules that are on when every one of them is limited to projects or
+ * assets: issues on an asset outside them (an asset in no project, listed
+ * only under "All projects") then reach no one. Empty when no rule is on or
+ * one of them covers the whole organisation.
+ */
+export function projectOnlyRules(routes: Route[]): Route[] {
+  const on = routes.filter((r) => r.enabled);
+  const wholeOrg = (r: Route) => !r.project_ids?.length && !r.owner_project_id && !r.owner_asset_id;
+  return on.some(wholeOrg) ? [] : on;
+}
+
 /** What a channel receives, from the rules that use it. */
 export function receivesOf(channelId: number, routes: Route[]): Receives {
   const mine = routes.filter((r) => r.channel_id === channelId);

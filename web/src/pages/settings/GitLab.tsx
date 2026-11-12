@@ -4,6 +4,7 @@ import { useAction } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { ErrorBox, RelativeTime } from "../../components/ui";
+import { useProject } from "../../project";
 
 /*
  * Connect GitLab (docs/gitlab.md): the button on the Git repository card,
@@ -56,7 +57,12 @@ function credentialText(c: GitLabConnection): string {
 
 export function GitLabConnections({ status, admin, onChange }: { status: GitLabStatus; admin: boolean; onChange: () => void }) {
   const act = useAction();
+  const { projects } = useProject();
   if (status.connections.length === 0) return null;
+  const projectName = (id: number | null) => (id ? (projects.find((p) => p.id === id)?.name ?? `project ${id}`) : "");
+  const chooseProject = async (c: GitLabConnection, id: number) => {
+    if (await act.run(() => api.patch(`/integrations/gitlab/connections/${c.id}`, { project_id: id }))) onChange();
+  };
   const sync = async (c: GitLabConnection) => {
     if (await act.run(() => api.post(`/integrations/gitlab/connections/${c.id}/sync`, {}))) onChange();
   };
@@ -100,6 +106,28 @@ export function GitLabConnections({ status, admin, onChange }: { status: GitLabS
                 {c.webhook === "active" ? "rescanned on push" : "scanned on the schedule only (no webhook)"} · listed <RelativeTime iso={c.last_sync} />
               </div>
               {c.note && <div className="small text-warn-strong">{c.note}</div>}
+              {projects.length > 0 &&
+                (admin ? (
+                  <label className="small">
+                    Assets go into{" "}
+                    <select
+                      aria-label={`Stackurity project for ${c.group_path}`}
+                      value={c.project_id ?? 0}
+                      onChange={(e) => void chooseProject(c, Number(e.target.value))}
+                      disabled={act.pending}
+                    >
+                      <option value={0}>no project</option>
+                      {projects.map((p) => (
+                        <option key={p.id} value={p.id}>
+                          {p.name}
+                        </option>
+                      ))}
+                    </select>{" "}
+                    <span className="muted">(choosing one also adds this group&apos;s assets that are in no project)</span>
+                  </label>
+                ) : (
+                  <div className="muted small">{c.project_id ? `Assets go into ${projectName(c.project_id)}` : "Assets go into no project"}</div>
+                ))}
             </div>
             {admin && (
               <div className="form-actions">

@@ -166,8 +166,11 @@ var routeRules = map[string]routeRule{
 	}},
 	"POST /api/v1/integrations/gitlab/connections/{id}/sync": {class: "object", obj: id("gitlabconn")},
 	"DELETE /api/v1/integrations/gitlab/connections/{id}":    {class: "object", obj: id("gitlabconn")},
-	"GET /api/v1/notification-options":                       {class: "list"},
-	"GET /api/v1/email-recipients":                           {class: "list"},
+	"PATCH /api/v1/integrations/gitlab/connections/{id}": {class: "object", obj: id("gitlabconn"), body: func(*tenantFx) any {
+		return map[string]any{"project_id": 0}
+	}},
+	"GET /api/v1/notification-options": {class: "list"},
+	"GET /api/v1/email-recipients":     {class: "list"},
 	// Connect PagerDuty: a state or session of A's (or a guessed one) is
 	// refused in B; B's connect starts in B (pagerduty_app_test.go).
 	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
@@ -1080,7 +1083,7 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s saved view: %d", tag, code)
 	}
 	set("savedview", view.ID)
-	glc, err := e.st.BindGitLabGroup(ctx, 800000+ws, "gl-"+tag, "GitLab "+tag, me.User.ID)
+	glc, err := e.st.BindGitLabGroup(ctx, 800000+ws, "gl-"+tag, "GitLab "+tag, me.User.ID, nil)
 	if err != nil {
 		t.Fatalf("%s gitlab connection: %v", tag, err)
 	}

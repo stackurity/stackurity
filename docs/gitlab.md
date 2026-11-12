@@ -12,6 +12,8 @@ What happens:
 4. The admin's own token is revoked at GitLab before the page answers. It was kept, encrypted, only between GitLab's redirect and the group being picked (at most 10 minutes; an abandoned connect's token is revoked when it expires).
 5. Every project in the group becomes an integration of kind `gitlab`, scanned within minutes (first scans are spread out), on the same asset a CI scan or Git integration of the same URL uses.
 
+**Stackurity projects.** When picking the group, choose the Stackurity project its assets go into (the project selected at the top of the page is the default; "No project" leaves them unfiled, seen only by people with an organisation-wide role). Each connected group can go into a different project. Each GitLab project's asset is added to it on its first scan; later scans leave project membership alone, so an asset someone moved stays moved. To change it later, or to file the assets of a group connected before this choice existed, pick the project on the connection under **Integrations → GitLab**: the group's assets that are in no project are added to it. Assets in no project are listed under **Assets → Not in a project**.
+
 After that:
 
 - A push to a project's **default branch** that changes a lockfile or manifest (or a file an installed stack pack reads) queues a scan. Other pushes are ignored. Without a webhook, projects are scanned on their schedule (every 6 hours).

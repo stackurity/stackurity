@@ -18,7 +18,7 @@ import {
 import { useAuth } from "../../auth";
 import { useProject } from "../../project";
 import { useAction, useJobRunner, useLoad } from "../../hooks";
-import { CodeBlock, ErrorBox, JobStatus, Loading, PageHeader } from "../../components/ui";
+import { CodeBlock, ErrorBox, JobStatus, Loading, Notice, PageHeader } from "../../components/ui";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { channelTarget, DeliveriesTab, kindLabel } from "./Notifications";
 import { CloudConnectPanel } from "./CloudConnect";
@@ -31,6 +31,7 @@ import {
   connectedCounts,
   filterItems,
   parseFilter,
+  projectOnlyRules,
   receivesOf,
   scopeOf,
   sortItems,
@@ -241,6 +242,7 @@ export function IntegrationsHubPage() {
     ...servers.items,
   ]);
   const summary = summarise(items);
+  const narrowRules = projectOnlyRules(routes.data?.items ?? []);
   const shown = filterItems(items, filter);
   const counts = connectedCounts(channels.data?.items ?? [], sources.data?.items ?? [], servers);
   const hrefFor = (f: StatusFilter) => (f === "all" ? "/integrations#active" : `/integrations?status=${f}#active`);
@@ -367,6 +369,13 @@ export function IntegrationsHubPage() {
       <ErrorBox error={act.error} title="Action failed" />
       <ErrorBox error={job.error} title="Could not start run" />
       <JobStatus state={job.state} onDismiss={job.reset} />
+      {narrowRules.length > 0 && (
+        <Notice kind="warn">
+          Every alert rule is limited to a project, so issues on assets outside those projects (shown only under All projects) send no alerts. To be told
+          about every asset, open <Link to={`/integrations/channels/${narrowRules[0].channel_id}`}>its integration</Link> and add a rule with no project
+          ticked (rule &quot;{narrowRules[0].name}&quot; belongs to its project and stays limited to it).
+        </Notice>
+      )}
       {!loading && items.length > 0 && <HealthSummary summary={summary} failingTo={hrefFor("failing")} />}
       <div className="ix-head" id="active">
         <h2 className="h-sm">Active integrations</h2>
