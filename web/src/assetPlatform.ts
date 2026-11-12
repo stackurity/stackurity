@@ -92,9 +92,10 @@ export function assetPlatform(a: PlatformInput): AssetPlatform | null {
     case "host": {
       const cloud = hostCloud(at);
       const withCloud = (p: AssetPlatform): AssetPlatform => (cloud ? { ...p, cloud } : p);
-      const os = OS[(at.os ?? "").toLowerCase()];
+      const osId = (at.os ?? "").toLowerCase();
+      const os = OS[osId];
       if (os) {
-        const v = at.os_version && a.attributes?.os !== "windows" ? shortVersion(at.os_version) : "";
+        const v = at.os_version && osId !== "windows" ? shortVersion(at.os_version) : "";
         return withCloud({ ...os, label: v ? `${os.label} ${v}` : os.label });
       }
       if (at.os || at.os_name) return withCloud({ logo: "linux", label: at.os_name || at.os });

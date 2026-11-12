@@ -11,6 +11,7 @@ test("hosts show their OS with a short version", () => {
   assert.equal(assetPlatform({ kind: "host", attributes: { os: "rhel", os_version: "9.4.1" } })?.label, "RHEL 9.4");
   assert.equal(assetPlatform({ kind: "host", attributes: { os: "amzn", os_version: "2023" } })?.logo, "aws");
   assert.equal(assetPlatform({ kind: "host", attributes: { os: "windows", os_version: "10.0.26100" } })?.label, "Windows");
+  assert.equal(assetPlatform({ kind: "host", attributes: { os: "Windows", os_version: "10.0.26100" } })?.label, "Windows");
 });
 
 test("an unknown Linux keeps its own name; nothing reported shows nothing", () => {
