@@ -7124,24 +7124,91 @@ a.cov-chip:hover {
   margin: 0;
   color: var(--muted);
 }
+.ask-history-note {
+  margin: 0 0 8px;
+}
+.ask-history-group + .ask-history-group {
+  margin-top: 12px;
+}
+.ask-history-day {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--text-2);
+}
 .ask-history {
   list-style: none;
   padding: 0;
-  margin: 0 0 12px;
+  margin: 0;
 }
 .ask-history li {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid var(--border);
+  gap: 4px;
+  border-radius: 8px;
+}
+.ask-history li:hover,
+.ask-history li:focus-within {
+  background: var(--surface-2, rgba(127, 127, 127, 0.08));
+}
+.ask-history-current {
+  background: var(--accent-soft, rgba(59, 91, 219, 0.08));
+  box-shadow: inset 3px 0 0 var(--accent);
 }
 .ask-history-open {
   flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  background: none;
+  border: none;
+  font: inherit;
   text-align: left;
+  color: var(--text);
+  cursor: pointer;
+}
+.ask-history-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+}
+/* Delete stays quiet until the row is in use: one red word per row was the loudest thing in the list. */
+.ask-history-delete {
+  color: var(--text-2);
+  opacity: 0;
+}
+.ask-history li:hover .ask-history-delete,
+.ask-history li:focus-within .ask-history-delete {
+  opacity: 1;
+}
+.ask-history-delete:hover,
+.ask-history-delete:focus-visible {
+  color: var(--danger);
+}
+@media (hover: none) {
+  .ask-history-delete {
+    opacity: 1;
+  }
+}
+.ask-history-delete-all {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+  width: 100%;
+  text-align: left;
+}
+.ask-scope {
+  margin: 0;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2, rgba(127, 127, 127, 0.06));
+  color: var(--text-2);
 }
 @media (max-width: 700px) {
   .topbar-ask-label {
@@ -7181,9 +7248,46 @@ a.cov-chip:hover {
 .ask-toolbar {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
+  justify-content: space-between;
   gap: 4px;
-  padding: 4px 12px;
+  padding: 0 8px;
   border-bottom: 1px solid var(--border);
+}
+.ask-tabs {
+  display: flex;
+  gap: 2px;
+}
+.ask-tabs .tab {
+  padding: 8px 12px;
+}
+.ask-new {
+  margin-bottom: 4px;
+}
+.ask-fb {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.ask-rate .ask-fb {
+  flex-basis: 100%;
+  margin-top: 8px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+.ask-fb-title {
+  margin: 0;
+  font-size: 15px;
+}
+.ask-fb-actions {
+  display: flex;
+  gap: 8px;
+}
+.ask-fb-other {
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
 }
 /* A phone: the header's buttons get the room; the name may shorten. */
 @media (max-width: 480px) {
@@ -7304,6 +7408,7 @@ a.cov-chip:hover {
    the form, a bottom sheet on a phone. */
 .ask-rate {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 4px;
   margin-top: 2px;

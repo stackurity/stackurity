@@ -13,6 +13,7 @@ export const FEEDBACK_CATEGORIES: { value: string; label: string }[] = [
   { value: "slow", label: "Too slow" },
   { value: "wrong_data", label: "Didn't use my data, or looked at the wrong asset" },
   { value: "formatting", label: "Formatting" },
+  { value: "idea", label: "An idea or a request" },
   { value: "other", label: "Other" },
 ];
 

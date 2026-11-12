@@ -5,6 +5,8 @@
 //   - a half-typed question survives navigation and a reload, and the
 //     panel comes back open on the same conversation after a reload;
 //   - minimised, the page behind can be used; restored, nothing is lost;
+//   - Chat, History and Feedback are tabs, and Feedback on Ask is a form
+//     inside the panel;
 //   - no console errors and no horizontal scroll.
 //
 //   node ask.mjs <base url> [email] [password]
@@ -105,6 +107,19 @@ for (const width of [1280, 390]) {
   await log.getByText("Word299").waitFor();
   ok((await log.innerText()).includes("Short answer:"), `${tag} after a reload: open on the same conversation`);
   ok((await panel.getByLabel("Your question").inputValue()) === "half typed question", `${tag} after a reload: the half-typed question is kept`);
+
+  // Chat, History and Feedback are tabs: the one shown is selected. Feedback
+  // on Ask is a form inside the panel, never a dialog over the page.
+  const tab = (name) => panel.getByRole("tab", { name });
+  ok((await tab("Chat").getAttribute("aria-selected")) === "true", `${tag} the Chat tab is selected in a chat`);
+  await tab(/^History/).click();
+  ok((await tab(/^History/).getAttribute("aria-selected")) === "true", `${tag} the History tab is selected when shown`);
+  ok(await panel.locator(".ask-history-current").isVisible(), `${tag} History marks the open conversation`);
+  await tab("Feedback").click();
+  ok(await panel.getByRole("heading", { name: "Feedback on Ask" }).isVisible(), `${tag} Feedback opens inside the panel`);
+  ok((await page.locator('[role=dialog][aria-modal="true"]').count()) === 0, `${tag} Feedback on Ask is not a dialog over the page`);
+  await panel.getByRole("button", { name: "Cancel" }).click();
+  ok((await tab("Chat").getAttribute("aria-selected")) === "true", `${tag} Cancel goes back to the chat`);
 
   const w = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(w <= 1, `${tag} no horizontal scroll (${w}px)`);
