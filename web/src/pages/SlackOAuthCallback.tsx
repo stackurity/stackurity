@@ -62,7 +62,7 @@ async function exchange(code: string, state: string): Promise<Outcome> {
         name: pending.route_name,
         channel_id: result.channel.id,
         enabled: true,
-        project_ids: [pending.project_id],
+        // The organisation's rule (no project_ids): see Onboarding.tsx.
         events: pending.events,
         new_min_priority: pending.new_min_priority,
         min_priority: "P1",
