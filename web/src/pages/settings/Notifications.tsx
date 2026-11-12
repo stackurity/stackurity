@@ -1175,11 +1175,16 @@ export function DeliveriesTab({ channels, channelsLoaded = true, admin }: { chan
     {
       key: "incident",
       header: "Incident",
+      className: "col-title",
       cell: (d) =>
         d.incident_id ? (
-          <Link to={`/incidents/${d.incident_id}`}>{titleOf(d) || `#${d.incident_id}`}</Link>
+          <Link to={`/incidents/${d.incident_id}`} className="clamp-2" title={titleOf(d) || undefined}>
+            {titleOf(d) || `#${d.incident_id}`}
+          </Link>
         ) : (
-          <span className="small">{titleOf(d) || <span className="muted">—</span>}</span>
+          <span className="small clamp-2" title={titleOf(d) || undefined}>
+            {titleOf(d) || <span className="muted">—</span>}
+          </span>
         ),
     },
     {

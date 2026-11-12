@@ -402,3 +402,42 @@ func TestRebootRequired(t *testing.T) {
 		t.Errorf("package upgrade: reboot %v, change type %q", g != nil && g.Reboot, g.ChangeType)
 	}
 }
+
+// An image is fixed in its build, not in a running container: patching a
+// container is lost when it is recreated.
+func TestImageSecurityUpdatesAreBuildSteps(t *testing.T) {
+	image := func(id int64, osID, osv string, f Row) Row {
+		f = host(id, f)
+		f.AssetKind, f.AssetName, f.OS, f.OSVersion, f.OSName = "image", "registry.example.com/demo/shop-api:2.4.1", osID, osv, osID+" "+osv
+		return f
+	}
+	for _, c := range []struct{ os, osv, purl, action string }{
+		{"debian", "12", "deb", "RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*"},
+		{"alpine", "3.19", "apk", "RUN apk upgrade --no-cache"},
+		{"rocky", "9", "rpm", "RUN dnf upgrade -y --refresh && dnf clean all"},
+		{"centos", "7", "rpm", "RUN yum update -y && yum clean all"},
+		{"opensuse-leap", "15.5", "rpm", "RUN zypper --non-interactive patch"},
+	} {
+		groups, _ := Build([]Row{image(1, c.os, c.osv, Row{Component: "openssl", FixedVersion: "3.0.15", PurlType: c.purl})}, nil)
+		if len(groups) != 1 || groups[0].Kind != SecurityUpdates {
+			t.Fatalf("%s: groups = %+v", c.os, groups)
+		}
+		g := groups[0]
+		if g.Action != c.action || strings.Contains(g.Action, "sudo") {
+			t.Errorf("%s: action = %q, want the build step %q", c.os, g.Action, c.action)
+		}
+		if g.Title != "Rebuild the image with the available security updates" || !strings.Contains(g.Note, "redeploy") {
+			t.Errorf("%s: title %q, note %q", c.os, g.Title, g.Note)
+		}
+	}
+	// A distribution without a known package manager: words, not a command.
+	groups, _ := Build([]Row{image(1, "wolfi", "", Row{Component: "openssl", FixedVersion: "3.0.15", PurlType: "apk"})}, nil)
+	if g := groups[0]; strings.HasPrefix(g.Action, "RUN ") || strings.Contains(g.Action, "sudo") || !strings.Contains(g.Action, "image's build") {
+		t.Errorf("unknown OS image action = %q", g.Action)
+	}
+	// A host keeps the command it runs itself.
+	groups, _ = Build([]Row{host(1, Row{Component: "openssl", FixedVersion: "1.1.1f-1ubuntu2.24"})}, nil)
+	if g := groups[0]; g.Action != "sudo apt update && sudo apt upgrade" {
+		t.Errorf("host action = %q", g.Action)
+	}
+}

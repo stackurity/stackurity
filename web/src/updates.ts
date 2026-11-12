@@ -42,12 +42,12 @@ export function installsQuery(filter: UpdateFilter, assetId: string, limit: numb
   return q;
 }
 
-/** "56 installs behind: 3 major, 12 minor, 41 patch", or that none are. */
+/** "56 installs behind: 3 major, 12 minor, 41 patch.", or that none are. */
 export function countsText(counts: UpdatesSummary["counts"] | undefined): string {
   const total = counts?.total ?? 0;
   if (!counts || total === 0) return "Every registry package is on its latest stable release.";
   const parts = UPDATE_TYPES.filter((t) => (counts[t] ?? 0) > 0).map((t) => `${counts[t].toLocaleString()} ${t}`);
-  return `${total.toLocaleString()} ${total === 1 ? "install" : "installs"} behind: ${parts.join(", ")}`;
+  return `${total.toLocaleString()} ${total === 1 ? "install" : "installs"} behind: ${parts.join(", ")}.`;
 }
 
 /** A package as people write it: "@babel/core", "symfony/console", "org.slf4j:slf4j-api", "lodash". */

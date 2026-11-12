@@ -136,7 +136,7 @@ export function UpgradeDetails({ rec, issueFix }: { rec: UpgradeRecommendation; 
   entries.push(
     [
       // No count here: `fixes` can include an end-of-life entry, which the
-      // fix's own "N issues cleared together" does not, and the two must not disagree.
+      // fix's own "N issues fixed together" does not, and the two must not disagree.
       smallerIssueFix && issues > 1 ? "minimum for everything it resolves" : "minimum fixed",
       rec.minimum_fixed_version ? (
         <span className="badges">

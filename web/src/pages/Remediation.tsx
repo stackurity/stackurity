@@ -21,6 +21,7 @@ import { useAuth } from "../auth";
 import { useAction, useFacets, useLoad } from "../hooks";
 import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
+import { TruncatedName } from "../components/Truncate";
 import {
   CHANGE_TYPE_HELP,
   CHANGE_TYPE_LABEL,
@@ -106,12 +107,15 @@ export function PlansTab() {
     {
       key: "pkg",
       header: "Package",
+      className: "col-ident",
       cell: (p) => (
         <>
           <Link to={`/remediation/plans/${p.id}`} onClick={(e) => e.stopPropagation()}>
             {p.package}
           </Link>
-          <div className="mono small muted break">{p.purl_key}</div>
+          <div>
+            <TruncatedName value={p.purl_key} className="mono small muted" copy={false} />
+          </div>
         </>
       ),
     },
