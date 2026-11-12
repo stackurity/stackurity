@@ -562,6 +562,12 @@ func toolLabel(u ToolUse) string {
 		return "Checking what changed"
 	case "updates_available":
 		return "Checking available updates"
+	case "account_overview":
+		return "Reading your account"
+	case "integrations_status":
+		return "Checking integrations"
+	case "notification_settings":
+		return "Reading notification rules"
 	}
 	return "Reading"
 }
