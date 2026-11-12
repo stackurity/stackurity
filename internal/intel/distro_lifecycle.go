@@ -197,12 +197,6 @@ func osMatches(osOnAsset string, dist *store.LifecycleCycle, cache map[string][]
 // no revision before it.
 var debCodenameSuffix = regexp.MustCompile(`-[0-9][^~]*~(?:[a-z]+\.[0-9.]+~)?[a-z]+$`)
 
-// mysqlRepoSuffix matches MySQL's APT repository's version ending for a
-// release: "-<revision>ubuntu<release>" or "-<revision>debian<release>".
-func mysqlRepoSuffix(release string) *regexp.Regexp {
-	return regexp.MustCompile(`-[0-9]+(?:ubuntu|debian)` + regexp.QuoteMeta(release) + `$`)
-}
-
 // thirdPartyBuild reports versions that show a package was built by another
 // repository rather than the distribution. The agent does not record the
 // repository a package came from, so only recognisable builds are caught.
@@ -218,11 +212,8 @@ func thirdPartyBuild(purlType, v, release string) bool {
 		if debCodenameSuffix.MatchString(v) {
 			return true
 		}
-		// MySQL's APT repository: "8.0.39-1ubuntu22.04", "8.0.39-1debian12",
-		// the release right after the packaging revision. Ubuntu's own snapd
-		// ends in the release too, after a "+" ("2.77.1+ubuntu24.04"), and is
-		// the distribution's build.
-		if release != "" && mysqlRepoSuffix(release).MatchString(v) {
+		// MySQL's APT repository: "8.0.39-1ubuntu22.04", "8.0.39-1debian12".
+		if release != "" && (strings.HasSuffix(v, "ubuntu"+release) || strings.HasSuffix(v, "debian"+release)) {
 			return true
 		}
 	case "rpm":
