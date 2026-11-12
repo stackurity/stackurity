@@ -693,3 +693,28 @@ func TestAccountToolsNeverReturnSecrets(t *testing.T) {
 		}
 	}
 }
+
+// action_plan's limit keeps a plan across every asset small enough for Ask
+// (whose tool results are cut at 24 KB), so it ranks the whole workspace
+// instead of narrowing to one asset at a time.
+func TestActionPlanLimit(t *testing.T) {
+	for _, c := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(15)}, "group_by=fix&limit=15"},
+		{map[string]any{"limit": float64(500)}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(0)}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(5), "asset_id": float64(3)}, "asset_id=3&group_by=fix&limit=5"},
+	} {
+		api := &fakeAPI{}
+		if _, err := CallRead(context.Background(), api, "action_plan", c.args); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"GET /api/v1/fix-groups?" + c.want, "GET /api/v1/fix-groups/summary?" + c.want}
+		if strings.Join(api.paths, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%v: requests = %v", c.args, api.paths)
+		}
+	}
+}

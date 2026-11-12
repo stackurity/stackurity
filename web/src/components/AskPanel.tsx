@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type FormEvent, type Reac
 import { Link, useLocation } from "react-router";
 import { api, ApiError, getActiveProject } from "../api";
 import {
+  historyGroups,
   ASK_CONSENT_VERSION,
   ASK_NOTICE_VERSION,
   AskHTTPError,
@@ -23,11 +24,13 @@ import {
 import { Card, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
-import { AskFeedbackButton, AskRate } from "./AskFeedback";
+import { AskFeedbackForm, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
 import type { AskPanelState } from "../askState";
+import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
+import { AskAnswerExtras } from "./AskAnswerExtras";
 
 /**
  * Renders an answer. One the model wrote with the known headings
@@ -201,7 +204,10 @@ export function AskPanel({
   const [draft, setDraft] = useState("");
   const [tool, setTool] = useState("");
   const [busy, setBusy] = useState(false);
-  const [history, setHistory] = useState(false);
+  // The panel's three views; the tab of the one shown is underlined.
+  const [view, setView] = useState<"chat" | "history" | "feedback">("chat");
+  const history = view === "history";
+  const [fbSent, setFbSent] = useState(false);
   const [error, setError] = useState<ApiError | null>(null);
   const [usePage, setUsePage] = useState(true);
   const [longChat, setLongChat] = useState(false);
@@ -211,6 +217,8 @@ export function AskPanel({
   const body = useRef<HTMLDivElement>(null);
   const scroll = useRef<number | null>(null);
   const page: AskPage | null = pageOf(pathname);
+  const { project, projects, choose } = useProject();
+  const projectName = (id: number | null) => (id ? projects.find((p) => p.id === id)?.name ?? "" : "");
 
   useEffect(() => setUsePage(true), [pathname]);
   useEffect(() => {
@@ -271,7 +279,7 @@ export function AskPanel({
 
   const openConv = async (id: number) => {
     setLongChat(false);
-    setHistory(false);
+    setView("chat");
     setError(null);
     try {
       const r = await api.get<{ messages: AskMessage[] }>(`/ask/conversations/${id}`);
@@ -288,7 +296,7 @@ export function AskPanel({
     setLoaded(null);
     setConv(null);
     setTurns([]);
-    setHistory(false);
+    setView("chat");
     setError(null);
     input.current?.focus();
   };
@@ -435,15 +443,43 @@ export function AskPanel({
       </header>
       {/* The conversation's actions get a row of their own, so the name is never cut short. */}
       {s?.notice_accepted && (
-        <div className="ask-toolbar" role="toolbar" aria-label="Conversation">
-          <button type="button" className="btn btn-sm btn-link" onClick={fresh}>
-            New
+        <div className="ask-toolbar">
+          {/* Chat, History and Feedback are the panel's views; the one shown is underlined. New chat is an action. */}
+          <div className="ask-tabs" role="tablist" aria-label="Ask Stackurity">
+            {(
+              [
+                ["chat", "Chat"],
+                ["history", `History${convs.length > 0 ? ` (${convs.length})` : ""}`],
+                ["feedback", "Feedback"],
+              ] as const
+            ).map(([v, label]) => (
+              <button
+                key={v}
+                type="button"
+                role="tab"
+                aria-selected={view === v}
+                className={`tab${view === v ? " tab-active" : ""}`}
+                onClick={() => {
+                  setFbSent(false);
+                  setView(v);
+                }}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <button type="button" className="btn btn-sm btn-link ask-new" onClick={fresh}>
+            + New chat
           </button>
-          <button type="button" className="btn btn-sm btn-link" onClick={() => setHistory((h) => !h)} aria-expanded={history}>
-            History
-          </button>
-          <AskFeedbackButton conv={conv} />
         </div>
+      )}
+      {s?.notice_accepted && view === "chat" && project && (
+        <p className="ask-scope small">
+          Answers cover the <strong>{project.name}</strong> project only.{" "}
+          <button type="button" className="btn-link" onClick={() => choose(0)}>
+            Use all projects
+          </button>
+        </p>
       )}
       <ErrorBox error={error} title="Ask Stackurity" />
       {!s ? (
@@ -461,31 +497,60 @@ export function AskPanel({
             I understand
           </button>
         </div>
+      ) : view === "feedback" ? (
+        <div className="ask-body">
+          {fbSent ? (
+            <div className="ask-fb-thanks">
+              <p>Thanks: your feedback on Ask was sent.</p>
+              <button type="button" className="btn btn-sm" onClick={() => setView("chat")}>
+                Back to the chat
+              </button>
+            </div>
+          ) : (
+            <>
+              <AskFeedbackForm conv={conv} seq={null} title="Feedback on Ask" onClose={() => setView("chat")} onSent={() => setFbSent(true)} />
+              <p className="small muted ask-fb-other">
+                About something else in Stackurity? Use <strong>Send feedback</strong> in your account menu (top right).
+              </p>
+            </>
+          )}
+        </div>
       ) : history ? (
         <div className="ask-body">
           {convs.length === 0 ? (
             <p className="muted">No conversations yet. They are deleted 30 days after you start them.</p>
           ) : (
-            <ul className="ask-history">
-              {convs.map((c) => (
-                <li key={c.id}>
-                  <button type="button" className="btn-link ask-history-open" onClick={() => void openConv(c.id)}>
-                    {c.title || "Untitled"}
-                  </button>
-                  <span className="small muted">
-                    <RelativeTime iso={c.updated_at} />
-                  </span>
-                  <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void remove(c.id)} aria-label={`Delete ${c.title || "conversation"}`}>
-                    Delete
-                  </button>
-                </li>
+            <>
+              <p className="small muted ask-history-note">Your conversations in this organisation. Each is deleted 30 days after you start it.</p>
+              {historyGroups(convs, new Date()).map((g) => (
+                <section key={g.label} className="ask-history-group">
+                  <h4 className="ask-history-day">{g.label}</h4>
+                  <ul className="ask-history">
+                    {g.items.map((c) => {
+                      const where = projectName(c.project_id);
+                      return (
+                        <li key={c.id} className={c.id === conv ? "ask-history-current" : undefined}>
+                          <button type="button" className="ask-history-open" onClick={() => void openConv(c.id)} aria-current={c.id === conv ? "true" : undefined}>
+                            <span className="ask-history-title">{c.title || "Untitled"}</span>
+                            <span className="ask-history-meta small muted">
+                              <RelativeTime iso={c.updated_at} />
+                              {where ? ` · ${where} project` : " · All projects"}
+                              {c.id === conv ? " · Open now" : ""}
+                            </span>
+                          </button>
+                          <button type="button" className="btn btn-sm btn-link ask-history-delete" onClick={() => void remove(c.id)} aria-label={`Delete ${c.title || "conversation"}`}>
+                            Delete
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                </section>
               ))}
-            </ul>
-          )}
-          {convs.length > 0 && (
-            <button type="button" className="btn btn-sm btn-link-danger" onClick={() => void removeAll()}>
-              Delete all my conversations
-            </button>
+              <button type="button" className="btn btn-sm btn-link-danger ask-history-delete-all" onClick={() => void removeAll()}>
+                Delete all my conversations
+              </button>
+            </>
           )}
         </div>
       ) : (
@@ -510,6 +575,7 @@ export function AskPanel({
               ) : t.role === "assistant" ? (
                 <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
+                  <AskAnswerExtras text={t.text} onNavigate={onLinkClick} />
                   <AskReadOnly tools={t.tools} onNavigate={onLinkClick} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>

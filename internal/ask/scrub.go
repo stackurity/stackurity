@@ -157,7 +157,7 @@ func ToolResultText(name string, out any) string {
 		for cut > 0 && !utf8.RuneStart(s[cut]) {
 			cut--
 		}
-		s = s[:cut] + fmt.Sprintf("\n[cut: the result was longer than %d KB. Ask again with a narrower filter: asset_id, query, severity or limit.]", maxToolResult>>10)
+		s = s[:cut] + fmt.Sprintf("\n[cut: the result was longer than %d KB. Ask again with a smaller limit or a narrower filter (asset_id, query, severity).]", maxToolResult>>10)
 	}
 	return dataNote + s
 }

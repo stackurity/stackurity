@@ -74,6 +74,7 @@ export function IncidentsPage() {
     {
       key: "prio",
       header: "Priority",
+      className: "col-nowrap",
       cell: (i) => (
         <span className="badges">
           <PriorityBadge priority={i.priority} />
@@ -84,6 +85,7 @@ export function IncidentsPage() {
     {
       key: "title",
       header: "Incident",
+      className: "col-text-wide",
       cell: (i) => (
         <>
           <Link to={`/incidents/${i.id}`} onClick={(e) => e.stopPropagation()}>
@@ -98,11 +100,12 @@ export function IncidentsPage() {
         </>
       ),
     },
-    { key: "kind", header: "Kind", cell: (i) => INCIDENT_KIND_LABEL[i.kind] ?? humanize(i.kind) },
+    { key: "kind", header: "Kind", className: "col-nowrap", cell: (i) => INCIDENT_KIND_LABEL[i.kind] ?? humanize(i.kind) },
     { key: "team", header: "Owner team", cell: (i) => i.owner_team || <span className="muted">unowned</span> },
     {
       key: "counts",
       header: "Scope",
+      className: "col-nowrap",
       cell: (i) =>
         i.finding_count || i.asset_count ? (
           <span className="small">
@@ -117,6 +120,7 @@ export function IncidentsPage() {
     {
       key: "state",
       header: "State",
+      className: "col-nowrap",
       cell: (i) => (
         <span className="badges">
           {i.status === "open" ? <StateBadge state={i.state} /> : <Badge status="resolved" />}
@@ -124,7 +128,7 @@ export function IncidentsPage() {
         </span>
       ),
     },
-    { key: "updated", header: "Updated", cell: (i) => <RelativeTime iso={i.updated_at} /> },
+    { key: "updated", header: "Updated", className: "col-nowrap", cell: (i) => <RelativeTime iso={i.updated_at} /> },
   ];
 
   const sosCount = sosOpen.data?.total ?? 0;

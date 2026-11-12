@@ -16334,7 +16334,7 @@
    "post": {
     "operationId": "post_ask_conversations_id_feedback",
     "summary": "Feedback on an Ask Stackurity answer or conversation",
-    "description": "`seq` (the answer, for scope `answer`), `rating` (`up` or `down`), `category` (`wrong`, `misunderstood`, `incomplete`, `slow`, `wrong_data`, `formatting`, `other`), `scope` (`answer`, the default; `chat`; `ui`: the panel itself), `text` (what they expected, up to 2,000 characters), `consent` (share the conversation with the Stackurity team: with it a snapshot of the messages' visible text, credentials and email addresses removed, is kept 90 days; without it only the category, text and metadata), `page_path` (no query), `viewport` (`WIDTHxHEIGHT`). 201 with `id`. The conversation must be the caller's own (404 otherwise); 30 an hour per person\n\nRole: a browser session",
+    "description": "`seq` (the answer, for scope `answer`), `rating` (`up` or `down`), `category` (`wrong`, `misunderstood`, `incomplete`, `slow`, `wrong_data`, `formatting`, `idea`, `other`), `scope` (`answer`, the default; `chat`; `ui`: the panel itself), `text` (what they expected, up to 2,000 characters), `consent` (share the conversation with the Stackurity team: with it a snapshot of the messages' visible text, credentials and email addresses removed, is kept 90 days; without it only the category, text and metadata), `page_path` (no query), `viewport` (`WIDTHxHEIGHT`). 201 with `id`. The conversation must be the caller's own (404 otherwise); 30 an hour per person\n\nRole: a browser session",
     "tags": [
      "Ask Stackurity"
     ],

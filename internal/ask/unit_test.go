@@ -281,3 +281,15 @@ func TestOwnTokensAndKeyValuesRedacted(t *testing.T) {
 		t.Errorf("redacted too much or too little: %s", out)
 	}
 }
+
+func TestToolLabelFixes(t *testing.T) {
+	for in, want := range map[string]string{
+		`{"limit":15}`:    "Reading the fixes for every asset",
+		`{}`:              "Reading the fixes for every asset",
+		`{"asset_id":20}`: "Reading the fixes #20",
+	} {
+		if got := toolLabel(ToolUse{Name: "action_plan", Input: []byte(in)}); got != want {
+			t.Errorf("%s: %q, want %q", in, got, want)
+		}
+	}
+}

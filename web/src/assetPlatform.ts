@@ -4,6 +4,8 @@ import type { PlatformLogo } from "./platformLogos.ts";
 export interface AssetPlatform {
   logo: PlatformLogo;
   label: string;
+  /** For a host the agent found on a cloud: "DigitalOcean Droplet", "AWS EC2". */
+  cloud?: string;
 }
 
 interface PlatformInput {
@@ -41,6 +43,31 @@ const CLOUD: Record<string, AssetPlatform> = {
   digitalocean: { logo: "digitalocean", label: "DigitalOcean" },
 };
 
+/** The Linux agent's cloud_provider attribute → the provider's name. */
+const CLOUD_NAMES: Record<string, string> = {
+  aws: "AWS",
+  digitalocean: "DigitalOcean",
+  gcp: "Google Cloud",
+  azure: "Azure",
+  oracle: "Oracle Cloud",
+  hetzner: "Hetzner",
+  linode: "Akamai (Linode)",
+  vultr: "Vultr",
+  alibaba: "Alibaba Cloud",
+};
+
+/**
+ * "DigitalOcean Droplet" from cloud_provider and cloud_service; just the
+ * provider when the service repeats it ("Akamai (Linode)"). Undefined for a
+ * provider this dashboard does not know.
+ */
+function hostCloud(at: Record<string, string>): string | undefined {
+  const name = CLOUD_NAMES[(at.cloud_provider ?? "").toLowerCase()];
+  if (!name) return undefined;
+  const service = (at.cloud_service ?? "").trim();
+  return service && !name.toLowerCase().includes(service.toLowerCase()) ? `${name} ${service}` : name;
+}
+
 /** "24.04.3" → "24.04"; "12" stays "12". Full detail is on the asset page. */
 function shortVersion(v: string): string {
   return v.split(".").slice(0, 2).join(".");
@@ -63,13 +90,20 @@ export function assetPlatform(a: PlatformInput): AssetPlatform | null {
   const at = a.attributes ?? {};
   switch (a.kind) {
     case "host": {
-      const os = OS[(at.os ?? "").toLowerCase()];
+      const cloud = hostCloud(at);
+      const withCloud = (p: AssetPlatform): AssetPlatform => (cloud ? { ...p, cloud } : p);
+      const osId = (at.os ?? "").toLowerCase();
+      const os = OS[osId];
       if (os) {
-        const v = at.os_version && a.attributes?.os !== "windows" ? shortVersion(at.os_version) : "";
-        return { ...os, label: v ? `${os.label} ${v}` : os.label };
+        const v = at.os_version && osId !== "windows" ? shortVersion(at.os_version) : "";
+        return withCloud({ ...os, label: v ? `${os.label} ${v}` : os.label });
       }
-      if (at.os || at.os_name) return { logo: "linux", label: at.os_name || at.os };
-      return CLOUD[(a.provider ?? "").toLowerCase()] ?? null;
+      if (at.os || at.os_name) return withCloud({ logo: "linux", label: at.os_name || at.os });
+      // No OS reported: the cloud the agent found names the host on its own.
+      const mark = CLOUD[(at.cloud_provider ?? "").toLowerCase()];
+      if (mark && cloud) return { logo: mark.logo, label: cloud };
+      const p = CLOUD[(a.provider ?? "").toLowerCase()];
+      return p ? withCloud(p) : null;
     }
     case "repository":
       return at.git_url ? gitHost(at.git_url) : null;
