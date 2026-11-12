@@ -21,7 +21,8 @@ const exchanges = new Map<string, Promise<GitLabOAuthResult>>();
 const asApiError = (e: unknown) => (e instanceof ApiError ? e : new ApiError(0, "client", String(e)));
 
 export function GitLabCallbackPage() {
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  const projects = me?.projects ?? [];
   const [q] = useState(() => new URLSearchParams(window.location.search));
   const code = q.get("code") ?? "";
   const state = q.get("state") ?? "";
@@ -30,6 +31,12 @@ export function GitLabCallbackPage() {
   const [error, setError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<GitLabOAuthResult | null>(null);
   const [group, setGroup] = useState<number | null>(null);
+  // The Stackurity project the group's assets go into: the one last chosen
+  // in the switcher, if any. Each connected group can have its own.
+  const [project, setProject] = useState<number>(() => {
+    const def = me?.default_project_id ?? 0;
+    return (me?.projects ?? []).some((p) => p.id === def) ? def : 0;
+  });
   const [connected, setConnected] = useState<GitLabConnectResult | null>(null);
   const pick = useAction();
 
@@ -49,7 +56,7 @@ export function GitLabCallbackPage() {
 
   const connect = async () => {
     if (!result?.pick || group === null) return;
-    const r = await pick.run(() => api.post<GitLabConnectResult>("/integrations/gitlab/connections", { pick: result.pick, group_id: group }));
+    const r = await pick.run(() => api.post<GitLabConnectResult>("/integrations/gitlab/connections", { pick: result.pick, group_id: group, project_id: project }));
     if (r) setConnected(r);
   };
 
@@ -148,6 +155,23 @@ export function GitLabCallbackPage() {
             </label>
           ))}
         </fieldset>
+        {projects.length > 0 && (
+          <div className="field">
+            <label htmlFor="gitlab-project">Add its assets to the Stackurity project</label>
+            <select id="gitlab-project" value={project} onChange={(e) => setProject(Number(e.target.value))}>
+              <option value={0}>No project</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <p className="muted small">
+              Connect each group with its own project. Assets in no project are seen only by people with an organisation-wide role; you can choose a project
+              later under Integrations.
+            </p>
+          </div>
+        )}
         <ErrorBox error={pick.error} title="Could not connect the group" />
         <div className="form-actions">
           <button type="button" className="btn btn-primary" onClick={() => void connect()} disabled={group === null || pick.pending}>

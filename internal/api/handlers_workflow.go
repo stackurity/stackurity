@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -642,6 +643,11 @@ func (s *Server) testChannelAs(w http.ResponseWriter, r *http.Request, sc *notif
 
 var priorities = map[string]bool{"P1": true, "P2": true, "P3": true, "P4": true}
 
+// routeKinds are the incident kinds a rule can be limited to: every kind
+// an incident can have. The dashboard's list is INCIDENT_KINDS in
+// web/src/api.ts; TestRouteKindsMatchTheDashboard keeps the two the same.
+var routeKinds = []string{"vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"}
+
 func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	s.saveRouteAs(w, r, id, nil)
 }
@@ -749,10 +755,8 @@ func (s *Server) saveRouteAs(w http.ResponseWriter, r *http.Request, id int64, s
 		return
 	}
 	for _, k := range rt.Kinds {
-		switch k {
-		case "vulnerability", "end_of_life", "feed", "collection", "coverage", "leak":
-		default:
-			s.fail(w, r, badRequest("kinds may contain vulnerability, end_of_life, feed, collection, coverage, leak"))
+		if !slices.Contains(routeKinds, k) {
+			s.fail(w, r, badRequest("Incident kinds may only be "+strings.Join(routeKinds, ", ")+"; got "+strconv.Quote(k)))
 			return
 		}
 	}

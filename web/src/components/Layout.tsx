@@ -6,6 +6,8 @@ import { useAuth } from "../auth";
 import { ProjectProvider, useProject } from "../project";
 import { GlobalSearch } from "./Search";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "./Feedback";
+import { FeedbackNudge } from "./FeedbackNudge";
+import { updateNudge } from "../feedbackNudge";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
 import {
@@ -269,6 +271,18 @@ function Shell() {
             <IconHelp />
             <span className="nav-text">Help</span>
           </Link>
+          {showFeedback && (
+            <button
+              type="button"
+              className="nav-item"
+              aria-haspopup="dialog"
+              onClick={() => feedback.current?.open()}
+              title={collapsed ? "Send feedback" : undefined}
+            >
+              <IconMessage />
+              <span className="nav-text">Send feedback</span>
+            </button>
+          )}
           <button
             type="button"
             className="nav-collapse"
@@ -295,6 +309,18 @@ function Shell() {
           <ProjectSwitcher />
           <div className="topbar-search">{me?.workspace ? <GlobalSearch /> : null}</div>
           {me?.workspace && <AskButton status={askStatus.data} onOpen={() => updateAsk({ open: true, minimised: false })} />}
+          {showFeedback && (
+            <button
+              type="button"
+              className="btn btn-sm topbar-feedback"
+              onClick={() => feedback.current?.open()}
+              aria-haspopup="dialog"
+              title="Tell the Stackurity team what is broken, confusing or missing"
+            >
+              <IconMessage size={16} />
+              <span className="topbar-feedback-label">Feedback</span>
+            </button>
+          )}
           <AvatarMenu onFeedback={showFeedback ? () => feedback.current?.open() : undefined} onLogout={() => {
               clearAskState();
               void logout();
@@ -412,7 +438,13 @@ function Shell() {
         </div>
       )}
       {/* Mounted once, outside the menus, so closing a menu does not close the dialog. */}
-      <FeedbackDialog ref={feedback} />
+      <FeedbackDialog
+        ref={feedback}
+        onSent={() => {
+          if (me?.user) updateNudge(me.user.id, { lastSent: Date.now() }, Date.now());
+        }}
+      />
+      {showFeedback && me?.user && <FeedbackNudge userId={me.user.id} onOpen={() => feedback.current?.open()} hold={askOpen} />}
       {me?.workspace && <AskPanel key={askKey} state={ask} update={updateAsk} status={askStatus.data} reload={askStatus.reload} />}
     </div>
   );

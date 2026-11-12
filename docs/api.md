@@ -2085,7 +2085,7 @@ Finishes an authorisation at GitLab with `{"state", "code"}` from GitLab's redir
 
 **Who:** admin
 
-Connects a GitLab group: `{"pick", "group_id"}`. 400 `gitlab_state` for a pick that is unknown, used, expired or someone else's. The `group_id` is not trusted: 403 `gitlab_group` unless the caller's GitLab account is a Reporter or above in it; 409 `gitlab_group_taken` when it, or a group above or below it, is connected to another organisation. As the group's Owner, a group access token (`read_api`, `read_repository`, Reporter, under a year) and a push webhook are created where GitLab allows. 201 with `connection`, `needs_readonly` (no group access token: start `POST /integrations/gitlab/connections/{id}/authorize` with `readonly`), `notes` and `return_to`. The caller's GitLab token is revoked. Audited as `gitlab.connect` (or `gitlab.refused`).
+Connects a GitLab group: `{"pick", "group_id", "project_id"}`. `project_id` is the Stackurity project the group's assets are added to when first scanned: 0 for none; left out, the project chosen in the switcher (connecting again then keeps the connection's project). 404 for a project that does not exist or is archived. 400 `gitlab_state` for a pick that is unknown, used, expired or someone else's. The `group_id` is not trusted: 403 `gitlab_group` unless the caller's GitLab account is a Reporter or above in it; 409 `gitlab_group_taken` when it, or a group above or below it, is connected to another organisation. As the group's Owner, a group access token (`read_api`, `read_repository`, Reporter, under a year) and a push webhook are created where GitLab allows. 201 with `connection`, `needs_readonly` (no group access token: start `POST /integrations/gitlab/connections/{id}/authorize` with `readonly`), `notes` and `return_to`. The caller's GitLab token is revoked. Audited as `gitlab.connect` (or `gitlab.refused`).
 
 ### `POST /integrations/gitlab/connections/{id}/authorize`
 
@@ -2098,6 +2098,12 @@ Connects a GitLab group: `{"pick", "group_id"}`. 400 `gitlab_state` for a pick t
 **Who:** admin
 
 Lists the group's projects on GitLab again now: 202. Audited as `gitlab.sync`.
+
+### `PATCH /integrations/gitlab/connections/{id}`
+
+**Who:** admin
+
+`{"project_id"}`: chooses the Stackurity project the group's assets are added to when first scanned (0 for none). The group's assets already scanned that are in no project are added to it now; assets already in a project stay where they are. 200 with `connection` and `assets_added`. Audited as `gitlab.project`.
 
 ### `DELETE /integrations/gitlab/connections/{id}`
 
