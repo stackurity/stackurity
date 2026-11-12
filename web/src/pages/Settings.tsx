@@ -104,11 +104,17 @@ export function SettingsLayout() {
   );
 }
 
-/** /settings opens its first section, as the list on the left shows them. */
+/**
+ * /settings opens its first section, as the list on the left shows them.
+ * The query and hash go along: the project picker adds ?project= to /settings
+ * in the same render, and a target without it would never change, so the
+ * redirect would not run again and the page would stay empty.
+ */
 export function SettingsIndex() {
   const visible = useVisible();
+  const { search, hash } = useLocation();
   const first = GROUPS.flatMap((g) => g.entries).find(visible);
-  return <Navigate replace to={first?.to ?? "/settings/risk-policy"} />;
+  return <Navigate replace to={{ pathname: first?.to ?? "/settings/risk-policy", search, hash }} />;
 }
 
 /** Settings, Automatic fixes: the remediation policies (security role). */

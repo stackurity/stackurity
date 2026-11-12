@@ -544,7 +544,7 @@ export function App() {
         <Route path="settings/users" element={movedTo("/people")} />
         <Route path="settings/teams" element={movedTo("/people/teams")} />
         <Route path="settings/owners" element={movedTo("/people/owners")} />
-        <Route path="admin" element={<Navigate replace to="/admin/workspaces" />} />
+        <Route path="admin" element={movedTo("/admin/workspaces")} />
         <Route
           path="admin/workspaces"
           element={
