@@ -40,7 +40,7 @@ type AskProposal struct {
 	// (ask.AskedForChange); the card says so.
 	Unrequested bool `json:"unrequested"`
 	// Status: proposed, applied, dismissed, expired, failed, undone,
-	// started (a hand-off whose flow the person started; migration 0106)
+	// started (a hand-off whose flow the person started; migration 0107)
 	// (and, while a request runs, applying or undoing).
 	Status    string          `json:"status"`
 	Changed   bool            `json:"changed"`
@@ -231,7 +231,7 @@ func (s *Store) DismissAskProposal(ctx context.Context, userID, convID, id int64
 }
 
 // StartAskProposal records that the person clicked a hand-off's button or
-// link (tool "connect", migration 0106): the connection goes on at the
+// link (tool "connect", migration 0107): the connection goes on at the
 // service's page, so the proposal moves to started, once, while it is
 // open. A server hand-off is applied instead (ClaimAskProposal), never
 // started.

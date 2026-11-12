@@ -8,4 +8,4 @@
 
 ### Upgrading
 
-- Migration `0106_ask_handoffs` lets `ask_proposals` hold connection hand-offs (`tool` `connect`, status `started`).
+- Migration `0107_ask_handoffs` lets `ask_proposals` hold connection hand-offs (`tool` `connect`, status `started`).

@@ -70,7 +70,7 @@ type ConnectKind struct {
 // connectKinds are what exists in the codebase to connect, in this order.
 // Slack, Jira and PagerDuty start their app's flow when the server has the
 // app set up, and otherwise link to their page (the card decides, as the
-// Integrations page does). Keep in step with migration 0106's CHECK and
+// Integrations page does). Keep in step with migration 0107's CHECK and
 // web/src/askHandoff.ts.
 var connectKinds = []ConnectKind{
 	{Kind: "github", Service: "GitHub", How: HowStart, Summary: "Install the Stackurity app on GitHub and pick the repositories to scan. GitHub asks you to approve it."},
