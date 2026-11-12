@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-11.1",
+  "version": "2026-11-12.1",
   "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
   "products": [
     {
@@ -204,6 +204,45 @@
         "https://apt.releases.hashicorp.com/dists/noble/main/binary-amd64/Packages.gz"
       ],
       "verified": "2026-11-11"
+    },
+    {
+      "id": "docker-engine",
+      "label": "Docker Engine",
+      "packages": ["^deb/docker-ce$", "^rpm/docker-ce$", "^deb/docker-ce-cli$", "^rpm/docker-ce-cli$", "^deb/docker-ce-rootless-extras$", "^rpm/docker-ce-rootless-extras$"],
+      "cpes": [
+        "cpe:2.3:a:docker:engine",
+        "cpe:2.3:a:mobyproject:moby",
+        "cpe:2.3:a:docker:docker",
+        "cpe:2.3:a:docker:docker:*:*:*:*:community",
+        "cpe:2.3:a:docker:docker:*:*:*:*:community_edition"
+      ],
+      "coverage_note": "Docker Compose and Buildx (docker-compose-plugin, docker-buildx-plugin) are not read: NVD's records for them name no product and no versions.",
+      "update": "Update it from Docker's repository: sudo apt-get install --only-upgrade docker-ce docker-ce-cli containerd.io (or sudo dnf upgrade docker-ce docker-ce-cli containerd.io), then restart Docker.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:docker:engine",
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:mobyproject:moby",
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:docker:docker",
+        "https://docs.docker.com/engine/install/ubuntu/",
+        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz",
+        "https://download.docker.com/linux/rhel/9/x86_64/stable/Packages/"
+      ],
+      "verified": "2026-11-12",
+      "note": "docker-ce, docker-ce-cli and docker-ce-rootless-extras ship at one version (5:29.9.3-1~ubuntu.24.04~noble, 29.9.3-1.el9). NVD names Docker Engine 29 under docker:engine (6 CVEs, e.g. CVE-2026-41568 fixed in 29.5.1), the Moby releases up to 28 under mobyproject:moby (21) and older Docker under docker:docker (55; Docker CE is sw_edition community or community_edition, enterprise is not read, and Windows-only records are not read). Engine and Moby share version numbers up to 28; Moby's Go module v2 versions (moby/v2 2.0.0-beta) are not Engine versions and are not read."
+    },
+    {
+      "id": "containerd",
+      "label": "containerd",
+      "packages": ["^deb/containerd\\.io$", "^rpm/containerd\\.io$"],
+      "cpes": ["cpe:2.3:a:linuxfoundation:containerd"],
+      "coverage_note": "The runc that containerd.io bundles is not read separately.",
+      "update": "Update it from Docker's repository: sudo apt-get install --only-upgrade containerd.io (or sudo dnf upgrade containerd.io), then restart containerd and Docker.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:linuxfoundation:containerd",
+        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz",
+        "https://download.docker.com/linux/rhel/9/x86_64/stable/Packages/"
+      ],
+      "verified": "2026-11-12",
+      "note": "Docker's build of containerd carries the upstream release (2.4.2-4~ubuntu.24.04~noble, 2.4.2-4.el9 are containerd 2.4.2); NVD names it under linuxfoundation:containerd (22 CVEs). The distributions' own containerd package is not listed: its advisories apply."
     }
   ]
 }

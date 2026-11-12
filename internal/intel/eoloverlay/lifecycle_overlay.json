@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-10-29.1",
+  "version": "2026-11-12.1",
   "description": "Stackurity's lifecycle mappings on top of endoflife.date. Every product entry was checked against the vendor's or distribution's own package index (sources) on the date given. endoflife.date's own identifiers win unless an entry sets override.",
   "namespace_families": [
     {
@@ -105,14 +105,16 @@
     {
       "product": "containerd",
       "purls": [
-        "pkg:deb/*/containerd.io"
+        "pkg:deb/*/containerd.io",
+        "pkg:rpm/*/containerd.io"
       ],
       "vendor_only": "Docker's repository (download.docker.com)",
       "sources": [
-        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz"
+        "https://download.docker.com/linux/ubuntu/dists/noble/stable/binary-amd64/Packages.gz",
+        "https://download.docker.com/linux/rhel/9/x86_64/stable/Packages/"
       ],
-      "verified": "2026-10-28",
-      "note": "Docker's build of containerd (2.4.2-3~ubuntu.24.04~noble)."
+      "verified": "2026-11-12",
+      "note": "Docker's build of containerd (2.4.2-3~ubuntu.24.04~noble, 2.4.2-4.el9); the distributions name theirs containerd."
     },
     {
       "product": "containerd",
