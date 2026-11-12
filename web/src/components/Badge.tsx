@@ -1,5 +1,8 @@
 import type { ReactNode } from "react";
 import { humanize } from "../format";
+import { assetPlatform } from "../assetPlatform.ts";
+import { PLATFORM_LOGOS, type PlatformLogo } from "../platformLogos.ts";
+import { IconDocument, IconInventory, IconLayers, IconPackage } from "./Icons";
 
 export type Tone = "good" | "warn" | "bad" | "muted" | "info" | "crit" | "orange" | "p1" | "p2" | "p3" | "p4";
 
@@ -246,6 +249,46 @@ export function AssetKindBadge({ kind }: { kind: string }) {
       tone={kind === "managed_service" || kind === "cluster" ? "info" : "muted"}
       label={ASSET_KIND_TEXT[kind] ?? kind.replace(/_/g, " ")}
     />
+  );
+}
+
+/** A brand's official mark in the text colour, sized to the text. */
+export function PlatformMark({ logo }: { logo: PlatformLogo }) {
+  return (
+    <svg className="platform-mark" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+      <path fill="currentColor" d={PLATFORM_LOGOS[logo]} />
+    </svg>
+  );
+}
+
+/**
+ * An asset's kind with what it runs on or lives in: the Ubuntu mark and
+ * "Ubuntu 24.04" over "host", GitHub over "repository". When the collector
+ * said nothing more, a plain icon and the kind.
+ */
+export function AssetKindCell({ asset }: { asset: { kind: string; provider?: string; attributes: Record<string, string> | null } }) {
+  const p = assetPlatform(asset);
+  const kind = ASSET_KIND_TEXT[asset.kind] ?? asset.kind.replace(/_/g, " ");
+  if (!p) {
+    // Nothing more is known: a plain line icon and the kind, laid out the same.
+    const Icon = asset.kind === "host" ? IconInventory : asset.kind === "repository" ? IconLayers : asset.kind === "sbom" ? IconDocument : IconPackage;
+    return (
+      <span className="asset-kind">
+        <span className="platform-mark">
+          <Icon size={16} />
+        </span>
+        <span className="asset-kind-platform">{kind.charAt(0).toUpperCase() + kind.slice(1)}</span>
+      </span>
+    );
+  }
+  return (
+    <span className="asset-kind" title={`${p.label} · ${kind}`}>
+      <PlatformMark logo={p.logo} />
+      <span className="asset-kind-text">
+        <span className="asset-kind-platform">{p.label}</span>
+        <span className="small muted">{kind}</span>
+      </span>
+    </span>
   );
 }
 

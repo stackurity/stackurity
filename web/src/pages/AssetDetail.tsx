@@ -225,7 +225,7 @@ export function AssetDetailPage() {
               <span className="project-chips">
                 <span className="small muted">· In</span>
                 {a.projects!.map((p) => (
-                  <span key={p.id} className="project-chip">
+                  <span key={p.id} className="project-chip" title={p.name}>
                     {p.name}
                   </span>
                 ))}
