@@ -6,6 +6,17 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.3
+
+### Added
+
+- **`pkg/engine`: `RunningContainersWith` can take each running image's archive from the caller.** `ContainerOptions.Export` supplies the archive (what `docker save` writes) in place of the Docker engine's export, so a program that also reads the archive itself, such as stackurity-scan's key scan of every layer, exports each image once instead of twice. `RunningContainers` is unchanged.
+- **The Linux agent records which cloud a host runs on.** It reads the machine's DMI strings (`/sys/class/dmi/id`), with no network or metadata-service call, and sets the host attributes `cloud_provider` and `cloud_service` for AWS EC2, DigitalOcean Droplets, Google Compute Engine, Azure, Oracle Cloud, Hetzner, Akamai (Linode), Vultr and Alibaba Cloud ECS. The Assets list then shows the cloud under the OS, for example "Ubuntu 24.04" over "host · DigitalOcean Droplet". Containers, bare metal and other clouds set nothing. Hosts show it after their agent is upgraded and reports again.
+
+### Fixed
+
+- **The incidents list no longer wraps its short columns.** Priority shows P1 and SOS side by side, Scope keeps "1 finding" on one line, and Kind, State and Updated no longer break mid-phrase; the Incident title takes the spare width. On a narrow screen the table scrolls sideways instead.
+
 ## 0.20.2
 
 ### Changed
