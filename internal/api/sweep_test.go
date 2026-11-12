@@ -632,6 +632,11 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/remediation/policies/preview": {class: "create", edition: "ee", query: "?id={policy}", body: func(*tenantFx) any {
 		return map[string]any{"name": "sweep", "enabled": true, "target": "host_package", "ecosystems": []string{"deb"}, "change_types": []string{"distro"}}
 	}},
+
+	// Changes Ask proposed: only in the caller's own conversation.
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
 }
 
 // tenantFx is one workspace's data and credentials. Every name contains
@@ -1006,6 +1011,13 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatal(err)
 	}
 	set("askconv", conv.ID)
+	// A change Ask proposed in it: nobody else may apply, dismiss or undo it.
+	prop, err := e.st.CreateAskProposal(ctx, me.User.ID, conv.ID, store.NewAskProposal{QuestionSeq: 1, Tool: "check_again",
+		Args: map[string]any{"asset_id": main.AssetID}, Summary: "Ask for a fresh report to check " + tag, Code: "sweep" + tag})
+	if err != nil {
+		t.Fatal(err)
+	}
+	set("askprop", prop.ID)
 	_, agent, err := e.st.CreateAssetToken(ctx, main.AssetID, "agent-"+tag, me.User.ID)
 	if err != nil {
 		t.Fatal(err)

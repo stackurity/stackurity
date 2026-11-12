@@ -76,6 +76,7 @@ func (s *Server) askRoutes(r chi.Router) {
 	r.Post("/ask/conversations/{id}/messages", s.askQuestion)
 	r.Post("/ask/conversations/{id}/feedback", s.askFeedback)
 	r.Post("/ask/feedback", s.askFeedback)
+	s.askProposalRoutes(r)
 	r.Group(func(r chi.Router) {
 		r.Use(requireRole(auth.RoleAdmin))
 		r.Get("/ask/settings", s.askSettings)
@@ -91,7 +92,7 @@ func (s *Server) askRoutes(r chi.Router) {
 // API tokens, assistants and the assistant's own tool calls cannot ask.
 func askPerson(w http.ResponseWriter, r *http.Request) (*Principal, bool) {
 	p := principal(r)
-	if p == nil || p.User == nil || !p.Session || p.Token != nil || p.Assistant != nil || p.Ask {
+	if p == nil || p.User == nil || !p.Session || p.Token != nil || p.Assistant != nil || p.Ask || p.ViaAsk {
 		writeError(w, 403, "forbidden", "Ask Stackurity is for people signed in to the dashboard")
 		return nil, false
 	}
@@ -294,7 +295,12 @@ func (s *Server) askGetConversation(w http.ResponseWriter, r *http.Request) {
 			shown = append(shown, m)
 		}
 	}
-	writeJSON(w, 200, map[string]any{"conversation": c, "messages": shown})
+	proposals, err := s.Store.AskProposals(r.Context(), p.User.ID, id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"conversation": c, "messages": shown, "proposals": proposals})
 }
 
 func (s *Server) askDeleteConversation(w http.ResponseWriter, r *http.Request) {
@@ -344,10 +350,12 @@ func (s *Server) askSettings(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"enabled": l.Enabled, "configured": l.Configured, "provider": l.Provider, "model": l.Model,
 		"question_limit": l.QuestionLimit, "question_period": l.QuestionPeriod, "spend_cap_micros": l.SpendCapMicros,
 		"questions_this_month": u.Questions, "spend_this_month_micros": u.CostMicros, "notice_version": AskNoticeVersion,
-		"consent_version": AskConsentVersion})
+		"consent_version": AskConsentVersion, "propose_changes": l.Propose})
 }
 
-// PUT /ask/settings {"enabled", "consent_version"} (organisation admins).
+// PUT /ask/settings {"enabled", "consent_version", "propose_changes"}
+// (organisation admins). propose_changes alone turns "Ask may propose
+// changes" on or off (ask_proposals.go), audited as ask.settings.
 // Turning it on needs consent_version, the version of the wording the
 // administrator ticked and confirmed in the consent dialog: it must be the
 // current one (409 otherwise, so a stale page cannot consent to wording
@@ -357,16 +365,28 @@ func (s *Server) askPutSettings(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Enabled        *bool  `json:"enabled"`
 		ConsentVersion string `json:"consent_version"`
+		ProposeChanges *bool  `json:"propose_changes"`
 	}
 	if err := decode(r, &in); err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	if in.Enabled == nil {
+	if in.Enabled == nil && in.ProposeChanges == nil {
 		writeError(w, 400, "bad_request", "enabled is required")
 		return
 	}
 	p := principal(r)
+	if in.ProposeChanges != nil {
+		if err := s.Store.SetAskPropose(r.Context(), *in.ProposeChanges); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "ask.settings", "workspace", "", map[string]any{"propose_changes": *in.ProposeChanges})
+		if in.Enabled == nil {
+			s.askSettings(w, r)
+			return
+		}
+	}
 	if *in.Enabled {
 		// Consent is a person's: an administrator signed in to the
 		// dashboard, never an API token or a connected assistant.
@@ -439,6 +459,8 @@ var askBusy sync.Map
 //	event: tool   {"tool": "Reading issue #12"}
 //	event: text   {"text": "..."}          a piece of the answer
 //	event: reset  {}                      drop the text so far (a refusal or a fallback model)
+//	event: proposal {...}                 a change Ask proposed (ask_proposals.go); nothing is changed
+//	event: proposals_dropped {}           the turn is answered again: drop its proposals
 //	event: done   {"stop_reason", "questions_used", "questions_limit", "long_chat"}
 //	event: error  {"code", "message"}
 func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
@@ -512,7 +534,8 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	}
 
 	cookie, _ := r.Cookie(sessionCookie)
-	api := &askAPI{s: s, session: cookie.Value, remote: r.RemoteAddr, project: r.Header.Get("X-Stackurity-Project"), workspace: p.Workspace}
+	api := &askAPI{s: s, session: cookie.Value, remote: r.RemoteAddr, project: r.Header.Get("X-Stackurity-Project"), workspace: p.Workspace,
+		propose: l.Propose}
 	page := s.askPage(ctx, api, in.Page)
 	project := ""
 	if p.Project > 0 {
@@ -561,7 +584,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.TitleAskConversation(ctx, p.User.ID, conv.ID, in.Text)
 	}
 	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project,
-		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api}, func(e ask.Event) {
+		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api, Propose: l.Propose}, func(e ask.Event) {
 		switch e.Kind {
 		case "text":
 			send("text", map[string]string{"text": e.Text})
@@ -569,6 +592,10 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 			send("tool", map[string]string{"tool": e.Tool})
 		case "reset":
 			send("reset", map[string]any{})
+		case "proposal":
+			send("proposal", e.Proposal)
+		case "proposals_dropped":
+			send("proposals_dropped", map[string]any{})
 		}
 	})
 	answerSeq := s.askSignals(context.WithoutCancel(ctx), p.User.ID, conv, out, err)
@@ -691,12 +718,20 @@ type askAPI struct {
 	// call is refused if the session has since switched to another one,
 	// so one organisation's data never lands in another's conversation.
 	workspace int64
+	// propose: the propose tools may read what their previews need too
+	// (askProposePaths), still with GET only.
+	propose bool
 }
+
+// askProposePaths are the further API paths the propose tools' previews
+// read (internal/mcp write.go plans): who the person is, whom they may
+// assign to, a fix's issues and a project's name.
+var askProposePaths = []string{"/api/v1/auth/me", "/api/v1/users/directory", "/api/v1/fix-groups/", "/api/v1/projects/"}
 
 var errAskPath = errors.New("Ask Stackurity cannot read that")
 
 func (a *askAPI) Do(ctx context.Context, method, path string, body io.Reader, _ map[string]string, out any) error {
-	if method != http.MethodGet || body != nil || strings.Contains(path, "..") || !askPathAllowed(path) {
+	if method != http.MethodGet || body != nil || strings.Contains(path, "..") || !(askPathAllowed(path) || a.propose && askProposePathAllowed(path)) {
 		return errAskPath
 	}
 	if a.workspace <= 0 {
@@ -727,6 +762,15 @@ func (a *askAPI) Do(ctx context.Context, method, path string, body io.Reader, _ 
 		return nil
 	}
 	return json.NewDecoder(bytes.NewReader(rec.body.Bytes())).Decode(out)
+}
+
+func askProposePathAllowed(path string) bool {
+	for _, p := range askProposePaths {
+		if path == p || strings.HasPrefix(path, p) && strings.HasSuffix(p, "/") {
+			return true
+		}
+	}
+	return false
 }
 
 func askPathAllowed(path string) bool {

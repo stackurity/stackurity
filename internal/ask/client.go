@@ -34,6 +34,8 @@ type Client struct {
 	provider string
 	svc      anthropic.BetaMessageService
 	tools    []anthropic.BetaToolUnionParam
+	// proposeTools are tools plus the propose tools (Call.Propose).
+	proposeTools []anthropic.BetaToolUnionParam
 	// fallbacks: server-side fallback after a classifier refusal.
 	fallbacks bool
 }
@@ -48,7 +50,7 @@ const requestTimeout = 150 * time.Second
 // so a stray variable on the host neither turns the assistant on nor
 // sends its traffic elsewhere.
 func NewClient(ctx context.Context, cfg Config) (*Client, error) {
-	c := &Client{provider: cfg.Provider, tools: toolParams()}
+	c := &Client{provider: cfg.Provider, tools: toolParams(), proposeTools: append(toolParams(), proposeToolParams()...)}
 	common := []option.RequestOption{option.WithMaxRetries(2), option.WithRequestTimeout(requestTimeout)}
 	switch cfg.Provider {
 	case ProviderAnthropic:
@@ -118,6 +120,25 @@ func toolParams() []anthropic.BetaToolUnionParam {
 	return out
 }
 
+// proposeToolParams are the propose tools (mcp.ProposeTools), after the
+// read-only ones and in their fixed order, offered only to organisations
+// that let Ask propose changes. Calling one only previews (engine.go).
+func proposeToolParams() []anthropic.BetaToolUnionParam {
+	var out []anthropic.BetaToolUnionParam
+	for _, t := range mcp.ProposeTools() {
+		props, _ := t.InputSchema["properties"].(map[string]any)
+		req, _ := t.InputSchema["required"].([]string)
+		tp := anthropic.BetaToolParam{
+			Name:        t.Name,
+			Description: anthropic.String(t.Description),
+			InputSchema: anthropic.BetaToolInputSchemaParam{Properties: props, Required: req,
+				ExtraFields: map[string]any{"additionalProperties": false}},
+		}
+		out = append(out, anthropic.BetaToolUnionParam{OfTool: &tp})
+	}
+	return out
+}
+
 // Call is one model call.
 type Call struct {
 	Model     string
@@ -134,6 +155,9 @@ type Call struct {
 	// NoThinking turns thinking off: the small yes-or-no triage call,
 	// where thinking would only spend tokens (allowed at low effort).
 	NoThinking bool
+	// Propose offers the propose tools too: the organisation lets Ask
+	// propose changes.
+	Propose bool
 }
 
 // serverFallback reports whether the provider offers server-side fallback
@@ -208,6 +232,9 @@ func (c *Client) Stream(ctx context.Context, call Call, on func(StreamEvent)) (*
 	system, tools := SystemPrompt, c.tools
 	if call.System != "" {
 		system = call.System
+	}
+	if call.Propose {
+		tools = c.proposeTools
 	}
 	if call.NoTools {
 		tools = nil

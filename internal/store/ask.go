@@ -45,6 +45,10 @@ type AskSettings struct {
 	// ConsentVersion is the version of the wording an administrator agreed
 	// to when turning the assistant on ("": nobody has).
 	ConsentVersion string `json:"consent_version"`
+	// Propose: Ask may propose changes, which the person applies with a
+	// click (ask_proposals.go). Off for organisations that existed before
+	// migration 0105, on for those created since.
+	Propose bool `json:"propose_changes"`
 }
 
 // AskLimits are what an edition or an instance admin sets for an
@@ -63,8 +67,8 @@ func (s *Store) AskSettings(ctx context.Context) (AskSettings, error) {
 		return AskSettings{}, ErrNotFound
 	}
 	var a AskSettings
-	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_question_period, ask_spend_cap_micros, ask_model, ask_consent_version FROM workspaces WHERE id = $1`, ws).
-		Scan(&a.Enabled, &a.QuestionLimit, &a.QuestionPeriod, &a.SpendCapMicros, &a.Model, &a.ConsentVersion)
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT ask_enabled, ask_question_limit, ask_question_period, ask_spend_cap_micros, ask_model, ask_consent_version, ask_propose FROM workspaces WHERE id = $1`, ws).
+		Scan(&a.Enabled, &a.QuestionLimit, &a.QuestionPeriod, &a.SpendCapMicros, &a.Model, &a.ConsentVersion, &a.Propose)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return a, ErrNotFound
 	}

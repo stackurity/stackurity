@@ -70,6 +70,12 @@ type Principal struct {
 	// process with the person's own session while they wait for an answer.
 	// It may only read (projectGate), and nothing from outside can set it.
 	Ask bool
+	// ViaAsk: the person's own click on Apply (or Undo) of a change Ask
+	// Stackurity proposed (ask_proposals.go), made in process with their
+	// session. It is the person acting, with every check of the dashboard;
+	// the audit log names them "(via Ask Stackurity)". Nothing from
+	// outside can set it.
+	ViaAsk bool
 	// instanceAdminMFA, set by authenticate for every principal of an
 	// instance administrator (session or API token), decides what the
 	// request must do before it may use the powers of the role
@@ -106,6 +112,8 @@ func (p *Principal) Actor(r *http.Request) store.Actor {
 		a.Type, a.ID, a.Name = "assistant", p.Assistant.ID, p.User.Email+" (assistant "+p.Assistant.ClientName+")"
 	case p.Ask:
 		a.Type, a.ID, a.Name = "user", p.User.ID, p.User.Email+" (Ask Stackurity)"
+	case p.ViaAsk:
+		a.Type, a.ID, a.Name = "user", p.User.ID, p.User.Email+" (via Ask Stackurity)"
 	case p.Token != nil:
 		a.Type, a.ID, a.Name = "token", p.Token.ID, p.Token.Name
 		if p.User != nil {
@@ -179,7 +187,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
-					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential,
+					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential, ViaAsk: askApplyWorkspace(r.Context()) > 0,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
@@ -191,6 +199,12 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 					// The person switched organisation while Ask was
 					// answering: its tools read only the one asked in.
 					writeError(w, 409, "workspace_changed", "the organisation changed while Ask Stackurity was answering")
+					return
+				}
+				if p.ViaAsk && p.Workspace != askApplyWorkspace(r.Context()) {
+					// Switched organisation since the click: the change is
+					// never made in another one.
+					writeError(w, 409, "workspace_changed", "the organisation changed while the change was being applied")
 					return
 				}
 				// The session gate runs below, once the two-factor policy

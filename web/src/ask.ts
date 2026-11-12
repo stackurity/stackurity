@@ -68,6 +68,8 @@ export interface AskSettings {
   spend_cap_micros: number | null;
   questions_this_month: number;
   spend_this_month_micros: number;
+  /** Ask may propose changes, which each person applies with a click. */
+  propose_changes: boolean;
 }
 
 /** Who processes the questions, in words, for the notice. */

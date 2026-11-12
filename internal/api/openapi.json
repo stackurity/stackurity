@@ -15924,7 +15924,7 @@
    "get": {
     "operationId": "get_ask_conversations_id",
     "summary": "One of the caller's Ask Stackurity conversations",
-    "description": "`conversation` and its `messages` as the caller saw them (`role`, `text`, `page`, `stop_reason`, `created_at`); no tool data. 404 for anyone else's, an organisation admin's included\n\nRole: a browser session",
+    "description": "`conversation` and its `messages` as the caller saw them (`role`, `text`, `page`, `stop_reason`, `created_at`); no tool data; and `proposals`, the changes Ask proposed in it with their state (`proposed`, `applied`, `dismissed`, `expired`, `failed`, `undone`) and the `question_seq` of the question each answered. 404 for anyone else's, an organisation admin's included\n\nRole: a browser session",
     "tags": [
      "Ask Stackurity"
     ],
@@ -15993,7 +15993,7 @@
    "post": {
     "operationId": "post_ask_conversations_id_messages",
     "summary": "Ask a question",
-    "description": "`{\"text\", \"page\": {\"kind\": \"finding\" | \"asset\" | \"component\" | \"fix_group\", \"id\"}}`. The answer streams as server-sent events: `tool` (what is being read), `text` (a piece of the answer), `reset` (drop the text so far), `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`, `message`). Before the stream: 409 `notice_required`, 429 `quota_reached`, `busy` or `rate_limited` (10 a minute and 60 an hour per person), and the status errors of `POST /ask/conversations`\n\nRole: a browser session",
+    "description": "`{\"text\", \"page\": {\"kind\": \"finding\" | \"asset\" | \"component\" | \"fix_group\", \"id\"}}`. The answer streams as server-sent events: `tool` (what is being read), `text` (a piece of the answer), `reset` (drop the text so far), `proposal` (a change Ask proposed, for the person to apply or dismiss; nothing is changed), `proposals_dropped` (the turn is answered again: drop its proposals), `done` (`stop_reason`, `questions_used`, `questions_limit`, `message`) or `error` (`code`, `message`). Before the stream: 409 `notice_required`, 429 `quota_reached`, `busy` or `rate_limited` (10 a minute and 60 an hour per person), and the status errors of `POST /ask/conversations`\n\nRole: a browser session",
     "tags": [
      "Ask Stackurity"
     ],
@@ -16038,11 +16038,182 @@
     }
    }
   },
+  "/ask/conversations/{id}/proposals/{pid}/apply": {
+   "post": {
+    "operationId": "post_ask_conversations_id_proposals_pid_apply",
+    "summary": "Apply a change Ask Stackurity proposed",
+    "description": "The person's click on Apply: runs the proposed write tool's confirm path as the caller, through the same API, role and project checks as the dashboard, and answers `proposal` (`status` `applied`, `link`, `can_undo`). A browser session only (API tokens and connected assistants are refused), for a proposal of the caller's own conversation (404 otherwise), while the organisation lets Ask propose changes (403 `proposals_off`). Each proposal applies once (409 `proposal_applied`, `proposal_dismissed`, `proposal_failed`) and within 15 minutes (410 `proposal_expired`). When what the change covers changed since the preview, nothing is applied: 409 `changed` with the new preview in `error.proposal`, to apply again. The API's own refusal (403 for a role too low) is returned as it is, with the proposal marked `failed`. The activity log names the caller \"(via Ask Stackurity)\"\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success: `proposal`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations/{id}/proposals/{pid}/dismiss": {
+   "post": {
+    "operationId": "post_ask_conversations_id_proposals_pid_dismiss",
+    "summary": "Dismiss a change Ask Stackurity proposed",
+    "description": "Closes an open proposal without applying it: `proposal` with `status` `dismissed`; 409 when it is not open\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success: `proposal`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations/{id}/proposals/{pid}/undo": {
+   "post": {
+    "operationId": "post_ask_conversations_id_proposals_pid_undo",
+    "summary": "Undo a change applied from Ask Stackurity",
+    "description": "Reverses an applied change that has a clean reverse (`can_undo`: a snooze, whose issues are reopened, or a project rename, back to the old name), once, within 15 minutes of applying it, through the same API and checks: `proposal` with `status` `undone`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success: `proposal`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/ask/settings": {
    "get": {
     "operationId": "get_ask_settings",
     "summary": "Ask Stackurity settings and use",
-    "description": "`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar), and `consent_version`, the current consent wording's version. Never anyone's conversations\n\nRole: admin",
+    "description": "`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar), `consent_version`, the current consent wording's version, and `propose_changes` (Ask may propose changes for people to apply). Never anyone's conversations\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],
@@ -16069,7 +16240,7 @@
    "put": {
     "operationId": "put_ask_settings",
     "summary": "Turn Ask Stackurity on or off for the organisation",
-    "description": "`{\"enabled\": true, \"consent_version\": \"…\"}` turns it on: `consent_version` is the version of the consent wording the administrator ticked and confirmed in the dashboard's consent dialog (`consent_version` from `GET /ask/settings`). Without it: 400 `consent_required`; an older version: 409 `consent_outdated`; from an API token or a connected assistant: 403 (consent is a signed-in person's). Who agreed, when and to which version is stored and audited as `ask.consent`. `{\"enabled\": false}` turns it off, audited as `ask.settings`\n\nRole: admin",
+    "description": "`{\"enabled\": true, \"consent_version\": \"…\"}` turns it on: `consent_version` is the version of the consent wording the administrator ticked and confirmed in the dashboard's consent dialog (`consent_version` from `GET /ask/settings`). Without it: 400 `consent_required`; an older version: 409 `consent_outdated`; from an API token or a connected assistant: 403 (consent is a signed-in person's). Who agreed, when and to which version is stored and audited as `ask.consent`. `{\"enabled\": false}` turns it off, audited as `ask.settings`. `{\"propose_changes\": true | false}` (alone, or with `enabled`) turns \"Ask may propose changes\" on or off, audited as `ask.settings`\n\nRole: admin",
     "tags": [
      "Ask Stackurity"
     ],

@@ -52,6 +52,11 @@ type change struct {
 	key     string // what will be done exactly, beyond the arguments
 	apply   func(ctx context.Context) (any, error)
 	notes   []string
+	// link is the dashboard page of what changes, and undo how to reverse
+	// it cleanly (nil: no clean reverse). Only Ask's proposals use them
+	// (propose.go).
+	link string
+	undo *Undo
 }
 
 // Install codes made by an assistant: at most this many servers and hours.
@@ -263,6 +268,17 @@ func resolveIssues(ctx context.Context, api API, a map[string]any) (*issueSet, e
 	return set, nil
 }
 
+// link is the dashboard page of the issues: the fix, or the first issue.
+func (set *issueSet) link() string {
+	if set.fixGroup != "" {
+		return "/fixes/" + url.PathEscape(set.fixGroup)
+	}
+	if len(set.ids) > 0 {
+		return fmt.Sprintf("/findings/%d", set.ids[0])
+	}
+	return ""
+}
+
 func issueLine(f finding) map[string]any {
 	return map[string]any{"finding_id": f.ID, "key": f.Key, "component": f.ComponentName, "version": f.Version,
 		"asset": f.AssetName, "priority": f.Priority, "state": f.State}
@@ -431,6 +447,8 @@ func init() {
 			}
 			return &change{summary: fmt.Sprintf("Rename the project %q (%d) to %q", p.Name, id, name),
 				details: map[string]any{"project_id": id, "from": p.Name, "to": name},
+				link:    fmt.Sprintf("/projects/%d", id),
+				undo:    &Undo{Kind: "rename", ProjectID: id, Name: p.Name, Summary: fmt.Sprintf("Rename it back to %q", p.Name)},
 				apply: func(ctx context.Context) (any, error) {
 					var out map[string]any
 					err := send(ctx, s.API, "PATCH", fmt.Sprintf("/api/v1/projects/%d", id), map[string]any{"name": name}, &out)
@@ -466,6 +484,7 @@ func init() {
 			}
 			c := &change{summary: fmt.Sprintf("%s %d assets %s the project %q (%d)", verb, len(ids), prep, p.Name, id),
 				details: map[string]any{"project_id": id, "project": p.Name, "assets": assets},
+				link:    fmt.Sprintf("/projects/%d", id),
 				apply: func(ctx context.Context) (any, error) {
 					method := "POST"
 					if !add {
@@ -581,7 +600,7 @@ func init() {
 			d := set.details()
 			d["assignee"] = who
 			return &change{summary: fmt.Sprintf("Assign %s to %s", issues(len(set.ids)), who), details: d,
-				key: fmt.Sprintf("%d|%s", uid, idsKey(set.ids)),
+				key: fmt.Sprintf("%d|%s", uid, idsKey(set.ids)), link: set.link(),
 				apply: func(ctx context.Context) (any, error) {
 					return bulkAction(ctx, s.API, set.ids, map[string]any{"action": "assign", "user_id": uid})
 				}}, nil
@@ -625,6 +644,7 @@ func init() {
 				body["until_fix"] = true
 			}
 			return &change{summary: fmt.Sprintf("Snooze %s %s", issues(len(set.ids)), when), details: set.details(), key: idsKey(set.ids),
+				link: set.link(), undo: &Undo{Kind: "reopen", IDs: set.ids, Summary: "Reopen these issues: they go back to New"},
 				apply: func(ctx context.Context) (any, error) { return bulkAction(ctx, s.API, set.ids, body) }}, nil
 		}},
 	}
@@ -680,14 +700,14 @@ func init() {
 			d["reason"], d["scope"], d["expiry"] = reason, scope, expiry
 			if rank[m.highest()] >= rank["security"] {
 				return &change{summary: fmt.Sprintf("Ignore %s %s %s (%s)", issues(len(set.ids)), where, when, reason), details: d,
-					key: "ignore|" + idsKey(set.ids),
+					key: "ignore|" + idsKey(set.ids), link: set.link(),
 					apply: func(ctx context.Context) (any, error) {
 						body := with(spec, map[string]any{"action": "ignore"})
 						return bulkAction(ctx, s.API, set.ids, body)
 					}}, nil
 			}
 			c := &change{summary: fmt.Sprintf("Ask to ignore %s %s %s (%s); a security or admin user decides, nothing changes until then",
-				issues(len(set.ids)), where, when, reason), details: d, key: "request|" + idsKey(set.ids),
+				issues(len(set.ids)), where, when, reason), details: d, key: "request|" + idsKey(set.ids), link: "/approvals",
 				apply: func(ctx context.Context) (any, error) {
 					body := with(spec, map[string]any{})
 					if set.fixGroup != "" {
@@ -720,7 +740,7 @@ func init() {
 			if (fix == "") == !hasAsset {
 				return nil, fmt.Errorf("give fix_group or asset_id")
 			}
-			var path, what string
+			var path, what, link string
 			if fix != "" {
 				var res struct {
 					Group struct {
@@ -732,6 +752,7 @@ func init() {
 					return nil, fmt.Errorf("fix %s: %w", fix, err)
 				}
 				path, what = "/api/v1/fix-groups/"+url.PathEscape(fix)+"/check", fmt.Sprintf("the fix %q on %s", res.Group.Title, res.Group.AssetName)
+				link = "/fixes/" + url.PathEscape(fix)
 			} else {
 				id, err := positive(a, "asset_id")
 				if err != nil {
@@ -742,8 +763,10 @@ func init() {
 					return nil, err
 				}
 				path, what = fmt.Sprintf("/api/v1/assets/%d/check", id), fmt.Sprintf("the asset %q (%d)", as[0].Name, id)
+				link = fmt.Sprintf("/assets/%d", id)
 			}
 			return &change{summary: "Ask for a fresh report to check " + what, details: map[string]any{"fix_group": fix, "asset_id": a["asset_id"]},
+				link: link,
 				apply: func(ctx context.Context) (any, error) {
 					var chk map[string]any
 					if err := send(ctx, s.API, "POST", path, nil, &chk); err != nil {

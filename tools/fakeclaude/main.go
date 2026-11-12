@@ -7,8 +7,12 @@
 //
 // A question containing "slow" gets a long answer streamed slowly (to test
 // Stop and navigating while an answer streams); "tools" first calls the
-// read-only list_assets tool; anything else gets a short markdown answer
-// with a link to a Stackurity page.
+// read-only list_assets tool; "rename project 7 to New name" proposes that
+// change (propose_rename_project, when the organisation lets Ask propose
+// changes), then says nothing changes until Apply, and "what is project 7"
+// proposes a rename nobody asked for (as text planted in data might make a
+// model do); anything else gets a short markdown answer with a link to a
+// Stackurity page.
 package main
 
 import (
@@ -18,10 +22,35 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
 )
+
+// renameAsk and renameUnasked are the questions that propose a rename.
+var (
+	renameAsk     = regexp.MustCompile(`rename project ([0-9]+) to ([A-Za-z0-9 -]+)`)
+	renameUnasked = regexp.MustCompile(`what is project ([0-9]+)`)
+)
+
+// turn returns the person's latest question and the messages after it.
+func turn(msgs []json.RawMessage) (question, tail string) {
+	at := -1
+	for i, m := range msgs {
+		if strings.Contains(string(m), `"role":"user"`) && !strings.Contains(string(m), "tool_result") {
+			at = i
+		}
+	}
+	if at < 0 {
+		return "", ""
+	}
+	var b strings.Builder
+	for _, m := range msgs[at+1:] {
+		b.Write(m)
+	}
+	return string(msgs[at]), b.String()
+}
 
 const answer = "**Short answer:** upgrade `openssl` on [the asset](/assets/1).\n\n- Check [the issue](/findings/1)\n- Then run the scan again\n"
 
@@ -62,13 +91,36 @@ func main() {
 		ev("message_start", map[string]any{"type": "message_start", "message": map[string]any{"id": fmt.Sprintf("msg_fake_%d", id), "type": "message",
 			"role": "assistant", "model": req.Model, "content": []any{}, "stop_reason": nil, "stop_sequence": nil, "usage": usage}})
 		stop := "end_turn"
-		if strings.Contains(last, "tools") && !strings.Contains(last, "tool_result") {
+		question, tail := turn(req.Messages)
+		toolUse := func(id, name, input string) {
+			ev("content_block_start", map[string]any{"type": "content_block_start", "index": 0,
+				"content_block": map[string]any{"type": "tool_use", "id": id, "name": name, "input": map[string]any{}}})
+			ev("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "input_json_delta", "partial_json": input}})
+			ev("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+			stop = "tool_use"
+		}
+		var rename map[string]any
+		if m := renameAsk.FindStringSubmatch(question); m != nil {
+			rename = map[string]any{"project_id": json.Number(m[1]), "name": strings.TrimSpace(m[2])}
+		} else if m := renameUnasked.FindStringSubmatch(question); m != nil {
+			rename = map[string]any{"project_id": json.Number(m[1]), "name": "Renamed by Ask"}
+		}
+		switch {
+		case rename != nil && !strings.Contains(tail, "toolu_propose"):
+			in, _ := json.Marshal(rename)
+			toolUse("toolu_propose", "propose_rename_project", string(in))
+		case rename != nil:
+			text := "I have proposed renaming the project. Nothing changes until you click **Apply**."
+			ev("content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}})
+			ev("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}})
+			ev("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
+		case strings.Contains(last, "tools") && !strings.Contains(last, "tool_result"):
 			ev("content_block_start", map[string]any{"type": "content_block_start", "index": 0,
 				"content_block": map[string]any{"type": "tool_use", "id": "toolu_fake", "name": "list_assets", "input": map[string]any{}}})
 			ev("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "input_json_delta", "partial_json": "{}"}})
 			ev("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 			stop = "tool_use"
-		} else {
+		default:
 			text, pause := answer, 10*time.Millisecond
 			if strings.Contains(last, "slow") {
 				words := make([]string, 300)

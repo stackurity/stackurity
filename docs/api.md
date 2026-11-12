@@ -2761,7 +2761,7 @@ Deletes all of the caller's conversations in this organisation; answers `deleted
 
 **Who:** a browser session
 
-One of the caller's conversations as they saw it: `conversation` and `messages` (`role`, `text`, `page`, `stop_reason`, `created_at`), without tool data. 404 for anyone else's, an organisation admin's included.
+One of the caller's conversations as they saw it: `conversation` and `messages` (`role`, `text`, `page`, `stop_reason`, `created_at`), without tool data, and `proposals`: the changes Ask proposed in it (below), each with the `question_seq` of the question it answered and its `status`. 404 for anyone else's, an organisation admin's included.
 
 ### `DELETE /api/v1/ask/conversations/{id}`
 
@@ -2773,7 +2773,27 @@ Deletes one of the caller's conversations (404 for anyone else's).
 
 **Who:** a browser session
 
-Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `answer_seq`: the answer's `seq` for feedback, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), `proposal` (a change Ask proposed, below; nothing is changed), `proposals_dropped` (the turn is answered again on a stronger model: drop the proposals shown for it), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `answer_seq`: the answer's `seq` for feedback, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply`
+
+**Who:** a browser session (the conversation's own person; 404 for anyone else)
+
+Applies a change Ask proposed. When the organisation lets Ask propose changes (`propose_changes` in `/ask/settings`), the model may call a `propose_` version of `assign`, `snooze`, `ignore`, `check_again`, `add_assets_to_project` or `rename_project`: the server runs that tool's preview and stores it as a proposal, with its confirm code, which the model never receives. A proposal is `id`, `tool`, `args`, `summary` (what will change), `details` (on what), `notes`, `code`, `unrequested` (the question had no words asking for a change, so the card says Ask suggested it), `status` (`proposed`, `applied`, `dismissed`, `expired`, `failed`, `undone`), `changed`, `link` (the page of what changed), `can_undo`, `error`, `created_at`, `expires_at`, `decided_at`.
+
+Apply runs the tool's confirm path as the caller, through the same API, role and project checks as the dashboard, and answers `proposal` with `status` `applied`. API tokens and connected assistants are refused (403 and 401). 403 `proposals_off` when the organisation turned proposals off. Each proposal applies once (409 `proposal_applied`, `proposal_dismissed`, `proposal_failed`) and only within 15 minutes of being proposed (410 `proposal_expired`). When what the change covers changed since the preview (an issue of the fix was resolved, the caller's role changed), nothing is applied: 409 `changed`, with the new preview in `error.proposal`, which the caller can apply. A refusal of the API itself (403 for a role too low) is returned as it is, and the proposal is `failed`. The activity log records the change under the caller's name followed by "(via Ask Stackurity)", and issue actions have `detail.source` `ask`.
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss`
+
+**Who:** a browser session (the conversation's own person)
+
+Closes an open proposal without applying it: `proposal` with `status` `dismissed` (409 when it is not open).
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo`
+
+**Who:** a browser session (the conversation's own person)
+
+Reverses an applied change that has a clean reverse (`can_undo`): a snooze (the issues are reopened, back to New) or a project rename (back to the old name). Once, within 15 minutes of applying it, through the same API and checks: `proposal` with `status` `undone`. Assigning, ignoring, checking again and adding assets to a project have no Undo.
 
 ### `POST /api/v1/ask/conversations/{id}/feedback`
 
@@ -2810,13 +2830,13 @@ Each signal is recorded once per conversation, message and kind.
 
 **Who:** admin
 
-`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month` and `spend_this_month_micros` (millionths of a US dollar). Never anyone's conversations.
+`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar) and `propose_changes` (Ask may propose changes for people to apply). Never anyone's conversations.
 
 ### `PUT /api/v1/ask/settings`
 
 **Who:** admin
 
-`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`.
+`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`. `{"propose_changes": true | false}`, alone or with `enabled`: lets Ask propose changes, which each person applies with a click, or stops it. Off for organisations that existed before the upgrade that added it (migration `0105_ask_proposals`), on for those created since. Audited as `ask.settings`.
 
 ### `DELETE /api/v1/ask/settings/conversations`
 
