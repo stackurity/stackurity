@@ -285,3 +285,42 @@ func TestSameMessageSentOnce(t *testing.T) {
 		t.Error("a project rule's copy of an organisation rule's message was sent again")
 	}
 }
+
+// An asset in no project (listed only under "All projects") follows the
+// organisation's rules: an issue found on it alone is sent. A rule that
+// belongs to a project (what the first-run flow used to make) does
+// not hear about it.
+func TestOrganisationRuleCoversAssetsInNoProject(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	f := setup(t)
+	f.addAsset("shop-web", "production", true)
+	f.addAsset("loose-repo", "production", true)
+	p, err := f.st.CreateProject(ctx, "Shop", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.st.AddProjectAssets(ctx, p.ID, []int64{f.asset["shop-web"]}); err != nil {
+		t.Fatal(err)
+	}
+	f.findingsOn(map[string][]string{"loose-repo": {"CVE-2021-23337"}})
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 1 || !strings.HasPrefix(ev[0], "urgent") {
+		t.Fatalf("an organisation rule missed an asset in no project: %v", ev)
+	}
+	if m := f.hook.got[0]; m.Title != "loose-repo: 1 new urgent issue" {
+		t.Errorf("urgent alert: %q", m.Title)
+	}
+
+	// The same rule as the project's: the asset in no project is outside it.
+	routes, _ := f.st.ListRoutes(ctx)
+	r := routes[0]
+	r.ProjectIDs, r.OwnerProjectID = []int64{p.ID}, &p.ID
+	if _, err := f.st.SaveRoute(ctx, r); err != nil {
+		t.Fatal(err)
+	}
+	f.findingsOn(map[string][]string{"loose-repo": {"CVE-2021-23337", "CVE-2020-8203"}})
+	f.tick()
+	if ev := f.hook.events(); len(ev) != 1 {
+		t.Fatalf("a project's rule heard about an asset in no project: %v", ev)
+	}
+}

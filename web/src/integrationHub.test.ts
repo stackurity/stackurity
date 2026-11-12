@@ -7,6 +7,7 @@ import {
   filterItems,
   parseFilter,
   priorityRange,
+  projectOnlyRules,
   receivesOf,
   ruleSummary,
   scopeOf,
@@ -180,4 +181,16 @@ test("credentialNote", () => {
   assert.equal(credentialNote("stored"), null);
   assert.equal(credentialNote(""), null);
   assert.equal(credentialNote(undefined), null);
+});
+
+test("projectOnlyRules: warns when no rule covers the whole organisation", () => {
+  const org = route({ id: 1, enabled: true, project_ids: [] });
+  const proj = route({ id: 2, enabled: true, project_ids: [7], owner_project_id: 7 });
+  const asset = route({ id: 3, enabled: true, project_ids: [], owner_asset_id: 9 });
+  const off = route({ id: 4, enabled: false, project_ids: [] });
+  assert.deepEqual(projectOnlyRules([]), []);
+  assert.deepEqual(projectOnlyRules([org, proj]), []);
+  assert.deepEqual(projectOnlyRules([proj, off]).map((r) => r.id), [2]);
+  assert.deepEqual(projectOnlyRules([proj, asset]).map((r) => r.id), [2, 3]);
+  assert.deepEqual(projectOnlyRules([off]), []);
 });

@@ -2948,7 +2948,8 @@ export interface GitHubSetupResult {
 /** Route choices saved before "Add to Slack" during onboarding (sessionStorage). */
 export const SLACK_PENDING_KEY = "stk-slack-pending";
 export interface SlackPendingRoute {
-  project_id: number;
+  /** Saved by older releases; ignored: the rule is the organisation's. */
+  project_id?: number;
   events: RouteEvent[];
   new_min_priority: Priority;
   escalation: boolean;
