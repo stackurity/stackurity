@@ -7111,6 +7111,35 @@ a.cov-chip:hover {
 .ask-sec-gaps > summary {
   color: var(--warn-fg);
 }
+/* Under an answer: the linked fixes' stored commands, and Read more. */
+.ask-extras {
+  margin-top: 8px;
+}
+.ask-cmd {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+.ask-cmd-head {
+  margin: 0 0 6px;
+}
+.ask-cmd .codeblock {
+  margin: 0;
+}
+.ask-cmd .fix-action {
+  margin: 0;
+}
+.ask-cmd-note {
+  margin: 6px 0 0;
+  color: var(--warn-fg);
+}
+.ask-readmore-item p {
+  margin: 6px 0 2px;
+}
+.ask-readmore .ref-list {
+  margin: 0;
+}
 .ask-ran {
   margin-top: 6px;
   padding-top: 6px;

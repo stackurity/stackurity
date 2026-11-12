@@ -7,8 +7,10 @@
 //
 // A question containing "slow" gets a long answer streamed slowly (to test
 // Stop and navigating while an answer streams); "tools" first calls the
-// read-only list_assets tool; anything else gets a short markdown answer
-// with a link to a Stackurity page.
+// read-only list_assets tool; "linkfix:GROUP_ID linkissue:N" gets an answer
+// that links that fix group and issue, a dashboard page and a page Ask may
+// not link to; anything else gets a short markdown answer with a link to a
+// Stackurity page.
 package main
 
 import (
@@ -18,9 +20,15 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"regexp"
 	"strings"
 	"sync/atomic"
 	"time"
+)
+
+var (
+	linkFix   = regexp.MustCompile(`linkfix:([A-Za-z0-9:_.-]+)`)
+	linkIssue = regexp.MustCompile(`linkissue:(\d+)`)
 )
 
 const answer = "**Short answer:** upgrade `openssl` on [the asset](/assets/1).\n\n- Check [the issue](/findings/1)\n- Then run the scan again\n"
@@ -70,6 +78,9 @@ func main() {
 			stop = "tool_use"
 		} else {
 			text, pause := answer, 10*time.Millisecond
+			if f, i := linkFix.FindStringSubmatch(last), linkIssue.FindStringSubmatch(last); f != nil && i != nil {
+				text = fmt.Sprintf("**Links answer:** apply [the fix](/fixes/%s) for [the issue](/findings/%s). See the [audit log](/audit), not [tokens](/settings/tokens).\n", f[1], i[1])
+			}
 			if strings.Contains(last, "slow") {
 				words := make([]string, 300)
 				for i := range words {

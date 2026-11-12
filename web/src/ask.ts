@@ -8,6 +8,7 @@
 // answer cannot send anything anywhere.
 
 import { autoLink } from "./askAnswer.ts";
+import { isNavPath } from "./askRoutes.ts";
 
 /**
  * The version of the consent wording in consentText below. The client sends
@@ -141,15 +142,13 @@ export function noticeText(provider: string): string[] {
   return [...consentText(provider, "person"), "Answers can be wrong. Check them on the linked pages before you act on them."];
 }
 
-// Stackurity pages an answer may link to. Anything else is shown as text.
+// Stackurity pages an answer may link to: these, and the dashboard pages in
+// askRoutes.ts. Anything else is shown as text.
 const ALLOWED = [
   /^\/findings\/\d{1,18}$/,
   /^\/assets\/\d{1,18}$/,
   /^\/components\/\d{1,18}$/,
   /^\/fixes\/[A-Za-z0-9:_.-]{1,128}$/,
-  /^\/fixes$/,
-  /^\/fixes\/issues$/,
-  /^\/help\/[a-z0-9-]{1,64}$/,
   // An advisory id, searched in Stackurity (askAnswer.ts autoLink).
   /^\/search\?q=(?:CVE-\d{4}-\d{4,7}|GHSA(?:-[23456789cfghjmpqrvwx]{4}){3})$/i,
 ];
@@ -158,7 +157,7 @@ const ALLOWED = [
 export function askHref(href: string): string | null {
   const h = href.trim();
   if (!h.startsWith("/") || h.startsWith("//") || h.includes("\\") || h.includes("..")) return null;
-  return ALLOWED.some((re) => re.test(h)) ? h : null;
+  return ALLOWED.some((re) => re.test(h)) || isNavPath(h) ? h : null;
 }
 
 export type Inline =

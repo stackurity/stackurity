@@ -5,6 +5,9 @@
 //   - a half-typed question survives navigation and a reload, and the
 //     panel comes back open on the same conversation after a reload;
 //   - minimised, the page behind can be used; restored, nothing is lost;
+//   - an answer that links a fix shows the fix's stored command with Copy,
+//     an issue gets Read more links to advisory sites only, and only the
+//     allowed dashboard pages are links;
 //   - no console errors and no horizontal scroll.
 //
 //   node ask.mjs <base url> [email] [password]
@@ -30,7 +33,9 @@ for (const width of [1280, 390]) {
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   // From here on (the login page itself checks for a session first, a 401).
   const errors = [];
-  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  // The demo answer links issue #1, which the demo estate may not have: the
+  // panel's look-up of it may 404, which is expected.
+  page.on("console", (m) => m.type() === "error" && !/\/api\/v1\/(findings|fix-groups)\//.test(m.location().url ?? "") && errors.push(m.text()));
   page.on("pageerror", (e) => errors.push(String(e)));
   const api = (method, path, data) =>
     page.request.fetch(base + "/api/v1" + path, { method, headers: { "X-Stackurity-CSRF": "1", "Content-Type": "application/json" }, data });
@@ -72,6 +77,51 @@ for (const width of [1280, 390]) {
   await log.getByText("Short answer:").waitFor();
   await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
   const before = await log.innerText();
+
+  // Command card, Read more and page links. The demo estate has no issues
+  // while feeds are off, so the fix group and issue the answer links are
+  // served here, as the API would send them.
+  const fixId = "9001:security_updates";
+  const cmd = "sudo apt update && sudo apt upgrade";
+  await page.route(`**/api/v1/fix-groups/${encodeURIComponent(fixId)}?*`, (r) =>
+    r.fulfill({ json: { group: { id: fixId, title: "Install security updates", action: cmd, asset_name: "demo-web-1", reboot: true, places: null }, findings: null } }),
+  );
+  await page.route("**/api/v1/findings/9002", (r) =>
+    r.fulfill({
+      json: {
+        finding: { id: 9002, key: "CVE-2024-3094" },
+        advisories: [
+          {
+            id: "GHSA-6jjj-mmmm-pppp",
+            aliases: ["CVE-2024-3094"],
+            references: [
+              { type: "ADVISORY", url: "https://security-tracker.debian.org/tracker/CVE-2024-3094" },
+              { type: "WEB", url: "https://evil.example/pwn" },
+              { type: "WEB", url: "http://access.redhat.com/x" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  await q.fill(`linkfix:${fixId} linkissue:9002`);
+  await panel.getByRole("button", { name: "Ask", exact: true }).click();
+  await log.getByText("Links answer:").waitFor();
+  const card = log.locator(".ask-cmd").last();
+  await card.waitFor();
+  ok((await card.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
+  ok((await card.innerText()).includes("Run this on demo-web-1") && (await card.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
+  ok(await card.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
+  const more = log.locator(".ask-readmore").last();
+  await more.locator("summary").click();
+  const hrefs = await more.locator("a[target=_blank]").evaluateAll((as) => as.map((a) => [a.href, a.rel]));
+  ok(
+    hrefs.length === 3 && hrefs.every(([h, rel]) => h.startsWith("https://") && !h.includes("evil") && rel === "noopener noreferrer"),
+    `${tag} Read more has only https advisory-site links that open safely ${JSON.stringify(hrefs.map((x) => x[0]))}`,
+  );
+  const answerLinks = await log.evaluate((el) => [...el.querySelectorAll(".ask-answer a")].map((a) => a.getAttribute("href")));
+  ok(answerLinks.includes("/audit") && !answerLinks.includes("/settings/tokens"), `${tag} only allowed pages are links`);
+  await page.unrouteAll();
 
   // An answer still streaming survives moving to another page.
   await q.fill("slow answer please");
