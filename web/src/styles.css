@@ -2178,6 +2178,16 @@ details.json pre {
   font-size: 12.5px;
   white-space: nowrap;
 }
+.fromto-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fromto-stack .mono {
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
 
 /* --- Stage 5: integrations and plugins */
 
@@ -8034,4 +8044,68 @@ a.cov-chip:hover {
 }
 .scope-rule-form > .field-group:first-child > .field-group-desc {
   margin-top: 0;
+}
+
+/* Phone search (R002-02): below 720px the box is a search button; tapped, it
+   becomes a full-width row over the top bar, so the query stays readable. */
+.global-search-toggle,
+.global-search-close {
+  display: none;
+}
+@media (max-width: 720px) {
+  .topbar-search {
+    flex: 1 0 auto;
+    justify-content: flex-end;
+  }
+  .global-search {
+    position: static;
+    flex: none;
+  }
+  .global-search-toggle {
+    display: inline-flex;
+    position: relative;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 0 10px;
+  }
+  .global-search-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .global-search form {
+    display: none;
+  }
+  .global-search.expanded form {
+    display: flex;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 41;
+    height: 52px;
+    padding: 0 var(--s2) 0 var(--s3);
+    gap: var(--s2);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .global-search.expanded .global-search-icon {
+    left: calc(var(--s3) + 10px);
+  }
+  .global-search.expanded input {
+    flex: 1;
+    min-width: 0;
+  }
+  .global-search.expanded .global-search-close {
+    display: inline-flex;
+    flex: none;
+  }
+  .global-search.expanded .search-pop {
+    z-index: 41;
+  }
 }

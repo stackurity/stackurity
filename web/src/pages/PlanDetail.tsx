@@ -199,7 +199,18 @@ export function PlanDetailPage() {
 
   const entries: [string, ReactNode][] = [
     ["package", <span className="mono">{plan.purl_key || plan.package}</span>],
-    ["change", <span className="fromto">{fromText} → {plan.target_version}</span>],
+    [
+      "change",
+      // From and to on their own lines: long distribution versions don't fit side by side in the card.
+      <span className="fromto-stack">
+        <span>
+          <span className="muted">from</span> <span className="mono">{fromText}</span>
+        </span>
+        <span>
+          <span className="muted">to</span> <span className="mono">{plan.target_version}</span>
+        </span>
+      </span>,
+    ],
     [
       "change type",
       <span>
