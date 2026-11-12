@@ -5,6 +5,11 @@
 //   - a half-typed question survives navigation and a reload, and the
 //     panel comes back open on the same conversation after a reload;
 //   - minimised, the page behind can be used; restored, nothing is lost;
+//   - an answer that links a fix shows the fix's stored command with Copy,
+//     an issue gets Read more links to advisory sites only, and only the
+//     allowed dashboard pages are links;
+//   - Chat, History and Feedback are tabs, and Feedback on Ask is a form
+//     inside the panel;
 //   - a change Ask proposes shows as a card under the answer; Apply makes
 //     it (the card says Applied), Undo reverses it, Dismiss leaves it
 //     undone, a proposal nobody asked for says so, and History keeps the
@@ -38,7 +43,9 @@ for (const width of [1280, 390]) {
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   // From here on (the login page itself checks for a session first, a 401).
   const errors = [];
-  page.on("console", (m) => m.type() === "error" && errors.push(m.text()));
+  // The demo answer links issue #1, which the demo estate may not have: the
+  // panel's look-up of it may 404, which is expected.
+  page.on("console", (m) => m.type() === "error" && !/\/api\/v1\/(findings|fix-groups)\//.test(m.location().url ?? "") && errors.push(m.text()));
   page.on("pageerror", (e) => errors.push(String(e)));
   const api = (method, path, data) =>
     page.request.fetch(base + "/api/v1" + path, { method, headers: { "X-Stackurity-CSRF": "1", "Content-Type": "application/json" }, data });
@@ -81,6 +88,51 @@ for (const width of [1280, 390]) {
   await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
   const before = await log.innerText();
 
+  // Command card, Read more and page links. The demo estate has no issues
+  // while feeds are off, so the fix group and issue the answer links are
+  // served here, as the API would send them.
+  const fixId = "9001:security_updates";
+  const cmd = "sudo apt update && sudo apt upgrade";
+  await page.route(`**/api/v1/fix-groups/${encodeURIComponent(fixId)}?*`, (r) =>
+    r.fulfill({ json: { group: { id: fixId, title: "Install security updates", action: cmd, asset_name: "demo-web-1", reboot: true, places: null }, findings: null } }),
+  );
+  await page.route("**/api/v1/findings/9002", (r) =>
+    r.fulfill({
+      json: {
+        finding: { id: 9002, key: "CVE-2024-3094" },
+        advisories: [
+          {
+            id: "GHSA-6jjj-mmmm-pppp",
+            aliases: ["CVE-2024-3094"],
+            references: [
+              { type: "ADVISORY", url: "https://security-tracker.debian.org/tracker/CVE-2024-3094" },
+              { type: "WEB", url: "https://evil.example/pwn" },
+              { type: "WEB", url: "http://access.redhat.com/x" },
+            ],
+          },
+        ],
+      },
+    }),
+  );
+  await q.fill(`linkfix:${fixId} linkissue:9002`);
+  await panel.getByRole("button", { name: "Ask", exact: true }).click();
+  await log.getByText("Links answer:").waitFor();
+  const card = log.locator(".ask-cmd").last();
+  await card.waitFor();
+  ok((await card.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
+  ok((await card.innerText()).includes("Run this on demo-web-1") && (await card.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
+  ok(await card.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
+  const more = log.locator(".ask-readmore").last();
+  await more.locator("summary").click();
+  const hrefs = await more.locator("a[target=_blank]").evaluateAll((as) => as.map((a) => [a.href, a.rel]));
+  ok(
+    hrefs.length === 3 && hrefs.every(([h, rel]) => h.startsWith("https://") && !h.includes("evil") && rel === "noopener noreferrer"),
+    `${tag} Read more has only https advisory-site links that open safely ${JSON.stringify(hrefs.map((x) => x[0]))}`,
+  );
+  const answerLinks = await log.evaluate((el) => [...el.querySelectorAll(".ask-answer a")].map((a) => a.getAttribute("href")));
+  ok(answerLinks.includes("/audit") && !answerLinks.includes("/settings/tokens"), `${tag} only allowed pages are links`);
+  await page.unrouteAll();
+
   // An answer still streaming survives moving to another page.
   await q.fill("slow answer please");
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
@@ -114,6 +166,19 @@ for (const width of [1280, 390]) {
   ok((await log.innerText()).includes("Short answer:"), `${tag} after a reload: open on the same conversation`);
   ok((await panel.getByLabel("Your question").inputValue()) === "half typed question", `${tag} after a reload: the half-typed question is kept`);
 
+  // Chat, History and Feedback are tabs: the one shown is selected. Feedback
+  // on Ask is a form inside the panel, never a dialog over the page.
+  const tab = (name) => panel.getByRole("tab", { name });
+  ok((await tab("Chat").getAttribute("aria-selected")) === "true", `${tag} the Chat tab is selected in a chat`);
+  await tab(/^History/).click();
+  ok((await tab(/^History/).getAttribute("aria-selected")) === "true", `${tag} the History tab is selected when shown`);
+  ok(await panel.locator(".ask-history-current").isVisible(), `${tag} History marks the open conversation`);
+  await tab("Feedback").click();
+  ok(await panel.getByRole("heading", { name: "Feedback on Ask" }).isVisible(), `${tag} Feedback opens inside the panel`);
+  ok((await page.locator('[role=dialog][aria-modal="true"]').count()) === 0, `${tag} Feedback on Ask is not a dialog over the page`);
+  await panel.getByRole("button", { name: "Cancel" }).click();
+  ok((await tab("Chat").getAttribute("aria-selected")) === "true", `${tag} Cancel goes back to the chat`);
+
   const w = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(w <= 1, `${tag} no horizontal scroll (${w}px)`);
 
@@ -141,7 +206,7 @@ for (const width of [1280, 390]) {
     });
     ok(sw <= 1, `${tag} ${what}: no horizontal scroll (${sw}px)`);
   };
-  await panel.getByRole("button", { name: "New" }).click();
+  await panel.getByRole("button", { name: "New chat" }).click();
   await ask(`rename project ${project} to UI renamed ${width} ${run}`);
   const card = log.locator(".ask-proposal").last();
   await card.waitFor();
@@ -182,7 +247,7 @@ for (const width of [1280, 390]) {
   await third.locator(".badge", { hasText: "Dismissed" }).waitFor();
 
   // History keeps the cards' states.
-  await panel.getByRole("button", { name: "History" }).click();
+  await panel.getByRole("tab", { name: /^History/ }).click();
   await panel.locator(".ask-history-open").first().click();
   await log.locator(".ask-proposal").first().waitFor();
   const states = await log.locator(".ask-proposal .badge").allInnerTexts();

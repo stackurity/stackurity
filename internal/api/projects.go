@@ -270,7 +270,9 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				writeError(w, 403, "forbidden", "Ask Stackurity only reads")
 				return
 			}
-			if sc == accountScope && route != "GET /api/v1/auth/me" {
+			// It reads the person's role, and the questions left (its
+			// account_overview tool); no other account route.
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" {
 				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
 				return
 			}

@@ -103,6 +103,12 @@ func askPerson(w http.ResponseWriter, r *http.Request) (*Principal, bool) {
 	return p, true
 }
 
+// askOwnTool: the request is one of Ask Stackurity's own tool calls, made
+// as the person who asked (askAPI), not by a token or a connected assistant.
+func askOwnTool(p *Principal) bool {
+	return p != nil && p.Ask && p.User != nil && p.Session && p.Token == nil && p.Assistant == nil && p.Workspace > 0
+}
+
 // askLimits are the organisation's settings with the server's defaults
 // filled in.
 type askLimits struct {
@@ -152,11 +158,15 @@ func (s *Server) askUnavailable(ctx context.Context, l askLimits) (status int, c
 	return 0, "", ""
 }
 
-// GET /ask/status: what the dashboard needs to show the panel.
+// GET /ask/status: what the dashboard needs to show the panel. Ask's own
+// account_overview tool reads it too, for "how many questions are left".
 func (s *Server) askStatus(w http.ResponseWriter, r *http.Request) {
-	p, ok := askPerson(w, r)
-	if !ok {
-		return
+	p := principal(r)
+	if !askOwnTool(p) {
+		var ok bool
+		if p, ok = askPerson(w, r); !ok {
+			return
+		}
 	}
 	ctx := r.Context()
 	l, err := s.askLimits(ctx)
@@ -704,6 +714,15 @@ func askWorkspace(ctx context.Context) int64 {
 var askPaths = []string{"/api/v1/search?", "/api/v1/assets?", "/api/v1/assets/", "/api/v1/fix-groups?", "/api/v1/fix-groups/summary?",
 	"/api/v1/findings?", "/api/v1/findings/", "/api/v1/components?", "/api/v1/components/", "/api/v1/inventory?", "/api/v1/inventory/updates?"}
 
+// askExactPaths are what the account tools read (mcp/account.go), allowed
+// as these exact paths only: "/api/v1/users" is the member list, which the
+// tool reduces to counts by role, and must not open /users/{id} or
+// /users/directory. Each endpoint keeps its own role check.
+var askExactPaths = map[string]bool{"/api/v1/auth/me": true, "/api/v1/usage": true, "/api/v1/users": true, "/api/v1/ask/status": true,
+	"/api/v1/channels": true, "/api/v1/routes": true, "/api/v1/settings/notifications": true, "/api/v1/integrations": true,
+	"/api/v1/integrations/github": true, "/api/v1/integrations/gitlab": true, "/api/v1/integrations/jira/connections": true,
+	"/api/v1/integrations/digitalocean": true}
+
 // askAPI is the API as Ask Stackurity's tools see it: each call goes
 // through the server's own router with the person's session, as if their
 // browser had sent it, marked as Ask's. It reads only (GET, the tools'
@@ -774,6 +793,9 @@ func askProposePathAllowed(path string) bool {
 }
 
 func askPathAllowed(path string) bool {
+	if askExactPaths[path] {
+		return true
+	}
 	for _, p := range askPaths {
 		if strings.HasPrefix(path, p) {
 			return true

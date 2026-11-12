@@ -17,8 +17,8 @@ import { AskAI } from "../components/AskAI";
 import { askFromFinding } from "../askAI";
 import { sectionForHash, type SectionId } from "../findingLayers";
 import { GroupCrumb } from "../components/nav";
+import { advisoryCves, nvdUrl, osvUrl } from "../advisoryLinks";
 
-const CVE_RE = /^CVE-\d{4}-\d{4,}$/i;
 const CVE_IN = /CVE-\d{4}-\d{4,}/i;
 
 function ExtLink({ href, children }: { href: string | null; children: ReactNode }) {
@@ -95,7 +95,7 @@ function evidenceEntries(ev: FindingEvidence): [string, ReactNode][] {
 function AdvisoryCard({ a, matched }: { a: Advisory; matched: boolean }) {
   const refs = (a.references ?? []).filter((r) => safeHttpUrl(r.url));
   const aliases = a.aliases ?? [];
-  const cves = [a.id, ...aliases].filter((x) => CVE_RE.test(x));
+  const cves = advisoryCves(a);
   return (
     <section className={`card advisory${a.withdrawn ? " withdrawn" : ""}`} aria-labelledby={`adv-${a.id}`}>
       <header className="card-head">
@@ -107,11 +107,11 @@ function AdvisoryCard({ a, matched }: { a: Advisory; matched: boolean }) {
           {!matched && <Badge status="related" tone="muted" label="did not match this package" />}
         </h3>
         <div className="card-actions small">
-          <ExtLink href={`https://osv.dev/vulnerability/${encodeURIComponent(a.id)}`}>osv.dev</ExtLink>
+          <ExtLink href={osvUrl(a.id)}>osv.dev</ExtLink>
           {cves.map((c) => (
             <span key={c}>
               {" · "}
-              <ExtLink href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(c)}`}>NVD {c}</ExtLink>
+              <ExtLink href={nvdUrl(c)}>NVD {c}</ExtLink>
             </span>
           ))}
         </div>
@@ -251,7 +251,7 @@ export function FindingDetailPage() {
           <span className="badges">
             <span className="mono">{f.key}</span>
             {cve && (
-              <ExtLink href={`https://nvd.nist.gov/vuln/detail/${encodeURIComponent(cve.toUpperCase())}`}>NVD</ExtLink>
+              <ExtLink href={nvdUrl(cve)}>NVD</ExtLink>
             )}
             <span>· {kindLabel(f.kind)}</span>
             <SeverityBadge severity={f.severity} score={f.score} />

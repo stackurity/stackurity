@@ -8,6 +8,7 @@
 // answer cannot send anything anywhere.
 
 import { autoLink } from "./askAnswer.ts";
+import { isNavPath } from "./askRoutes.ts";
 
 /**
  * The version of the consent wording in consentText below. The client sends
@@ -35,6 +36,8 @@ export interface AskStatus {
 
 export interface AskConversation {
   id: number;
+  /** The project chosen when it started; null: all projects. */
+  project_id: number | null;
   title: string;
   model: string;
   created_at: string;
@@ -143,15 +146,13 @@ export function noticeText(provider: string): string[] {
   return [...consentText(provider, "person"), "Answers can be wrong. Check them on the linked pages before you act on them."];
 }
 
-// Stackurity pages an answer may link to. Anything else is shown as text.
+// Stackurity pages an answer may link to: these, and the dashboard pages in
+// askRoutes.ts. Anything else is shown as text.
 const ALLOWED = [
   /^\/findings\/\d{1,18}$/,
   /^\/assets\/\d{1,18}$/,
   /^\/components\/\d{1,18}$/,
   /^\/fixes\/[A-Za-z0-9:_.-]{1,128}$/,
-  /^\/fixes$/,
-  /^\/fixes\/issues$/,
-  /^\/help\/[a-z0-9-]{1,64}$/,
   // An advisory id, searched in Stackurity (askAnswer.ts autoLink).
   /^\/search\?q=(?:CVE-\d{4}-\d{4,7}|GHSA(?:-[23456789cfghjmpqrvwx]{4}){3})$/i,
 ];
@@ -160,7 +161,7 @@ const ALLOWED = [
 export function askHref(href: string): string | null {
   const h = href.trim();
   if (!h.startsWith("/") || h.startsWith("//") || h.includes("\\") || h.includes("..")) return null;
-  return ALLOWED.some((re) => re.test(h)) ? h : null;
+  return ALLOWED.some((re) => re.test(h)) || isNavPath(h) ? h : null;
 }
 
 export type Inline =
@@ -335,4 +336,24 @@ export async function streamQuestion(
     if (done) break;
     for (const e of p.push(dec.decode(value, { stream: true }))) on(e);
   }
+}
+
+/**
+ * History's day headings: Today, Yesterday, then Earlier, in the person's
+ * time zone, newest first within each. Empty groups are left out.
+ */
+export function historyGroups(convs: AskConversation[], now: Date): { label: string; items: AskConversation[] }[] {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const groups = [
+    { label: "Today", items: [] as AskConversation[] },
+    { label: "Yesterday", items: [] as AskConversation[] },
+    { label: "Earlier", items: [] as AskConversation[] },
+  ];
+  const sorted = [...convs].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  for (const c of sorted) {
+    const t = Date.parse(c.updated_at);
+    groups[t >= start ? 0 : t >= start - day ? 1 : 2].items.push(c);
+  }
+  return groups.filter((g) => g.items.length > 0);
 }

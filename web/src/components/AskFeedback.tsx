@@ -13,9 +13,10 @@ import {
   type FeedbackScope,
 } from "../askFeedback";
 
-// Feedback on Ask Stackurity: thumbs under each answer, a "Feedback" item
-// in the panel's header, and the form both open (askFeedback.ts says what
-// is sent).
+// Feedback on Ask Stackurity: thumbs under each answer, and the panel's
+// Feedback tab. Both show the form inside the panel, never over the page, so
+// it is plainly about Ask and not the general Send feedback (askFeedback.ts
+// says what is sent).
 
 const Thumb = ({ down }: { down?: boolean }) => (
   <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" style={down ? { transform: "rotate(180deg)" } : undefined}>
@@ -54,25 +55,6 @@ export function AskRate({ conv, seq }: { conv: number; seq: number }) {
   );
 }
 
-/** "Feedback" in the panel's header: about the whole chat, or the panel itself. */
-export function AskFeedbackButton({ conv }: { conv: number | null }) {
-  const [open, setOpen] = useState(false);
-  const [sent, setSent] = useState(false);
-  useEffect(() => {
-    if (!sent) return;
-    const t = setTimeout(() => setSent(false), 3000);
-    return () => clearTimeout(t);
-  }, [sent]);
-  return (
-    <>
-      <button type="button" className="btn btn-sm btn-link" onClick={() => setOpen(true)} aria-haspopup="dialog">
-        {sent ? "Thanks" : "Feedback"}
-      </button>
-      {open && <AskFeedbackForm conv={conv} seq={null} onClose={() => setOpen(false)} onSent={() => setSent(true)} />}
-    </>
-  );
-}
-
 function here() {
   return { href: window.location.href, width: window.innerWidth, height: window.innerHeight };
 }
@@ -84,12 +66,15 @@ export function AskFeedbackForm({
   rating,
   onClose,
   onSent,
+  title,
 }: {
   conv: number | null;
   seq: number | null;
   rating?: FeedbackRating;
   onClose: () => void;
   onSent: () => void;
+  /** The heading; the default suits a form under one answer. */
+  title?: string;
 }) {
   const scopes = scopesFor(conv, seq);
   const [f, setF] = useState<FeedbackForm>({ rating, category: "", scope: scopes[0], text: "", consent: true });
@@ -97,7 +82,8 @@ export function AskFeedbackForm({
   const [error, setError] = useState("");
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
-    box.current?.querySelector<HTMLElement>("select, input, textarea")?.focus();
+    box.current?.scrollIntoView({ block: "nearest" });
+    box.current?.querySelector<HTMLElement>("select, input, textarea")?.focus({ preventScroll: true });
   }, []);
   const set = (p: Partial<FeedbackForm>) => setF((x) => ({ ...x, ...p }));
   const send = async () => {
@@ -123,14 +109,13 @@ export function AskFeedbackForm({
   };
   const id = (s: string) => `ask-fb-${s}`;
   return (
-    <div className="confirm-backdrop ask-fb-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={box} className="confirm-dialog ask-fb" role="dialog" aria-modal="true" aria-labelledby={id("title")} onKeyDown={onKey}>
-        <h2 id={id("title")} className="confirm-title">
-          {rating === "down" ? "What went wrong?" : "Send feedback"}
-        </h2>
-        <div className="confirm-body">
+    <div ref={box} className="ask-fb" role="form" aria-labelledby={id("title")} onKeyDown={onKey}>
+        <h3 id={id("title")} className="ask-fb-title">
+          {title ?? (rating === "down" ? "What went wrong with this answer?" : "Feedback on Ask")}
+        </h3>
+        <div className="ask-fb-body">
           <div className="field">
-            <label htmlFor={id("category")}>What was wrong</label>
+            <label htmlFor={id("category")}>{rating === "down" ? "What was wrong" : "What kind of feedback"}</label>
             <select id={id("category")} value={f.category} onChange={(e) => set({ category: e.target.value })}>
               <option value="">Choose one</option>
               {FEEDBACK_CATEGORIES.map((c) => (
@@ -169,15 +154,14 @@ export function AskFeedbackForm({
           </p>
           {error && <p className="text-danger small">{error}</p>}
         </div>
-        <div className="confirm-actions">
+        <div className="ask-fb-actions">
+          <button type="button" className="btn btn-primary" disabled={!canSend(f) || busy} onClick={() => void send()}>
+            {busy ? "Sending…" : "Send feedback on Ask"}
+          </button>
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="button" className="btn btn-primary" disabled={!canSend(f) || busy} onClick={() => void send()}>
-            Send feedback
-          </button>
         </div>
       </div>
-    </div>
   );
 }

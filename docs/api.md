@@ -2729,7 +2729,7 @@ The in-app assistant ([ai-assistants.md](ai-assistants.md#ask-stackurity)). It i
 
 ### `GET /api/v1/ask/status`
 
-**Who:** a browser session
+**Who:** a browser session, and Ask Stackurity's own `account_overview` tool for the person asking (not API tokens or connected assistants)
 
 `available`, and when not, `reason` (`not_configured`, `ask_disabled`, `plan_required`, `read_only`, `spend_cap`) and `message`; `notice_version` and `notice_accepted`; `questions_used`, `questions_limit` (null: no limit), `question_period` (`month` or `total`) and `resets_at`.
 

@@ -153,7 +153,10 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-	"list_leaks lists keys, tokens and passwords found written in files (never their values)."
+	"list_leaks lists keys, tokens and passwords found written in files (never their values). For questions about the " +
+	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
+	"integrations and notification channels are connected and on, never their addresses or credentials) and " +
+	"notification_settings (the notification rules in effect)."
 
 const readOnlyNote = " This connection is read-only: no tool changes anything."
 
@@ -389,12 +392,19 @@ var tools = map[string]tool{
 		description: "What to fix, grouped into concrete actions (upgrade X to version Y, move off an end-of-life runtime), " +
 			"ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
 			"to move to (the title names it), to_version the lowest version that fixes them all. The same fix in several places is " +
-			"one action listing each place (asset, app_dir, its own group_id and finding count) under places. Omit asset_id for every asset.",
-		schema: obj(map[string]any{"asset_id": num("Limit to one asset")}),
+			"one action listing each place (asset, app_dir, its own group_id and finding count) under places. Omit asset_id for every asset; " +
+			"with limit, only the most urgent actions across them (10 to 15 answers \"what should I fix first\").",
+		schema: obj(map[string]any{
+			"asset_id": num("Limit to one asset"),
+			"limit":    num("Only the first N actions, most urgent first (1 to 100; default 100)"),
+		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			// The same fix in several places is one action, listing each
 			// place (its own group) under places.
 			q := url.Values{"limit": {"100"}, "group_by": {"fix"}}
+			if n, ok := a["limit"].(float64); ok && n >= 1 && n < 100 {
+				q.Set("limit", strconv.FormatInt(int64(n), 10))
+			}
 			set(q, "asset_id", a["asset_id"])
 			var groups, summary any
 			if err := api.Do(ctx, "GET", "/api/v1/fix-groups?"+q.Encode(), nil, nil, &groups); err != nil {
@@ -882,9 +892,11 @@ type findingVEX struct {
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
-	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
+	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+	"account_overview", "integrations_status", "notification_settings"}
 
 // readTitles are the read tools' short human titles (directories show them).
+// The account tools add theirs in account.go.
 var readTitles = map[string]string{
 	"search":                 "Search",
 	"list_assets":            "List assets",

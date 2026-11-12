@@ -27,7 +27,7 @@ const (
 )
 
 // Feedback categories a person picks ("What was wrong").
-var AskFeedbackCategories = []string{"wrong", "misunderstood", "incomplete", "slow", "wrong_data", "formatting", "other"}
+var AskFeedbackCategories = []string{"wrong", "misunderstood", "incomplete", "slow", "wrong_data", "formatting", "idea", "other"}
 
 // Implicit signal categories.
 const (

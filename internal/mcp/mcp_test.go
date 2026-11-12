@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/stackurity/stackurity/internal/client"
 )
 
 type fakeAPI struct{ paths []string }
@@ -78,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 13 || len(writeTools) != 10 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 10 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -469,5 +471,250 @@ func TestListLeaksWorkflow(t *testing.T) {
 	l := leaks[0].(map[string]any)
 	if l["state"] != "still_found" || l["assignee_email"] != "ravi@x.io" || l["overdue"] != true || l["due_at"] == nil || l["rotated_at"] == nil {
 		t.Errorf("leak: %v", l)
+	}
+}
+
+// accountAPI answers the account tools' endpoints as a person with role:
+// the role checks are the API's (users for admins, channels and rules for
+// security, integrations for engineers), as in internal/api. Every answer
+// carries the secrets the real endpoints hold, so a test can check that
+// none of them gets through.
+type accountAPI struct {
+	role  string
+	paths []string
+}
+
+const (
+	leakWebhook  = "https://hooks.slack.com/services/T000/B000/sEcReTwEbHoOk"
+	leakTeams    = "https://acme.webhook.office.com/webhookb2/abc@def/IncomingWebhook/xyz/teamssecret"
+	leakSMTPPass = "smtp-pass-hunter2"
+	leakToken    = "ghp_abcdefghijklmnopqrstuvwxyz0123456789"
+	leakEmail    = "colleague.admin@acme.io"
+)
+
+func (f *accountAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[string]string, out any) error {
+	f.paths = append(f.paths, method+" "+path)
+	rank := map[string]int{"viewer": 1, "engineer": 2, "security": 3, "admin": 4}[f.role]
+	need := map[string]int{"/api/v1/users": 4, "/api/v1/channels": 3, "/api/v1/routes": 3, "/api/v1/settings/notifications": 3,
+		"/api/v1/integrations": 2, "/api/v1/integrations/github": 2, "/api/v1/integrations/gitlab": 2,
+		"/api/v1/integrations/jira/connections": 4, "/api/v1/integrations/digitalocean": 4}[path]
+	if rank < need {
+		return &client.APIError{Status: 403, Code: "forbidden", Message: "requires a higher role"}
+	}
+	var body string
+	switch path {
+	case "/api/v1/auth/me":
+		body = `{"user":{"id":1,"email":"me@acme.io","name":"Me"},"role":"` + f.role + `","token":null,"edition":"pro",
+			"features":["remediation","teams"],"access":"organisation","project_role":null,"projects":[{"id":1},{"id":2}],
+			"workspace":{"id":9,"name":"Acme","slug":"acme","read_only":null,"report_mode":"full"},
+			"license_key":{"state":"installed","upgraded":false,"signup_url":"https://stackurity.ai/signup?k=` + leakToken + `"}}`
+	case "/api/v1/usage":
+		body = `{"monitored":42,"limit":50,"at_limit":false,"by_kind":{"host":30,"repository":12},"stale":3,"workloads":7,
+			"refused":[{"name":"secret-host"}],"refused_recently":0,"projects":4,"project_limit":5,"projects_at_limit":false,
+			"plan":{"plan":"team","next_plan":"business","members":{"used":6,"limit":10},"allowed_channel_kinds":["email","slack"],
+			"sbom_imports":{"used":1,"limit":20},"history_days":365,"api_requests_per_hour":1000}}`
+	case "/api/v1/users":
+		body = `{"items":[{"id":1,"email":"me@acme.io","name":"Me","role":"admin"},
+			{"id":2,"email":"` + leakEmail + `","name":"Priya Admin","role":"admin","phone":"+1 555 0100"},
+			{"id":3,"email":"eng@acme.io","name":"Eng","role":"engineer"},
+			{"id":4,"email":"p@acme.io","name":"Proj","role":"","access":"projects"},
+			{"id":5,"email":"gone@acme.io","name":"Gone","role":"viewer","disabled":true}],"total":5}`
+	case "/api/v1/ask/status":
+		body = `{"available":true,"reason":"","questions_used":30,"questions_limit":100,"question_period":"month","resets_at":"2026-12-01T00:00:00Z"}`
+	case "/api/v1/channels":
+		body = `{"items":[
+			{"id":1,"kind":"slack","name":"Slack #alerts","enabled":true,"config":{"webhook_url":"` + leakWebhook + `"},
+			 "secret_ref":"secret:SLACK_HOOK","secret_source":"stored","last_ok_at":"2026-11-10T00:00:00Z",
+			 "last_error":"Post \"` + leakWebhook + `\": 404"},
+			{"id":2,"kind":"teams","name":"Teams ops","enabled":false,"config":{"url":"` + leakTeams + `"},"secret_source":"missing"},
+			{"id":3,"kind":"email","name":"Security email","enabled":true,"owner_project_id":4,
+			 "config":{"to":["` + leakEmail + `"],"smtp_host":"smtp.acme.io","smtp_password":"` + leakSMTPPass + `"}}],"total":3}`
+	case "/api/v1/routes":
+		body = `{"items":[
+			{"id":10,"name":"Critical to Slack","channel_id":1,"enabled":true,"min_priority":"P2","events":["urgent","new_issues"],
+			 "mode":"urgent_summary","timezone":"UTC","event_channels":{"daily_summary":3}},
+			{"id":11,"name":"Teams digest","channel_id":2,"enabled":true,"min_priority":"P3","events":["daily_summary"],"mode":"daily",
+			 "quiet_start":"22:00","quiet_end":"07:00","owner_project_id":4}],"total":2}`
+	case "/api/v1/settings/notifications":
+		body = `{"project_chat_apps":false}`
+	case "/api/v1/integrations":
+		body = `{"items":[{"id":5,"kind":"git_repository","name":"shop","enabled":true,"schedule_minutes":360,
+			"config":{"url":"https://x-access-token:` + leakToken + `@github.com/acme/shop.git"},"secret_ref":"secret:GH",
+			"last_error":"clone https://x-access-token:` + leakToken + `@github.com/acme/shop.git failed"}],"total":1}`
+	case "/api/v1/integrations/github":
+		body = `{"configured":true,"app_url":"https://github.com/apps/stackurity","installations":[
+			{"account_login":"acme","account_type":"Organization","status":"active","repositories":12,"installed_by":2},
+			{"account_login":"priya-personal","account_type":"User","status":"active","repositories":1}]}`
+	case "/api/v1/integrations/gitlab":
+		body = `{"configured":false,"connections":[]}`
+	case "/api/v1/integrations/jira/connections":
+		body = `{"items":[{"id":1,"sites":[{"id":"c1","name":"acme","url":"https://acme.atlassian.net"}],"status":"active",
+			"connected_by":2,"connected_at":"2026-10-01T00:00:00Z"}],"total":1}`
+	case "/api/v1/integrations/digitalocean":
+		body = `{"connected":true,"connected_at":"2026-10-02T00:00:00Z","secrets_enabled":true}`
+	default:
+		return &client.APIError{Status: 404, Code: "not_found", Message: "no route " + path}
+	}
+	return json.Unmarshal([]byte(body), out)
+}
+
+func TestAccountOverview(t *testing.T) {
+	api := &accountAPI{role: "admin"}
+	out := callTool(t, &Server{API: api, Version: "t"}, "account_overview", nil)
+	if e, ok := out["error"]; ok {
+		t.Fatal(e)
+	}
+	b, _ := json.Marshal(out)
+	var got struct {
+		You          map[string]any `json:"you"`
+		Organisation map[string]any `json:"organisation"`
+		Edition      struct{ Name string }
+		Plan         map[string]any `json:"plan"`
+		Assets       map[string]any `json:"assets"`
+		Projects     map[string]any `json:"projects"`
+		Members      struct {
+			Active, Disabled int
+			ByRole           map[string]int `json:"by_role"`
+		} `json:"members"`
+		Ask          map[string]any `json:"ask_stackurity"`
+		NotAvailable []unavailable  `json:"not_available"`
+	}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got.You["role"] != "admin" || got.You["projects_you_can_see"] != 2.0 || got.Organisation["name"] != "Acme" || got.Edition.Name != "pro" {
+		t.Errorf("you/organisation/edition: %s", b)
+	}
+	if got.Plan["name"] != "team" || got.Assets["monitored"] != 42.0 || got.Assets["limit"] != 50.0 || got.Projects["limit"] != 5.0 {
+		t.Errorf("plan/usage: %s", b)
+	}
+	if got.Members.Active != 4 || got.Members.Disabled != 1 || got.Members.ByRole["admin"] != 2 || got.Members.ByRole["engineer"] != 1 ||
+		got.Members.ByRole["project_access_only"] != 1 {
+		t.Errorf("members: %+v", got.Members)
+	}
+	if got.Ask["questions_left"] != 70.0 || got.Ask["questions_limit"] != 100.0 {
+		t.Errorf("ask: %v", got.Ask)
+	}
+	if len(got.NotAvailable) != 0 {
+		t.Errorf("an admin can read everything: %v", got.NotAvailable)
+	}
+	// Members are counted, never named, and the refused assets' names and
+	// the sign-up link are not passed on.
+	for _, s := range []string{"Priya", leakEmail, "me@acme.io", "555", "secret-host", leakToken, "signup"} {
+		if strings.Contains(string(b), s) {
+			t.Errorf("account_overview shows %q: %s", s, b)
+		}
+	}
+}
+
+// A viewer gets what a viewer may read, and is told what is missing and
+// why, instead of the tool failing or showing zeros.
+func TestAccountToolsForAViewer(t *testing.T) {
+	s := &Server{API: &accountAPI{role: "viewer"}, Version: "t"}
+	out := callTool(t, s, "account_overview", nil)
+	if _, ok := out["members"]; ok || out["assets"] == nil || out["you"].(map[string]any)["role"] != "viewer" {
+		t.Errorf("viewer overview: %v", out)
+	}
+	if na := fmt.Sprint(out["not_available"]); !strings.Contains(na, "members") || !strings.Contains(na, "role") {
+		t.Errorf("not_available: %v", na)
+	}
+	out = callTool(t, s, "integrations_status", nil)
+	if _, ok := out["channels"]; ok {
+		t.Errorf("a viewer read the channels: %v", out)
+	}
+	if na := fmt.Sprint(out["not_available"]); !strings.Contains(na, "channels") || !strings.Contains(na, "sources") {
+		t.Errorf("not_available: %v", na)
+	}
+	out = callTool(t, s, "notification_settings", nil)
+	if _, ok := out["rules"]; ok || !strings.Contains(fmt.Sprint(out["not_available"]), "rules") {
+		t.Errorf("viewer rules: %v", out)
+	}
+}
+
+func TestIntegrationsAndNotificationSettings(t *testing.T) {
+	s := &Server{API: &accountAPI{role: "admin"}, Version: "t"}
+	out := callTool(t, s, "integrations_status", nil)
+	chans := out["channels"].([]any)
+	if len(chans) != 3 {
+		t.Fatalf("channels: %v", out)
+	}
+	slack, teams, email := chans[0].(map[string]any), chans[1].(map[string]any), chans[2].(map[string]any)
+	if slack["kind"] != "slack" || slack["enabled"] != true || slack["belongs_to"] != "organisation" || slack["last_worked_at"] == nil {
+		t.Errorf("slack: %v", slack)
+	}
+	if teams["enabled"] != false || teams["credential_missing"] != true || email["belongs_to"] != "project 4" {
+		t.Errorf("teams/email: %v %v", teams, email)
+	}
+	if src := out["sources"].([]any); len(src) != 1 || src[0].(map[string]any)["name"] != "shop" {
+		t.Errorf("sources: %v", out["sources"])
+	}
+	gh := out["github"].(map[string]any)["installations"].([]any)
+	if gh[0].(map[string]any)["account_login"] != "acme" || gh[1].(map[string]any)["account_login"] != nil {
+		t.Errorf("github: a personal account's login is shown, or the organisation's is not: %v", gh)
+	}
+	if out["digitalocean"].(map[string]any)["connected"] != true || len(out["not_available"].([]any)) != 0 {
+		t.Errorf("digitalocean / not_available: %v", out)
+	}
+
+	out = callTool(t, s, "notification_settings", nil)
+	rules := out["rules"].([]any)
+	if len(rules) != 2 {
+		t.Fatalf("rules: %v", out)
+	}
+	crit, digest := rules[0].(map[string]any), rules[1].(map[string]any)
+	if crit["min_priority"] != "P2" || crit["sends"] != true || crit["channel"].(map[string]any)["name"] != "Slack #alerts" ||
+		crit["event_channels"].(map[string]any)["daily_summary"].(map[string]any)["kind"] != "email" {
+		t.Errorf("critical rule: %v", crit)
+	}
+	// Enabled, but its channel is off: it sends nothing.
+	if digest["sends"] != false || digest["belongs_to"] != "project 4" || digest["quiet_hours"] == nil {
+		t.Errorf("digest rule: %v", digest)
+	}
+	if out["project_chat_apps"] != false {
+		t.Errorf("project_chat_apps: %v", out)
+	}
+}
+
+// No account tool returns a webhook URL, an SMTP password, a token, a
+// secret reference or a colleague's email, wherever the API had it:
+// configuration, error text or a link.
+func TestAccountToolsNeverReturnSecrets(t *testing.T) {
+	for _, role := range []string{"admin", "security", "engineer", "viewer"} {
+		s := &Server{API: &accountAPI{role: role}, Version: "t"}
+		for _, name := range []string{"account_overview", "integrations_status", "notification_settings"} {
+			b, _ := json.Marshal(callTool(t, s, name, nil))
+			for _, leak := range []string{leakWebhook, "sEcReTwEbHoOk", leakTeams, "teamssecret", leakSMTPPass, leakToken, leakEmail,
+				"hooks.slack.com", "webhook.office.com", "x-access-token", "secret:", "SLACK_HOOK", "smtp", "config", "secret_ref",
+				"installed_by", "connected_by", "atlassian.net", "app_url"} {
+				if strings.Contains(string(b), leak) {
+					t.Errorf("%s as %s returns %q: %s", name, role, leak, b)
+				}
+			}
+		}
+	}
+}
+
+// action_plan's limit keeps a plan across every asset small enough for Ask
+// (whose tool results are cut at 24 KB), so it ranks the whole workspace
+// instead of narrowing to one asset at a time.
+func TestActionPlanLimit(t *testing.T) {
+	for _, c := range []struct {
+		args map[string]any
+		want string
+	}{
+		{map[string]any{}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(15)}, "group_by=fix&limit=15"},
+		{map[string]any{"limit": float64(500)}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(0)}, "group_by=fix&limit=100"},
+		{map[string]any{"limit": float64(5), "asset_id": float64(3)}, "asset_id=3&group_by=fix&limit=5"},
+	} {
+		api := &fakeAPI{}
+		if _, err := CallRead(context.Background(), api, "action_plan", c.args); err != nil {
+			t.Fatal(err)
+		}
+		want := []string{"GET /api/v1/fix-groups?" + c.want, "GET /api/v1/fix-groups/summary?" + c.want}
+		if strings.Join(api.paths, "\n") != strings.Join(want, "\n") {
+			t.Errorf("%v: requests = %v", c.args, api.paths)
+		}
 	}
 }
