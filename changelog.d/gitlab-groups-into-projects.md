@@ -4,4 +4,4 @@
 
 ### Upgrading
 
-- Migration `0107_gitlab_connection_project` adds the chosen project to `gitlab_connections` (one nullable column). Existing connections keep their assets where they are until a project is chosen.
+- Migration `0105_gitlab_connection_project` adds the chosen project to `gitlab_connections` (one nullable column). Existing connections keep their assets where they are until a project is chosen.
