@@ -48,7 +48,11 @@ The API calls:
 | `fb -X PATCH "$FB_API/FB-123" -d '{"status":"triaged","note":"…"}'` | change status and append a note |
 | `fb -X POST "$FB_API/FB-123/attachments/<aid>/link"` | a 10-minute download link |
 
-The PATCH fields are `status`, `note` (appended), `resolution` (the sender reads it), `link` (a PR or issue under github.com/stackurity), `duplicate_of` and `fixed_in`.
+The PATCH fields are `status`, `note` (appended), `resolution` (the sender reads it), `owner_reason` (why it needs the owner), `link` (a PR or issue under github.com/stackurity), `duplicate_of` and `fixed_in`.
+
+To ask the sender (they read and answer it in My feedback; the item becomes `needs_info` and goes back to `new` when they reply): `fb -X POST "$FB_API/FB-123/comments" -d '{"body":"1. Which page…?","ask":true}'`. Without `ask` it is an update they read. Approve and Decline are the owner's, in the dashboard (Admin → Feedback); the triage token cannot do them.
+
+The automated loop is `tools/feedback-agent` on the owner's Mac (docs/feedback-queue.md#the-feedback-agent). `/feedback review` is for working the queue by hand alongside it; skip items the agent is already on (`in_progress` with a `feedback/fb-…` pull request).
 
 To look at an attachment:
 1. Download it into a new empty folder in your scratchpad.

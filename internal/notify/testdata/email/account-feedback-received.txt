@@ -1,0 +1,22 @@
+Subject: We received your Stackurity feedback FB-125
+
+Hello,
+
+Thank you for your feedback FB-125. It is with the Stackurity team now. We will email you when it is done, or if we need more details from you.
+
+You sent:
+
+The Fixes page loses the asset filter after I open a fix and go back.
+
+With 1 attachment.
+
+You can follow it under My feedback, in your account menu in Stackurity.
+
+The Stackurity team
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you left this address when you sent feedback to the Stackurity team.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

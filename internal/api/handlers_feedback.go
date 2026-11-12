@@ -19,6 +19,8 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/stackurity/stackurity/internal/feedback"
 	"github.com/stackurity/stackurity/internal/store"
 )
@@ -54,6 +56,9 @@ const (
 
 // limitFeedback caps what one user can send.
 var limitFeedback = rateLimit{10, time.Hour}
+
+// limitFeedbackReply caps one user's replies in My feedback.
+var limitFeedbackReply = rateLimit{20, time.Hour}
 
 // feedbackUploads bounds sends with attachments at once on this server
 // (each holds up to 90 MB in memory); more are asked to try again.
@@ -557,77 +562,218 @@ func (s *Server) myFeedback(w http.ResponseWriter, r *http.Request) {
 	if items == nil {
 		items = []store.FeedbackSent{}
 	}
+	for i := range items {
+		if items[i].Thread == nil {
+			items[i].Thread = []store.FeedbackPublicComment{}
+		}
+	}
 	writeJSON(w, 200, map[string]any{"items": items, "check_failed": checkFailed})
 }
 
 func (s *Server) refreshFeedbackStatus(ctx context.Context, items []store.FeedbackSent, idx []int) error {
-	type ask struct {
-		Ref   string `json:"ref"`
-		Token string `json:"token"`
-	}
-	req := struct {
-		Items []ask `json:"items"`
-	}{}
+	var asks []feedbackStatusItem
 	byRef := map[string]int{}
 	for _, i := range idx {
-		if len(req.Items) == 50 {
+		if len(asks) == 50 {
 			break
 		}
-		req.Items = append(req.Items, ask{items[i].Ref, items[i].Token})
+		asks = append(asks, feedbackStatusItem{Ref: items[i].Ref, Token: items[i].Token})
 		byRef[items[i].Ref] = i
 	}
-	body, _ := json.Marshal(req)
+	res, err := s.askFeedbackQueue(ctx, asks)
+	if err != nil {
+		return err
+	}
+	for _, st := range res {
+		i, ok := byRef[st.Ref]
+		if !ok {
+			continue
+		}
+		if err := s.storeFeedbackStatus(ctx, &items[i], st); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// askFeedbackQueue posts a status request (with at most one reply) to the
+// queue, through STACKURITY_FEEDBACK_URL/status.
+func (s *Server) askFeedbackQueue(ctx context.Context, asks []feedbackStatusItem) ([]store.FeedbackPublic, error) {
+	body, _ := json.Marshal(map[string]any{"items": asks})
 	ctx, cancel := context.WithTimeout(ctx, feedbackTimeout)
 	defer cancel()
 	hr, err := http.NewRequestWithContext(ctx, "POST", s.feedbackStatusURL(), bytes.NewReader(body))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	hr.Header.Set("Content-Type", "application/json")
 	hr.Header.Set("Accept", "application/json")
 	hr.Header.Set("User-Agent", "stackurity")
 	resp, err := s.feedbackClient(feedbackTimeout).Do(hr)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != 200 {
-		return fmt.Errorf("%w answered %s", errFeedbackUpstream, resp.Status)
+		raw, _ := io.ReadAll(io.LimitReader(resp.Body, 16<<10))
+		if msg := upstreamMessage(raw); msg != "" && resp.StatusCode/100 == 4 {
+			return nil, &upstreamProblem{status: resp.StatusCode, msg: msg}
+		}
+		return nil, fmt.Errorf("%w answered %s", errFeedbackUpstream, resp.Status)
 	}
 	var res struct {
 		Items []store.FeedbackPublic `json:"items"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 256<<10)).Decode(&res); err != nil {
-		return err
+		return nil, err
 	}
-	for _, st := range res.Items {
-		i, ok := byRef[st.Ref]
-		if !ok {
-			continue
-		}
-		it := &items[i]
-		switch st.Status {
-		case "received", "reviewing", "in_progress", "fixed", "released", "wont_fix", "duplicate", "unknown":
+	return res.Items, nil
+}
+
+// feedbackThreadMax bounds the thread an installation keeps per item.
+const feedbackThreadMax = 60 << 10
+
+// cleanThread keeps the comments the queue reported that make sense, each
+// body at most 2000 characters, and the newest that fit feedbackThreadMax.
+// nil (the queue left the thread out) stays nil.
+func cleanThread(in []store.FeedbackPublicComment) []store.FeedbackPublicComment {
+	if in == nil {
+		return nil
+	}
+	out := []store.FeedbackPublicComment{}
+	for _, c := range in {
+		switch c.From {
+		case store.FeedbackByAgent, store.FeedbackByTeam, store.FeedbackBySender:
 		default:
 			continue
 		}
-		note := oneLineKeepBreaks(st.Resolution, 2000)
-		fixed := ""
-		if feedbackVersion.MatchString(st.FixedIn) {
-			fixed = st.FixedIn
+		switch c.Kind {
+		case "comment", "question", "reply":
+		default:
+			c.Kind = "comment"
 		}
-		var at *time.Time
-		if !st.UpdatedAt.IsZero() {
-			t := st.UpdatedAt
-			at = &t
+		c.Body = strings.TrimSpace(oneLineKeepBreaks(c.Body, 2000))
+		if c.Body == "" {
+			continue
 		}
-		if err := s.Store.SetFeedbackSentStatus(ctx, it.ID, st.Status, note, fixed, at); err != nil {
-			return err
+		out = append(out, c)
+	}
+	if len(out) > store.FeedbackPublicComments {
+		out = out[len(out)-store.FeedbackPublicComments:]
+	}
+	for len(out) > 0 {
+		b, _ := json.Marshal(out)
+		if len(b) <= feedbackThreadMax {
+			break
 		}
-		now := time.Now()
-		it.Status, it.StatusNote, it.FixedIn, it.StatusAt, it.CheckedAt = st.Status, note, fixed, at, &now
+		out = out[1:]
+	}
+	return out
+}
+
+// storeFeedbackStatus records what the queue said about one item.
+func (s *Server) storeFeedbackStatus(ctx context.Context, it *store.FeedbackSent, st store.FeedbackPublic) error {
+	switch st.Status {
+	case "received", "reviewing", "needs_info", "in_progress", "fixed", "released", "wont_fix", "duplicate", "unknown":
+	default:
+		return nil
+	}
+	note := oneLineKeepBreaks(st.Resolution, 2000)
+	fixed := ""
+	if feedbackVersion.MatchString(st.FixedIn) {
+		fixed = st.FixedIn
+	}
+	var at *time.Time
+	if !st.UpdatedAt.IsZero() {
+		t := st.UpdatedAt
+		at = &t
+	}
+	thread := cleanThread(st.Comments)
+	if err := s.Store.SetFeedbackSentStatus(ctx, it.ID, st.Status, note, fixed, at, thread); err != nil {
+		return err
+	}
+	now := time.Now()
+	it.Status, it.StatusNote, it.FixedIn, it.StatusAt, it.CheckedAt = st.Status, note, fixed, at, &now
+	if thread != nil {
+		it.Thread = thread
 	}
 	return nil
+}
+
+// replyFeedback sends the signed-in person's reply to one item they sent
+// ({"message": "..."}), through the same status lookup, and answers with
+// the item as it is now. A reply to an item waiting for their details
+// puts it back in the team's queue.
+func (s *Server) replyFeedback(w http.ResponseWriter, r *http.Request) {
+	p := principal(r)
+	if s.FeedbackURL == "" {
+		writeError(w, 404, "not_found", "feedback is turned off on this server")
+		return
+	}
+	if p.User == nil || p.Workspace == 0 {
+		writeError(w, 403, "forbidden", "replying needs a signed-in user")
+		return
+	}
+	if s.limited(w, r, "you have sent a lot of replies; try again in an hour", limitHit{"feedback-reply", itoa(p.User.ID), limitFeedbackReply}) {
+		return
+	}
+	var req struct {
+		Message string `json:"message"`
+	}
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	msg, err := validComment(req.Message, feedbackReplyMax)
+	if err != nil {
+		s.fail(w, r, badRequest(fmt.Sprintf("write a reply of 1 to %d characters", feedbackReplyMax)))
+		return
+	}
+	ref := chi.URLParam(r, "ref")
+	if !feedbackRefPattern.MatchString(ref) {
+		s.fail(w, r, badRequest("invalid reference; use FB-123"))
+		return
+	}
+	it, err := s.Store.FeedbackSentByRef(r.Context(), p.User.ID, ref)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	res, err := s.askFeedbackQueue(r.Context(), []feedbackStatusItem{{Ref: it.Ref, Token: it.Token, Reply: msg}})
+	if err != nil {
+		var up *upstreamProblem
+		if errors.As(err, &up) {
+			writeError(w, up.status, "feedback_refused", up.msg)
+			return
+		}
+		s.Log.Warn("feedback reply not delivered", "ref", ref, "err", err)
+		writeError(w, 502, "feedback_unavailable", "the reply could not be delivered; try again later")
+		return
+	}
+	for _, st := range res {
+		if st.Ref != it.Ref {
+			continue
+		}
+		if err := s.storeFeedbackStatus(r.Context(), it, st); err != nil {
+			s.fail(w, r, err)
+			return
+		}
+		if !st.Replied {
+			problem := st.ReplyError
+			if problem == "" {
+				problem = "the Stackurity team's server did not take the reply"
+			}
+			writeError(w, 409, "reply_refused", oneLinePrintable(problem, 200))
+			return
+		}
+		_ = s.Store.Audit(r.Context(), p.Actor(r), "feedback.reply", "feedback", it.Ref, nil)
+		if it.Thread == nil {
+			it.Thread = []store.FeedbackPublicComment{}
+		}
+		writeJSON(w, 200, it)
+		return
+	}
+	writeError(w, 502, "feedback_unavailable", "the reply could not be delivered; try again later")
 }
 
 // oneLineKeepBreaks keeps text from the queue at most n runes, valid UTF-8.

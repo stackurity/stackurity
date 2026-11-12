@@ -4481,7 +4481,7 @@
    "get": {
     "operationId": "get_feedback_mine",
     "summary": "List the feedback you sent and its status",
-    "description": "Items the caller sent from this installation, newest first: `ref` (FB-123), `kind`, `summary`, `attachments`, `status` (`received`, `reviewing`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note`, `fixed_in`, `status_at`, `created_at`. Statuses of open items older than five minutes are asked again from the feedback service with each item's status token; `check_failed` says when that did not work. See network.md\n\nRole: any signed-in user",
+    "description": "Items the caller sent from this installation, newest first: `ref` (FB-123), `kind`, `summary`, `attachments`, `status` (`received`, `reviewing`, `needs_info`, `in_progress`, `fixed`, `released`, `wont_fix`, `duplicate`, `unknown`), `status_note`, `fixed_in`, `status_at`, `created_at`, `thread` (the team's questions and updates and the caller's replies). Statuses of open items older than five minutes are asked again from the feedback service with each item's status token; `check_failed` says when that did not work. See network.md\n\nRole: any signed-in user",
     "tags": [
      "Account"
     ],
@@ -18338,6 +18338,162 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/{id}/comments": {
+   "post": {
+    "operationId": "post_admin_feedback_id_comments",
+    "summary": "Comment on a feedback item, or ask its sender",
+    "description": "`body` (1 to 5000 characters) and `ask`. The comment is shown to the sender in My feedback, from the agent (a triage token) or the team. With `ask` it is a question: the item moves to `needs_info` and the sender may be emailed (`STACKURITY_FEEDBACK_AGENT_EMAILS`). 409 for a question on a closed item. See feedback-queue.md\n\nRole: instance admin or feedback triage token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin or feedback triage token",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/{id}/approve": {
+   "post": {
+    "operationId": "post_admin_feedback_id_approve",
+    "summary": "Approve a feedback item that needs the owner",
+    "description": "`note` (optional). A `needs_owner` item moves to `triaged` with `approved_at`; the feedback agent builds it on its next run. 409 when it is not waiting for approval. See feedback-queue.md\n\nRole: instance admin signed in to the dashboard (not a token)",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin signed in to the dashboard (not a token)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/feedback/{id}/decline": {
+   "post": {
+    "operationId": "post_admin_feedback_id_decline",
+    "summary": "Decline a feedback item that needs the owner",
+    "description": "`resolution` (required; the sender reads it). A `needs_owner` item is closed as `wont_fix`, which emails the sender under the usual conditions. 409 when it is not waiting for approval. See feedback-queue.md\n\nRole: instance admin signed in to the dashboard (not a token)",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin signed in to the dashboard (not a token)",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/feedback/mine/{ref}/reply": {
+   "post": {
+    "operationId": "post_feedback_mine_ref_reply",
+    "summary": "Reply on feedback you sent",
+    "description": "`message` (1 to 2000 characters): answers the team's questions or adds a detail on an open item you sent, through the feedback service with the item's status token. An item waiting for your answer goes back to the team. 200 with the item; 409 `reply_refused` when it is closed. See feedback-queue.md\n\nRole: any signed-in user",
+    "tags": [
+     "Account"
+    ],
+    "x-stackurity-role": "any signed-in user",
+    "parameters": [
+     {
+      "name": "ref",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",

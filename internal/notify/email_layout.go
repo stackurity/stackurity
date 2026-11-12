@@ -114,6 +114,8 @@ func emailWhy(m Message, host string) string {
 		return "You received this email because you are an administrator of this installation" + on + "."
 	case "feedback_update":
 		return "You received this email because you left this address when you sent feedback to the Stackurity team."
+	case "feedback_approval":
+		return "You received this email because this address approves feedback changes on this installation" + on + "."
 	}
 	if m.unsubscribe != "" {
 		return "You received this email because an organisation" + on + " sends its notifications to this address."

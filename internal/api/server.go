@@ -341,6 +341,7 @@ func (s *Server) Handler() http.Handler {
 			}
 			r.Post("/feedback", s.sendFeedback)
 			r.Get("/feedback/mine", s.myFeedback)
+			r.Post("/feedback/mine/{ref}/reply", s.replyFeedback)
 			// The caller's saved views on dashboard pages (saved_views.go).
 			r.Get("/saved-views", s.listSavedViews)
 			r.Post("/saved-views", s.saveView)

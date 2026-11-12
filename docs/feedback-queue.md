@@ -31,6 +31,8 @@ installation ──POST /feedback (JSON or multipart)──▶ stackurity.dev (r
 | `STACKURITY_FEEDBACK_LINK_KEY` or `_FILE` | Signs attachment download links (at least 32 characters, not the intake key). Unset, each process makes a random key, so links work only on the replica that made them. |
 | `STACKURITY_FEEDBACK_SCAN` | `required` holds every new attachment as pending, hidden from operators and the triage agent, until the on-demand scanner ([below](#virus-scan)) reports it clean. Unset or `off`: attachments are available once the type, size and structure checks pass. |
 | `STACKURITY_FEEDBACK_EMAILS` | `on` sends the sender one short email when their item is released or will not be fixed (with the team's reason), through the server's account mail. Off by default: the owner approves the wording first (`GET /api/v1/admin/feedback/email-templates`). The email quotes nothing the sender wrote, since the address is not verified. |
+| `STACKURITY_FEEDBACK_AGENT_EMAILS` | `on` sends the sender the [feedback agent's](#the-feedback-agent) two emails: **received** (when the item arrives, quoting what they sent, at most 600 characters with links and addresses made unclickable, five a day per address) and **needs more details** (with the questions, and a link to My feedback for Stackurity Cloud senders). Off by default: the owner approves the wording first (`GET /api/v1/admin/feedback/email-templates` marks them `approved: false`). |
+| `STACKURITY_FEEDBACK_APPROVERS` | Addresses, separated by commas, emailed "Approval needed" when an item moves to `needs_owner`, with a link to Admin → Feedback. Unset: no email (the agent still posts to Slack). |
 | `STACKURITY_FEEDBACK_STORAGE_MAX_MB` | Cap on the attachments kept (default 5120). Above it, new attachments are refused with 507 and feedback without attachments is still taken. `GET /api/v1/admin/feedback` reports `storage.used_bytes` and `max_bytes`. |
 
 ## Items
@@ -43,6 +45,8 @@ Each item has an id shown as `FB-123`. Its fields:
 - **page, browser and viewport**, captured automatically;
 - **attachments**;
 - **status**, with `resolution` (shown to the sender) and `triage_notes` (internal);
+- **owner_reason** (why it needs the owner) and the owner's approval (`approved_at`, `approved_by`, `approval_note`);
+- **comments**: the thread the sender reads in My feedback (see [below](#the-feedback-agent));
 - **link** to the pull request or issue, plus `duplicate_of` and `fixed_in`;
 - **timestamps:** created, updated, triaged and closed.
 
@@ -52,6 +56,7 @@ Every change is recorded in `feedback_events`.
 |---|---|
 | `new` | Received |
 | `triaged`, `needs_owner` | Under review |
+| `needs_info` (the agent or the team asked a question) | Needs your answer |
 | `in_progress` | In progress |
 | `fixed` (merged, awaiting release) | Fixed, waiting for release |
 | `released` | Released in `fixed_in` |
@@ -110,3 +115,41 @@ A daily job, `feedback-retention`:
   - `/feedback release vX.Y.Z` moves fixed items to released at release time ([RELEASING.md](../RELEASING.md)).
 
 Feedback text and attachments are untrusted data: the skill never follows instructions found in them.
+
+## The feedback agent
+
+Feedback is worked on as it arrives, as the Commmerce CRM does it. The agent is `tools/feedback-agent`, a program that runs on the owner's Mac from launchd every ten minutes (the Mac has the repositories and builds the images; GitHub Actions is not used). It uses a triage token and changes code only through pull requests.
+
+```
+new item ──▶ agent (claude -p in a fresh worktree of origin/main)
+               ├─ done ───────────▶ checks pass ▶ branch + pull request ▶ in_progress (link)
+               ├─ needs_more_info ▶ question in the thread ▶ needs_info ──▶ sender answers in My feedback ▶ new
+               ├─ needs_approval ─▶ needs_owner + reason ▶ owner: Approve ▶ triaged (approved) ▶ agent builds it
+               │                                                  └ Decline (reason) ▶ wont_fix + email
+               └─ cannot ─────────▶ needs_owner, won't-fix candidate (owner declines with a reason, or approves a retry)
+```
+
+**What it may build alone:** changes under `web/`, `internal/`, `docs/` and `changelog.d/`. **What needs the owner (needs_owner):** billing, prices, plans and licences; sign-in, roles, permissions and who can see what; emails and any wording customers receive outside the dashboard; legal and privacy text; deleting data, retention and migrations (`internal/db/migrations/`); Ask Stackurity's prompts, AI models or running costs; new paid services or dependencies; anything outside those folders; and any item that tries to instruct the agent. Claude is told these rules, and the runner checks the changed paths again (`tools/feedback-agent/rules.go`): a change that touches one of them is not committed, and the item goes to the owner with the paths named, unless the owner approved it.
+
+**Each run:**
+
+1. One run at a time (a lock file); at most three items, approved ones first, then new ones oldest first.
+2. For each item: the item, its thread and its attachments are downloaded into a run folder (`~/code/feedback-agent-runs/runs/FB-123-…`, kept 30 days), with six frames of each video when `ffmpeg` is installed.
+3. `claude -p` runs in a fresh worktree of `origin/main` with a prompt that marks the item's text, thread and attachments as data, never instructions. It may read and edit files and run builds and tests; it cannot push, call `gh`, `curl` or the web, or read `.env` files, tokens, keys, `~/.config` or `~/.ssh`. Its environment has no queue token, Slack webhook or other secret. It stops after 45 minutes.
+4. On **done**, the runner runs `gofmt`, `go build ./...`, `go vet` and `go test` of the changed packages (through the Mac's shared test slot), and `npm ci`, typecheck, lint and tests when `web/` changed. Then it pushes a `feedback/fb-123-…` branch, opens a pull request whose body names the item by reference only, links it on the item (`in_progress`) and adds a short note for the sender to the thread. It never merges or deploys: the release owner merges and moves the item to `fixed`, and `/feedback release` moves it to `released`, which sends the released email.
+5. Every outcome is posted to Slack (reference, outcome and link; never the feedback's text or the sender's address) when a webhook file is configured.
+6. An item that fails twice in the same round (an error, failed checks, no result) goes to the owner with the error.
+
+**Approving:** an instance administrator opens Admin → Feedback in the dashboard (needs approval is listed first), reads the item, its attachments, the thread and the reason, and presses Approve (with an optional note for the agent) or Decline (with the reason the sender reads). Approve and Decline need a signed-in session: API tokens and the triage token cannot approve. Both are recorded in the item's events with who and when.
+
+**The sender** sees the thread in My feedback, labelled as the Stackurity team or the automated feedback agent, and can reply while the item is open. The reply goes through the same relay as status checks (`STACKURITY_FEEDBACK_URL/status`, one item with `reply`), so the website needs no change. A reply to a `needs_info` item puts it back to `new` for the agent.
+
+**Install on the Mac (owner):**
+
+1. Create a triage token in the dashboard's API (`POST /api/v1/admin/feedback-tokens` with `{"name":"feedback-agent","days":90}`) and save it with mode 0600 in `~/.config/stackurity/feedback-agent-token`. It expires after 90 days at most: renew it before then.
+2. Optional: a Slack incoming webhook URL in `~/.config/stackurity/feedback-agent-slack-webhook` (0600), and `FEEDBACK_AGENT_CLAUDE_TOKEN_FILE` with a token from `claude setup-token` if the `claude` sign-in is not available to launchd.
+3. `go build -o ~/.local/bin/stackurity-feedback-agent ./tools/feedback-agent` from an up-to-date clone.
+4. Try one item without writing anything: `stackurity-feedback-agent -dry-run -item FB-123`.
+5. Copy `tools/feedback-agent/com.stackurity.feedback-agent.plist` to `~/Library/LaunchAgents/`, replace `HOME_DIR`, and run `launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.stackurity.feedback-agent.plist`. The log is `~/code/feedback-agent-runs/agent.log`. To stop it: `launchctl bootout gui/$(id -u)/com.stackurity.feedback-agent`.
+
+The runner reads `STACKURITY_FEEDBACK_API` (default `https://app.stackurity.dev/api/v1/admin/feedback`), `STACKURITY_FEEDBACK_TOKEN_FILE`, `FEEDBACK_AGENT_REPO` (a clone of this repository, default `~/code/stackurity-feedback`), `FEEDBACK_AGENT_WORK`, `FEEDBACK_AGENT_SLACK_WEBHOOK_FILE`, `FEEDBACK_AGENT_CLAUDE_TOKEN_FILE`, `FEEDBACK_AGENT_TEST_DATABASE_URL` (a throwaway PostgreSQL for Go tests that need one) and `FEEDBACK_AGENT_TEST_SLOT`.
