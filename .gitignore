@@ -21,3 +21,6 @@ ee-overlay.json
 # A Homebrew global npm directory in the macOS collector fixture.
 !internal/collect/darwin/testdata/mac/opt/homebrew/lib/node_modules/
 stackurity-teams-app.zip
+
+# TypeScript incremental build state
+*.tsbuildinfo
