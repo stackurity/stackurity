@@ -8081,14 +8081,16 @@ a.cov-chip:hover {
   .global-search form {
     display: none;
   }
+  /* Over the whole top bar (the nearest positioned ancestor: .topbar-search
+     and .global-search are static here). */
+  .topbar-search {
+    position: static;
+  }
   .global-search.expanded form {
     display: flex;
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
+    position: absolute;
+    inset: 0;
     z-index: 41;
-    height: 52px;
     padding: 0 var(--s2) 0 var(--s3);
     gap: var(--s2);
     background: var(--surface);
