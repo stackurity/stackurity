@@ -1,4 +1,5 @@
 import { api, type GitLabConnection, type GitLabStatus } from "../../api";
+import { startGitLab } from "../../integrationStart";
 import { useAction } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { confirmAction } from "../../components/ConfirmDialog";
@@ -9,11 +10,8 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
  * and the connected GitLab groups under Integrations.
  */
 
-/** Sends the browser to GitLab's consent page for an authorisation Stackurity started. */
-async function goToGitLab(path: string, body: object): Promise<void> {
-  const r = await api.post<{ url: string }>(path, { return_to: "/integrations", ...body });
-  if (r?.url) window.location.assign(r.url);
-}
+/** Sends the browser to GitLab's consent page for an authorisation Stackurity started (integrationStart.ts). */
+const goToGitLab = (path: string, body: Record<string, unknown>) => startGitLab(path, body);
 
 /** Starts Connect GitLab. */
 export function ConnectGitLabButton({ className = "btn btn-sm btn-primary" }: { className?: string }) {

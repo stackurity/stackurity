@@ -2853,12 +2853,6 @@ export interface JiraProjectMeta {
   priorities: string[];
 }
 
-/** Starts Connect Jira (or reconnects `connectionId`) and goes to Atlassian's consent page. */
-export async function startJiraConnect(returnTo: string, connectionId = 0): Promise<void> {
-  const r = await api.post<{ url: string }>("/integrations/jira/install", { return_to: returnTo, connection_id: connectionId });
-  window.location.assign(r.url);
-}
-
 /** POST /integrations/slack/oauth */
 /** GET /integrations/gitlab: Connect GitLab's connected groups. */
 export interface GitLabConnection {

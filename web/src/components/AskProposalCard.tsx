@@ -13,6 +13,8 @@ import {
   type AskProposal,
 } from "../askProposal";
 import { Badge } from "./Badge";
+import { AskHandoffCard } from "./AskHandoffCard";
+import { handoffArgs } from "../askHandoff";
 
 /**
  * A change Ask Stackurity proposed, under its answer: what will change, on
@@ -22,6 +24,26 @@ import { Badge } from "./Badge";
  * proposed, applied, dismissed, expired, failed or undone.
  */
 export function AskProposalCard({
+  conv,
+  proposal,
+  onChange,
+  onNavigate,
+  onLeave,
+}: {
+  conv: number;
+  proposal: AskProposal;
+  onChange?: (p: AskProposal) => void;
+  onNavigate?: () => void;
+  /** A hand-off is about to leave for another service's page. */
+  onLeave?: () => void;
+}) {
+  const handoff = handoffArgs(proposal);
+  if (handoff)
+    return <AskHandoffCard conv={conv} proposal={proposal} args={handoff} onChange={(p) => onChange?.(p)} onNavigate={onNavigate} onLeave={onLeave} />;
+  return <ChangeCard conv={conv} proposal={proposal} onChange={onChange} onNavigate={onNavigate} />;
+}
+
+function ChangeCard({
   conv,
   proposal,
   onChange,

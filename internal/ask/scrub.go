@@ -50,6 +50,14 @@ var secretREs = []*regexp.Regexp{
 	regexp.MustCompile(`\b(gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|glpat-[A-Za-z0-9_-]{20,}|xox[abeprs]-[A-Za-z0-9-]{10,}|sk-ant-[A-Za-z0-9_-]{16,}|sk-[A-Za-z0-9_-]{32,}|(AKIA|ASIA)[0-9A-Z]{16}|AIza[0-9A-Za-z_-]{35})`),
 	// Stackurity's own secrets (auth.NewToken: kind, "_", lower-case base32).
 	regexp.MustCompile(`\b(stk[a-z]{0,3}|sess|inv|mfa|pwr|enr|slk)_[a-z2-7]{20,}`),
+	// Tokens of the services Ask hands connections off to (handoff.go):
+	// DigitalOcean, Atlassian API tokens.
+	regexp.MustCompile(`\b(do[opr]_v1_[a-f0-9]{40,}|ATATT[A-Za-z0-9_=-]{20,})`),
+	// Webhook addresses, which are credentials: Slack, Teams and Power
+	// Automate workflows, Discord, and any address signed with sig=.
+	regexp.MustCompile(`https://(hooks\.slack\.com/(services|workflows|triggers)/|[A-Za-z0-9-]+\.webhook\.office\.com/|` +
+		`[A-Za-z0-9.-]+\.logic\.azure\.com(:[0-9]+)?/workflows/|(discord|discordapp)\.com/api/webhooks/)[^\s"'<>]+`),
+	regexp.MustCompile(`https?://[^\s"'<>]*[?&](sig|signature)=[^\s"'<>]+`),
 }
 
 // secretValueRE is a value given to a key that names a credential
@@ -69,6 +77,19 @@ func redactSecrets(s string) string {
 	}
 	return secretValueRE.ReplaceAllString(s, "${1}${2}"+secretRemoved)
 }
+
+// RedactUserText removes what looks like a secret (secretREs and a
+// value given to a key named like a credential) from a person's own
+// message, before it is stored, titled or sent to the model; removed says
+// whether there was one. Ask never handles secrets: the panel then warns
+// the person, and the model is told to point them to the setup page.
+func RedactUserText(s string) (out string, removed bool) {
+	out = redactSecrets(s)
+	return out, out != s
+}
+
+// LooksLikeSecret reports whether s has text shaped like a secret.
+func LooksLikeSecret(s string) bool { return redactSecrets(s) != s }
 
 var emailRE = regexp.MustCompile(`[A-Za-z0-9._%+'-]+@[A-Za-z0-9-]+(\.[A-Za-z0-9-]+)*\.[A-Za-z]{2,}`)
 

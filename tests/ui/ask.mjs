@@ -9,12 +9,22 @@
 //     it (the card says Applied), Undo reverses it, Dismiss leaves it
 //     undone, a proposal nobody asked for says so, and History keeps the
 //     cards' states;
+//   - connection hand-offs: a pasted secret is warned about while typing
+//     and removed before the model sees it; a webhook card links to its
+//     setup page; a server card creates the install code only on Apply and
+//     shows the command with Copy; the GitHub card's button sends the same
+//     request, to the same GitHub address, as the Integrations page's
+//     Install on GitHub (the redirect is intercepted, never followed), and
+//     the panel is open again, the card Started, back on the dashboard;
 //   - no console errors and no horizontal scroll.
 //
 //   node ask.mjs <base url> [email] [password]
 //
 // With ASK_SHOTS set to a directory, the proposal card's states are saved
-// there as propose-<state>-<width>.png.
+// there as propose-<state>-<width>.png, and the hand-off cards as
+// handoff-<kind>-<state>-<width>.png. The GitHub button check needs the
+// server's GitHub App set up (any test values); without it the card is a
+// link, which is checked instead.
 import { chromium } from "playwright";
 
 const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "UI-test-password-1."] = process.argv.slice(2);
@@ -25,6 +35,14 @@ const ok = (cond, what) => {
 };
 
 const shots = process.env.ASK_SHOTS || "";
+// The server takes 10 questions a minute per person, in windows aligned to
+// the minute: past 9 in this one, wait for the next.
+const asked = [];
+const pace = async (page) => {
+  const minute = Math.floor(Date.now() / 60000);
+  if (asked.filter((m) => m === minute).length >= 9) await page.waitForTimeout((minute + 1) * 60000 - Date.now() + 1500);
+  asked.push(Math.floor(Date.now() / 60000));
+};
 const browser = await chromium.launch();
 for (const width of [1280, 390]) {
   const tag = `${width}px`;
@@ -76,6 +94,7 @@ for (const width of [1280, 390]) {
   ok(!overlap.clash && !overlap.offscreen && !overlap.spill, `${tag} the header's name and buttons don't overlap ${JSON.stringify(overlap)}`);
   const q = panel.getByLabel("Your question");
   await q.fill("What should I fix first?");
+  await pace(page);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await log.getByText("Short answer:").waitFor();
   await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
@@ -83,6 +102,7 @@ for (const width of [1280, 390]) {
 
   // An answer still streaming survives moving to another page.
   await q.fill("slow answer please");
+  await pace(page);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await panel.getByRole("button", { name: "Stop" }).waitFor();
   if (width < 700) {
@@ -131,6 +151,7 @@ for (const width of [1280, 390]) {
   };
   const ask = async (question) => {
     await q.fill(question);
+    await pace(page);
     await panel.getByRole("button", { name: "Ask", exact: true }).click();
     await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
   };
@@ -192,6 +213,107 @@ for (const width of [1280, 390]) {
   await page.reload();
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   ok(!(await panel.isVisible()), `${tag} closed stays closed after a reload`);
+
+  // Hand-offs: Ask starts a connection; the person finishes it.
+  const hshot = async (state) => {
+    if (shots) await panel.screenshot({ path: `${shots}/handoff-${state}-${width}.png` });
+  };
+  await page.locator("button.topbar-ask").click();
+  await panel.waitFor();
+  await panel.getByRole("button", { name: "New" }).click();
+  // A pasted secret: warned while typing, removed before it is kept or
+  // sent. A webhook: a link to its setup page, nothing secret in it.
+  const secret = "https://hooks.slack.com/services/T0000000/B0000000/abcdefghijklmnopqrstuvwx";
+  await q.fill(`connect our webhook, the address is ${secret}`);
+  ok(await panel.locator(".ask-secret-warning").isVisible(), `${tag} typing a secret shows a warning`);
+  await hshot("secret-typing");
+  await ask(`connect our webhook, the address is ${secret}`);
+  await log.getByText(/removed what looked like a secret/).waitFor();
+  const said = await log.innerText();
+  ok(said.includes("(secret removed)") && !said.includes("hooks.slack.com"), `${tag} the question is shown without the secret`);
+  const wh = log.locator(".ask-handoff").last();
+  await wh.waitFor();
+  const whLink = wh.getByRole("link", { name: "Open Webhook setup" });
+  ok((await whLink.getAttribute("href")) === "/integrations/new/webhook", `${tag} the webhook card links to its setup page`);
+  ok((await log.locator(".ask-ran-note").last().innerText()).includes("Nothing is connected until you finish"), `${tag} the line under the answer says nothing is connected`);
+  await noScroll("webhook card");
+  await hshot("secret-removed-webhook");
+
+  // A server: Apply creates the install code, as the person; the card shows
+  // the command with Copy.
+  const label = `ui-web-${width}-${run}`;
+  const codes = async () => ((await (await api("GET", "/enrollments")).json()).items ?? []).filter((e) => e.label === label).length;
+  await ask(`add a new server called ${label}`);
+  const sv = log.locator(".ask-handoff").last();
+  await sv.waitFor();
+  ok((await sv.innerText()).includes(`label "${label}"`), `${tag} the server card says what will be created`);
+  ok((await sv.locator(".codeblock").count()) === 0 && (await codes()) === 0, `${tag} no install code before Apply`);
+  await noScroll("server card");
+  await hshot("server-proposed");
+  await sv.getByRole("button", { name: "Apply" }).click();
+  await sv.locator(".codeblock pre").first().waitFor();
+  const cmd = await sv.locator(".codeblock pre").first().innerText();
+  ok(cmd.startsWith("curl -fsSL ") && cmd.includes("STACKURITY_ENROLL_CODE="), `${tag} Apply shows the install command`);
+  ok(await sv.getByRole("button", { name: /^Copy/ }).isVisible(), `${tag} the command has Copy`);
+  ok((await sv.locator("textarea, input[type=text]").count()) === 0, `${tag} the command is copy-only`);
+  ok(await sv.locator(".badge", { hasText: "Code created" }).isVisible(), `${tag} the card says Code created`);
+  ok((await codes()) === 1, `${tag} Apply created one install code`);
+  await noScroll("server card with the command");
+  if (shots) await sv.screenshot({ path: `${shots}/handoff-server-command-${width}.png` });
+  await hshot("server-applied");
+
+  // GitHub: the card's button and the Integrations page's Install on GitHub
+  // make the same request and go to the same GitHub address. The redirect
+  // is intercepted, never followed.
+  const ghPosts = [];
+  const ghNav = [];
+  page.on("request", (r) => {
+    if (r.url().endsWith("/api/v1/integrations/github/install")) ghPosts.push(r.postData());
+  });
+  await page.route("https://github.com/**", (route) => {
+    ghNav.push(route.request().url());
+    return route.fulfill({ status: 200, contentType: "text/html", body: "<!doctype html><title>GitHub stub</title><p>Not followed.</p>" });
+  });
+  await ask("connect our github");
+  const gh = log.locator(".ask-handoff").last();
+  await gh.locator(".ask-proposal-actions .btn-primary:not([disabled])").waitFor();
+  await noScroll("GitHub card");
+  await hshot("github-proposed");
+  const ghButton = gh.getByRole("button", { name: "Install on GitHub" });
+  if ((await ghButton.count()) === 1) {
+    await Promise.all([page.waitForURL(/^https:\/\/github\.com\/apps\//), ghButton.click()]);
+    const cardPost = ghPosts.at(-1);
+    const cardURL = ghNav.at(-1);
+    // Back on the dashboard, as GitHub's callback would bring the person.
+    await page.goto(base + "/integrations");
+    await panel.waitFor();
+    const back = log.locator(".ask-handoff").last();
+    await back.locator(".badge", { hasText: "Started" }).waitFor();
+    ok(true, `${tag} back from GitHub: the panel is open and the card says Started`);
+    ok((await back.getByRole("link", { name: "Open the GitHub page" }).getAttribute("href")) === "/integrations", `${tag} Started links to Integrations`);
+    await noScroll("started card");
+    await hshot("github-started");
+    await panel.getByRole("button", { name: "Close" }).click();
+    await Promise.all([page.waitForURL(/^https:\/\/github\.com\/apps\//), page.locator("main").getByRole("button", { name: "Install on GitHub" }).click()]);
+    const pagePost = ghPosts.at(-1);
+    const pageURL = ghNav.at(-1);
+    const strip = (u) => {
+      const x = new URL(u);
+      x.searchParams.delete("state");
+      return x.toString();
+    };
+    ok(ghPosts.length === 2 && cardPost === pagePost, `${tag} the card and the Integrations page send the same request ${cardPost} / ${pagePost}`);
+    ok(
+      !!cardURL && strip(cardURL) === strip(pageURL) && !!new URL(cardURL).searchParams.get("state") && new URL(cardURL).searchParams.get("state") !== new URL(pageURL).searchParams.get("state"),
+      `${tag} both go to the same GitHub address, each with its own state (${cardURL ? strip(cardURL) : "none"})`,
+    );
+    await page.goto(base + "/integrations");
+    await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
+  } else {
+    const href = await gh.getByRole("link", { name: "Open Git repository setup" }).getAttribute("href");
+    ok(href === "/integrations/sources?add=git", `${tag} without a GitHub App the card links to the Git repository setup`);
+    console.log(`SKIP ${tag} GitHub button: the server has no GitHub App set up (STACKURITY_GITHUB_APP_*)`);
+  }
   ok(errors.length === 0, `${tag} no console errors ${errors.slice(0, 2).join(" | ")}`);
   await ctx.close();
 }

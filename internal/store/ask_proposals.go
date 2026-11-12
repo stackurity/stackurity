@@ -39,8 +39,9 @@ type AskProposal struct {
 	// Unrequested: the person's question had no words asking for a change
 	// (ask.AskedForChange); the card says so.
 	Unrequested bool `json:"unrequested"`
-	// Status: proposed, applied, dismissed, expired, failed, undone (and,
-	// while a request runs, applying or undoing).
+	// Status: proposed, applied, dismissed, expired, failed, undone,
+	// started (a hand-off whose flow the person started; migration 0106)
+	// (and, while a request runs, applying or undoing).
 	Status    string          `json:"status"`
 	Changed   bool            `json:"changed"`
 	Result    json.RawMessage `json:"result,omitempty"`
@@ -219,6 +220,25 @@ func (s *Store) FinishAskProposal(ctx context.Context, id int64, applied bool, r
 func (s *Store) DismissAskProposal(ctx context.Context, userID, convID, id int64) (*AskProposal, error) {
 	p, err := scanAskProposal(s.Pool.QueryRow(ctx, `UPDATE ask_proposals SET status = 'dismissed', decided_at = now()
 		WHERE id = $1 AND conversation_id = $2 AND user_id = $3 AND status = 'proposed' RETURNING `+askProposalCols, id, convID, userID))
+	if !errors.Is(err, ErrNotFound) {
+		return p, err
+	}
+	cur, err := s.GetAskProposal(ctx, userID, convID, id)
+	if err != nil {
+		return nil, err
+	}
+	return nil, &AskProposalStateError{Proposal: cur}
+}
+
+// StartAskProposal records that the person clicked a hand-off's button or
+// link (tool "connect", migration 0106): the connection goes on at the
+// service's page, so the proposal moves to started, once, while it is
+// open. A server hand-off is applied instead (ClaimAskProposal), never
+// started.
+func (s *Store) StartAskProposal(ctx context.Context, userID, convID, id int64) (*AskProposal, error) {
+	p, err := scanAskProposal(s.Pool.QueryRow(ctx, `UPDATE ask_proposals SET status = 'started', decided_at = now()
+		WHERE id = $1 AND conversation_id = $2 AND user_id = $3 AND status = 'proposed' AND expires_at > now()
+		AND tool = 'connect' AND args->>'kind' <> 'server' RETURNING `+askProposalCols, id, convID, userID))
 	if !errors.Is(err, ErrNotFound) {
 		return p, err
 	}

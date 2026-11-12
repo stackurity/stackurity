@@ -5,15 +5,18 @@
 // tested in askProposal.test.ts; the card is components/AskProposalCard.tsx.
 
 import type { Tone } from "./components/Badge";
+import { handoffArgs, handoffChangedLine } from "./askHandoff.ts";
 
-export type ProposalStatus = "proposed" | "applying" | "applied" | "dismissed" | "expired" | "failed" | "undoing" | "undone";
+/** started: a connection hand-off whose flow the person started (askHandoff.ts). */
+export type ProposalStatus = "proposed" | "applying" | "applied" | "dismissed" | "expired" | "failed" | "undoing" | "undone" | "started";
 
 export interface AskProposal {
   id: number;
   conversation_id: number;
   /** The seq of the person's question this proposal answered. */
   question_seq: number;
-  tool: "assign" | "snooze" | "ignore" | "check_again" | "add_assets_to_project" | "rename_project";
+  /** connect: a connection Ask hands off (askHandoff.ts, components/AskHandoffCard.tsx). */
+  tool: "assign" | "snooze" | "ignore" | "check_again" | "add_assets_to_project" | "rename_project" | "connect";
   args: Record<string, unknown>;
   /** One sentence: what will change. */
   summary: string;
@@ -54,6 +57,7 @@ const TOOL_TITLE: Record<AskProposal["tool"], string> = {
   check_again: "Check again",
   add_assets_to_project: "Add assets to a project",
   rename_project: "Rename a project",
+  connect: "Connect",
 };
 
 export function proposalTitle(p: Pick<AskProposal, "tool">): string {
@@ -79,6 +83,8 @@ export function proposalBadge(status: ProposalStatus): { label: string; tone: To
       return { label: "Undoing", tone: "info" };
     case "undone":
       return { label: "Undone", tone: "muted" };
+    case "started":
+      return { label: "Started", tone: "info" };
   }
 }
 
@@ -115,11 +121,15 @@ export function proposalStatusLine(p: AskProposal): string {
       return "Undoing…";
     case "undone":
       return `Undone at ${clock(p.undone_at)}.`;
+    case "started":
+      return `Started at ${clock(p.decided_at)}.`;
   }
 }
 
 /** The line under an answer about what Ask changed (it never changes anything itself). */
-export function changedLine(p: Pick<AskProposal, "status"> | undefined): string {
+export function changedLine(p: Pick<AskProposal, "status" | "tool" | "args"> | undefined): string {
+  const h = p ? handoffArgs(p) : null;
+  if (p && h) return handoffChangedLine(p, h);
   if (!p) return "Changed nothing: Ask can only read your Stackurity data. Any change is yours to make, on the linked pages.";
   if (p.status === "proposed" || p.status === "applying") return "Nothing changes until you click Apply.";
   if (p.status === "applied" || p.status === "undoing" || p.status === "undone") return "Ask changed nothing itself: you applied the change above.";
@@ -161,6 +171,7 @@ export function proposalTargets(p: Pick<AskProposal, "tool" | "details">): { ite
 
 /** The activity log, filtered to what a proposal's tool changes. */
 export function activityLink(p: Pick<AskProposal, "tool">): string {
+  if (p.tool === "connect") return "/audit";
   const type = p.tool === "rename_project" || p.tool === "add_assets_to_project" ? "project" : p.tool === "check_again" ? "" : "finding";
   return type ? `/audit?object_type=${type}` : "/audit";
 }

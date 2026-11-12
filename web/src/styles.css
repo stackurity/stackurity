@@ -7189,6 +7189,37 @@ a.cov-chip:hover {
   background: var(--surface-2);
   border-color: var(--border);
 }
+/* A connection Ask handed off (AskHandoffCard): the install command fits the panel. */
+.ask-handoff-command {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ask-handoff-command .codeblock,
+.ask-handoff-command .install-command {
+  min-width: 0;
+  max-width: 100%;
+}
+.ask-handoff-command .install-command .codeblock pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-right: 12px;
+}
+/* In the narrow panel, Show code and Copy go under the command, not over it. */
+.ask-handoff-command .codeblock-actions {
+  position: static;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.ask-secret-warning {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
 .ask-form {
   border-top: 1px solid var(--border);
   padding: 12px 16px;
