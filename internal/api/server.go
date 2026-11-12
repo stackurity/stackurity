@@ -620,6 +620,7 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requireWritable, s.limitAddress("gitlab-oauth", limitGitLabOAuth, "too many attempts; wait a minute")).Post("/integrations/gitlab/connections", s.connectGitLabGroup)
 				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/authorize", s.authorizeGitLabConnection)
 				r.With(s.requireWritable).Post("/integrations/gitlab/connections/{id}/sync", s.syncGitLabConnection)
+				r.Patch("/integrations/gitlab/connections/{id}", s.updateGitLabConnection)
 				r.Delete("/integrations/gitlab/connections/{id}", s.disconnectGitLab)
 				r.With(s.requireWritable).Post("/integrations/pagerduty/connect", s.startPagerDutyConnect)
 				r.With(s.requireWritable).Post("/integrations/pagerduty/oauth", s.finishPagerDutyOAuth)

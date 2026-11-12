@@ -287,6 +287,10 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Pick    string          `json:"pick"`
 		GroupID json.RawMessage `json:"group_id"`
+		// ProjectID is the Stackurity project the group's assets are added
+		// to; 0 for none. Left out: the project chosen in the switcher, if
+		// any (connecting again keeps what the connection has otherwise).
+		ProjectID *int64 `json:"project_id"`
 	}
 	if err := decode(r, &req); err != nil {
 		s.fail(w, r, err)
@@ -294,6 +298,13 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := r.Context()
 	p := principal(r)
+	project := req.ProjectID
+	if project == nil && p.Project > 0 {
+		project = &p.Project
+	}
+	if project != nil && !s.gitlabProjectOK(w, r, *project) {
+		return
+	}
 	userTok, returnTo, err := s.Store.TakeGitLabPick(ctx, s.SecretBox, req.Pick, userID(p))
 	if err != nil {
 		if errors.Is(err, store.ErrGitLabStateInvalid) {
@@ -337,7 +348,7 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 		writeError(w, 502, "gitlab_refused", "GitLab did not answer; start Connect GitLab again")
 		return
 	}
-	conn, err := s.Store.BindGitLabGroup(ctx, g.ID, g.FullPath, g.Name, userID(p))
+	conn, err := s.Store.BindGitLabGroup(ctx, g.ID, g.FullPath, g.Name, userID(p), project)
 	if errors.Is(err, store.ErrGitLabGroupTaken) {
 		record("connected to another organisation")
 		writeError(w, 409, "gitlab_group_taken", err.Error())
@@ -426,6 +437,70 @@ func (s *Server) connectGitLabGroup(w http.ResponseWriter, r *http.Request) {
 		map[string]string{"group": g.FullPath, "credential": tokenKind, "webhook": webhook})
 	conn, _ = s.Store.GetGitLabConnection(ctx, conn.ID)
 	writeJSON(w, 201, map[string]any{"connection": conn, "needs_readonly": tokenKind == "none", "notes": notes, "return_to": returnTo})
+}
+
+// gitlabProjectOK checks a Stackurity project chosen for a connection: 0
+// (none) or an active project. On a refusal it has written the error.
+func (s *Server) gitlabProjectOK(w http.ResponseWriter, r *http.Request, project int64) bool {
+	if project < 0 {
+		s.fail(w, r, badRequest("project_id must be a project id, or 0 for none"))
+		return false
+	}
+	if project == 0 {
+		return true
+	}
+	ok, err := s.Store.ActiveProject(r.Context(), project)
+	if err != nil {
+		s.fail(w, r, err)
+		return false
+	}
+	if !ok {
+		writeError(w, 404, "not_found", "no such project")
+	}
+	return ok
+}
+
+// updateGitLabConnection chooses the Stackurity project a connected
+// group's assets are added to. The assets already scanned that are in no
+// project are added to it as well.
+func (s *Server) updateGitLabConnection(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	var req struct {
+		ProjectID *int64 `json:"project_id"`
+	}
+	if err := decode(r, &req); err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if req.ProjectID == nil {
+		s.fail(w, r, badRequest("project_id is required (0 for none)"))
+		return
+	}
+	if !s.gitlabProjectOK(w, r, *req.ProjectID) {
+		return
+	}
+	conn, err := s.Store.GetGitLabConnection(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	filed, err := s.Store.SetGitLabProject(r.Context(), id, *req.ProjectID)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "gitlab.project", "gitlab_group", strconv.FormatInt(conn.GroupID, 10),
+		map[string]any{"group": conn.GroupPath, "project_id": *req.ProjectID, "assets_added": filed})
+	conn, err = s.Store.GetGitLabConnection(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"connection": conn, "assets_added": filed})
 }
 
 // gitlabReadOnly stores the read-only OAuth credential of a connection

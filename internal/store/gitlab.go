@@ -201,6 +201,9 @@ type GitLabConnection struct {
 	LastSync          *time.Time `json:"last_sync"`
 	// Projects scanned through it (not removed).
 	Projects int64 `json:"projects"`
+	// ProjectID is the Stackurity project its assets are added to (nil:
+	// none, they stay in no project).
+	ProjectID *int64 `json:"project_id"`
 	// TokenID and HookID are GitLab's ids of what Stackurity created.
 	TokenID *int64 `json:"-"`
 	HookID  *int64 `json:"-"`
@@ -208,14 +211,19 @@ type GitLabConnection struct {
 
 const glConnCols = `c.id, c.group_id, c.group_path, c.group_name, c.credential_kind, c.credential_expires, c.webhook, c.status, c.note,
 	c.connected_by, c.connected_at, c.updated_at, c.last_sync,
-	(SELECT count(*) FROM gitlab_projects p WHERE p.connection_id = c.id AND p.removed_at IS NULL), c.token_id, c.hook_id`
+	(SELECT count(*) FROM gitlab_projects p WHERE p.connection_id = c.id AND p.removed_at IS NULL), c.project_id, c.token_id, c.hook_id`
 
 // BindGitLabGroup records a group as connected to the context's workspace;
 // a group already connected here is returned as it is (connecting again
 // renews its credential). A group connected to another organisation, or
 // one above or below a group connected anywhere, is refused: a project is
 // scanned for one organisation.
-func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name string, by int64) (*GitLabConnection, error) {
+//
+// project is the Stackurity project the group's assets are added to: nil
+// keeps what a connection made before has (none for a new one), 0 is none.
+// A project chosen when connecting again also files the assets already
+// scanned that are in no project.
+func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name string, by int64, project *int64) (*GitLabConnection, error) {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return nil, errNoWorkspace
@@ -236,6 +244,9 @@ func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name s
 		// connection.
 		err := tx.QueryRow(ctx, `UPDATE gitlab_connections SET group_path = $2, group_name = $3, updated_at = now() WHERE group_id = $1 RETURNING id`,
 			groupID, clip(path, 255), clip(name, 255)).Scan(&id)
+		if err == nil && project != nil {
+			_, err = setGitLabProject(ctx, tx, id, *project)
+		}
 		if err == nil || !errors.Is(err, pgx.ErrNoRows) {
 			return err
 		}
@@ -254,8 +265,12 @@ func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name s
 		case !errors.Is(err, pgx.ErrNoRows):
 			return err
 		}
-		return tx.QueryRow(ctx, `INSERT INTO gitlab_connections (group_id, group_path, group_name, connected_by) VALUES ($1, $2, $3, $4) RETURNING id`,
-			groupID, clip(path, 255), clip(name, 255), installer).Scan(&id)
+		var pid *int64
+		if project != nil && *project > 0 {
+			pid = project
+		}
+		return tx.QueryRow(ctx, `INSERT INTO gitlab_connections (group_id, group_path, group_name, connected_by, project_id) VALUES ($1, $2, $3, $4, $5) RETURNING id`,
+			groupID, clip(path, 255), clip(name, 255), installer, pid).Scan(&id)
 	})
 	if isUniqueViolation(err) {
 		return nil, ErrGitLabGroupTaken
@@ -264,6 +279,63 @@ func (s *Store) BindGitLabGroup(ctx context.Context, groupID int64, path, name s
 		return nil, err
 	}
 	return s.GetGitLabConnection(ctx, id)
+}
+
+// SetGitLabProject chooses the Stackurity project a connection's assets
+// are added to (0: none). The assets its projects already have that are in
+// no active project are added to it now; it returns how many. Assets
+// already in a project stay where they are.
+func (s *Store) SetGitLabProject(ctx context.Context, id, project int64) (int64, error) {
+	var n int64
+	err := pgx.BeginTxFunc(tenant.WithoutProject(ctx), s.Pool, pgx.TxOptions{}, func(tx pgx.Tx) error {
+		var err error
+		n, err = setGitLabProject(tenant.WithoutProject(ctx), tx, id, project)
+		return notFound(err)
+	})
+	return n, err
+}
+
+func setGitLabProject(ctx context.Context, tx pgx.Tx, id, project int64) (int64, error) {
+	var pid *int64
+	if project > 0 {
+		var ok bool
+		if err := tx.QueryRow(ctx, `SELECT EXISTS (SELECT 1 FROM projects WHERE id = $1 AND archived_at IS NULL)`, project).Scan(&ok); err != nil {
+			return 0, err
+		}
+		if !ok {
+			return 0, fmt.Errorf("%w: no such project", ErrNotFound)
+		}
+		pid = &project
+	}
+	if err := tx.QueryRow(ctx, `UPDATE gitlab_connections SET project_id = $2, updated_at = now() WHERE id = $1 RETURNING id`, id, pid).Scan(&id); err != nil {
+		return 0, err
+	}
+	if pid == nil {
+		return 0, nil
+	}
+	tag, err := tx.Exec(ctx, `INSERT INTO project_assets (project_id, asset_id)
+		SELECT DISTINCT $2::bigint, a.id FROM gitlab_projects gp
+		JOIN integrations i ON i.id = gp.integration_id
+		JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL
+		WHERE gp.connection_id = $1
+		  AND NOT EXISTS (SELECT 1 FROM project_assets pa JOIN projects p ON p.id = pa.project_id
+		    WHERE pa.asset_id = a.id AND p.archived_at IS NULL)
+		ON CONFLICT DO NOTHING`, id, *pid)
+	return tag.RowsAffected(), err
+}
+
+// FileGitLabAsset adds the asset a Connect GitLab integration scanned to
+// its connection's Stackurity project, if it has one. The runner calls it
+// when the integration's asset is new to it (its first scan), so an asset
+// someone took out of the project later is not put back.
+func (s *Store) FileGitLabAsset(ctx context.Context, integrationID, assetID int64) error {
+	_, err := s.Pool.Exec(tenant.WithoutProject(ctx), `INSERT INTO project_assets (project_id, asset_id)
+		SELECT c.project_id, $2 FROM gitlab_projects gp
+		JOIN gitlab_connections c ON c.id = gp.connection_id
+		JOIN projects p ON p.id = c.project_id AND p.archived_at IS NULL
+		WHERE gp.integration_id = $1
+		ON CONFLICT DO NOTHING`, integrationID, assetID)
+	return err
 }
 
 // GetGitLabConnection reads a connection of the context's workspace.

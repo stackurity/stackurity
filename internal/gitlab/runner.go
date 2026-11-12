@@ -124,6 +124,12 @@ func (r *Runner) Run(ctx context.Context, in *store.Integration) error {
 		if res != nil {
 			assetID = res.AssetID
 		}
+		// The integration's first asset (or a new one) goes into the
+		// Stackurity project chosen for the group; later scans leave
+		// project membership to people.
+		if err == nil && assetID > 0 && (res.NewAsset || in.AssetID == nil || *in.AssetID != assetID) {
+			err = r.Store.FileGitLabAsset(ctx, in.ID, assetID)
+		}
 	}
 	if err != nil {
 		_ = r.Store.IntegrationResult(context.WithoutCancel(ctx), in.ID, 0, err)

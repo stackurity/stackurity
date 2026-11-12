@@ -3226,7 +3226,47 @@ h6.md-h {
 
 /* Send feedback (components/Feedback.tsx) */
 .topbar-feedback {
-  gap: 4px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+}
+/* The occasional "How is Stackurity working for you?" card (components/FeedbackNudge.tsx). */
+.feedback-nudge {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 30;
+  width: min(340px, calc(100vw - 32px));
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-lg);
+}
+.feedback-nudge-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-weight: 600;
+}
+.feedback-nudge-text {
+  margin: 0 0 var(--s3);
+  color: var(--text-2);
+  font-size: 13px;
+}
+.feedback-nudge-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+@media (max-width: 720px) {
+  .feedback-nudge {
+    right: 16px;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+  }
 }
 .error-support {
   margin-top: 4px;

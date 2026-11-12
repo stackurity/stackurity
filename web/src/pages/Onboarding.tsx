@@ -714,7 +714,11 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
   const platformEmail = kind === "email" && Boolean(opts?.platform_email.enabled) && !ownSmtp;
   const choice = eventsFor(now, summary);
   const needsSecret = (kind === "slack" && !useApp) || (kind === "email" && !platformEmail && Boolean(password));
-  const routeName = `${project.name}: ${routeNameFor(now, summary)}`;
+  // The first rule is the organisation's, not the first project's: assets
+  // added later (a GitLab group, a server outside this project) are in no
+  // project or in another one, and a rule limited to this project would
+  // never tell anyone about them.
+  const routeName = `All assets: ${routeNameFor(now, summary)}`;
 
   const routeFields = () =>
     choice && {
@@ -731,7 +735,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
   const rememberForSlack = () => {
     const f = routeFields();
     if (!f) return;
-    const pending: SlackPendingRoute = { project_id: project.id, route_name: routeName, ...f };
+    const pending: SlackPendingRoute = { route_name: routeName, ...f };
     try {
       window.sessionStorage.setItem(SLACK_PENDING_KEY, JSON.stringify(pending));
     } catch {
@@ -764,7 +768,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
             : { host: host.trim(), port: Number(port) || 587, tls, from: from.trim(), to: [to.trim()], username: user.trim() || undefined };
         ch = await api.post<{ id: number }>("/channels", { kind, name: `${project.name} (${kind === "slack" ? "Slack" : "email"})`, config, secret_ref: ref });
       }
-      await api.post("/routes", { name: routeName, channel_id: ch.id, enabled: true, project_ids: [project.id], min_priority: "P1", ...f });
+      await api.post("/routes", { name: routeName, channel_id: ch.id, enabled: true, min_priority: "P1", ...f });
       return { channel: ch.id, text: doneText(now, summary, tz) };
     });
     if (r) setSaved(r);
@@ -785,7 +789,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
     return (
       <StepCard>
         <Notice kind="success">
-          Notifications are on for {project.name}. {saved.text}
+          Notifications are on for every asset, in any project or none. {saved.text}
         </Notice>
         {tested && <Notice kind={tested.startsWith("Test message") ? "success" : "warn"}>{tested}</Notice>}
         <ErrorBox error={act.error} title="Could not send a test" />
@@ -915,7 +919,7 @@ function NotifyStep({ project, onNext }: { project: Project; onNext: () => void 
             </p>
           )}
         </SettingRow>
-        <SettingRow title="What to send" description="Alerts as new issues appear, and a regular summary of what is open. Most teams start with urgent issues only.">
+        <SettingRow title="What to send" description="Alerts as new issues appear on any asset, and a regular summary of what is open. Issues already there when an asset is first checked are not sent one by one: one message lists them. Most teams start with urgent issues only.">
           <RouteQuestions
             idp="ob"
             now={now}

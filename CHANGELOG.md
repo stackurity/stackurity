@@ -6,6 +6,31 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.4
+
+### Added
+
+- **Ask Stackurity shows the command to run, read-more pages and more page links.** When an answer links a fix, the panel shows that fix's stored command under the answer, with a Copy button, where to run it and whether it needs a restart; Ask no longer writes commands itself. For the issues an answer links, a closed **Read more** list gives their osv.dev and NVD pages and stored advisory references on well-known advisory sites. Answers can also link to a fixed list of dashboard pages, such as Settings, Integrations, the Audit log, Leaked keys, Coverage, Projects and Help articles. See [AI assistants](docs/ai-assistants.md#ask-stackurity).
+
+### Changed
+
+- **Ask Stackurity's panel has tabs.** Chat, History and Feedback are tabs, and the one shown is underlined; **+ New chat** starts a conversation. When a project is chosen, a line under the tabs says answers cover that project only, with a link to use all projects.
+- **History is easier to scan.** Conversations are grouped under Today, Yesterday and Earlier, with up to two lines of the question, when it was last used, the project it was asked in, and the open conversation marked. Delete shows when you point at a row (always on touch screens).
+- **Feedback on Ask stays in the panel.** The Feedback tab and a thumbs-down open the form inside the panel, titled "Feedback on Ask", instead of a dialog over the page. It has a new kind, **An idea or a request**, and points to **Send feedback** in the account menu for anything else in Stackurity.
+- **Send feedback is easy to find.** A **Feedback** button now sits in the top bar next to Ask, and **Send feedback** is in the sidebar under Help (it was only in the account menu). The account menu and the phone's More sheet keep it too.
+- **Stackurity asks for feedback now and then.** A small card in the corner asks "How is Stackurity working for you?", with Send feedback, Not now and Don't ask again. It never shows on someone's first day or in their first few minutes of a visit, shows at most once a week, waits two weeks after they sent feedback, and stops for good on Don't ask again. It is remembered per person in that browser, and is off wherever feedback is turned off.
+
+### Fixed
+
+- **Alerts now cover assets in no project.** The alert rule made while setting up Stackurity was limited to the first project, so issues on assets added later outside it (for example repositories from a GitLab group, listed only under All projects) sent nothing to Slack or email. New setups make a rule for every asset, and Integrations warns when every rule is limited to a project, with how to add one for the whole organisation.
+- **Ask Stackurity ranks "what should I fix first" across every asset.** The fix list for a whole workspace was too long for Ask to read, so it narrowed to one server and gave that server's top fixes as if they were the workspace's. `action_plan` now takes a `limit` (the most urgent N actions across every asset), and Ask uses it for these questions, ranks by priority then known-exploited, and says which assets it left out when it looks at only some. When a project is chosen, the answer says so in its first sentence. "What Ask looked at" shows "Reading the fixes for every asset" for that read.
+- **Integration rules limited to platform incidents save again.** Ticking **platform** under **Incident kinds** on a Slack (or any other) integration made **Save changes** fail with "kinds may contain ...", because the server did not accept that kind. It now accepts every kind the dashboard offers, and a test keeps the two lists the same.
+- **GitLab groups go into the Stackurity project you choose.** Assets from Connect GitLab were added to no project, so people with project access never saw them and their findings showed only under "All projects". When you pick a GitLab group you now choose its project (the one selected at the top is the default), and each group can have its own. For a group connected before, choose its project under Integrations → GitLab: its assets that are in no project are added to it.
+
+### Upgrading
+
+- Migration `0105_gitlab_connection_project` adds the chosen project to `gitlab_connections` (one nullable column). Existing connections keep their assets where they are until a project is chosen.
+
 ## 0.20.3
 
 ### Added

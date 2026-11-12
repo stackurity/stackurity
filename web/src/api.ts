@@ -2876,6 +2876,8 @@ export interface GitLabConnection {
   updated_at: string;
   last_sync: string | null;
   projects: number;
+  /** The Stackurity project its assets are added to; null: none. */
+  project_id: number | null;
 }
 
 export interface GitLabStatus {
@@ -2948,7 +2950,8 @@ export interface GitHubSetupResult {
 /** Route choices saved before "Add to Slack" during onboarding (sessionStorage). */
 export const SLACK_PENDING_KEY = "stk-slack-pending";
 export interface SlackPendingRoute {
-  project_id: number;
+  /** Saved by older releases; ignored: the rule is the organisation's. */
+  project_id?: number;
   events: RouteEvent[];
   new_min_priority: Priority;
   escalation: boolean;
