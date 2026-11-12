@@ -1,3 +1,0 @@
-### Changed
-
-- **All issues grouped by asset now pages by asset.** Each asset has a heading showing how many issues it has, its five most urgent issues, and **Show all N**, which opens every issue of that asset. There are 20 assets per page. Before, the grouped list paged 50 issues at a time, so an asset with thousands of kernel CVEs filled hundreds of pages before the next asset appeared. The new `GET /findings/by-asset` takes the `GET /findings` filters and returns each asset with its count and its first `per_asset` findings ([API](docs/api.md#get-findingsby-asset)). `GET /findings?sort=asset` is unchanged.
