@@ -6,7 +6,13 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.1
+
 0.20.0 was tagged but never published: its server image failed the release's vulnerability gate (CVE-2026-105437 in git, below). This release includes everything that was in 0.20.0.
+
+### Security
+
+- **The server image ships git 2.56.1**, fixing CVE-2026-105437 (a heap buffer overflow in git, which Stackurity uses to clone repositories it scans). Alpine 3.24 has no fixed git yet, so the image takes it from Alpine edge until it does.
 
 ### Added
 
