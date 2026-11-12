@@ -4,7 +4,8 @@ import type { Feature, UserRole } from "../api";
 import { useAuth } from "../auth";
 import { PageHeader } from "../components/ui";
 import { ProBadge, ProNotice } from "../components/ProNotice";
-import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
+import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconPeople, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
+import { ProjectChatAppsCard } from "../components/ScopeNotifications";
 import { PoliciesTab } from "./Remediation";
 
 interface Entry {
@@ -28,6 +29,10 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/settings/vex", label: "VEX", icon: <IconDocument /> },
       { to: "/settings/automatic-fixes", label: "Automatic fixes", icon: <IconRemediation />, min: "security", feature: "remediation" },
     ],
+  },
+  {
+    title: "Projects",
+    entries: [{ to: "/settings/project-permissions", label: "Project permissions", icon: <IconPeople />, min: "security" }],
   },
   {
     title: "Plan and usage",
@@ -116,6 +121,24 @@ export function SettingsIndex() {
   const { search, hash } = useLocation();
   const first = GROUPS.flatMap((g) => g.entries).find(visible);
   return <Navigate replace to={{ pathname: first?.to ?? "/settings/risk-policy", search, hash }} />;
+}
+
+/**
+ * Settings, Project permissions: what each project's admins may set up on
+ * their own. An organisation-wide choice, so it lives here rather than on
+ * Integrations, which every project also shows.
+ */
+export function ProjectPermissionsPage() {
+  const { can } = useAuth();
+  return (
+    <>
+      <PageHeader
+        title="Project permissions"
+        sub="What each project's admins may set up for their project on their own. These apply to every project in the organisation."
+      />
+      <ProjectChatAppsCard admin={can("admin")} />
+    </>
+  );
 }
 
 /** Settings, Automatic fixes: the remediation policies (security role). */
