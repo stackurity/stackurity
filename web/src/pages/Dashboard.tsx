@@ -338,7 +338,7 @@ export function NeedsYouBlock({ rows, lastReport, loading }: { rows: NeedRow[]; 
   );
 }
 
-/** Coverage under Security posture: what was not checked, by who acts, and updates that are not vulnerabilities. */
+/** Coverage under Security posture: what was not checked, by who acts, and newer releases of installed packages, security or not. */
 function CoverageDetail({ unchecked }: { unchecked: ReturnType<typeof useUnchecked> }) {
   const b = uncheckedBanner(unchecked.data);
   // Updates available (not findings): a quiet pointer to that page.
@@ -372,7 +372,7 @@ function CoverageDetail({ unchecked }: { unchecked: ReturnType<typeof useUncheck
         ))}
       {behind > 0 && (
         <p className="small muted dash-updates">
-          <Link to="/components/updates">{plural(behind, "update")} available</Link> for installed packages (not vulnerabilities).
+          <Link to="/components/updates">{plural(behind, "update")} available</Link> for installed packages, whether or not they fix a known vulnerability. What to upgrade first for security is in <Link to="/fixes">Fixes</Link>.
         </p>
       )}
     </>
