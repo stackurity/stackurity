@@ -7200,6 +7200,68 @@ a.cov-chip:hover {
 .ask-ran-note {
   margin: 2px 0 0;
 }
+/* A change Ask proposed (AskProposalCard): the person applies it. */
+.ask-proposal {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ask-proposal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.ask-proposal-label {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ask-proposal-summary {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.ask-proposal-unasked {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.ask-proposal-targets,
+.ask-proposal-notes {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.ask-proposal-status {
+  margin: 0;
+  color: var(--text-2);
+}
+.ask-proposal-error {
+  margin: 6px 0 0;
+  color: var(--bad-fg);
+}
+.ask-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ask-proposal-applied {
+  border-color: var(--border);
+}
+.ask-proposal-dismissed,
+.ask-proposal-expired,
+.ask-proposal-undone {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
 .ask-form {
   border-top: 1px solid var(--border);
   padding: 12px 16px;

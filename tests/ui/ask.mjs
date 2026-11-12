@@ -10,9 +10,16 @@
 //     allowed dashboard pages are links;
 //   - Chat, History and Feedback are tabs, and Feedback on Ask is a form
 //     inside the panel;
+//   - a change Ask proposes shows as a card under the answer; Apply makes
+//     it (the card says Applied), Undo reverses it, Dismiss leaves it
+//     undone, a proposal nobody asked for says so, and History keeps the
+//     cards' states;
 //   - no console errors and no horizontal scroll.
 //
 //   node ask.mjs <base url> [email] [password]
+//
+// With ASK_SHOTS set to a directory, the proposal card's states are saved
+// there as propose-<state>-<width>.png.
 import { chromium } from "playwright";
 
 const [base = "http://127.0.0.1:8080", email = "ui@example.com", password = "UI-test-password-1."] = process.argv.slice(2);
@@ -22,6 +29,7 @@ const ok = (cond, what) => {
   if (!cond) failures.push(what);
 };
 
+const shots = process.env.ASK_SHOTS || "";
 const browser = await chromium.launch();
 for (const width of [1280, 390]) {
   const tag = `${width}px`;
@@ -35,6 +43,7 @@ for (const width of [1280, 390]) {
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   // From here on (the login page itself checks for a session first, a 401).
   const errors = [];
+  let rateLimited = 0; // questions refused by the per-minute limit, and asked again
   // The demo answer links issue #1, which the demo estate may not have: the
   // panel's look-up of it may 404, which is expected.
   page.on("console", (m) => m.type() === "error" && !/\/api\/v1\/(findings|fix-groups)\//.test(m.location().url ?? "") && errors.push(m.text()));
@@ -109,11 +118,11 @@ for (const width of [1280, 390]) {
   await q.fill(`linkfix:${fixId} linkissue:9002`);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await log.getByText("Links answer:").waitFor();
-  const card = log.locator(".ask-cmd").last();
-  await card.waitFor();
-  ok((await card.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
-  ok((await card.innerText()).includes("Run this on demo-web-1") && (await card.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
-  ok(await card.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
+  const cmdCard = log.locator(".ask-cmd").last();
+  await cmdCard.waitFor();
+  ok((await cmdCard.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
+  ok((await cmdCard.innerText()).includes("Run this on demo-web-1") && (await cmdCard.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
+  ok(await cmdCard.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
   const more = log.locator(".ask-readmore").last();
   await more.locator("summary").click();
   const hrefs = await more.locator("a[target=_blank]").evaluateAll((as) => as.map((a) => [a.href, a.rel]));
@@ -173,12 +182,94 @@ for (const width of [1280, 390]) {
 
   const w = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   ok(w <= 1, `${tag} no horizontal scroll (${w}px)`);
+
+  // Proposed changes: Ask proposes, only the click applies.
+  const set = await api("PUT", "/ask/settings", JSON.stringify({ propose_changes: true }));
+  ok(set.status() === 200, `${tag} "Ask may propose changes" turned on (${set.status()})`);
+  const run = Date.now() % 100000; // a rerun against the same database needs new names
+  const name = `UI proposals ${width} ${run}`;
+  const made = await api("POST", "/projects", JSON.stringify({ name }));
+  const project = (await made.json()).id;
+  ok(made.status() === 201 || made.status() === 200, `${tag} project created (${made.status()})`);
+  const projectName = async () => (await (await api("GET", `/projects/${project}`)).json()).project?.name;
+  const shot = async (state) => {
+    if (shots) await panel.screenshot({ path: `${shots}/propose-${state}-${width}.png` });
+  };
+  // Ask allows 10 questions a minute per person, and this file asks more than
+  // that at each width: when the server says to wait, wait and ask again.
+  const ask = async (question) => {
+    const limited = panel.getByText(/too many questions/i);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = await limited.count();
+      await q.fill(question);
+      await panel.getByRole("button", { name: "Ask", exact: true }).click();
+      await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
+      if ((await limited.count()) === before) return;
+      rateLimited++; // the browser logs the refused request as a console error
+      await page.waitForTimeout(61_000);
+    }
+    throw new Error(`still rate limited asking: ${question}`);
+  };
+  const noScroll = async (what) => {
+    const sw = await page.evaluate(() => {
+      const log = document.querySelector(".ask-log");
+      return Math.max(document.documentElement.scrollWidth - document.documentElement.clientWidth, log ? log.scrollWidth - log.clientWidth : 0);
+    });
+    ok(sw <= 1, `${tag} ${what}: no horizontal scroll (${sw}px)`);
+  };
+  await panel.getByRole("button", { name: "New chat" }).click();
+  await ask(`rename project ${project} to UI renamed ${width} ${run}`);
+  const card = log.locator(".ask-proposal").last();
+  await card.waitFor();
+  ok((await card.innerText()).includes(`Rename the project "${name}"`), `${tag} the card says what will change`);
+  ok((await card.getByText("Nothing changes until you click Apply.").count()) === 0, `${tag} the card does not repeat the line under the answer`);
+  ok((await log.locator(".ask-ran-note").last().innerText()).includes("Nothing changes until you click Apply."), `${tag} the line under the answer says so too`);
+  ok(!(await card.innerText()).includes("you didn't ask"), `${tag} a requested change has no "you didn't ask" note`);
+  ok((await projectName()) === name, `${tag} proposing changed nothing`);
+  await noScroll("proposed card");
+  await shot("proposed");
+  await card.getByRole("button", { name: "Apply" }).click();
+  await card.getByText(/^Applied at /).waitFor();
+  ok(await card.locator(".badge", { hasText: "Applied" }).isVisible(), `${tag} Apply: the card says Applied`);
+  ok((await card.getByRole("link", { name: "View what changed" }).getAttribute("href")) === `/projects/${project}`, `${tag} Applied links to the project`);
+  ok((await projectName()) === `UI renamed ${width} ${run}`, `${tag} Apply renamed the project`);
+  await noScroll("applied card");
+  await shot("applied");
+  await card.getByRole("button", { name: "Undo" }).click();
+  await card.locator(".badge", { hasText: "Undone" }).waitFor();
+  ok((await projectName()) === name, `${tag} Undo put the old name back`);
+  await shot("undone");
+
+  await ask(`rename project ${project} to UI dismissed ${width} ${run}`);
+  const second = log.locator(".ask-proposal").last();
+  await second.getByRole("button", { name: "Dismiss" }).click();
+  await second.locator(".badge", { hasText: "Dismissed" }).waitFor();
+  ok((await projectName()) === name, `${tag} Dismiss changed nothing`);
+  ok((await second.getByRole("button").count()) === 0, `${tag} a dismissed card has no buttons`);
+  await shot("dismissed");
+
+  await ask(`what is project ${project}`);
+  const third = log.locator(".ask-proposal").last();
+  await third.waitFor();
+  ok(await third.getByText("Ask suggested this; you didn't ask for a change.").isVisible(), `${tag} an unasked proposal says so`);
+  await noScroll("unasked card");
+  await shot("unasked");
+  await third.getByRole("button", { name: "Dismiss" }).click();
+  await third.locator(".badge", { hasText: "Dismissed" }).waitFor();
+
+  // History keeps the cards' states.
+  await panel.getByRole("tab", { name: /^History/ }).click();
+  await panel.locator(".ask-history-open").first().click();
+  await log.locator(".ask-proposal").first().waitFor();
+  const states = await log.locator(".ask-proposal .badge").allInnerTexts();
+  ok(JSON.stringify(states) === JSON.stringify(["Undone", "Dismissed", "Dismissed"]), `${tag} History keeps the card states ${JSON.stringify(states)}`);
   // Closed, it stays closed after a reload.
   await panel.getByRole("button", { name: "Close" }).click();
   await page.reload();
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   ok(!(await panel.isVisible()), `${tag} closed stays closed after a reload`);
-  ok(errors.length === 0, `${tag} no console errors ${errors.slice(0, 2).join(" | ")}`);
+  const unexpected = errors.filter((e, i) => !(/status of 429/.test(e) && errors.slice(0, i).filter((x) => /status of 429/.test(x)).length < rateLimited));
+  ok(unexpected.length === 0, `${tag} no console errors ${unexpected.slice(0, 2).join(" | ")}`);
   await ctx.close();
 }
 await browser.close();

@@ -447,6 +447,10 @@ var projectScopes = map[string]string{
 	"GET /api/v1/integrations/digitalocean/droplets":          "org",
 	"PUT /api/v1/integrations/digitalocean/token":             "org",
 	"DELETE /api/v1/integrations/digitalocean/token":          "org",
+
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    "account",
 }
 
 // --- one organisation, two projects
