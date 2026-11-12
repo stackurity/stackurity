@@ -41,6 +41,9 @@ func TestDebian(t *testing.T) {
 	if !b.Complete {
 		t.Errorf("expected complete batch, coverage %+v", b.Coverage)
 	}
+	if a := b.Asset.Attributes; a["cloud_provider"] != "digitalocean" || a["cloud_service"] != "Droplet" {
+		t.Errorf("cloud attributes = %v", a)
+	}
 	obs := byName(b)
 	if len(obs) != 3 { // os + libssl3 + bash; removed-pkg excluded
 		t.Fatalf("got %d observations: %v", len(obs), obs)
