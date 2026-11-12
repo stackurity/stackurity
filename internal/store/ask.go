@@ -47,7 +47,7 @@ type AskSettings struct {
 	ConsentVersion string `json:"consent_version"`
 	// Propose: Ask may propose changes, which the person applies with a
 	// click (ask_proposals.go). Off for organisations that existed before
-	// migration 0105, on for those created since.
+	// migration 0106, on for those created since.
 	Propose bool `json:"propose_changes"`
 }
 

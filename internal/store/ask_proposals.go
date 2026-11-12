@@ -12,7 +12,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Changes Ask Stackurity proposed (migration 0105). The model only
+// Changes Ask Stackurity proposed (migration 0106). The model only
 // proposes: the engine stores the write tool's preview here, with its
 // confirm code, and the person applies it with a click (the API's
 // POST /ask/conversations/{id}/proposals/{pid}/apply). Like conversations,
