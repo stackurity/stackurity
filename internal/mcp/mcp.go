@@ -153,7 +153,10 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-	"list_leaks lists keys, tokens and passwords found written in files (never their values)."
+	"list_leaks lists keys, tokens and passwords found written in files (never their values). For questions about the " +
+	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
+	"integrations and notification channels are connected and on, never their addresses or credentials) and " +
+	"notification_settings (the notification rules in effect)."
 
 const readOnlyNote = " This connection is read-only: no tool changes anything."
 
@@ -889,9 +892,11 @@ type findingVEX struct {
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
-	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
+	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+	"account_overview", "integrations_status", "notification_settings"}
 
 // readTitles are the read tools' short human titles (directories show them).
+// The account tools add theirs in account.go.
 var readTitles = map[string]string{
 	"search":                 "Search",
 	"list_assets":            "List assets",
