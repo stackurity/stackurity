@@ -6,7 +6,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { useDebounced, useFacets, useLoad } from "../hooks";
 import { assetKindLabel } from "../format";
-import { AssetKindBadge, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
+import { AssetKindCell, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { InventorySummary } from "./InventorySummary";
 import { Code, EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
@@ -125,7 +125,7 @@ export function AssetsPage() {
         );
       },
     },
-    { key: "kind", header: "Kind", cell: (a) => <AssetKindBadge kind={a.kind} /> },
+    { key: "kind", header: "Kind", cell: (a) => <AssetKindCell asset={a} /> },
     { key: "env", header: "Environment", cell: (a) => a.environment || <span className="muted">—</span> },
     { key: "team", header: "Owner team", cell: (a) => a.owner_team || <span className="muted">unassigned</span> },
     ...(projects.length > 0
@@ -137,7 +137,7 @@ export function AssetsPage() {
               a.projects?.length ? (
                 <span className="project-chips">
                   {a.projects.map((p) => (
-                    <span key={p.id} className="project-chip">
+                    <span key={p.id} className="project-chip" title={p.name}>
                       {p.name}
                     </span>
                   ))}
@@ -281,7 +281,7 @@ export function AssetsPage() {
           >
             <p>
               Run <Code>stackurity agent --once</Code> on a host or <Code>stackurity scan DIR</Code> in CI, or add a Git
-              repository under Integrations.
+              repository under <Link to="/integrations/sources">Integrations</Link>.
             </p>
           </EmptyState>
         )

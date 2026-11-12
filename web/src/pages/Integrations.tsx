@@ -744,7 +744,7 @@ function PluginForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: 
     return (
       <Card title="Add plugin integration">
         <Notice kind="warn">
-          Plugins are not enabled on this server. Set <Code>STACKURITY_PLUGIN_DIR</Code> and install plugins there; see Integrations → Plugins.
+          Plugins are not enabled on this server. Set <Code>STACKURITY_PLUGIN_DIR</Code> and install plugins there; see <Link to="/integrations/plugins">Integrations → Plugins</Link>.
         </Notice>
         <button type="button" className="btn" onClick={onCancel}>
           Cancel

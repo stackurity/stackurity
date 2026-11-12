@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import type { ReactNode } from "react";
 import { api, safeHttpUrl, type InstalledPlugin, type PluginList } from "../../api";
 import { PLUGINS_EMPTY } from "../../emptyCopy";
@@ -152,7 +153,7 @@ export function PluginsPage() {
       )}
       {res.data?.items.map((p) => <PluginCard key={p.name} p={p} />)}
       {res.data?.enabled && res.data.items.length > 0 && (
-        <p className="hint">Use a plugin under Integrations → Add integration → Plugin. Protocol and authoring guide: docs/plugins.md.</p>
+        <p className="hint">Use a plugin under <Link to="/integrations/sources">Integrations → Add integration → Plugin</Link>. Protocol and authoring guide: docs/plugins.md.</p>
       )}
     </>
   );

@@ -35,7 +35,7 @@ import { TrustBadgePage } from "./pages/settings/TrustBadge";
 import { TrustBadgesAdminPage } from "./pages/admin/TrustBadges";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { DashboardPage } from "./pages/Dashboard";
-import { AutomaticFixPoliciesPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
+import { AutomaticFixPoliciesPage, ProjectPermissionsPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
@@ -338,6 +338,14 @@ export function App() {
             }
           />
           <Route
+            path="project-permissions"
+            element={
+              <RequireRole min="security">
+                <ProjectPermissionsPage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="sso"
             element={
               <RequireRole min="admin">
@@ -544,7 +552,7 @@ export function App() {
         <Route path="settings/users" element={movedTo("/people")} />
         <Route path="settings/teams" element={movedTo("/people/teams")} />
         <Route path="settings/owners" element={movedTo("/people/owners")} />
-        <Route path="admin" element={<Navigate replace to="/admin/workspaces" />} />
+        <Route path="admin" element={movedTo("/admin/workspaces")} />
         <Route
           path="admin/workspaces"
           element={

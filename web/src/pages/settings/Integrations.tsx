@@ -25,7 +25,6 @@ import { CloudConnectPanel } from "./CloudConnect";
 import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
-import { ProjectChatAppsCard } from "../../components/ScopeNotifications";
 import { PlanLimitNote } from "../../components/PlanLimit";
 import { Catalogue, HealthSummary, IntegrationGrid, IntegrationIcon, StatusFilterBar, type CatalogueEntry } from "../../components/IntegrationCards";
 import {
@@ -384,7 +383,6 @@ export function IntegrationsHubPage() {
       ) : (
         <IntegrationGrid items={shown} actions={{ admin, busy: act.pending || job.busy, onTest: sendTest, onToggle: toggle, onRun: runNow }} testOf={(i) => tests[i.key]} />
       )}
-      {security && <ProjectChatAppsCard admin={admin} />}
       <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
       <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
       <h2 className="h-sm" id="add">

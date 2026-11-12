@@ -1029,6 +1029,10 @@ h1 .badge {
 .table .col-nowrap {
   white-space: nowrap;
 }
+/* Badges in a no-wrap column stay on one line too (P1 and SOS side by side). */
+.table .col-nowrap .badges {
+  flex-wrap: nowrap;
+}
 
 .row-actions {
   display: flex;
@@ -5059,7 +5063,32 @@ h6.md-h {
   border: 1px solid var(--border);
   font-size: 12px;
   color: var(--text-2);
-  overflow-wrap: anywhere;
+  /* One line: a long name ends in "…" (the full name is the tooltip) instead
+     of breaking mid-word into a tall bubble. */
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.asset-kind {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+.asset-kind-text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.asset-kind-platform {
+  font-weight: 600;
+  color: var(--text);
+}
+.platform-mark {
+  flex: none;
+  display: inline-flex;
+  color: var(--text-2);
 }
 .project-list {
   list-style: none;

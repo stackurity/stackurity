@@ -29,6 +29,7 @@ import { AskLongChat } from "./AskLongChat";
 import type { AskPanelState } from "../askState";
 import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
+import { PlaceText } from "./PlaceText";
 
 /**
  * Renders an answer. One the model wrote with the known headings
@@ -592,7 +593,11 @@ export function AskPanel({
           </div>
           {longChat && !busy && <AskLongChat onNew={fresh} />}
           <form className="ask-form" onSubmit={(e) => void send(e)}>
-            {blocked && <p className="ask-note small">{blocked}</p>}
+            {blocked && (
+              <p className="ask-note small">
+                <PlaceText text={blocked} />
+              </p>
+            )}
             {page && usePage && (
               <p className="ask-page small">
                 About {PAGE_LABEL[page.kind]}{" "}
