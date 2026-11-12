@@ -4,4 +4,4 @@
 
 ### Upgrading
 
-- Migration `0105_ask_proposals` adds `workspaces.ask_propose` and the `ask_proposals` table. **Ask may propose changes** is off for organisations that exist when you upgrade, and on for organisations created afterwards; an admin can turn it on under Integrations → AI assistants.
+- Migration `0106_ask_proposals` adds `workspaces.ask_propose` and the `ask_proposals` table. **Ask may propose changes** is off for organisations that exist when you upgrade, and on for organisations created afterwards; an admin can turn it on under Integrations → AI assistants.

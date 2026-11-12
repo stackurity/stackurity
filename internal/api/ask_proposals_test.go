@@ -65,7 +65,7 @@ func newProposalFx(t *testing.T, people map[string]auth.Role) *proposalFx {
 }
 
 // proposeOn turns "Ask may propose changes" on: the default organisation
-// existed before migration 0105, so it starts off.
+// existed before migration 0106, so it starts off.
 func (f *proposalFx) proposeOn(t *testing.T, on bool) {
 	t.Helper()
 	var st map[string]any
@@ -313,7 +313,7 @@ func TestAskProposalStaleCodeRepreviews(t *testing.T) {
 	}
 }
 
-// Off (the organisation existed before migration 0105, or an admin turned
+// Off (the organisation existed before migration 0106, or an admin turned
 // it off): the model is not offered the propose tools, and nothing can be
 // applied. Only an admin changes the setting.
 func TestAskProposalsOff(t *testing.T) {

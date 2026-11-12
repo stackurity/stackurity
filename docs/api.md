@@ -2836,7 +2836,7 @@ Each signal is recorded once per conversation, message and kind.
 
 **Who:** admin
 
-`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`. `{"propose_changes": true | false}`, alone or with `enabled`: lets Ask propose changes, which each person applies with a click, or stops it. Off for organisations that existed before the upgrade that added it (migration `0105_ask_proposals`), on for those created since. Audited as `ask.settings`.
+`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`. `{"propose_changes": true | false}`, alone or with `enabled`: lets Ask propose changes, which each person applies with a click, or stops it. Off for organisations that existed before the upgrade that added it (migration `0106_ask_proposals`), on for those created since. Audited as `ask.settings`.
 
 ### `DELETE /api/v1/ask/settings/conversations`
 

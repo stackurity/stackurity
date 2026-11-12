@@ -10,7 +10,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// "Ask may propose changes" (migration 0105): off for the organisations
+// "Ask may propose changes" (migration 0106): off for the organisations
 // that existed when the migration ran, on for those created afterwards.
 func TestAskProposeDefault(t *testing.T) {
 	f := newAskFixture(t)
