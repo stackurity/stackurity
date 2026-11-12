@@ -134,13 +134,14 @@ for (const width of [1280, 390]) {
     }),
   );
   await q.fill(`linkfix:${fixId} linkissue:9002`);
+  await pace(page);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await log.getByText("Links answer:").waitFor();
-  const card = log.locator(".ask-cmd").last();
-  await card.waitFor();
-  ok((await card.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
-  ok((await card.innerText()).includes("Run this on demo-web-1") && (await card.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
-  ok(await card.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
+  const cmdCard = log.locator(".ask-cmd").last();
+  await cmdCard.waitFor();
+  ok((await cmdCard.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
+  ok((await cmdCard.innerText()).includes("Run this on demo-web-1") && (await cmdCard.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
+  ok(await cmdCard.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
   const more = log.locator(".ask-readmore").last();
   await more.locator("summary").click();
   const hrefs = await more.locator("a[target=_blank]").evaluateAll((as) => as.map((a) => [a.href, a.rel]));
@@ -317,8 +318,8 @@ for (const width of [1280, 390]) {
   await hshot("server-proposed");
   await sv.getByRole("button", { name: "Apply" }).click();
   await sv.locator(".codeblock pre").first().waitFor();
-  const cmd = await sv.locator(".codeblock pre").first().innerText();
-  ok(cmd.startsWith("curl -fsSL ") && cmd.includes("STACKURITY_ENROLL_CODE="), `${tag} Apply shows the install command`);
+  const installCmd = await sv.locator(".codeblock pre").first().innerText();
+  ok(installCmd.startsWith("curl -fsSL ") && installCmd.includes("STACKURITY_ENROLL_CODE="), `${tag} Apply shows the install command`);
   ok(await sv.getByRole("button", { name: /^Copy/ }).isVisible(), `${tag} the command has Copy`);
   ok((await sv.locator("textarea, input[type=text]").count()) === 0, `${tag} the command is copy-only`);
   ok(await sv.locator(".badge", { hasText: "Code created" }).isVisible(), `${tag} the card says Code created`);
