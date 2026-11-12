@@ -547,6 +547,9 @@ func toolLabel(u ToolUse) string {
 	case "list_assets":
 		return "Listing assets"
 	case "action_plan", "remediation_plan":
+		if id("asset_id") == "" {
+			return "Reading the fixes for every asset"
+		}
 		return "Reading the fixes" + id("asset_id")
 	case "asset_stack":
 		return "Reading asset" + id("asset_id")

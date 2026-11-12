@@ -49,6 +49,6 @@ test("something to send", () => {
 test("categories match the server's", () => {
   assert.deepEqual(
     FEEDBACK_CATEGORIES.map((c) => c.value),
-    ["wrong", "misunderstood", "incomplete", "slow", "wrong_data", "formatting", "other"],
+    ["wrong", "misunderstood", "incomplete", "slow", "wrong_data", "formatting", "idea", "other"],
   );
 });

@@ -36,6 +36,8 @@ export interface AskStatus {
 
 export interface AskConversation {
   id: number;
+  /** The project chosen when it started; null: all projects. */
+  project_id: number | null;
   title: string;
   model: string;
   created_at: string;
@@ -332,4 +334,24 @@ export async function streamQuestion(
     if (done) break;
     for (const e of p.push(dec.decode(value, { stream: true }))) on(e);
   }
+}
+
+/**
+ * History's day headings: Today, Yesterday, then Earlier, in the person's
+ * time zone, newest first within each. Empty groups are left out.
+ */
+export function historyGroups(convs: AskConversation[], now: Date): { label: string; items: AskConversation[] }[] {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const day = 24 * 60 * 60 * 1000;
+  const groups = [
+    { label: "Today", items: [] as AskConversation[] },
+    { label: "Yesterday", items: [] as AskConversation[] },
+    { label: "Earlier", items: [] as AskConversation[] },
+  ];
+  const sorted = [...convs].sort((a, b) => Date.parse(b.updated_at) - Date.parse(a.updated_at));
+  for (const c of sorted) {
+    const t = Date.parse(c.updated_at);
+    groups[t >= start ? 0 : t >= start - day ? 1 : 2].items.push(c);
+  }
+  return groups.filter((g) => g.items.length > 0);
 }

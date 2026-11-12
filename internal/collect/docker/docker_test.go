@@ -8,7 +8,9 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -243,6 +245,7 @@ const (
 	idShop  = "sha256:aaaa000000000000000000000000000000000000000000000000000000000001"
 	idAPI   = "sha256:bbbb000000000000000000000000000000000000000000000000000000000002"
 	idOther = "sha256:cccc000000000000000000000000000000000000000000000000000000000003"
+	idBig   = "sha256:dddd000000000000000000000000000000000000000000000000000000000004"
 )
 
 var hostRef = model.AssetRef{Kind: model.AssetHost, Name: "web-1",
@@ -690,5 +693,58 @@ func TestImageGoBinary(t *testing.T) {
 	}
 	if c := coverage(&model.ObservationBatch{Coverage: r.Coverage}, "go-binaries"); c.Status != "checked" {
 		t.Errorf("go-binaries coverage = %+v", c)
+	}
+}
+
+// With Export set, each image's archive comes from it, not from the
+// engine's export: the reading is the same, it is asked once per image
+// (not at all for an oversize one), and its error is that image's
+// coverage.
+func TestExportOverride(t *testing.T) {
+	d := startDocker(t)
+	d.add(idShop, []string{"shop:1.0"}, "", alpineLayers()...)
+	d.add(idAPI, []string{"api:2"}, "/usr/src/app", debianLayers()...)
+	d.add(idBig, []string{"big:1"}, "", alpineLayers()...)
+	d.mu.Lock()
+	d.images[idBig].info.Size = 10 << 30
+	d.mu.Unlock()
+	d.run(Container{ID: "c1", Image: "shop:1.0", ImageID: idShop, State: "running"},
+		Container{ID: "c2", Image: "shop:1.0", ImageID: idShop, State: "running"},
+		Container{ID: "c3", Image: "api:2", ImageID: idAPI, State: "running"},
+		Container{ID: "c4", Image: "big:1", ImageID: idBig, State: "running"})
+
+	want := byIdentity(newScanner(t, d.socket).Collect(context.Background(), hostRef))
+
+	asked := map[string]int{}
+	s := newScanner(t, d.socket)
+	s.Export = func(ctx context.Context, id string) (io.ReadCloser, error) {
+		asked[id]++
+		if id == idAPI {
+			return nil, errors.New("no space left on device")
+		}
+		d.mu.Lock()
+		defer d.mu.Unlock()
+		return io.NopCloser(bytes.NewReader(d.images[id].archive)), nil
+	}
+	before := map[string]int{idShop: d.exported(idShop), idAPI: d.exported(idAPI), idBig: d.exported(idBig)}
+	got := byIdentity(s.Collect(context.Background(), hostRef))
+	for id, n := range before {
+		if d.exported(id) != n {
+			t.Errorf("%s exported by the engine with Export set", id)
+		}
+	}
+	if asked[idShop] != 1 || asked[idAPI] != 1 || asked[idBig] != 0 {
+		t.Errorf("Export asked %v", asked)
+	}
+	if shop := got["shop:1.0"]; shop == nil || !shop.Complete || !slices.Equal(purls(shop), purls(want["shop:1.0"])) {
+		t.Errorf("shop through Export = %+v, want packages %v", shop, purls(want["shop:1.0"]))
+	}
+	api := got["api:2"]
+	if api == nil || api.Complete || coverage(api, "image:api:2").Status != "failed" ||
+		!strings.Contains(coverage(api, "image:api:2").Reason, "no space left on device") {
+		t.Errorf("failed Export = %+v", api)
+	}
+	if big := got["big:1"]; big == nil || coverage(big, "image:big:1").Status != "skipped" {
+		t.Errorf("oversize image = %+v", big)
 	}
 }

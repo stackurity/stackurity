@@ -6,6 +6,31 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.3
+
+### Added
+
+- **`pkg/engine`: `RunningContainersWith` can take each running image's archive from the caller.** `ContainerOptions.Export` supplies the archive (what `docker save` writes) in place of the Docker engine's export, so a program that also reads the archive itself, such as stackurity-scan's key scan of every layer, exports each image once instead of twice. `RunningContainers` is unchanged.
+- **The Linux agent records which cloud a host runs on.** It reads the machine's DMI strings (`/sys/class/dmi/id`), with no network or metadata-service call, and sets the host attributes `cloud_provider` and `cloud_service` for AWS EC2, DigitalOcean Droplets, Google Compute Engine, Azure, Oracle Cloud, Hetzner, Akamai (Linode), Vultr and Alibaba Cloud ECS. The Assets list then shows the cloud under the OS, for example "Ubuntu 24.04" over "host · DigitalOcean Droplet". Containers, bare metal and other clouds set nothing. Hosts show it after their agent is upgraded and reports again.
+
+### Fixed
+
+- **The incidents list no longer wraps its short columns.** Priority shows P1 and SOS side by side, Scope keeps "1 finding" on one line, and Kind, State and Updated no longer break mid-phrase; the Incident title takes the spare width. On a narrow screen the table scrolls sideways instead.
+
+## 0.20.2
+
+### Changed
+
+- **The Assets list shows what each asset runs on.** The Kind column now shows the platform's logo and name: the operating system and version for hosts (Ubuntu 24.04, RHEL 9.4, Amazon Linux, Windows, macOS), GitHub, GitLab or Bitbucket for repositories, AWS, Azure, Google Cloud or DigitalOcean for cloud services, Docker for images and Kubernetes for clusters and workloads. The kind itself is shown underneath, and the Kind filter is unchanged.
+- **Places named in the dashboard are links.** Where a message, hint or Help article says where to go, such as "Integrations → AI assistants", "Settings → Jobs" or "People ▸ Users", the name now opens that page in one click. Every Help article's "Where to find it" line is a link too.
+- **"Projects can connect their own Slack or Teams" moved to Settings ▸ Project permissions.** It's an organisation-wide choice, so it's no longer on Integrations, which every project shows too. The setting and its value are unchanged; the project's Notifications page and Help link to the new place.
+
+### Fixed
+
+- **Long project names no longer break into tall bubbles in the Assets list.** A project name stays on one line and ends in "…" when it doesn't fit; hover to see the whole name.
+- **Settings opens its first section again when a project is selected.** With a project picked in the header, Settings showed only the list of sections and an empty page. It now opens the first section you can see (Risk policy for most people) and keeps the selected project. `/admin` had the same problem and now goes to Workspaces.
+- **The Outcomes link in the remediation plan help opens the right article.** It pointed at a help page that does not exist. The API reference now also says what the Assets list's `q` matches.
+
 ## 0.20.1
 
 0.20.0 was tagged but never published: its server image failed the release's vulnerability gate (CVE-2026-105437 in git, below). This release includes everything that was in 0.20.0.

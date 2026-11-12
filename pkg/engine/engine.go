@@ -130,6 +130,29 @@ func HostSoftware(ctx context.Context, toolVersion string) ([]*Batch, error) {
 // default socket). The first batch is the host's; one batch per image
 // follows. Nothing is pulled or run.
 func RunningContainers(ctx context.Context, socket, toolVersion string) []*Batch {
+	return RunningContainersWith(ctx, toolVersion, ContainerOptions{Socket: socket})
+}
+
+// ContainerOptions say how RunningContainersWith reads the images. The zero
+// value is what RunningContainers does with the default socket.
+type ContainerOptions struct {
+	// Socket is the Docker engine's Unix socket; DefaultDockerSocket()
+	// when "".
+	Socket string
+	// Export, when set, supplies each running image's archive (what docker
+	// save writes), given its image ID, in place of the engine's export.
+	// A caller that reads the archive itself as well (stackurity-scan
+	// looks for keys in every layer) can then save each image once and
+	// read that one copy twice. It is called one image at a time, at most
+	// once per image, and not for an image skipped as too large; the
+	// reader is closed when the image has been read. An error is reported
+	// in that image's coverage, as a failed export is.
+	Export func(ctx context.Context, imageID string) (io.ReadCloser, error)
+}
+
+// RunningContainersWith is RunningContainers with options.
+func RunningContainersWith(ctx context.Context, toolVersion string, opt ContainerOptions) []*Batch {
+	socket := opt.Socket
 	if socket == "" {
 		socket = DefaultDockerSocket()
 	}
@@ -139,7 +162,7 @@ func RunningContainers(ctx context.Context, socket, toolVersion string) []*Batch
 	}
 	defer os.RemoveAll(work)
 	host, _ := os.Hostname()
-	s := &docker.Scanner{Engine: docker.NewEngine(socket), Version: toolVersion, WorkDir: work}
+	s := &docker.Scanner{Engine: docker.NewEngine(socket), Version: toolVersion, WorkDir: work, Export: opt.Export}
 	return s.Collect(ctx, model.AssetRef{Kind: model.AssetHost, Name: host,
 		Identifiers: []model.Identifier{{Scheme: "hostname", Value: host}}})
 }
