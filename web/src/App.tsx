@@ -35,7 +35,7 @@ import { TrustBadgePage } from "./pages/settings/TrustBadge";
 import { TrustBadgesAdminPage } from "./pages/admin/TrustBadges";
 import { SingleSignOnPage } from "./pages/settings/SingleSignOn";
 import { DashboardPage } from "./pages/Dashboard";
-import { AutomaticFixPoliciesPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
+import { AutomaticFixPoliciesPage, ProjectPermissionsPage, SettingsIndex, SettingsLayout } from "./pages/Settings";
 import { AssetsPage } from "./pages/Assets";
 import { AssetDetailPage } from "./pages/AssetDetail";
 import { AddServerPage } from "./pages/AddServer";
@@ -334,6 +334,14 @@ export function App() {
             element={
               <RequireRole min="admin">
                 <BillingPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="project-permissions"
+            element={
+              <RequireRole min="security">
+                <ProjectPermissionsPage />
               </RequireRole>
             }
           />

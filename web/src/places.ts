@@ -70,6 +70,7 @@ const PLACES: Record<string, string> = {
   "settings > fix grouping": "/settings/fix-grouping",
   "settings > vex": "/settings/vex",
   "settings > automatic fixes": "/settings/automatic-fixes",
+  "settings > project permissions": "/settings/project-permissions",
   "settings > usage": "/settings/usage",
   "settings > plan and billing": "/settings/billing",
   "settings > single sign-on": "/settings/sso",
