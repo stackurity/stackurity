@@ -281,7 +281,7 @@ export function AssetsPage() {
           >
             <p>
               Run <Code>stackurity agent --once</Code> on a host or <Code>stackurity scan DIR</Code> in CI, or add a Git
-              repository under Integrations.
+              repository under <Link to="/integrations/sources">Integrations</Link>.
             </p>
           </EmptyState>
         )

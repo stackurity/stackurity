@@ -48,7 +48,7 @@ export function SlackInstallPage() {
       <>
         {error.status === 404 ? (
           <Notice kind="warn">
-            Add to Slack is not set up on this server. An administrator can still connect Slack with an incoming webhook under Integrations → Slack.
+            Add to Slack is not set up on this server. An administrator can still connect Slack with an incoming webhook under <Link to="/integrations/new/slack">Integrations → Slack</Link>.
           </Notice>
         ) : error.status === 403 ? (
           <Notice kind="warn">Only an organisation&apos;s administrators can add Stackurity to Slack, and this organisation is read-only or you are not one of them.</Notice>

@@ -2,16 +2,22 @@ import type { ReactNode } from "react";
 import { Link } from "react-router";
 import { CodeBlock } from "../components/ui";
 import type { Block } from "./types";
+import { placeHref } from "../places";
 
 const TOKEN = /(\*\*[^*]+\*\*|`[^`]+`|\[[^\]]+\]\([^)]+\))/g;
 
-/** Inline markup: **bold**, `code`, [label](/path) and [label](help:id). */
+/** Inline markup: **bold** (a link when it names a place), `code`, [label](/path) and [label](help:id). */
 export function Inline({ text }: { text: string }) {
   const parts = text.split(TOKEN).filter((x) => x !== "");
   return (
     <>
       {parts.map((part, i) => {
-        if (part.startsWith("**") && part.endsWith("**")) return <strong key={i}>{part.slice(2, -2)}</strong>;
+        if (part.startsWith("**") && part.endsWith("**")) {
+          // A bold place ("**Integrations ▸ API tokens**") opens that page.
+          const label = part.slice(2, -2);
+          const to = placeHref(label);
+          return <strong key={i}>{to ? <Link to={to}>{label}</Link> : label}</strong>;
+        }
         if (part.startsWith("`") && part.endsWith("`")) return <code key={i} className="code">{part.slice(1, -1)}</code>;
         const m = part.match(/^\[([^\]]+)\]\(([^)]+)\)$/);
         if (m) {

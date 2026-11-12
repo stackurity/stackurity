@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { api, type Asset, type List, type Project, type Team, type UserRole } from "../api";
 import { useLoad, type Loaded } from "../hooks";
 import { ErrorBox, Loading, Notice } from "./ui";
@@ -82,7 +83,7 @@ export function AccessPicker({
         <div className="field access-projects">
           <ErrorBox error={projects.error} title="Could not load projects" />
           {projects.data && projects.data.items.length === 0 && (
-            <Notice kind="warn">There are no projects yet. Create one under Assets, Projects, or give them all projects and assets.</Notice>
+            <Notice kind="warn">There are no projects yet. Create one under <Link to="/projects">Projects</Link>, or give them all projects and assets.</Notice>
           )}
           {f.projects.map((p) => (
             <ProjectAccess key={p.projectId} idp={idp} pick={p} name={names[p.projectId] ?? `Project ${p.projectId}`} dispatch={dispatch} />

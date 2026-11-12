@@ -94,7 +94,8 @@ export function SettingsLayout() {
           );
         })}
         <p className="small muted settings-nav-note">
-          Integrations and People are under Administration in the main sidebar, Projects under Environment, and the audit log under Governance ▸ Reports and audit.
+          <Link to="/integrations">Integrations</Link> and <Link to="/people">People</Link> are under Administration in the main sidebar,{" "}
+          <Link to="/projects">Projects</Link> under Environment, and the <Link to="/audit">audit log</Link> under Governance ▸ Reports and audit.
         </p>
       </nav>
       <div className="settings-main">

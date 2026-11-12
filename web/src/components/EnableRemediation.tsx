@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useState } from "react";
 import { api, type Asset, type InventoryRow, type List, type Token } from "../api";
 import { useAction } from "../hooks";
@@ -109,7 +110,7 @@ WantedBy=multi-user.target`;
           <div className="alert alert-warn secret-reveal" role="alert">
             <p>
               <strong>Copy this token now.</strong> It is shown only once. It can report inventory only for {asset.name} and fetch only this
-              host's changes. Revoke it under Integrations → API tokens ({created.token.prefix}…) to un-enrol the host.
+              host's changes. Revoke it under <Link to="/integrations/tokens">Integrations → API tokens</Link> ({created.token.prefix}…) to un-enrol the host.
             </p>
             <CopyBox value={created.secret} label={`Remediation token for ${asset.name}`} />
           </div>

@@ -20,7 +20,7 @@ export function NoTeamsHint({ what = "choose one here" }: { what?: string }) {
           Create one under <Link to="/people/teams">People, Teams</Link> to {what}.
         </>
       ) : (
-        <>Ask an administrator to create one under People, Teams.</>
+        <>Ask an administrator to create one under <Link to="/people/teams">People, Teams</Link>.</>
       )}
     </p>
   );
