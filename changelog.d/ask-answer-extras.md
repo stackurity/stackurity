@@ -1,0 +1,3 @@
+### Added
+
+- **Ask Stackurity shows the command to run, read-more pages and more page links.** When an answer links a fix, the panel shows that fix's stored command under the answer, with a Copy button, where to run it and whether it needs a restart; Ask no longer writes commands itself. For the issues an answer links, a closed **Read more** list gives their osv.dev and NVD pages and stored advisory references on well-known advisory sites. Answers can also link to a fixed list of dashboard pages, such as Settings, Integrations, the Audit log, Leaked keys, Coverage, Projects and Help articles. See [AI assistants](docs/ai-assistants.md#ask-stackurity).

@@ -30,6 +30,7 @@ import type { AskPanelState } from "../askState";
 import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
+import { AskAnswerExtras } from "./AskAnswerExtras";
 
 /**
  * Renders an answer. One the model wrote with the known headings
@@ -574,6 +575,7 @@ export function AskPanel({
               ) : t.role === "assistant" ? (
                 <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
+                  <AskAnswerExtras text={t.text} onNavigate={onLinkClick} />
                   <AskReadOnly tools={t.tools} onNavigate={onLinkClick} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>
