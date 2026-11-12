@@ -72,6 +72,8 @@ jobs:
       STACKURITY_TEST_DATABASE_URL: postgres://stackurity:stackurity@localhost:5432/stackurity_test?sslmode=disable
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PostgreSQL lock table
+        run: tools/ci/pg-locks.sh
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version-file: go.mod
