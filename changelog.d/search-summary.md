@@ -1,3 +1,0 @@
-### Changed
-
-- **Search results start with an overview.** Searching for a package such as `openssl` now opens with how many matching components are installed, in how many versions and on how many assets, and how many open issues are critical or urgent (P1). Every figure counts all matches, not only those listed, and opens the list behind it. The results follow in the order of an investigation: matching assets, components (each opens its installed versions and assets), vulnerabilities with their severity, then advisories that affect nothing here, then teams and people. When nothing matches, the page suggests a narrower or broader search. `GET /search` takes `summary=1` for the same counts; see [Search](docs/api.md#search).
