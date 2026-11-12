@@ -163,19 +163,35 @@ export function isBuildStep(action: string): boolean {
   return /^RUN\s/.test(action.trim());
 }
 
-/** The action as a copyable command when it is one, otherwise as text. */
-export function ActionInstruction({ action, assetKind, kind }: { action: string; assetKind?: string; kind?: string }) {
+/** Fix kinds whose steps change an image's operating system packages. */
+const IMAGE_OS_KINDS = ["security_updates", "release_upgrade"];
+
+/**
+ * The action as a copyable command when it is one, otherwise as text. On an
+ * image, a fix is made in its build: a package command is labelled as a
+ * build step, and the rebuild, publish, redeploy and scan steps follow (on a
+ * card, only for OS updates; the fix page shows them for every fix that
+ * changes the image).
+ */
+export function ActionInstruction({ action, assetKind, kind, compact }: { action: string; assetKind?: string; kind?: string; compact?: boolean }) {
   if (!action) return null;
-  const rebuild = assetKind === "image" && kind !== undefined && kind !== "no_fix" && kind !== "old_kernels";
-  if (rebuild || isBuildStep(action)) {
+  const image = assetKind === "image" && kind !== undefined && kind !== "no_fix" && kind !== "old_kernels";
+  const steps = image && (!compact || IMAGE_OS_KINDS.includes(kind ?? ""));
+  if (image || isBuildStep(action)) {
     return (
       <>
         {isCommand(action) ? (
-          <CodeBlock label={isBuildStep(action) ? "Dockerfile build step" : "Command"} text={action.trim()} />
+          <>
+            <p className="small build-label">
+              <strong>{isBuildStep(action) ? "Dockerfile build step" : "Build instruction"}</strong>
+              {isBuildStep(action) ? ": add it to the image's Dockerfile." : ": run it in the image's Dockerfile, not in a running container."}
+            </p>
+            <CodeBlock label={isBuildStep(action) ? "Dockerfile build step" : "Build instruction"} text={action.trim()} />
+          </>
         ) : (
           <p className="fix-action">{action}</p>
         )}
-        {rebuild && <ImageRebuildSteps />}
+        {steps && <ImageRebuildSteps />}
       </>
     );
   }
@@ -312,7 +328,7 @@ export function FixGroupCard({
         </div>
         <GroupBadges g={g} />
         <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
-        <ActionInstruction action={g.action} assetKind={places ? undefined : g.asset_kind} kind={g.kind} />
+        <ActionInstruction action={g.action} assetKind={places ? undefined : g.asset_kind} kind={g.kind} compact />
         {places && <FixPlaces g={g} places={places} />}
         {g.note && <p className="hint">{g.note}</p>}
         {g.packages && g.packages.length > 0 && (

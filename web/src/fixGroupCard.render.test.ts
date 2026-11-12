@@ -93,3 +93,11 @@ test("the count under a fix says what it does: issues awaiting a fix when none i
   assert.match(upgrade, /issue this fixes/);
   assert.doesNotMatch(upgrade, /cleared/);
 });
+
+test("an image's package upgrade card stays short (the fix page has the steps); a host command on an image is labelled as a build instruction", () => {
+  const upgrade = render(group({ asset_kind: "image", kind: "package_upgrade", action: "Update axios to 1.12.0 or later in the lockfile and redeploy." }));
+  assert.doesNotMatch(upgrade, /Rebuild the image and publish it/);
+  const old = render(group({ asset_kind: "image", action: "sudo apt update && sudo apt upgrade" }));
+  assert.match(old, /Build instruction<\/strong>: run it in the image&#x27;s Dockerfile, not in a running container/);
+  assert.match(old, /Rebuild the image and publish it/);
+});

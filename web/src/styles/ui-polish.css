@@ -284,3 +284,6 @@
   overflow: hidden;
   overflow-wrap: break-word;
 }
+.build-label {
+  margin: 0 0 var(--s1);
+}
