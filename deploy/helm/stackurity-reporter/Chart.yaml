@@ -2,8 +2,8 @@ apiVersion: v2
 name: stackurity-reporter
 description: Reports a Kubernetes cluster's workloads, the images they run and their exposure to Stackurity, from inside the cluster with read-only access
 type: application
-version: 0.20.2
-appVersion: "0.20.2"
+version: 0.20.3
+appVersion: "0.20.3"
 home: https://github.com/stackurity/stackurity/blob/main/docs/kubernetes.md
 sources: [https://github.com/stackurity/stackurity]
 license: Apache-2.0
