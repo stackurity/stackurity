@@ -43,6 +43,7 @@ for (const width of [1280, 390]) {
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   // From here on (the login page itself checks for a session first, a 401).
   const errors = [];
+  let rateLimited = 0; // questions refused by the per-minute limit, and asked again
   // The demo answer links issue #1, which the demo estate may not have: the
   // panel's look-up of it may 404, which is expected.
   page.on("console", (m) => m.type() === "error" && !/\/api\/v1\/(findings|fix-groups)\//.test(m.location().url ?? "") && errors.push(m.text()));
@@ -117,11 +118,11 @@ for (const width of [1280, 390]) {
   await q.fill(`linkfix:${fixId} linkissue:9002`);
   await panel.getByRole("button", { name: "Ask", exact: true }).click();
   await log.getByText("Links answer:").waitFor();
-  const card = log.locator(".ask-cmd").last();
-  await card.waitFor();
-  ok((await card.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
-  ok((await card.innerText()).includes("Run this on demo-web-1") && (await card.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
-  ok(await card.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
+  const cmdCard = log.locator(".ask-cmd").last();
+  await cmdCard.waitFor();
+  ok((await cmdCard.locator("pre").innerText()).trim() === cmd, `${tag} the fix's stored command is shown`);
+  ok((await cmdCard.innerText()).includes("Run this on demo-web-1") && (await cmdCard.innerText()).includes("Restart demo-web-1"), `${tag} the card says where to run it and to restart`);
+  ok(await cmdCard.getByRole("button", { name: "Copy" }).isVisible(), `${tag} the command has a Copy button`);
   const more = log.locator(".ask-readmore").last();
   await more.locator("summary").click();
   const hrefs = await more.locator("a[target=_blank]").evaluateAll((as) => as.map((a) => [a.href, a.rel]));
@@ -194,10 +195,20 @@ for (const width of [1280, 390]) {
   const shot = async (state) => {
     if (shots) await panel.screenshot({ path: `${shots}/propose-${state}-${width}.png` });
   };
+  // Ask allows 10 questions a minute per person, and this file asks more than
+  // that at each width: when the server says to wait, wait and ask again.
   const ask = async (question) => {
-    await q.fill(question);
-    await panel.getByRole("button", { name: "Ask", exact: true }).click();
-    await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
+    const limited = panel.getByText(/too many questions/i);
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const before = await limited.count();
+      await q.fill(question);
+      await panel.getByRole("button", { name: "Ask", exact: true }).click();
+      await panel.getByRole("button", { name: "Ask", exact: true }).waitFor();
+      if ((await limited.count()) === before) return;
+      rateLimited++; // the browser logs the refused request as a console error
+      await page.waitForTimeout(61_000);
+    }
+    throw new Error(`still rate limited asking: ${question}`);
   };
   const noScroll = async (what) => {
     const sw = await page.evaluate(() => {
@@ -257,7 +268,8 @@ for (const width of [1280, 390]) {
   await page.reload();
   await page.locator("nav[aria-label=Main]").waitFor({ state: "attached" });
   ok(!(await panel.isVisible()), `${tag} closed stays closed after a reload`);
-  ok(errors.length === 0, `${tag} no console errors ${errors.slice(0, 2).join(" | ")}`);
+  const unexpected = errors.filter((e, i) => !(/status of 429/.test(e) && errors.slice(0, i).filter((x) => /status of 429/.test(x)).length < rateLimited));
+  ok(unexpected.length === 0, `${tag} no console errors ${unexpected.slice(0, 2).join(" | ")}`);
   await ctx.close();
 }
 await browser.close();
