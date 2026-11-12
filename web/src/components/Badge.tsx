@@ -281,12 +281,13 @@ export function AssetKindCell({ asset }: { asset: { kind: string; provider?: str
       </span>
     );
   }
+  const sub = p.cloud ? `${kind} · ${p.cloud}` : kind;
   return (
-    <span className="asset-kind" title={`${p.label} · ${kind}`}>
+    <span className="asset-kind" title={`${p.label} · ${sub}`}>
       <PlatformMark logo={p.logo} />
       <span className="asset-kind-text">
         <span className="asset-kind-platform">{p.label}</span>
-        <span className="small muted">{kind}</span>
+        <span className="small muted">{sub}</span>
       </span>
     </span>
   );

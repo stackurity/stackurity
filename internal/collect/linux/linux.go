@@ -72,6 +72,9 @@ func (c *Collector) Collect(ctx context.Context, hostname, machineID string) (*m
 	for k, v := range c.rebootState() {
 		attrs[k] = v
 	}
+	for k, v := range c.cloudAttributes() {
+		attrs[k] = v
+	}
 	ids := []model.Identifier{{Scheme: "hostname", Value: hostname}}
 	if machineID != "" {
 		ids = append([]model.Identifier{{Scheme: "machine-id", Value: machineID}}, ids...)
