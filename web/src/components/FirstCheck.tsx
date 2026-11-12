@@ -11,6 +11,7 @@ import {
   type Source,
 } from "../firstCheck";
 import { StatTile } from "./ui";
+import { PlaceText } from "./PlaceText";
 
 /*
  * The first check on Get started: progress with the numbers as they arrive,
@@ -55,7 +56,11 @@ export function FirstCheckProgress({
       </ol>
       <div role="status" aria-live="polite">
         <p className="onboard-big">{t.title}</p>
-        {t.text && <p className="muted">{t.text}</p>}
+        {t.text && (
+          <p className="muted">
+            <PlaceText text={t.text} />
+          </p>
+        )}
       </div>
     </div>
   );

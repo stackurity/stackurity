@@ -4,7 +4,8 @@ import type { Feature, UserRole } from "../api";
 import { useAuth } from "../auth";
 import { PageHeader } from "../components/ui";
 import { ProBadge, ProNotice } from "../components/ProNotice";
-import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
+import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconPeople, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
+import { ProjectChatAppsCard } from "../components/ScopeNotifications";
 import { PoliciesTab } from "./Remediation";
 
 interface Entry {
@@ -28,6 +29,10 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/settings/vex", label: "VEX", icon: <IconDocument /> },
       { to: "/settings/automatic-fixes", label: "Automatic fixes", icon: <IconRemediation />, min: "security", feature: "remediation" },
     ],
+  },
+  {
+    title: "Projects",
+    entries: [{ to: "/settings/project-permissions", label: "Project permissions", icon: <IconPeople />, min: "security" }],
   },
   {
     title: "Plan and usage",
@@ -94,7 +99,8 @@ export function SettingsLayout() {
           );
         })}
         <p className="small muted settings-nav-note">
-          Integrations and People are under Administration in the main sidebar, Projects under Environment, and the audit log under Governance ▸ Reports and audit.
+          <Link to="/integrations">Integrations</Link> and <Link to="/people">People</Link> are under Administration in the main sidebar,{" "}
+          <Link to="/projects">Projects</Link> under Environment, and the <Link to="/audit">audit log</Link> under Governance ▸ Reports and audit.
         </p>
       </nav>
       <div className="settings-main">
@@ -104,11 +110,35 @@ export function SettingsLayout() {
   );
 }
 
-/** /settings opens its first section, as the list on the left shows them. */
+/**
+ * /settings opens its first section, as the list on the left shows them.
+ * The query and hash go along: the project picker adds ?project= to /settings
+ * in the same render, and a target without it would never change, so the
+ * redirect would not run again and the page would stay empty.
+ */
 export function SettingsIndex() {
   const visible = useVisible();
+  const { search, hash } = useLocation();
   const first = GROUPS.flatMap((g) => g.entries).find(visible);
-  return <Navigate replace to={first?.to ?? "/settings/risk-policy"} />;
+  return <Navigate replace to={{ pathname: first?.to ?? "/settings/risk-policy", search, hash }} />;
+}
+
+/**
+ * Settings, Project permissions: what each project's admins may set up on
+ * their own. An organisation-wide choice, so it lives here rather than on
+ * Integrations, which every project also shows.
+ */
+export function ProjectPermissionsPage() {
+  const { can } = useAuth();
+  return (
+    <>
+      <PageHeader
+        title="Project permissions"
+        sub="What each project's admins may set up for their project on their own. These apply to every project in the organisation."
+      />
+      <ProjectChatAppsCard admin={can("admin")} />
+    </>
+  );
 }
 
 /** Settings, Automatic fixes: the remediation policies (security role). */

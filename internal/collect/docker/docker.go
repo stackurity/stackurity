@@ -20,6 +20,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -62,7 +63,11 @@ type Scanner struct {
 	// Inventory reads an unpacked image; ReadRoot when nil (tests replace
 	// it to count readings).
 	Inventory func(ctx context.Context, root string, im *Image, version string) Reading
-	Now       func() time.Time
+	// Export supplies an image's archive (what docker save writes) by its
+	// ID; Engine.Export when nil. A caller that reads the archive itself
+	// too saves it once and hands it here (pkg/engine ContainerOptions).
+	Export func(ctx context.Context, id string) (io.ReadCloser, error)
+	Now    func() time.Time
 
 	cache map[string]cached
 }
@@ -347,7 +352,11 @@ func (s *Scanner) read(ctx context.Context, im *image, work string, max int64) (
 		return Reading{}, err
 	}
 	defer os.RemoveAll(tmp)
-	body, err := s.Engine.Export(ctx, im.id)
+	export := s.Export
+	if export == nil {
+		export = s.Engine.Export
+	}
+	body, err := export(ctx, im.id)
 	if err != nil {
 		return Reading{}, err
 	}
