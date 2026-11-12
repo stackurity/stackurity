@@ -6,7 +6,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
-## 0.20.0
+0.20.0 was tagged but never published: its server image failed the release's vulnerability gate (CVE-2026-105437 in git, below). This release includes everything that was in 0.20.0.
 
 ### Added
 
