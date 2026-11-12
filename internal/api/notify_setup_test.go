@@ -392,3 +392,27 @@ func TestRouteEventsAPI(t *testing.T) {
 		t.Fatalf("old client round-trip: %d %+v", code, r)
 	}
 }
+
+// A rule limited to platform incidents saves: the dashboard offers every
+// incident kind, and the server once refused "platform" with a 400.
+func TestRouteKindsIncludePlatform(t *testing.T) {
+	e := newEnv(t)
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	var hook store.Channel
+	admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "hook", "config": map[string]string{"url": "https://hooks.example.com/x"}}, &hook)
+	var r store.Route
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "platform", "channel_id": hook.ID, "enabled": true,
+		"events": []string{"urgent"}, "kinds": []string{"platform", "coverage"}}, &r); code != 201 || !slices.Equal(r.Kinds, []string{"platform", "coverage"}) {
+		t.Fatalf("platform kind: %d %+v", code, r)
+	}
+	all := []string{"vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"}
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "platform", "channel_id": hook.ID, "enabled": true,
+		"events": []string{"urgent"}, "kinds": all}, &r); code != 200 || !slices.Equal(r.Kinds, all) {
+		t.Fatalf("every kind: %d %+v", code, r)
+	}
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), map[string]any{"name": "platform", "channel_id": hook.ID, "enabled": true,
+		"events": []string{"urgent"}, "kinds": []string{"os"}}, nil); code != 400 {
+		t.Errorf("unknown kind: %d", code)
+	}
+}
