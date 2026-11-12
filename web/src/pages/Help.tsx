@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { ARTICLES, ARTICLE_BY_ID } from "../help/articles";
 import { RenderBlock } from "../help/render";
+import { whereHref } from "../places";
 import { articleText, SECTIONS } from "../help/types";
 import { EmptyState, PageHeader } from "../components/ui";
 
@@ -78,7 +79,12 @@ export function HelpPage() {
               <p className="help-summary">{article.summary}</p>
               {article.where && (
                 <p className="help-where">
-                  <strong>Where to find it:</strong> Menu ▸ {article.where.join(" ▸ ")}
+                  <strong>Where to find it:</strong> Menu ▸{" "}
+                  {(() => {
+                    const to = whereHref(article.where);
+                    const path = article.where.join(" ▸ ");
+                    return to ? <Link to={to}>{path}</Link> : path;
+                  })()}
                 </p>
               )}
               {article.body.map((b, i) => (

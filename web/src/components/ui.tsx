@@ -621,7 +621,7 @@ export function JobStatus({ state, onDismiss }: { state: JobState; onDismiss?: (
     case "timeout":
       return (
         <Notice kind="warn">
-          {state.label}: still running after 10 minutes. Check Settings → Jobs. {dismiss}
+          {state.label}: still running after 10 minutes. Check <Link to="/settings/jobs">Settings → Jobs</Link>. {dismiss}
         </Notice>
       );
     case "failed":

@@ -121,7 +121,7 @@ function ClusterCommands({
               <li>Puts the code in the Secret <Code>stackurity-reporter</Code>. On first start the reporter exchanges it for its own token, keeps the token there and removes the code.</li>
               <li>Reports every hour. Running images are then scanned by Stackurity from their registries.</li>
               <li>
-                To remove it: <Code>{tab === "helm" ? uninstall.helm : uninstall.kubectl}</Code>. The cluster stays under Assets until you delete
+                To remove it: <Code>{tab === "helm" ? uninstall.helm : uninstall.kubectl}</Code>. The cluster stays under <Link to="/assets">Assets</Link> until you delete
                 it there.
               </li>
             </ul>

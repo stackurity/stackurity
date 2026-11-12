@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useEffect, useState, type ReactNode } from "react";
 import { api, ApiError, type EmailCategory, type EmailPreferences, type EmailPreferencesChange } from "../api";
 import { ErrorBox, Loading, Notice } from "../components/ui";
@@ -147,7 +148,7 @@ export function EmailPreferencesPage() {
 
   let body: ReactNode;
   if (!token || error?.code === "link_invalid") {
-    body = <Notice kind="warn">This link is not valid. Sign in and open Your account → Email preferences instead.</Notice>;
+    body = <Notice kind="warn">This link is not valid. Sign in and open <Link to="/account#email">Your account → Email preferences</Link> instead.</Notice>;
   } else if (error?.code === "link_expired") {
     body = (
       <Notice kind="warn">

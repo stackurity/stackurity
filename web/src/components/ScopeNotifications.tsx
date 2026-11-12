@@ -1,3 +1,4 @@
+import { Link } from "react-router";
 import { useState, type FormEvent } from "react";
 import {
   api,
@@ -349,7 +350,7 @@ export function ChatApps({ view, orgAdmin, connected }: { view: View; orgAdmin: 
       {!allowed && (
         <div className="alert alert-warn" role="alert">
           Your organisation does not let projects connect their own Slack or Teams. Ask an organisation admin{admins} to turn on{" "}
-          <strong>Projects can connect their own Slack or Teams</strong> under Integrations. Until then, this project&apos;s rules can send to the
+          <strong>Projects can connect their own Slack or Teams</strong> under <Link to="/integrations">Integrations</Link>. Until then, this project&apos;s rules can send to the
           organisation&apos;s channels.
         </div>
       )}
