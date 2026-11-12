@@ -7,6 +7,7 @@ import {
   proposalBadge,
   proposalsByAnswer,
   proposalStatusLine,
+  undoLabel,
   proposalTargets,
   type AskProposal,
   type ProposalStatus,
@@ -57,7 +58,7 @@ test("Apply and Dismiss only while proposed; Undo only when applied and it can b
 });
 
 test("the status line says what happened", () => {
-  assert.equal(proposalStatusLine(at("proposed")), "Nothing changes until you click Apply.");
+  assert.equal(proposalStatusLine(at("proposed")), "");
   assert.match(proposalStatusLine(at("proposed", { changed: true })), /^What this change covers changed since Ask proposed it\. This is the new preview/);
   assert.match(proposalStatusLine(at("applied", { decided_at: "2026-11-12T10:05:00Z" })), /^Applied at \d{1,2}[:.]\d{2}/);
   assert.equal(proposalStatusLine(at("dismissed")), "Dismissed. Nothing was changed.");
@@ -104,4 +105,9 @@ test("a proposal goes under the last answer to its question, so History shows it
   assert.deepEqual([...m.keys()], [4, 7]);
   assert.equal(m.get(4)![0].id, 1);
   assert.equal(m.get(7)![0].status, "dismissed");
+});
+
+test("undo of a snooze says it reopens", () => {
+  assert.equal(undoLabel({ tool: "snooze" }).label, "Reopen");
+  assert.equal(undoLabel({ tool: "rename_project" }).label, "Undo");
 });

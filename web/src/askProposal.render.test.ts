@@ -59,7 +59,8 @@ test("proposed: what will change, on what, with Apply and Dismiss", () => {
   assert.match(html, /<p class="ask-proposal-summary">Assign 1 issue to ui@example.com \(you\)<\/p>/);
   assert.match(html, /<a href="\/findings\/7"[^>]*>CVE-2021-23337 in lodash 4.17.15 on web-1<\/a>/);
   assert.match(html, />Not applied</);
-  assert.match(html, /Nothing changes until you click Apply\./);
+  // The line under the answer says nothing changes until Apply; the card does not repeat it.
+  assert.doesNotMatch(html, /Nothing changes until you click Apply/);
   assert.deepEqual(buttons(html), ["Apply", "Dismiss"]);
   assert.doesNotMatch(html, /you didn&#x27;t ask for a change/);
 });
@@ -79,7 +80,8 @@ test("applied: the time, a link to what changed and the activity log; Undo only 
   assert.match(html, /<a href="\/findings\/7"[^>]*>View what changed<\/a>/);
   assert.match(html, /<a href="\/audit\?object_type=finding"[^>]*>Activity log<\/a>/);
   assert.deepEqual(buttons(html), []);
-  assert.deepEqual(buttons(card("applied", { can_undo: true, tool: "snooze" })), ["Undo"]);
+  assert.deepEqual(buttons(card("applied", { can_undo: true, tool: "snooze" })), ["Reopen"]);
+  assert.deepEqual(buttons(card("applied", { can_undo: true, tool: "rename_project" })), ["Undo"]);
 });
 
 test("dismissed, expired, failed and undone have no buttons and say what happened", () => {

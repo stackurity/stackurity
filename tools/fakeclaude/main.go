@@ -110,7 +110,7 @@ func main() {
 			in, _ := json.Marshal(rename)
 			toolUse("toolu_propose", "propose_rename_project", string(in))
 		case rename != nil:
-			text := "I have proposed renaming the project. Nothing changes until you click **Apply**."
+			text := "I have proposed renaming the project."
 			ev("content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}})
 			ev("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}})
 			ev("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})

@@ -35,6 +35,15 @@ export interface AskProposal {
   undone_at?: string;
 }
 
+/**
+ * The Undo button's words. Undoing a snooze reopens the issues, which puts
+ * them back to New rather than the state they had before, so it says that.
+ */
+export function undoLabel(p: Pick<AskProposal, "tool">): { label: string; title: string } {
+  if (p.tool === "snooze") return { label: "Reopen", title: "Reopens these issues: they go back to New, not to the state they had before" };
+  return { label: "Undo", title: "Reverse this change" };
+}
+
 /** The line above the card's buttons, under the label. */
 export const UNREQUESTED_NOTE = "Ask suggested this; you didn't ask for a change.";
 
@@ -91,7 +100,7 @@ export function proposalStatusLine(p: AskProposal): string {
     case "proposed":
       return p.changed
         ? "What this change covers changed since Ask proposed it. This is the new preview: nothing changes until you click Apply."
-        : "Nothing changes until you click Apply.";
+        : "";
     case "applying":
       return "Applying…";
     case "applied":

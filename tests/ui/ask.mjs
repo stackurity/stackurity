@@ -146,7 +146,7 @@ for (const width of [1280, 390]) {
   const card = log.locator(".ask-proposal").last();
   await card.waitFor();
   ok((await card.innerText()).includes(`Rename the project "${name}"`), `${tag} the card says what will change`);
-  ok(await card.getByText("Nothing changes until you click Apply.").isVisible(), `${tag} the card says nothing changes until Apply`);
+  ok((await card.getByText("Nothing changes until you click Apply.").count()) === 0, `${tag} the card does not repeat the line under the answer`);
   ok((await log.locator(".ask-ran-note").last().innerText()).includes("Nothing changes until you click Apply."), `${tag} the line under the answer says so too`);
   ok(!(await card.innerText()).includes("you didn't ask"), `${tag} a requested change has no "you didn't ask" note`);
   ok((await projectName()) === name, `${tag} proposing changed nothing`);

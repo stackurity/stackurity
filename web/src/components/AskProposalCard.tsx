@@ -6,6 +6,7 @@ import {
   proposalActions,
   proposalBadge,
   proposalStatusLine,
+  undoLabel,
   proposalTargets,
   proposalTitle,
   UNREQUESTED_NOTE,
@@ -128,8 +129,8 @@ export function AskProposalCard({
             </button>
           )}
           {acts.undo && (
-            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void act("undo")} title="Reverse this change">
-              Undo
+            <button type="button" className="btn btn-sm" disabled={busy} onClick={() => void act("undo")} title={undoLabel(shown).title}>
+              {undoLabel(shown).label}
             </button>
           )}
         </div>
