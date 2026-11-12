@@ -850,7 +850,7 @@ Searches the current workspace for one query (`q`, `limit`, `summary`). See [Sea
 
 **Who:** viewer
 
-Lists assets, paged. Query: `kind`, `environment`, `status` (`collection_status`: `ok`, `partial`, `stale`, or `removed` for an application gone from its server), `owner_team_id`, `q`, `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
+Lists assets, paged. Query: `kind`, `environment`, `status` (`collection_status`: `ok`, `partial`, `stale`, or `removed` for an application gone from its server), `owner_team_id`, `q` (matches the name, any identifier, and the `digest`, `image` and `arn` attributes, as [search](#search) does), `reboot_required=true` (hosts running older code than is installed), `exposed=true|false` and `unfiled=true` (assets in no active project). Each asset has `projects`, the active projects it is in that the caller can see.
 
 Each asset also has `reporting` (0.13.10): `source` (`agent`, `scan`, `integration`, `manual`, or empty before its first report), `override` (`auto`, `daily`, `weekly`, `one_off`), `mode` (`agent`, `scheduled`, `one_off`, `integration`, `unknown`), `runs` (reports an hour apart or more, up to 6), `usual_seconds` (the median gap between them, once there is a cadence: 3 runs or more over at least a day), `due_after_seconds` (how long after its last report it is overdue; `null` when nothing is expected) and, for a `one_off` asset, `as_of` (the date its results are from). See [Assets that stop reporting](operations.md#assets-that-stop-reporting).
 
