@@ -415,4 +415,32 @@ func TestRouteKindsIncludePlatform(t *testing.T) {
 		"events": []string{"urgent"}, "kinds": []string{"os"}}, nil); code != 400 {
 		t.Errorf("unknown kind: %d", code)
 	}
+
+	// A project's own rule, off as a project's own Slack install starts:
+	// turning it on with platform ticked saves, from the integration's page
+	// (PUT /routes/{id}) and from the project's notifications.
+	var pr store.Project
+	if code := admin.do("POST", "/api/v1/projects", map[string]any{"name": "Shop"}, &pr); code != 201 {
+		t.Fatalf("project: %d", code)
+	}
+	base := "/api/v1/projects/" + itoa(pr.ID) + "/notifications"
+	var ch store.Channel
+	if code := admin.do("POST", base+"/channels", map[string]any{"kind": "webhook", "name": "shop-hook",
+		"config": map[string]string{"url": "https://hooks.example.com/shop"}}, &ch); code != 201 {
+		t.Fatalf("project channel: %d", code)
+	}
+	var own store.Route
+	if code := admin.do("POST", base+"/routes", map[string]any{"name": "shop", "channel_id": ch.ID, "enabled": false, "events": []string{"urgent"}}, &own); code != 201 || own.Enabled {
+		t.Fatalf("project rule: %d %+v", code, own)
+	}
+	if code := admin.do("PUT", "/api/v1/routes/"+itoa(own.ID), map[string]any{"name": "shop", "channel_id": ch.ID, "enabled": true,
+		"events": []string{"urgent"}, "project_ids": []int64{pr.ID}, "kinds": []string{"platform"}}, &own); code != 200 ||
+		!own.Enabled || !slices.Equal(own.Kinds, []string{"platform"}) || own.OwnerProjectID == nil || *own.OwnerProjectID != pr.ID {
+		t.Fatalf("turn on with platform from the integration page: %d %+v", code, own)
+	}
+	if code := admin.do("PUT", base+"/routes/"+itoa(own.ID), map[string]any{"name": "shop", "channel_id": ch.ID, "enabled": true,
+		"events": []string{"urgent", "daily_summary"}, "kinds": []string{"platform", "vulnerability"}}, &own); code != 200 ||
+		!own.Enabled || !slices.Equal(own.Kinds, []string{"platform", "vulnerability"}) {
+		t.Fatalf("edit from the project's notifications: %d %+v", code, own)
+	}
 }
