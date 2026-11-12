@@ -1029,6 +1029,10 @@ h1 .badge {
 .table .col-nowrap {
   white-space: nowrap;
 }
+/* Badges in a no-wrap column stay on one line too (P1 and SOS side by side). */
+.table .col-nowrap .badges {
+  flex-wrap: nowrap;
+}
 
 .row-actions {
   display: flex;
