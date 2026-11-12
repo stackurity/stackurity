@@ -2876,6 +2876,8 @@ export interface GitLabConnection {
   updated_at: string;
   last_sync: string | null;
   projects: number;
+  /** The Stackurity project its assets are added to; null: none. */
+  project_id: number | null;
 }
 
 export interface GitLabStatus {
