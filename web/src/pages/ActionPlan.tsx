@@ -607,7 +607,7 @@ export function FixGroupDetailPage() {
                 canEditPolicy={can("admin")}
               />
             ) : (
-              <ActionInstruction action={g.action} />
+              <ActionInstruction action={g.action} assetKind={g.places && g.places.length > 1 ? undefined : g.asset_kind} kind={g.kind} />
             )}
             {g.note && <p className="hint">{g.note}</p>}
             <p className="small">

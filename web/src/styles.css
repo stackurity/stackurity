@@ -2372,6 +2372,13 @@ details.json pre {
   background: var(--surface-2);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
+.image-steps {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s5);
+}
+.image-steps li + li {
+  margin-top: var(--s1);
+}
 .nofix-bundled {
   padding: var(--s2) var(--s3);
   border-left: 3px solid var(--accent);
@@ -5046,14 +5053,21 @@ h6.md-h {
 .approval p {
   margin: 0 0 var(--s2);
 }
+/* The note and its Approve / Decline buttons on one line, left-aligned under
+   the request. Row direction is explicit: the same element is a .form, which
+   is a column, and its flex-basis would then stretch the note's height. */
 .approval-actions {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: var(--s2);
   align-items: flex-end;
+  margin-top: var(--s2);
 }
 .approval-actions .field {
-  flex: 1 1 220px;
+  flex: 0 1 360px;
+  min-width: 200px;
   margin: 0;
 }
 @media (max-width: 720px) {

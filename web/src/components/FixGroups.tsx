@@ -75,6 +75,17 @@ export function urgencyOf(g: FixGroup): { label: string; tone: Tone; title: stri
 }
 
 /** What kind of change a fix is, in words. */
+/**
+ * The words under a fix's issue count. A fix promises nothing it cannot do: a
+ * group with no published fix has issues waiting for one, an upgrade has
+ * issues it would fix (they close once a newer report proves it).
+ */
+export function resolvesLabel(g: Pick<FixGroup, "kind" | "finding_count">): string {
+  const one = g.finding_count === 1;
+  if (g.kind === "no_fix") return one ? "issue awaiting a fix" : "issues awaiting a fix";
+  return one ? "issue this fixes" : "issues this fixes";
+}
+
 /** "10.1.0 → 10.7.5": what is installed and the version to move to (the recommended one when the server leads with it). */
 export function versionsText(g: FixGroup): string {
   const to = g.target_version || g.to_version;
@@ -140,18 +151,48 @@ export function BreakdownBar({ counts, order, classes, label }: { counts: Record
   );
 }
 
-const COMMAND_RE = /^(sudo\s|apt(-get)?\s|dnf\s|yum\s|apk\s|zypper\s|npm\s|yarn\s|pnpm\s|composer\s|pip\s|do-release-upgrade|pro\s|snap\s|brew\s|winget\s)/;
+const COMMAND_RE = /^(sudo\s|RUN\s|apt(-get)?\s|dnf\s|yum\s|apk\s|zypper\s|npm\s|yarn\s|pnpm\s|composer\s|pip\s|do-release-upgrade|pro\s|snap\s|brew\s|winget\s)/;
 
 /** True when a fix group's action is a command to run, not a sentence. */
 export function isCommand(action: string): boolean {
   return COMMAND_RE.test(action.trim());
 }
 
+/** True when the action is a Dockerfile line, run while an image is built. */
+export function isBuildStep(action: string): boolean {
+  return /^RUN\s/.test(action.trim());
+}
+
 /** The action as a copyable command when it is one, otherwise as text. */
-export function ActionInstruction({ action }: { action: string }) {
+export function ActionInstruction({ action, assetKind, kind }: { action: string; assetKind?: string; kind?: string }) {
   if (!action) return null;
+  const rebuild = assetKind === "image" && kind !== undefined && kind !== "no_fix" && kind !== "old_kernels";
+  if (rebuild || isBuildStep(action)) {
+    return (
+      <>
+        {isCommand(action) ? (
+          <CodeBlock label={isBuildStep(action) ? "Dockerfile build step" : "Command"} text={action.trim()} />
+        ) : (
+          <p className="fix-action">{action}</p>
+        )}
+        {rebuild && <ImageRebuildSteps />}
+      </>
+    );
+  }
   if (isCommand(action)) return <CodeBlock label="Command" text={action.trim()} />;
   return <p className="fix-action">{action}</p>;
+}
+
+/** How a fix reaches an image: in its build, never in a running container. */
+export function ImageRebuildSteps() {
+  return (
+    <ol className="image-steps small">
+      <li>Make the change in the image's build (the Dockerfile, its base image tag or the lockfile), not in a running container.</li>
+      <li>Rebuild the image and publish it to your registry.</li>
+      <li>Redeploy the containers that use it: a change made inside a running container is lost when it is recreated.</li>
+      <li>Scan the new image (or upload its SBOM) so Stackurity can confirm the fix.</li>
+    </ol>
+  );
 }
 
 export function GroupBadges({ g }: { g: FixGroup }) {
@@ -260,7 +301,7 @@ export function FixGroupCard({
           </div>
           <div className="fix-resolves">
             <span className="fix-count">{g.finding_count.toLocaleString()}</span>
-            <span className="small">{g.finding_count === 1 ? "issue cleared" : "issues cleared"}</span>
+            <span className="small">{resolvesLabel(g)}</span>
             {g.unique_issues !== undefined && g.unique_issues !== g.finding_count && (
               <span className="small muted">
                 {plural(g.unique_issues, "distinct vulnerability", "distinct vulnerabilities")}
@@ -271,7 +312,7 @@ export function FixGroupCard({
         </div>
         <GroupBadges g={g} />
         <BreakdownBar counts={g.by_priority} order={PRIORITIES} classes={PRIO_CLASS} label="By priority" />
-        <ActionInstruction action={g.action} />
+        <ActionInstruction action={g.action} assetKind={places ? undefined : g.asset_kind} kind={g.kind} />
         {places && <FixPlaces g={g} places={places} />}
         {g.note && <p className="hint">{g.note}</p>}
         {g.packages && g.packages.length > 0 && (
@@ -404,7 +445,7 @@ export function FindingFixGroup({ f }: { f: Finding }) {
         {g && (
           <span className="muted">
             {" "}
-            ({plural(g.finding_count, "issue")} cleared together)
+            ({g.kind === "no_fix" ? `${plural(g.finding_count, "issue")} awaiting a fix` : `${plural(g.finding_count, "issue")} fixed together`})
           </span>
         )}
       </span>

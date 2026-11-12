@@ -1,6 +1,7 @@
 import { Link, useSearchParams } from "react-router";
 import { api, type Asset, type InventoryRow, type List } from "../api";
 import { useLoad } from "../hooks";
+import { plural } from "../format";
 import { UpdateBadge } from "../components/Badge";
 import { AssetSelect, ProjectFilter } from "../components/AssetPicker";
 import { Table, type Column } from "../components/Table";
@@ -13,9 +14,10 @@ const LIMIT = 50;
 const TOP = 20;
 
 /**
- * Updates available: installs behind their package's latest stable release
- * that fix no known vulnerability (those are in Fixes). Kept plain: a list
- * for planning maintenance, not a second findings page.
+ * Updates available: every install behind its package's latest stable
+ * release, with or without a known vulnerability. Kept plain: a list for
+ * planning maintenance, not a second findings page; an install with open
+ * issues links to them, and Fixes says what to do first.
  */
 export function UpdatesAvailablePage() {
   const [params, setParams] = useSearchParams();
@@ -63,6 +65,16 @@ export function UpdatesAvailablePage() {
     { key: "latest", header: "Latest", cell: (r) => <LatestCell row={r} /> },
     { key: "asset", header: "Asset", cell: (r) => <Link to={`/assets/${r.asset_id}`}>{r.asset_name}</Link> },
     { key: "location", header: "Location", cell: (r) => <span className="small muted">{r.location}</span> },
+    {
+      key: "security",
+      header: "Security",
+      cell: (r) =>
+        (r.open_findings ?? 0) > 0 ? (
+          <Link to={`/fixes/issues?asset_id=${r.asset_id}&component_id=${r.component_id}`}>{plural(r.open_findings ?? 0, "open issue")}</Link>
+        ) : (
+          <span className="small muted">No open issues</span>
+        ),
+    },
   ];
 
   const nothing = sum.data && sum.data.counts.total === 0;
@@ -73,7 +85,8 @@ export function UpdatesAvailablePage() {
         title="Updates available"
         sub={
           <>
-            Newer stable releases that fix no known vulnerability. They are not issues: security fixes are in <Link to="/fixes">Fixes</Link>.
+            Every package behind its latest stable release, whether or not the upgrade fixes a known vulnerability. For what to upgrade first
+            for security, use <Link to="/fixes">Fixes</Link>: installs with open issues say so below and link to them.
           </>
         }
       />

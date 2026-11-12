@@ -173,6 +173,34 @@ func manager(osID, osVersion string) (update, autoremove string) {
 	return "Install the available package updates", "Remove kernels that are no longer booted"
 }
 
+// imageBuildStep is the Dockerfile line that installs the published updates
+// while an image is built, for its os-release ID and VERSION_ID; empty when
+// the distribution's package manager is not known. Images are fixed in their
+// build: an upgrade run in a container is lost when it is recreated.
+func imageBuildStep(osID, osVersion string) string {
+	switch osID {
+	case "ubuntu", "debian":
+		return "RUN apt-get update && apt-get upgrade -y && rm -rf /var/lib/apt/lists/*"
+	case "alpine":
+		return "RUN apk upgrade --no-cache"
+	case "amzn":
+		if osVersion == "2" {
+			return "RUN yum update -y && yum clean all"
+		}
+		return "RUN dnf upgrade -y --refresh && dnf clean all"
+	case "rhel", "centos", "ol":
+		if v, _, _ := strings.Cut(osVersion, "."); v == "7" {
+			return "RUN yum update -y && yum clean all"
+		}
+		return "RUN dnf upgrade -y --refresh && dnf clean all"
+	case "rocky", "almalinux", "fedora":
+		return "RUN dnf upgrade -y --refresh && dnf clean all"
+	case "sles", "sles_sap", "sled", "opensuse-leap":
+		return "RUN zypper --non-interactive patch"
+	}
+	return ""
+}
+
 func isOSPackage(t string) bool { return t == "deb" || t == "rpm" || t == "apk" }
 
 // windowsFix reports whether a row is a Windows update finding with a free
@@ -381,6 +409,16 @@ func describe(g *Group, osEOL map[int64]Row, advice map[string]Advice) {
 		g.Effort = "low"
 		g.Reboot = hasKernel(g.pkgs)
 		g.Note = fmt.Sprintf("%s across %s are fixed by updates already published for %s.", issues, plural(g.PackageCount, "package"), osLabel)
+		if g.AssetKind == "image" {
+			g.Title = "Rebuild the image with the available security updates"
+			g.Action = imageBuildStep(g.extra["os"], g.extra["osv"])
+			if g.Action == "" {
+				g.Action = "Install the available package updates in the image's build (or move to a newer base image), then rebuild."
+			}
+			g.Reboot = false
+			g.Note += " Change the image's build, not a running container: use the newest base image tag or add this step to the Dockerfile, " +
+				"rebuild and publish the image, redeploy the containers that use it, then scan the new image."
+		}
 	case WindowsUpdate:
 		describeWindowsUpdate(g, osLabel)
 	case OldKernels:

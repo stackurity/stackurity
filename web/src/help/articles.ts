@@ -1075,7 +1075,7 @@ stackurity.exe agent --interval 6h`,
       {
         table: [
           ["Kind", "What it means", "Typical fix"],
-          ["Security updates", "OS packages that have a fix in the current release.", "`sudo apt update && sudo apt upgrade` (or dnf/apk), then reboot if needed."],
+          ["Security updates", "OS packages that have a fix in the current release.", "`sudo apt update && sudo apt upgrade` (or dnf/apk), then reboot if needed. On a container image, a Dockerfile step such as `RUN apt-get update && apt-get upgrade -y` (or the newest base image tag): rebuild, publish, redeploy, then scan the new image."],
           ["Old kernels", "Kernels installed but not running. Not exploitable until booted.", "`sudo apt autoremove --purge` to remove them."],
           ["Release upgrade", "The OS release is end of life, plus OS issues with no free fix in this release and its packages that are also end of life upstream. May say “Ubuntu Pro optional (paid)” when the paid channel has fixes.", "Upgrade the release (e.g. Ubuntu 20.04 → 24.04). Ubuntu Pro (paid subscription) can bridge the time until then."],
           ["End of life", "Other software past end of life (MySQL 8.0, nginx 1.18, Python 3.8…). Not raised for a distribution's own package while the distribution release is supported: the distribution still patches it, and the component page says so.", "Move to a supported version."],
@@ -1486,7 +1486,7 @@ jobs:
     keywords: "outdated newer release latest stable patch minor major upgrade behind dependencies bootstrap npm",
     body: [
       {
-        p: "A newer release that fixes no known vulnerability is not an issue: it never appears in **Fixes**, gets no priority and raises no incident or alert. **Updates available** lists these upgrades for when you plan maintenance.",
+        p: "**Updates available** lists every package behind its latest stable release, for when you plan maintenance, whether or not the newer release fixes a known vulnerability. Being behind is not an issue on its own: it gets no priority and raises no incident or alert. An install with open issues says so in the **Security** column and links to them; **Fixes** is where those are put in order.",
       },
       {
         steps: [
