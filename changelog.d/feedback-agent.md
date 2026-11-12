@@ -7,4 +7,4 @@
 
 ### Upgrading
 
-- Migration `0105_feedback_agent` adds the `needs_info` status, the approval columns and `feedback_comments` to the feedback queue, and `thread` to `feedback_sent`. Additive.
+- Migration `0108_feedback_agent` adds the `needs_info` status, the approval columns and `feedback_comments` to the feedback queue, and `thread` to `feedback_sent`. Additive.
