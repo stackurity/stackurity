@@ -6,6 +6,35 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.5
+
+### Security
+
+- **Secrets pasted into Ask Stackurity are removed before the model sees them.** A token, password, key or webhook address in a known shape is taken out of the question before it is stored, used as the conversation's title or sent to the model, and the panel warns you, also while you type. Ask never asks for or accepts a secret: you enter it on the setup page.
+
+### Added
+
+- **Ask Stackurity answers questions about your account.** "What plan are we on", "how many assets are we using out of our limit", "how many admins do we have", "is Slack connected", "are we notified about critical issues" and "how many Ask questions are left" now get an answer from three new read-only tools, also offered to connected AI assistants: `account_overview` (your role, the plan and its limits against use, members counted by role, Ask questions left), `integrations_status` (which notification channels and integrations are connected and on) and `notification_settings` (the notification rules in effect). Each part needs the role its page needs and says so when yours cannot read it. Members are counted, never named, and webhook addresses, tokens and passwords are never returned. See [AI assistants](docs/ai-assistants.md#reading).
+- **Ask Stackurity can start a connection for you.** Ask it to connect GitHub, GitLab, Jira, PagerDuty or Slack, and the card under its answer has one button that starts the same flow as the Integrations page: you approve Stackurity on the service's own page and come back with the Ask panel still open. For Microsoft Teams, email and webhook alerts and DigitalOcean, the card links to the setup page. For a new server, **Apply** creates an install code as you and the card shows the install command with **Copy**; the code is shown once and Ask never sees it. The card says **Connected** when it finds the new connection. Only organisation admins get these cards, and they need **Ask may propose changes**. See [Ask Stackurity](docs/ai-assistants.md#ask-stackurity).
+- **Ask Stackurity can propose a change; you apply it with one click.** Ask the assistant to assign issues, snooze or ignore them, check a fix again, add assets to a project or rename a project, and it shows the change as a card under its answer, with what will change, on what, and **Apply** and **Dismiss**. Ask never applies anything itself and never sees the confirm code: only your click does, as you, through the same role checks as the dashboard. A proposal can be applied once, within 15 minutes; if the data changed since, you see the new preview instead. A snooze or a rename can be undone from the card. The activity log records the change under your name "(via Ask Stackurity)". Admins turn it on or off with **Ask may propose changes** (Integrations → AI assistants). See [Ask Stackurity](docs/ai-assistants.md#ask-stackurity).
+
+### Fixed
+
+- **Container images are fixed in their build.** An image's security updates were shown as `sudo apt update && sudo apt upgrade`, which patches a running container until it is recreated. The fix is now "Rebuild the image with the available security updates" with a Dockerfile build step (`RUN apt-get update && apt-get upgrade -y …`, or the dnf, yum, apk or zypper equivalent), and the steps after it: rebuild and publish, redeploy the containers, scan the new image.
+- **An asset's Coverage says how much was checked.** The asset header said "Not checked" whenever one component was unsupported; it now says "Partly checked (90%)", with the components checked and not supported in its tooltip, and "Not checked" only when nothing was.
+- **Updates available no longer says its upgrades fix no known vulnerability.** It lists every package behind its latest stable release, security or not; a new Security column links an install's open issues, and the page points to Fixes for what to do first.
+- **Approvals: the note and the Approve and Decline buttons sit together under the request**, instead of the note stretching the card.
+- **Fix counts say what the fix does.** "Issues cleared" is now "issues this fixes", and "issues awaiting a fix" on a card with no published fix.
+- **Tables with long identifiers stay readable.** Package paths (Automatic fixes), inventory locations (an asset's Inventory) and delivery titles (Delivery log) no longer wrap a few characters per line: the columns keep a minimum width, identifiers are cut in the middle with the full value on hover, focus and copy, and long titles stop at two lines.
+- **Search works on a phone.** The search box was squeezed between the project selector and the top-bar buttons, showing only its magnifier. On a phone it is now a search button that opens a full-width search row, with Close; a dot on the button shows that a query is kept.
+- **Automatic fix plans show long versions in full.** The Plan card's change row put both versions on one line and cut off the target; "from" and "to" now sit on their own lines and wrap.
+- **The dashboard no longer says available updates are "not vulnerabilities".** It says they are newer releases whether or not they fix a known vulnerability, and links to Fixes for what to upgrade first.
+
+### Upgrading
+
+- Migration `0107_ask_handoffs` lets `ask_proposals` hold connection hand-offs (`tool` `connect`, status `started`).
+- Migration `0106_ask_proposals` adds `workspaces.ask_propose` and the `ask_proposals` table. **Ask may propose changes** is off for organisations that exist when you upgrade, and on for organisations created afterwards; an admin can turn it on under Integrations → AI assistants.
+
 ## 0.20.4
 
 ### Added
