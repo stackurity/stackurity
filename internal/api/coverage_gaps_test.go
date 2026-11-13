@@ -69,7 +69,7 @@ func TestAdminCoverageGaps(t *testing.T) {
 		return []model.CoverageItem{{Scope: scope, Status: "unsupported", Reason: "parser not implemented yet"}}
 	}
 	// Workspace 1: a database host with MongoDB's and Docker's own packages
-	// (MongoDB is checked through nvd:vendor-builds, Docker is a gap), and two
+	// (both checked through nvd:vendor-builds), and two
 	// repositories with files nothing reads.
 	ingest(tenant.DefaultWorkspace, model.AssetHost, "acme-db-prod-7", nil,
 		ob("pkg:generic/ubuntu@24.04", "operating-system"),
@@ -131,15 +131,14 @@ func TestAdminCoverageGaps(t *testing.T) {
 	if g := find(rep.UnreadFiles, "swift:Package.resolved"); g.Assets != 1 || g.Workspaces != 1 {
 		t.Errorf("Package.resolved: %+v", g)
 	}
-	if g := find(rep.NoVulnerabilitySource, "deb|vendor_build|Docker's repository (download.docker.com)"); g.Assets != 1 || g.Components != 1 {
-		t.Errorf("Docker vendor build: %+v", g)
+	for _, g := range rep.NoVulnerabilitySource {
+		if strings.Contains(g.Kind, "download.docker.com") {
+			t.Errorf("Docker's own build is checked now, not a gap: %+v", g)
+		}
 	}
-	if g := find(rep.NoVulnerabilitySource, "deb|vendor_build|Docker's repository (download.docker.com)"); g.Actor != "stackurity" {
-		t.Errorf("vendor build actor: %+v", g)
-	}
-	// MongoDB and Elasticsearch from their vendors' repositories are matched
-	// through nvd:vendor-builds, which has not synced here.
-	if g := find(rep.NotChecked, "waiting_for_data|deb|nvd:vendor-builds"); g.Components != 2 || g.Assets != 1 || g.Actor != "automatic" {
+	// MongoDB, Elasticsearch and Docker from their vendors' repositories are
+	// matched through nvd:vendor-builds, which has not synced here.
+	if g := find(rep.NotChecked, "waiting_for_data|deb|nvd:vendor-builds"); g.Components != 3 || g.Assets != 1 || g.Actor != "automatic" {
 		t.Errorf("vendor builds waiting: %+v", g)
 	}
 	// npm has a source that has not synced here: counted, as waiting.
