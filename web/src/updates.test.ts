@@ -17,8 +17,8 @@ test("the installs query names the filter, and the asset only when one is picked
 });
 
 test("counts read largest change first and skip zeros", () => {
-  assert.equal(countsText({ patch: 41, minor: 12, major: 3, total: 56 }), "56 installs behind: 3 major, 12 minor, 41 patch");
-  assert.equal(countsText({ patch: 1, minor: 0, major: 0, total: 1 }), "1 install behind: 1 patch");
+  assert.equal(countsText({ patch: 41, minor: 12, major: 3, total: 56 }), "56 installs behind: 3 major, 12 minor, 41 patch.");
+  assert.equal(countsText({ patch: 1, minor: 0, major: 0, total: 1 }), "1 install behind: 1 patch.");
   assert.equal(countsText({ patch: 0, minor: 0, major: 0, total: 0 }), "Every registry package is on its latest stable release.");
   assert.equal(countsText(undefined), "Every registry package is on its latest stable release.");
 });

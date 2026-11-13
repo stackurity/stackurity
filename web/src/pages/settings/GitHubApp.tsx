@@ -1,4 +1,5 @@
 import { api, type GitHubAppStatus, type GitHubInstallation } from "../../api";
+import { INTEGRATIONS_RETURN, startGitHubInstall } from "../../integrationStart";
 import { useAction } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { confirmAction } from "../../components/ConfirmDialog";
@@ -13,10 +14,7 @@ import { ErrorBox, RelativeTime } from "../../components/ui";
 /** Starts Install on GitHub: GitHub's install page, with a state bound to this person. */
 export function InstallOnGitHubButton({ className = "btn btn-sm btn-primary" }: { className?: string }) {
   const act = useAction();
-  const start = async () => {
-    const r = await act.run(() => api.post<{ url: string }>("/integrations/github/install", { return_to: "/integrations" }));
-    if (r?.url) window.location.assign(r.url);
-  };
+  const start = () => act.run(() => startGitHubInstall(INTEGRATIONS_RETURN));
   return (
     <>
       <button type="button" className={className} onClick={() => void start()} disabled={act.pending}>

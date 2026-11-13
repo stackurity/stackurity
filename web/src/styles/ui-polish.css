@@ -262,3 +262,28 @@
     display: none;
   }
 }
+
+/* --- columns that say what a row is (Column.className): wide enough that a
+   package path or a title never breaks a few characters per line; the table
+   scrolls sideways instead. */
+
+.table .col-ident {
+  min-width: 14rem;
+}
+.table .col-title {
+  min-width: 16rem;
+  max-width: 28rem;
+}
+/* A long title in a row: two lines, then an ellipsis. The whole text stays
+   in the page for screen readers and is the hover title; the link opens it. */
+.clamp-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: break-word;
+}
+.build-label {
+  margin: 0 0 var(--s1);
+}

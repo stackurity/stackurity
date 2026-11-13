@@ -51,15 +51,34 @@ type Question struct {
 	Ceiling string
 	// API runs the tools as the person.
 	API mcp.API
+	// Propose: the organisation lets Ask propose changes. The model is
+	// then offered the propose tools (propose.go); otherwise it never sees
+	// them.
+	Propose bool
+	// SecretRemoved: the caller already removed text shaped like a secret
+	// from Text (RedactUserText), before titling the conversation. Ask
+	// removes any that is left, and warns either way.
+	SecretRemoved bool
 }
 
 // Event is what the engine reports while it answers.
 type Event struct {
-	Kind string `json:"-"` // text, reset, tool
+	Kind string `json:"-"` // text, reset, tool, proposal, proposals_dropped, secret_removed
 	Text string `json:"text,omitempty"`
 	// Tool describes a tool that runs, for the person ("Reading finding 12").
 	Tool string `json:"tool,omitempty"`
+	// Proposal is a change Ask proposed (kind proposal); the person applies
+	// it or not. Kind proposals_dropped: the turn is answered again, so the
+	// proposals shown for it are gone. Kind secret_removed: text shaped like
+	// a secret was removed from the question (Text is the question as
+	// stored and sent), so the panel warns.
+	Proposal *store.AskProposal `json:"-"`
 }
+
+// secretNote goes to the model after a question a secret was removed from.
+const secretNote = "<stackurity-note>Stackurity removed text that looked like a secret (a token, password, key or webhook address) " +
+	"from this message before you saw it. Tell the person in one short sentence not to paste secrets into Ask, and to enter them on the " +
+	"setup page instead. Never ask them to paste it again.</stackurity-note>"
 
 // Outcome is how a question ended.
 type Outcome struct {
@@ -116,6 +135,14 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if c.ContextTokens > MaxContextTokens {
 		return out, ErrTooLong
 	}
+	// A secret pasted into the question never reaches the model or the
+	// stored conversation, and the person is warned.
+	text, found := RedactUserText(q.Text)
+	q.Text = text
+	secret := found || q.SecretRemoved
+	if secret {
+		emit(Event{Kind: "secret_removed", Text: q.Text})
+	}
 	history, err := e.Store.AskMessages(ctx, q.UserID, c.ID)
 	if err != nil {
 		return out, err
@@ -139,7 +166,8 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 			plan = historyPlan{Tail: append(plan.Summarise, plan.Tail...)}
 		}
 	}
-	spec := callSpec{kind: "answer", model: c.Model, maxTokens: DefaultMaxTokens, historyTurns: len(exchanges(plan.Tail)), summaryUsed: summary != ""}
+	spec := callSpec{kind: "answer", model: c.Model, maxTokens: DefaultMaxTokens, historyTurns: len(exchanges(plan.Tail)), summaryUsed: summary != "",
+		propose: q.Propose}
 	if len(plan.Tail) == 0 {
 		spec.historyTurns = 0
 	}
@@ -166,12 +194,17 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if q.Page != nil {
 		page, _ = json.Marshal(q.Page)
 	}
-	um := userMessage(textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text))
+	blocks := []map[string]any{textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text)}
+	if secret {
+		blocks = append(blocks, textBlock(secretNote))
+	}
+	um := userMessage(blocks...)
 	qSeq, err := e.Store.AppendAskMessage(ctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: um, VisibleText: q.Text, Page: page}, 0)
 	if err != nil {
 		return out, err
 	}
 	msgs = append(msgs, um)
+	spec.questionSeq = qSeq
 
 	errs, err := e.answer(ctx, q, spec, msgs, emit, &out)
 	if err != nil || q.Ceiling == "" {
@@ -199,6 +232,12 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if err := e.Store.DropAskMessagesAfter(sctx, q.UserID, c.ID, qSeq); err != nil {
 		return out, err
 	}
+	if q.Propose {
+		if err := e.Store.DropAskProposalsFrom(sctx, q.UserID, c.ID, qSeq); err != nil {
+			return out, err
+		}
+		emit(Event{Kind: "proposals_dropped"})
+	}
 	if err := e.Store.SetAskConversationModel(sctx, q.UserID, c.ID, next, "", "", false); err != nil {
 		return out, err
 	}
@@ -218,6 +257,10 @@ func (e *Engine) answer(ctx context.Context, q Question, spec callSpec, base []j
 	c := q.Conversation
 	msgs := append([]json.RawMessage(nil), base...)
 	failedTools := 0
+	var prop *proposer
+	if spec.propose {
+		prop = &proposer{e: e, q: q, seq: spec.questionSeq}
+	}
 	for round := 1; ; round++ {
 		res, cost, err := e.call(ctx, q, spec, msgs, emit)
 		if err != nil {
@@ -262,7 +305,7 @@ func (e *Engine) answer(ctx context.Context, q Question, spec callSpec, base []j
 			return failedTools, nil
 		}
 		last := round >= MaxRounds || prompt > MaxContextTokens
-		results, failed := e.runTools(ctx, q.API, res.ToolUses, last, emit)
+		results, failed := e.runTools(ctx, q.API, res.ToolUses, last, emit, prop)
 		out.ToolErrors += failed
 		failedTools += failed
 		tm := userMessage(results...)
@@ -316,6 +359,10 @@ type callSpec struct {
 	// call record.
 	historyTurns int
 	summaryUsed  bool
+	// propose offers the propose tools (Question.Propose); questionSeq is
+	// the question's seq, which proposals are tied to.
+	propose     bool
+	questionSeq int
 }
 
 // call holds spend for one model call, makes it, settles the hold and
@@ -339,7 +386,7 @@ func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []jso
 		effort = spec.effort
 	}
 	res, err := e.Model.Stream(ctx, Call{Model: spec.model, Effort: effort, MaxTokens: spec.maxTokens, Messages: msgs,
-		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks, NoThinking: spec.noThinking}, func(ev StreamEvent) {
+		System: spec.system, NoTools: spec.noTools, NoFallbacks: !fallbacks, NoThinking: spec.noThinking, Propose: spec.propose}, func(ev StreamEvent) {
 		switch {
 		case ev.Reset:
 			emit(Event{Kind: "reset"})
@@ -468,8 +515,9 @@ const MaxToolsPerRound = 8
 
 // runTools runs the tools the model asked for, as the person, and returns
 // their results in order, all for one user message. last: the question's
-// budget is used up, so each result says so instead of running.
-func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event)) ([]map[string]any, int) {
+// budget is used up, so each result says so instead of running. prop, when
+// set, runs the propose tools (propose.go), one at a time, in order.
+func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last bool, emit func(Event), prop *proposer) ([]map[string]any, int) {
 	out := make([]map[string]any, len(uses))
 	ran := make([]bool, len(uses))
 	var wg sync.WaitGroup
@@ -486,8 +534,20 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 			out[i] = toolResult(u.ID, msg, true)
 			continue
 		}
+		if isProposeCall(u.Name) && prop != nil && prop.done {
+			out[i] = toolResult(u.ID, notRunProposal, true)
+			continue
+		}
 		emit(Event{Kind: "tool", Tool: toolLabel(u)})
 		ran[i] = true
+		if u.Name == ConnectTool && prop != nil {
+			out[i] = prop.runConnect(ctx, api, u, emit)
+			continue
+		}
+		if _, ok := mcp.ProposedTool(u.Name); ok && prop != nil {
+			out[i] = prop.run(ctx, api, u, emit)
+			continue
+		}
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -565,6 +625,25 @@ func toolLabel(u ToolUse) string {
 		return "Checking what changed"
 	case "updates_available":
 		return "Checking available updates"
+	case "account_overview":
+		return "Reading your account"
+	case "integrations_status":
+		return "Checking integrations"
+	case "notification_settings":
+		return "Reading notification rules"
+	}
+	if u.Name == ConnectTool {
+		return "Preparing a connection"
+	}
+	if _, ok := mcp.ProposedTool(u.Name); ok {
+		return "Preparing a change"
 	}
 	return "Reading"
+}
+
+// isProposeCall reports whether name is a propose tool or the hand-off
+// tool: together they may make one proposal per answer.
+func isProposeCall(name string) bool {
+	_, ok := mcp.ProposedTool(name)
+	return ok || name == ConnectTool
 }

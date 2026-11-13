@@ -262,6 +262,9 @@ export function GlobalSearch() {
   const { pathname, search } = useLocation();
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
+  // On phones the box is a button until tapped, then a full-width row over
+  // the top bar (CSS shows the button only at phone widths).
+  const [expanded, setExpanded] = useState(false);
   const [active, setActive] = useState(-1);
   const input = useRef<HTMLInputElement>(null);
   const box = useRef<HTMLDivElement>(null);
@@ -277,6 +280,7 @@ export function GlobalSearch() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditable(e.target)) {
         e.preventDefault();
+        setExpanded(true);
         input.current?.focus();
         input.current?.select();
       }
@@ -286,15 +290,24 @@ export function GlobalSearch() {
   }, []);
 
   // Close on navigation and on clicks elsewhere.
-  useEffect(() => setOpen(false), [pathname, search]);
+  useEffect(() => {
+    setOpen(false);
+    setExpanded(false);
+  }, [pathname, search]);
   useEffect(() => {
     const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
+      if (box.current && !box.current.contains(e.target as Node)) {
+        setOpen(false);
+        setExpanded(false);
+      }
     };
     document.addEventListener("mousedown", onDown);
     return () => document.removeEventListener("mousedown", onDown);
   }, []);
   useEffect(() => setActive(-1), [term]);
+  useEffect(() => {
+    if (expanded) input.current?.focus();
+  }, [expanded]);
 
   const submit = () => {
     const t = q.trim();
@@ -316,7 +329,10 @@ export function GlobalSearch() {
       setActive((i) => (i <= 0 ? items.length - 1 : i - 1));
     } else if (e.key === "Escape") {
       if (open) setOpen(false);
-      else input.current?.blur();
+      else {
+        setExpanded(false);
+        input.current?.blur();
+      }
     }
   };
 
@@ -325,7 +341,18 @@ export function GlobalSearch() {
   let n = -1;
 
   return (
-    <div className="global-search" ref={box}>
+    <div className={`global-search${expanded ? " expanded" : ""}`} ref={box}>
+      <button
+        type="button"
+        className="btn global-search-toggle"
+        aria-label={q.trim() ? `Search: ${q.trim()}` : "Search"}
+        title={q.trim() ? `Search: ${q.trim()}` : "Search"}
+        aria-expanded={expanded}
+        onClick={() => setExpanded(true)}
+      >
+        <IconSearch size={18} />
+        {q.trim() && <span className="global-search-dot" aria-hidden="true" />}
+      </button>
       <form
         role="search"
         onSubmit={(e) => {
@@ -363,6 +390,16 @@ export function GlobalSearch() {
         <kbd className="global-search-key" aria-hidden="true">
           /
         </kbd>
+        <button
+          type="button"
+          className="btn btn-link global-search-close"
+          onClick={() => {
+            setOpen(false);
+            setExpanded(false);
+          }}
+        >
+          Close
+        </button>
       </form>
       {showPop && (
         <div className="search-pop" id={listId} role="listbox" aria-label="Search results">

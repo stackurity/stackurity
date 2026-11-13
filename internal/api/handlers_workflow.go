@@ -118,10 +118,13 @@ func (s *Server) applyAction(w http.ResponseWriter, r *http.Request, ids []int64
 	}
 	detail := map[string]any{"note": req.Note, "mitigation": req.Mitigation, "until": req.Until, "user_id": req.UserID, "team_id": req.TeamID,
 		"until_fix": req.UntilFix, "reason": req.Reason, "scope": req.Scope, "expiry": req.Expiry, "applied": done}
-	// An action taken from Slack (slack.go) says so.
+	// An action taken from Slack (slack.go) or applied from an Ask
+	// Stackurity proposal (ask_proposals.go) says so.
 	if o, ok := originOf(r.Context()); ok {
 		detail["source"] = o.Source
-		detail["slack_user_id"], detail["slack_team_id"] = o.SlackUser, o.SlackTeam
+		if o.Source == "slack" {
+			detail["slack_user_id"], detail["slack_team_id"] = o.SlackUser, o.SlackTeam
+		}
 	}
 	_ = s.Store.Audit(r.Context(), actor, "finding."+req.Action, "finding", joinIDs(ids), detail)
 	if done == 0 && len(failures) > 0 {

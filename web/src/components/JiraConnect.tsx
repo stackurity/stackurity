@@ -2,12 +2,12 @@ import { useEffect } from "react";
 import {
   api,
   PRIORITIES,
-  startJiraConnect,
   type JiraConnection,
   type JiraProjectMeta,
   type List,
   type Priority,
 } from "../api";
+import { startJiraConnect } from "../integrationStart";
 import { useAction, useLoad } from "../hooks";
 import { Badge } from "./Badge";
 import { ErrorBox } from "./ui";

@@ -42,3 +42,9 @@ test("bad or missing storage never breaks the panel", () => {
   assert.deepEqual(loadAskState(undefined, 1, s), EMPTY_ASK_STATE);
   assert.deepEqual(loadAskState(7, undefined, s), EMPTY_ASK_STATE);
 });
+
+test("a half-typed question that holds a secret is not kept for the tab", () => {
+  const s = memory();
+  saveAskState(7, 1, { open: true, minimised: false, conversation: 42, text: "use xoxb-1234567890-abcdefghijkl" }, s);
+  assert.deepEqual(loadAskState(7, 1, s), { open: true, minimised: false, conversation: 42, text: "" });
+});

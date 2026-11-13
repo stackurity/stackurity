@@ -77,6 +77,15 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/slack/links/{id}":              accountScope,
 	"POST /api/v1/slack/links/preview":             accountScope,
 	"POST /api/v1/slack/links/confirm":             accountScope,
+
+	// Applying, dismissing or undoing a change Ask proposed in the
+	// caller's own conversation: the change itself is made through the
+	// API's own routes, with their scope and role checks.
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   accountScope,
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": accountScope,
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    accountScope,
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/start":   accountScope,
+
 	// Connecting AI assistants: the consent page and the caller's own
 	// connections, in every workspace they belong to.
 	"POST /api/v1/oauth/authorize/preview": accountScope,
@@ -262,7 +271,9 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				writeError(w, 403, "forbidden", "Ask Stackurity only reads")
 				return
 			}
-			if sc == accountScope && route != "GET /api/v1/auth/me" {
+			// It reads the person's role, and the questions left (its
+			// account_overview tool); no other account route.
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" {
 				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
 				return
 			}

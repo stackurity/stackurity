@@ -11,7 +11,9 @@ import {
   ending,
   filterOrgs,
   flagLabel,
+  refLabel,
   share,
+  signInLabel,
   timeToFirst,
   weekLabel,
   type TrialCohort,
@@ -44,6 +46,11 @@ function orgColumns(quietDays: number): Column<TrialOrg>[] {
           <div className="small muted">{plural(o.members, "member")}</div>
         </>
       ),
+    },
+    {
+      key: "contact",
+      header: "Customer",
+      cell: (o) => <ContactCell o={o} />,
     },
     {
       key: "signed_up",
@@ -110,6 +117,33 @@ function orgColumns(quietDays: number): Column<TrialOrg>[] {
   ];
 }
 
+/** Who an organisation is: whoever signed up, how they sign in, billing details, where they came from. */
+function ContactCell({ o }: { o: TrialOrg }) {
+  const c = o.contact;
+  if (!c || (!c.email && !c.billing_email)) return <span className="muted">not known</span>;
+  const billingName = c.billing_legal_name && c.billing_legal_name !== o.name ? c.billing_legal_name : "";
+  const billingEmail = c.billing_email && c.billing_email !== c.email ? c.billing_email : "";
+  return (
+    <>
+      {c.name && <div>{c.name}</div>}
+      {c.email && (
+        <div>
+          <a href={`mailto:${c.email}`}>{c.email}</a>
+        </div>
+      )}
+      <div className="small muted">
+        {c.email ? `Signs in with ${signInLabel(c.sign_ins)}` : "Whoever signed up was deleted"}
+        {(billingName || billingEmail || c.billing_country) && (
+          <div>
+            Billing: {[billingName, billingEmail, c.billing_country].filter(Boolean).join(", ")}
+          </div>
+        )}
+        {c.ref && <div>Came from the {refLabel(c.ref)}</div>}
+      </div>
+    </>
+  );
+}
+
 const FILTERS: { id: TrialFilter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "trialing", label: "In trial" },
@@ -133,8 +167,8 @@ export function TrialsPage() {
   return (
     <>
       <PageHeader
-        title="Trials"
-        sub="Organisations that signed up on Stackurity Cloud, by the week they signed up: whether they connected an asset, still use Stackurity and paid. Activity is sign-ins, dashboard use, collections, agent check-ins and API use by members; instance administrators are not counted."
+        title="Customers"
+        sub="Every organisation that signed up on Stackurity Cloud, whether in trial, paying or ended: who it is, by the week it signed up, whether it connected an asset, still uses Stackurity and paid. Activity is sign-ins, dashboard use, collections, agent check-ins and API use by members; instance administrators are not counted."
         actions={
           <button type="button" className="btn" onClick={res.reload}>
             Refresh

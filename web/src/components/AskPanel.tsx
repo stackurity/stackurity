@@ -21,7 +21,7 @@ import {
   type AskStatus,
   type Inline,
 } from "../ask";
-import { Card, ErrorBox, RelativeTime } from "./ui";
+import { Card, CheckCard, ErrorBox, RelativeTime } from "./ui";
 import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackForm, AskRate } from "./AskFeedback";
@@ -30,6 +30,9 @@ import type { AskPanelState } from "../askState";
 import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
+import { AskProposalCard } from "./AskProposalCard";
+import { looksLikeSecret, SECRET_REMOVED_NOTICE, SECRET_TYPING_WARNING } from "../askSecrets";
+import { changedLine, proposalsByAnswer, type AskProposal } from "../askProposal";
 import { AskAnswerExtras } from "./AskAnswerExtras";
 
 /**
@@ -111,7 +114,7 @@ function AnswerText({ text, onNavigate }: { text: string; onNavigate?: () => voi
  * reported while it answered; a conversation opened again later no longer
  * has them), and that it changed nothing, since its tools only read.
  */
-export function AskReadOnly({ tools, onNavigate }: { tools?: string[]; onNavigate?: () => void }) {
+export function AskReadOnly({ tools, onNavigate, proposal }: { tools?: string[]; onNavigate?: () => void; proposal?: AskProposal }) {
   const reads = tools ? lookedAt(tools) : [];
   return (
     <div className="ask-ran small">
@@ -135,8 +138,8 @@ export function AskReadOnly({ tools, onNavigate }: { tools?: string[]; onNavigat
         </details>
       )}
       <p className="ask-ran-note muted">
-        {tools && reads.length === 0 ? "Answered without looking anything up. " : ""}Changed nothing: Ask can only read your Stackurity data. Any change is
-        yours to make, on the linked pages.
+        {tools && reads.length === 0 ? "Answered without looking anything up. " : ""}
+        {changedLine(proposal)}
       </p>
     </div>
   );
@@ -160,6 +163,8 @@ interface Turn {
   seq?: number;
   /** The lookups Ask reported while it answered (not kept with the conversation). */
   tools?: string[];
+  /** Changes this answer proposed, shown as cards under it (askProposal.ts). */
+  proposals?: AskProposal[];
 }
 
 const REASONS: Record<string, string> = {
@@ -217,6 +222,7 @@ export function AskPanel({
   const body = useRef<HTMLDivElement>(null);
   const scroll = useRef<number | null>(null);
   const page: AskPage | null = pageOf(pathname);
+  const secretTyped = looksLikeSecret(text);
   const { project, projects, choose } = useProject();
   const projectName = (id: number | null) => (id ? projects.find((p) => p.id === id)?.name ?? "" : "");
 
@@ -239,8 +245,8 @@ export function AskPanel({
     if (conv === null || loaded === conv || busy) return;
     setLoaded(conv);
     if (turns.length > 0) return; // this tab already holds it
-    api.get<{ messages: AskMessage[] }>(`/ask/conversations/${conv}`).then(
-      (r) => setTurns(toTurns(r.messages)),
+    api.get<{ messages: AskMessage[]; proposals?: AskProposal[] }>(`/ask/conversations/${conv}`).then(
+      (r) => setTurns(toTurns(r.messages, r.proposals)),
       () => setConv(null), // deleted or expired: start afresh
     );
   }, [conv]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -282,10 +288,10 @@ export function AskPanel({
     setView("chat");
     setError(null);
     try {
-      const r = await api.get<{ messages: AskMessage[] }>(`/ask/conversations/${id}`);
+      const r = await api.get<{ messages: AskMessage[]; proposals?: AskProposal[] }>(`/ask/conversations/${id}`);
       setLoaded(id);
       setConv(id);
-      setTurns(toTurns(r.messages));
+      setTurns(toTurns(r.messages, r.proposals));
     } catch (e) {
       fail(e);
     }
@@ -369,6 +375,7 @@ export function AskPanel({
     let answer = "";
     let answerSeq = 0;
     const tools: string[] = [];
+    let proposals: AskProposal[] = [];
     let closing: Turn | null = null;
     try {
       await streamQuestion(id, q, usePage ? page : null, getActiveProject(), (e) => {
@@ -386,6 +393,24 @@ export function AskPanel({
             setTool(String(e.data.tool ?? "Reading"));
             tools.push(String(e.data.tool ?? "Reading"));
             break;
+          case "proposal":
+            proposals = [...proposals, e.data as unknown as AskProposal];
+            break;
+          case "proposals_dropped":
+            proposals = [];
+            break;
+          case "secret_removed": {
+            // The server took a secret out of the question before it was
+            // kept or sent to the model: show the question as kept, and why.
+            const kept = String(e.data.text ?? "");
+            setTurns((t) => {
+              const at = t.map((x) => x.role).lastIndexOf("user");
+              const next = at < 0 ? t : t.map((x, i) => (i === at ? { ...x, text: kept } : x));
+              return [...next, { role: "notice", text: SECRET_REMOVED_NOTICE }];
+            });
+            setConvs((cs) => cs.map((c) => (c.id === id ? { ...c, title: kept } : c)));
+            break;
+          }
           case "done":
             answerSeq = Number(e.data.answer_seq) || 0;
             if (e.data.message) closing = { role: "notice", text: String(e.data.message) };
@@ -404,12 +429,19 @@ export function AskPanel({
       setBusy(false);
       setDraft("");
       setTool("");
-      setTurns((t) => [...t, ...(answer ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined, tools }] : []), ...(closing ? [closing] : [])]);
+      setTurns((t) => [
+        ...t,
+        ...(answer || proposals.length ? [{ role: "assistant" as const, text: answer, seq: answerSeq || undefined, tools, proposals }] : []),
+        ...(closing ? [closing] : []),
+      ]);
       reload();
     }
   };
 
   const stop = () => abort.current?.abort();
+  // A card's new state (applied, dismissed, …), kept with its answer.
+  const proposalChanged = (p: AskProposal) =>
+    setTurns((ts) => ts.map((t) => (t.proposals?.some((x) => x.id === p.id) ? { ...t, proposals: t.proposals.map((x) => (x.id === p.id ? p : x)) } : t)));
   // On a phone the panel covers the page: following a link minimises it,
   // so the page opens in view and the conversation waits in the corner.
   const onLinkClick = () => {
@@ -575,8 +607,19 @@ export function AskPanel({
               ) : t.role === "assistant" ? (
                 <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
+                  {conv !== null &&
+                    t.proposals?.map((p) => (
+                      <AskProposalCard
+                        key={p.id}
+                        conv={conv}
+                        proposal={p}
+                        onChange={proposalChanged}
+                        onNavigate={onLinkClick}
+                        onLeave={() => update({ open: true, minimised: false })}
+                      />
+                    ))}
                   <AskAnswerExtras text={t.text} onNavigate={onLinkClick} />
-                  <AskReadOnly tools={t.tools} onNavigate={onLinkClick} />
+                  <AskReadOnly tools={t.tools} onNavigate={onLinkClick} proposal={t.proposals?.[0]} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>
               ) : (
@@ -623,7 +666,13 @@ export function AskPanel({
                   void send();
                 }
               }}
+              aria-describedby={secretTyped ? "ask-secret-warning" : undefined}
             />
+            {secretTyped && (
+              <p id="ask-secret-warning" className="ask-secret-warning small" role="alert">
+                {SECRET_TYPING_WARNING}
+              </p>
+            )}
             <div className="ask-form-row">
               <span className="small muted">{left}</span>
               {busy ? (
@@ -668,6 +717,7 @@ export function AskSettingsCard() {
     }
   };
   const [consenting, setConsenting] = useState(false);
+  const setPropose = (on: boolean) => void run(async () => setS(await api.put<AskSettings>("/ask/settings", { propose_changes: on })));
   // Turning it on goes through the consent dialog; off needs nothing.
   const toggle = (enabled: boolean) => {
     if (enabled) setConsenting(true);
@@ -712,6 +762,13 @@ export function AskSettingsCard() {
             organisation
           </label>
           {consenting && <AskConsentDialog provider={s.provider} onConsent={consent} onCancel={() => setConsenting(false)} />}
+          <CheckCard
+            checked={s.propose_changes}
+            disabled={busy}
+            onChange={setPropose}
+            label="Ask may propose changes"
+            description="When someone asks for a change (assign, snooze or ignore issues, check again, add assets to a project, rename a project), Ask shows it as a card with Apply and Dismiss. Nothing changes until that person clicks Apply, and only within their own role. When an admin asks to connect something (GitHub, Jira, Slack, a new server and more), the card starts it on the service's own page. Ask never makes a change by itself."
+          />
           <p className="small muted">
             {s.questions_this_month} questions this month
             {s.question_limit !== null ? ` of ${s.question_limit}${s.question_period === "total" ? " in total" : ""}` : ""}
@@ -735,9 +792,12 @@ function providerWordsShort(provider: string): string {
   return provider === "bedrock" ? "Amazon Bedrock" : provider === "vertex" ? "Google Vertex AI" : "Anthropic, PBC, which may process them in the United States or other regions";
 }
 
-function toTurns(messages: AskMessage[]): Turn[] {
+function toTurns(messages: AskMessage[], proposals: AskProposal[] = []): Turn[] {
+  const byAnswer = proposalsByAnswer(messages, proposals);
   return messages.map((m) =>
-    m.stop_reason === "refusal" && !m.text ? { role: "notice", text: "Claude declined to answer this question." } : { role: m.role, text: m.text, seq: m.seq },
+    m.stop_reason === "refusal" && !m.text
+      ? { role: "notice", text: "Claude declined to answer this question." }
+      : { role: m.role, text: m.text, seq: m.seq, proposals: byAnswer.get(m.seq) },
   );
 }
 

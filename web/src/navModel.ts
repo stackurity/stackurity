@@ -164,7 +164,7 @@ export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
       { to: "/admin/health", label: "Platform health", instanceAdmin: true },
       { to: "/admin/coverage-gaps", label: "Coverage gaps", instanceAdmin: true },
       { to: "/admin/trust-badges", label: "Trust badges", instanceAdmin: true, trustBadge: true },
-      { to: "/admin/trials", label: "Trials", instanceAdmin: true, billing: true },
+      { to: "/admin/trials", label: "Customers", instanceAdmin: true, billing: true },
       { to: "/admin/packs", label: "Stack packs", instanceAdmin: true },
       { to: "/admin/license", label: "Licence", instanceAdmin: true },
       { to: "/admin/self-hosted-keys", label: "Self-hosted keys", instanceAdmin: true, communityKeys: true },

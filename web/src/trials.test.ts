@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { STATE_LABEL, ending, filterOrgs, flagLabel, share, timeToFirst, weekLabel, type TrialOrg } from "./trials.ts";
+import { STATE_LABEL, ending, filterOrgs, flagLabel, refLabel, share, signInLabel, timeToFirst, weekLabel, type TrialOrg } from "./trials.ts";
 
 const org = (o: Partial<TrialOrg>): TrialOrg =>
   ({
@@ -78,4 +78,15 @@ test("a plan cancelled to end with its paid period counts as cancelled, and says
   assert.equal(STATE_LABEL.cancelled, "Cancelled (incl. ending)");
   assert.equal(ending({ billing_status: "cancelling" }), true);
   assert.equal(ending({ billing_status: "cancelled" }), false);
+});
+
+test("signInLabel names providers and GitHub usernames", () => {
+  assert.equal(signInLabel([]), "email and password");
+  assert.equal(signInLabel(["github:ada", "google"]), "GitHub @ada, Google");
+  assert.equal(signInLabel(["microsoft"]), "Microsoft");
+});
+
+test("refLabel reads trust badge refs", () => {
+  assert.equal(refLabel("badge-acme"), "trust badge of acme");
+  assert.equal(refLabel("hn"), "hn");
 });

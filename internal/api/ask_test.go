@@ -229,7 +229,8 @@ func TestAskProjectScoping(t *testing.T) {
 	in, _ := json.Marshal(args)
 	var tools []asktest.Tool
 	for i, rt := range []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "get_finding", "find_component",
-		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"} {
+		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+		"account_overview", "integrations_status", "notification_settings"} {
 		tools = append(tools, asktest.Tool{ID: fmt.Sprintf("t%d", i), Name: rt, Input: string(in)},
 			asktest.Tool{ID: fmt.Sprintf("p%d", i), Name: rt, Input: `{"since":"2000-01-01"}`})
 	}
@@ -597,5 +598,70 @@ func TestAskModelTiers(t *testing.T) {
 	admin.do("POST", fmt.Sprintf("/api/v1/ask/conversations/%d/feedback", conv), map[string]any{"seq": 2, "rating": "down"}, nil)
 	if model() != "claude-sonnet-5-5" {
 		t.Errorf("above the ceiling: %s", model())
+	}
+}
+
+// Ask Stackurity answers questions about the account through the account
+// tools, with what the person's role may read: an admin gets the members
+// by role (never their names or addresses), the questions left, the
+// channels and rules (never a webhook address); a viewer is told what their
+// role cannot read.
+func TestAskAccountTools(t *testing.T) {
+	tools := []asktest.Tool{{ID: "a", Name: "account_overview", Input: `{}`}, {ID: "b", Name: "integrations_status", Input: `{}`},
+		{ID: "c", Name: "notification_settings", Input: `{}`}}
+	fake := asktest.New(t, asktest.Reply{Tools: tools}, asktest.Reply{Text: "done"}, asktest.Reply{Tools: tools}, asktest.Reply{Text: "done"})
+	e := newEnvWith(t, withAsk(t, fake, nil))
+	e.user("admin@x.io", auth.RoleAdmin)
+	e.user("other-admin@x.io", auth.RoleAdmin)
+	e.user("viewer@x.io", auth.RoleViewer)
+	admin, viewer := e.login("admin@x.io"), e.login("viewer@x.io")
+	const hook = "https://h.example/hooks/sEcReTpAtH"
+	var ch store.Channel
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "Ops hook", "config": map[string]string{"url": hook}}, &ch); code != 201 {
+		t.Fatalf("channel: %d", code)
+	}
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "Critical", "channel_id": ch.ID, "enabled": true, "min_priority": "P1"}, nil); code != 201 {
+		t.Fatalf("route: %d", code)
+	}
+
+	conv := askReady(t, e, admin)
+	if code, evs, raw := askQ(t, admin, conv, "What plan are we on and who are the admins?", nil, nil); code != 200 || lastEvent(evs).Name != "done" {
+		t.Fatalf("admin: %d %s", code, raw)
+	}
+	results := string(fake.Requests()[1].Body)
+	for _, want := range []string{`\"by_role\":{\"admin\":2,\"viewer\":1}`, `\"questions_used\":1`, `\"Ops hook\"`, `\"name\":\"Critical\"`,
+		`\"min_priority\":\"P1\"`, `\"sends\":true`, `\"not_available\":[]`} {
+		if !strings.Contains(results, want) {
+			t.Errorf("admin's tool results lack %s: %s", want, results)
+		}
+	}
+	for _, leak := range []string{"sEcReTpAtH", "h.example", "other-admin", "viewer@x.io", "admin@x.io"} {
+		if strings.Contains(results, leak) {
+			t.Errorf("admin's tool results show %q: %s", leak, results)
+		}
+	}
+
+	conv = askReady(t, e, viewer)
+	if code, evs, raw := askQ(t, viewer, conv, "Is Slack connected?", nil, nil); code != 200 || lastEvent(evs).Name != "done" {
+		t.Fatalf("viewer: %d %s", code, raw)
+	}
+	results = string(fake.Requests()[3].Body)
+	for _, want := range []string{`\"role\":\"viewer\"`, `\"section\":\"members\"`, `\"section\":\"channels\"`, `\"section\":\"rules\"`,
+		`\"questions_used\":2`} {
+		if !strings.Contains(results, want) {
+			t.Errorf("viewer's tool results lack %s: %s", want, results)
+		}
+	}
+	for _, leak := range []string{"Ops hook", `\"name\":\"Critical\"`, "sEcReTpAtH", `\"by_role\":{`} {
+		if strings.Contains(results, leak) {
+			t.Errorf("viewer's tool results show %q: %s", leak, results)
+		}
+	}
+	// The status route is open to Ask's own tool only: a token still
+	// cannot read it.
+	var tok struct{ Secret string }
+	admin.do("POST", "/api/v1/tokens", map[string]any{"name": "t", "role": "admin"}, &tok)
+	if code := bearer(e, tok.Secret, "GET", "/api/v1/ask/status", nil, nil); code != 403 {
+		t.Errorf("token reads ask status: %d", code)
 	}
 }

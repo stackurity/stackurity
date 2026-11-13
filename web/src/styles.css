@@ -2178,6 +2178,16 @@ details.json pre {
   font-size: 12.5px;
   white-space: nowrap;
 }
+.fromto-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.fromto-stack .mono {
+  font-size: 12.5px;
+  overflow-wrap: anywhere;
+}
 
 /* --- Stage 5: integrations and plugins */
 
@@ -2371,6 +2381,13 @@ details.json pre {
   border-left: 3px solid var(--accent);
   background: var(--surface-2);
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.image-steps {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s5);
+}
+.image-steps li + li {
+  margin-top: var(--s1);
 }
 .nofix-bundled {
   padding: var(--s2) var(--s3);
@@ -5046,14 +5063,21 @@ h6.md-h {
 .approval p {
   margin: 0 0 var(--s2);
 }
+/* The note and its Approve / Decline buttons on one line, left-aligned under
+   the request. Row direction is explicit: the same element is a .form, which
+   is a column, and its flex-basis would then stretch the note's height. */
 .approval-actions {
   display: flex;
+  flex-direction: row;
   flex-wrap: wrap;
+  justify-content: flex-start;
   gap: var(--s2);
   align-items: flex-end;
+  margin-top: var(--s2);
 }
 .approval-actions .field {
-  flex: 1 1 220px;
+  flex: 0 1 360px;
+  min-width: 200px;
   margin: 0;
 }
 @media (max-width: 720px) {
@@ -7200,6 +7224,99 @@ a.cov-chip:hover {
 .ask-ran-note {
   margin: 2px 0 0;
 }
+/* A change Ask proposed (AskProposalCard): the person applies it. */
+.ask-proposal {
+  margin: 8px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.ask-proposal-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.ask-proposal-label {
+  font-size: 0.8em;
+  font-weight: 600;
+  color: var(--text-2);
+}
+.ask-proposal-summary {
+  margin: 0 0 6px;
+  font-weight: 600;
+}
+.ask-proposal-unasked {
+  margin: 0 0 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
+.ask-proposal-targets,
+.ask-proposal-notes {
+  margin: 0 0 6px;
+  padding-left: 18px;
+}
+.ask-proposal-status {
+  margin: 0;
+  color: var(--text-2);
+}
+.ask-proposal-error {
+  margin: 6px 0 0;
+  color: var(--bad-fg);
+}
+.ask-proposal-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 8px;
+}
+.ask-proposal-applied {
+  border-color: var(--border);
+}
+.ask-proposal-dismissed,
+.ask-proposal-expired,
+.ask-proposal-undone {
+  background: var(--surface-2);
+  border-color: var(--border);
+}
+/* A connection Ask handed off (AskHandoffCard): the install command fits the panel. */
+.ask-handoff-command {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.ask-handoff-command .codeblock,
+.ask-handoff-command .install-command {
+  min-width: 0;
+  max-width: 100%;
+}
+.ask-handoff-command .install-command .codeblock pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding-right: 12px;
+}
+/* In the narrow panel, Show code and Copy go under the command, not over it. */
+.ask-handoff-command .codeblock-actions {
+  position: static;
+  justify-content: flex-end;
+  margin-top: 6px;
+}
+.ask-secret-warning {
+  margin: 0;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--warn-bg);
+  color: var(--warn-fg);
+}
 .ask-form {
   border-top: 1px solid var(--border);
   padding: 12px 16px;
@@ -7958,4 +8075,70 @@ a.cov-chip:hover {
 }
 .scope-rule-form > .field-group:first-child > .field-group-desc {
   margin-top: 0;
+}
+
+/* Phone search (R002-02): below 720px the box is a search button; tapped, it
+   becomes a full-width row over the top bar, so the query stays readable. */
+.global-search-toggle,
+.global-search-close {
+  display: none;
+}
+@media (max-width: 720px) {
+  .topbar-search {
+    flex: 1 0 auto;
+    justify-content: flex-end;
+  }
+  .global-search {
+    position: static;
+    flex: none;
+  }
+  .global-search-toggle {
+    display: inline-flex;
+    position: relative;
+    align-items: center;
+    justify-content: center;
+    min-width: 44px;
+    padding: 0 10px;
+  }
+  .global-search-dot {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .global-search form {
+    display: none;
+  }
+  /* Over the whole top bar (the nearest positioned ancestor: .topbar-search
+     and .global-search are static here). */
+  .topbar-search {
+    position: static;
+  }
+  .global-search.expanded form {
+    display: flex;
+    position: absolute;
+    inset: 0;
+    z-index: 41;
+    padding: 0 var(--s2) 0 var(--s3);
+    gap: var(--s2);
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+  }
+  .global-search.expanded .global-search-icon {
+    left: calc(var(--s3) + 10px);
+  }
+  .global-search.expanded input {
+    flex: 1;
+    min-width: 0;
+  }
+  .global-search.expanded .global-search-close {
+    display: inline-flex;
+    flex: none;
+  }
+  .global-search.expanded .search-pop {
+    z-index: 41;
+  }
 }

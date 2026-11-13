@@ -44,6 +44,7 @@ import { LeaksView } from "../components/Leaks";
 import { KubernetesCard, WORKLOAD_ATTRS } from "../components/Kubernetes";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
+import { TruncatedName } from "../components/Truncate";
 import { AssetPicker } from "../components/AssetPicker";
 import { ActionsTable } from "../components/Remediation";
 import { FixGroupList } from "./ActionPlan";
@@ -208,7 +209,7 @@ export function AssetDetailPage() {
             <AssetDimensions
               dims={[
                 reportingDimension(a.collection_status),
-                ...(coverage.data && a.collection_status !== "removed" ? [coverageDimension(coverage.data.state, coverage.data.label)] : []),
+                ...(coverage.data && a.collection_status !== "removed" ? [coverageDimension(coverage.data.state, coverage.data.label, coverage.data.components)] : []),
                 ...(openFindings.data && a.collection_status !== "removed" ? [securityDimension(findingCount, p1.data?.total ?? 0, p2.data?.total ?? 0)] : []),
               ]}
               securityTo={findingCount > 0 ? `/fixes/issues?asset_id=${a.id}` : undefined}
@@ -788,7 +789,7 @@ function InventoryTab({ assetId }: { assetId: number }) {
     { key: "direct", header: "Direct", cell: (r) => directLabel(r.direct) },
     { key: "scope", header: "Scope", cell: (r) => r.scope || <span className="muted">—</span> },
     { key: "conf", header: "Confidence", cell: (r) => <Badge status={r.confidence} /> },
-    { key: "loc", header: "Location", cell: (r) => <span className="mono small break">{r.location}</span> },
+    { key: "loc", header: "Location", className: "col-ident", cell: (r) => (r.location ? <TruncatedName value={r.location} className="mono small" /> : <span className="muted">—</span>) },
     { key: "seen", header: "Last seen", cell: (r) => <RelativeTime iso={r.last_seen} /> },
   ];
 

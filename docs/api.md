@@ -2697,7 +2697,7 @@ A dry run of the Free plan (`STACKURITY_CLOUD_FREE_PLAN`) that changes nothing: 
 
 **Who:** instance admin · Stackurity Cloud
 
-The trial report: every organisation that signed up on the cloud, by the week it signed up (`cohorts`, Monday in UTC, newest first, and `totals`: `signed_up`, `activated`, `active_7d`, `converted` (paid at least once), `trialing`, `expired`, `cancelled`, `never_activated`, `went_quiet`), and `orgs`, each with `signed_up_at`, `trial_ends_at`, `state` (`trialing`, `converted`, `expired`: the trial ended unpaid, `cancelled`: paid, then cancelled, including a plan that ends with the period already paid for (`billing_status` `cancelling`), or stopped paying) and the `billing_status` it comes from, `first_paid_at`, `first_asset_at`, `first_asset_kind`, `hours_to_first_asset`, asset counts, `last_sign_in_at`, `last_seen_at`, `last_collection_at`, `last_agent_check_in_at`, `last_api_use_at`, `last_activity_at`, `active_7d`, `active_30d` and `flags` (`never_activated`, `went_quiet`: a trial with no activity for `quiet_days`, `trial_ended_not_converted`). Activity is sign-ins, dashboard use, collections, collector check-ins and API use by members who are not instance administrators. `excluded` lists the workspaces left out (the operator's own and test organisations, set in the cloud's configuration). It only reads. Instance administrators also get a short weekly summary of it by email, which the cloud's configuration can turn off.
+The trial report: every organisation that signed up on the cloud, by the week it signed up (`cohorts`, Monday in UTC, newest first, and `totals`: `signed_up`, `activated`, `active_7d`, `converted` (paid at least once), `trialing`, `expired`, `cancelled`, `never_activated`, `went_quiet`), and `orgs`, each with `signed_up_at`, `trial_ends_at`, `state` (`trialing`, `converted`, `expired`: the trial ended unpaid, `cancelled`: paid, then cancelled, including a plan that ends with the period already paid for (`billing_status` `cancelling`), or stopped paying) and the `billing_status` it comes from, `first_paid_at`, `first_asset_at`, `first_asset_kind`, `hours_to_first_asset`, asset counts, `last_sign_in_at`, `last_seen_at`, `last_collection_at`, `last_agent_check_in_at`, `last_api_use_at`, `last_activity_at`, `active_7d`, `active_30d`, `flags` (`never_activated`, `went_quiet`: a trial with no activity for `quiet_days`, `trial_ended_not_converted`) and `contact`: who the organisation is (`name` and `email` of whoever signed up, `sign_ins`: their social sign-ins such as `github:octocat` or `google`, empty for email and password; `billing_email`, `billing_legal_name` and `billing_country` as given at checkout, empty before; `ref`, where the sign-up came from, such as `badge-acme`). Activity is sign-ins, dashboard use, collections, collector check-ins and API use by members who are not instance administrators. `excluded` lists the workspaces left out (the operator's own and test organisations, set in the cloud's configuration). It only reads. Instance administrators also get a short weekly summary of it by email, which the cloud's configuration can turn off.
 
 ### `PUT /admin/trials/{id}`
 
@@ -2735,7 +2735,7 @@ The in-app assistant ([ai-assistants.md](ai-assistants.md#ask-stackurity)). It i
 
 ### `GET /api/v1/ask/status`
 
-**Who:** a browser session
+**Who:** a browser session, and Ask Stackurity's own `account_overview` tool for the person asking (not API tokens or connected assistants)
 
 `available`, and when not, `reason` (`not_configured`, `ask_disabled`, `plan_required`, `read_only`, `spend_cap`) and `message`; `notice_version` and `notice_accepted`; `questions_used`, `questions_limit` (null: no limit), `question_period` (`month` or `total`) and `resets_at`.
 
@@ -2767,7 +2767,7 @@ Deletes all of the caller's conversations in this organisation; answers `deleted
 
 **Who:** a browser session
 
-One of the caller's conversations as they saw it: `conversation` and `messages` (`role`, `text`, `page`, `stop_reason`, `created_at`), without tool data. 404 for anyone else's, an organisation admin's included.
+One of the caller's conversations as they saw it: `conversation` and `messages` (`role`, `text`, `page`, `stop_reason`, `created_at`), without tool data, and `proposals`: the changes Ask proposed in it (below), each with the `question_seq` of the question it answered and its `status`. 404 for anyone else's, an organisation admin's included.
 
 ### `DELETE /api/v1/ask/conversations/{id}`
 
@@ -2779,7 +2779,33 @@ Deletes one of the caller's conversations (404 for anyone else's).
 
 **Who:** a browser session
 
-Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `answer_seq`: the answer's `seq` for feedback, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+Asks a question: `{"text", "page": {"kind": "finding" | "asset" | "component" | "fix_group", "id"}}` (`page` optional; one the caller cannot read is ignored). The answer streams as server-sent events: `tool` (`{"tool": "Reading issue #12"}`), `text` (a piece of the answer), `reset` (drop the text so far: a refusal, or a fallback model took over), `proposal` (a change Ask proposed, below; nothing is changed), `proposals_dropped` (the turn is answered again on a stronger model: drop the proposals shown for it), `secret_removed` (`{"text"}`: text shaped like a secret, such as a token, a password or a webhook address, was removed from the question before it was stored or sent to the model; `text` is the question as kept), then `done` (`stop_reason`, `questions_used`, `questions_limit`, `answer_seq`: the answer's `seq` for feedback, `message`, `long_chat`: the conversation is long or has cost a lot, so the dashboard suggests a new one) or `error` (`code`: `spend_cap`, `too_long`, `timeout`, `unavailable`, `internal`). Before the stream starts: 409 `notice_required`; 429 `quota_reached`, `busy` (one question at a time) or `rate_limited` (10 a minute and 60 an hour per person, 300 an hour per organisation); and the errors of `POST /ask/conversations`.
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply`
+
+**Who:** a browser session (the conversation's own person; 404 for anyone else)
+
+Applies a change Ask proposed. When the organisation lets Ask propose changes (`propose_changes` in `/ask/settings`), the model may call a `propose_` version of `assign`, `snooze`, `ignore`, `check_again`, `add_assets_to_project` or `rename_project`: the server runs that tool's preview and stores it as a proposal, with its confirm code, which the model never receives. A proposal is `id`, `tool`, `args`, `summary` (what will change), `details` (on what), `notes`, `code`, `unrequested` (the question had no words asking for a change, so the card says Ask suggested it), `status` (`proposed`, `applied`, `dismissed`, `expired`, `failed`, `undone`, `started` for a hand-off, below), `changed`, `link` (the page of what changed), `can_undo`, `error`, `created_at`, `expires_at`, `decided_at`.
+
+Apply runs the tool's confirm path as the caller, through the same API, role and project checks as the dashboard, and answers `proposal` with `status` `applied`. API tokens and connected assistants are refused (403 and 401). 403 `proposals_off` when the organisation turned proposals off. Each proposal applies once (409 `proposal_applied`, `proposal_dismissed`, `proposal_failed`) and only within 15 minutes of being proposed (410 `proposal_expired`). When what the change covers changed since the preview (an issue of the fix was resolved, the caller's role changed), nothing is applied: 409 `changed`, with the new preview in `error.proposal`, which the caller can apply. A refusal of the API itself (403 for a role too low) is returned as it is, and the proposal is `failed`. The activity log records the change under the caller's name followed by "(via Ask Stackurity)", and issue actions have `detail.source` `ask`.
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss`
+
+**Who:** a browser session (the conversation's own person)
+
+Closes an open proposal without applying it: `proposal` with `status` `dismissed` (409 when it is not open).
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo`
+
+**Who:** a browser session (the conversation's own person)
+
+Reverses an applied change that has a clean reverse (`can_undo`): a snooze (the issues are reopened, back to New) or a project rename (back to the old name). Once, within 15 minutes of applying it, through the same API and checks: `proposal` with `status` `undone`. Assigning, ignoring, checking again and adding assets to a project have no Undo.
+
+### `POST /api/v1/ask/conversations/{id}/proposals/{pid}/start`
+
+**Who:** a browser session (the conversation's own person)
+
+Hand-offs: when the person asks Ask to connect something, the model may call `propose_connect` with a `kind` (`github`, `gitlab`, `jira`, `pagerduty`, `slack`, `teams`, `email`, `webhook`, `server`, `digitalocean`) and optional non-secret fields (`name`; for `server` also `environment` and `project_id`). Only an organisation admin gets one. It is stored as a proposal with `tool` `connect` and counts as the answer's one proposal. Its card starts the service's own flow (the same request and redirect as the Integrations page) or links to the setup page; this endpoint records the click: `proposal` with `status` `started`. The connection itself is made, and audited, by that flow's own endpoints. Once, within 15 minutes: 409 `proposal_started`, 410 `proposal_expired`; 400 `not_started` for a `server` hand-off, which is applied instead: Apply creates a one-server install code valid for 24 hours as the caller (audited as `enrollment.create` "(via Ask Stackurity)") and answers `install` (`code`, `enrollment`) with the proposal. The code is in that response only: it is not stored with the proposal, and the model never receives it.
 
 ### `POST /api/v1/ask/conversations/{id}/feedback`
 
@@ -2816,13 +2842,13 @@ Each signal is recorded once per conversation, message and kind.
 
 **Who:** admin
 
-`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month` and `spend_this_month_micros` (millionths of a US dollar). Never anyone's conversations.
+`enabled`, `configured`, `provider`, `model`, `question_limit`, `question_period`, `spend_cap_micros`, `questions_this_month`, `spend_this_month_micros` (millionths of a US dollar) and `propose_changes` (Ask may propose changes for people to apply). Never anyone's conversations.
 
 ### `PUT /api/v1/ask/settings`
 
 **Who:** admin
 
-`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`.
+`{"enabled": true | false}`: turns the assistant on or off for the organisation. Audited as `ask.settings`. `{"propose_changes": true | false}`, alone or with `enabled`: lets Ask propose changes, which each person applies with a click, or stops it. Off for organisations that existed before the upgrade that added it (migration `0106_ask_proposals`), on for those created since. Audited as `ask.settings`.
 
 ### `DELETE /api/v1/ask/settings/conversations`
 

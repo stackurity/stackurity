@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from "react";
-import { Link } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { api, type Enrollment, type EnrollmentCreated } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
@@ -117,8 +117,15 @@ export function CheckApps({ checked, onChange }: { id: string; checked: boolean;
   );
 }
 
+const MODES: Mode[] = ["one", "fleet", "digitalocean"];
+
 export function AddServerPage() {
-  const [mode, setMode] = useState<Mode>("one");
+  // ?tab=digitalocean opens that tab (Ask Stackurity's hand-off card links it).
+  const [params] = useSearchParams();
+  const [mode, setMode] = useState<Mode>(() => {
+    const t = params.get("tab") as Mode | null;
+    return t && MODES.includes(t) ? t : "one";
+  });
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">

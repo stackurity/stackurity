@@ -46,6 +46,7 @@ import {
   TZ_SUGGESTIONS,
 } from "./Notifications";
 import { confirmAction } from "../../components/ConfirmDialog";
+import { looksLikeSecret } from "../../askSecrets";
 
 /*
  * One notification integration (a channel): its connection, then what it
@@ -1014,6 +1015,10 @@ export function IntegrationChannelPage() {
 export function IntegrationAddPage() {
   const { kind: k } = useParams();
   const navigate = useNavigate();
+  // A name filled in by a link (Ask Stackurity's hand-off card): plain text only.
+  const [params] = useSearchParams();
+  const asked = [...(params.get("name") ?? "")].filter((ch) => ch >= " " && ch !== "\u007f").join("").trim().slice(0, 80);
+  const initialName = looksLikeSecret(asked) ? "" : asked;
   const kind = (ADDABLE as string[]).includes(k ?? "") ? (k as ChannelKind) : null;
   const channels = useLoad(() => api.get<List<Channel>>("/channels"), []);
   const ctx = useCtx(channels.data?.items);
@@ -1046,6 +1051,7 @@ export function IntegrationAddPage() {
       />
         <ChannelForm
           kind={kind}
+          initialName={initialName || undefined}
           options={options.data}
           members={members.data?.items}
           onCancel={() => navigate("/integrations")}

@@ -240,9 +240,12 @@ export function ChannelForm({
   extraDirty = false,
   afterSave,
   onDiscard,
+  initialName,
 }: {
   channel?: Channel;
   kind?: ChannelKind;
+  /** A new integration's name, filled in (from the address: ?name=, as Ask Stackurity links it). */
+  initialName?: string;
   options: NotificationOptions;
   members: DirectoryUser[] | undefined;
   onCancel?: () => void;
@@ -276,7 +279,7 @@ export function ChannelForm({
   const [slackWebhook, setSlackWebhook] = useState(false);
   const [pdPaste, setPdPaste] = useState(false);
   const [teamsWebhook, setTeamsWebhook] = useState(false);
-  const [name, setName] = useState(channel?.name ?? "");
+  const [name, setName] = useState(channel?.name ?? initialName ?? "");
   const [secretRef, setSecretRef] = useState(channel?.secret_ref ?? "");
   const [url, setUrl] = useState(cfg.url ?? "");
   const [host, setHost] = useState(cfg.host ?? "");
@@ -1175,11 +1178,16 @@ export function DeliveriesTab({ channels, channelsLoaded = true, admin }: { chan
     {
       key: "incident",
       header: "Incident",
+      className: "col-title",
       cell: (d) =>
         d.incident_id ? (
-          <Link to={`/incidents/${d.incident_id}`}>{titleOf(d) || `#${d.incident_id}`}</Link>
+          <Link to={`/incidents/${d.incident_id}`} className="clamp-2" title={titleOf(d) || undefined}>
+            {titleOf(d) || `#${d.incident_id}`}
+          </Link>
         ) : (
-          <span className="small">{titleOf(d) || <span className="muted">—</span>}</span>
+          <span className="small clamp-2" title={titleOf(d) || undefined}>
+            {titleOf(d) || <span className="muted">—</span>}
+          </span>
         ),
     },
     {

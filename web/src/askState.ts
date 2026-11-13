@@ -7,6 +7,8 @@
 // every access is guarded, and the panel then simply starts closed and
 // empty.
 
+import { looksLikeSecret } from "./askSecrets.ts";
+
 export interface AskPanelState {
   open: boolean;
   minimised: boolean;
@@ -52,7 +54,9 @@ export function loadAskState(ws: number | undefined, user: number | undefined, s
 export function saveAskState(ws: number | undefined, user: number | undefined, s: AskPanelState, store: Store | null = storage()): void {
   if (!ws || !user || !store) return;
   try {
-    store.setItem(KEY, JSON.stringify({ ws, user, ...s, text: s.text.slice(0, MAX_TEXT) }));
+    // A question that holds a secret is not kept for the tab (askSecrets.ts).
+    const text = looksLikeSecret(s.text) ? "" : s.text.slice(0, MAX_TEXT);
+    store.setItem(KEY, JSON.stringify({ ws, user, ...s, text }));
   } catch {
     // full or refused: the panel works, it just won't survive a reload
   }

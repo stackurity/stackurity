@@ -447,6 +447,11 @@ var projectScopes = map[string]string{
 	"GET /api/v1/integrations/digitalocean/droplets":          "org",
 	"PUT /api/v1/integrations/digitalocean/token":             "org",
 	"DELETE /api/v1/integrations/digitalocean/token":          "org",
+
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/start":   "account",
 }
 
 // --- one organisation, two projects
@@ -1600,7 +1605,8 @@ func TestProjectMCP(t *testing.T) {
 		n++
 	}
 	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
-		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available"}
+		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+		"account_overview", "integrations_status", "notification_settings"}
 	for _, name := range tools {
 		add(name, args)
 		add(name, plain)
