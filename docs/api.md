@@ -2389,6 +2389,28 @@ Every organisation's badges with their last decision, for Stackurity's operators
 
 One badge's decisions with their full evidence (the rule's inputs: systems, sources with freshness and cursors, grouped component states; and the decision), newest first, plus `reasons` (each reason in words). Each read is audited (`trust_badge.admin.history.read`).
 
+## Security notices to free-key holders
+
+Stackurity Cloud only (paid code): on any other server these routes answer 404. People who asked for a free key, and have no account, can be sent a notice listing the security fixes of Stackurity releases they may be missing; each notice carries a stop link and a one-click `List-Unsubscribe` header. Served outside `/api/v1`. The token `t` identifies the address only by a keyed hash; a stop is recorded as a hash of the address, never the address.
+
+### `GET /security-notices/stop`
+
+**Who:** Stackurity Cloud only; anyone with a notice's link (no sign-in; 10 requests a minute per address)
+
+`?t=<token>`: an HTML page that asks whether to stop the notices, with a button that posts the form below. Changes nothing, since mail scanners open links. 400 page "Link not valid" for a bad token.
+
+### `POST /security-notices/stop`
+
+**Who:** Stackurity Cloud only; anyone with a notice's link (no sign-in; 10 requests a minute per address)
+
+Form field `t`: stops the notices to that address (`source` `link`; audited as `community_key.notices_stopped`) and answers an HTML confirmation page, also when they were already stopped. The free key keeps working. 400 page for a bad token.
+
+### `POST /security-notices/one-click`
+
+**Who:** Stackurity Cloud only; anyone with a notice's link (no sign-in; 10 requests a minute per address)
+
+One-click unsubscribe (RFC 8058) from a notice's `List-Unsubscribe` header, with the token as `?t=`: stops the notices (`source` `header`) and answers 204. 400 `invalid` for a bad token.
+
 ## Intelligence
 
 ### `GET /public/cves/recent`
