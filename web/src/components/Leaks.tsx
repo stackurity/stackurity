@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
+import { useMenu } from "./useFocus";
 import { Link } from "react-router";
 import { api, type Check, type Leak, type LeakList, type LeakState, type LeakSummary } from "../api";
 import { useAuth } from "../auth";
@@ -48,43 +49,15 @@ export function LeakStateBadge({ state }: { state: LeakState }) {
 
 /** A small menu of row actions (Assign, Mark as rotated, Check again, Dismiss). */
 function RowMenu({ label, items }: { label: string; items: { label: string; onSelect: () => void }[] }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        button.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
+  const m = useMenu();
   if (items.length === 0) return null;
   return (
-    <div ref={box} style={{ position: "relative", display: "inline-block" }}>
-      <button
-        type="button"
-        ref={button}
-        className="btn btn-sm"
-        aria-haspopup="menu"
-        aria-expanded={open}
-        aria-label={label}
-        onClick={() => setOpen(!open)}
-      >
+    <div ref={m.box} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" ref={m.button} className="btn btn-sm" {...m.buttonProps} aria-label={label}>
         Actions ▾
       </button>
-      {open && (
-        <div className="menu menu-right" role="menu" aria-label={label}>
+      {m.open && (
+        <div className="menu menu-right" role="menu" aria-label={label} ref={m.menu} onKeyDown={m.onMenuKeyDown}>
           {items.map((it) => (
             <button
               key={it.label}
@@ -92,7 +65,7 @@ function RowMenu({ label, items }: { label: string; items: { label: string; onSe
               role="menuitem"
               className="menu-item"
               onClick={() => {
-                setOpen(false);
+                m.close(true);
                 it.onSelect();
               }}
             >

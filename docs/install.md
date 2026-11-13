@@ -122,7 +122,70 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_BREACHED_PASSWORD_CHECK` | `on` | `off` stops checking new passwords against known data breaches; `STACKURITY_BREACHED_PASSWORD_URL` points the check at a mirror ([network.md](network.md#breached-password-check)) |
 | `STACKURITY_SMTP_HOST`, `STACKURITY_SMTP_PORT` (`587`), `STACKURITY_SMTP_USERNAME`, `STACKURITY_SMTP_PASSWORD` / `_FILE`, `STACKURITY_SMTP_FROM`, `STACKURITY_SMTP_TLS` (`starttls`, `tls` or `none`) | — | The mail server for email about people's own accounts: password reset links ([Forgotten passwords](#forgotten-passwords)). Needs `STACKURITY_BASE_URL`. Not used for notifications, which each organisation sets up |
 
-Secrets are never stored in the database. Integrations hold a *reference*: `env:STACKURITY_SECRET_GITHUB` or `file:/run/secrets/github_token`.
+### Where secrets are kept
+
+An integration or channel holds a *reference* to its secret, never the value itself. The reference says where the value is:
+
+- **`env:STACKURITY_SECRET_<NAME>`** (a variable of the server's environment) or **`file:/run/secrets/<name>`** (a file in `STACKURITY_SECRETS_DIR`): the value stays outside the database, and only the reference is stored. On a server that hosts several organisations only instance administrators may use these ([Workspaces](#workspaces)).
+- **`secret:NAME`**: a value the organisation stores itself (**Integrations**, or `PUT /secrets/{name}`). It *is* in the database, in the `workspace_secrets` table, encrypted with `STACKURITY_SECRET_KEY` (AES-256-GCM). The same encryption protects the credentials Stackurity obtains or is given for you: the tokens of **Connect GitLab**, **Connect Jira**, **Add to Slack** and **Connect PagerDuty**, a DigitalOcean token, the webhook URL or SMTP password entered while setting up alerts, and two-factor app secrets. Without `STACKURITY_SECRET_KEY` none of these can be stored.
+
+API tokens, passwords and two-factor recovery codes are stored only as hashes.
+
+So a database dump holds encrypted credentials: on its own it does not reveal them, but a dump together with `STACKURITY_SECRET_KEY` does. Keep the key outside the database and away from its backups, and back the key up as well: restored without the same key, every stored secret fails with "stored secret cannot be decrypted (wrong STACKURITY_SECRET_KEY?)". Nothing can recover them; they have to be entered again, and there is no command that re-encrypts them under a new key. See [Backup and restore](#backup-and-restore).
+
+### Settings in Docker Compose
+
+`deploy/docker-compose.yml` passes the container only the variables it names: `STACKURITY_COOKIE_SECURE`, `STACKURITY_BASE_URL`, `STACKURITY_TRUST_PROXY`, `STACKURITY_TRUSTED_PROXY_HEADER`, `STACKURITY_TRUSTED_PROXIES`, `STACKURITY_LICENSE` and `STACKURITY_SECRET_GITHUB` (and sets `STACKURITY_DATABASE_URL_FILE` and `STACKURITY_SECRETS_DIR` itself). `STACKURITY_IMAGE` and `STACKURITY_PORT` choose the image and the published port.
+
+`deploy/.env` does not reach the server. Compose reads it only to fill in `${...}` in the Compose files, so a line such as `STACKURITY_SMTP_HOST=smtp.example.com` in `.env` changes nothing unless a Compose file names the variable. Every other setting in the table above (`STACKURITY_SECRET_KEY`, the SMTP settings, `STACKURITY_FEEDS`, `STACKURITY_UPDATE_CHECK`, an Ask provider's key, your Slack or GitLab app) needs an entry under `environment:`. Put them in `deploy/docker-compose.override.yml`, which Compose reads together with `docker-compose.yml` without being asked, so `docker-compose.yml` can be updated from the repository without losing them:
+
+```yaml
+# deploy/docker-compose.override.yml
+services:
+  stackurity:
+    environment:
+      # Fixed values.
+      STACKURITY_UPDATE_CHECK: "off"
+      STACKURITY_SMTP_HOST: smtp.example.com
+      STACKURITY_SMTP_USERNAME: stackurity@example.com
+      STACKURITY_SMTP_FROM: stackurity@example.com
+      # A value taken from deploy/.env (interpolated by Compose).
+      STACKURITY_SECRET_GITLAB: ${STACKURITY_SECRET_GITLAB:-}
+      # Secrets as files: the server reads the file the _FILE variable names.
+      STACKURITY_SECRET_KEY_FILE: /run/secrets/secret_key
+      STACKURITY_SMTP_PASSWORD_FILE: /run/secrets/smtp_password
+    secrets: [secret_key, smtp_password]
+
+secrets:
+  secret_key:
+    file: ./secrets/secret_key
+  smtp_password:
+    file: ./secrets/smtp_password
+```
+
+Create the files next to the ones `init-secrets.sh` made. The server runs as a non-root user (UID 10001), so the files must be readable inside the container; the `0700` `secrets` directory keeps them private on the host, as `init-secrets.sh` does for the database password:
+
+```sh
+cd deploy
+openssl rand -base64 32 > secrets/secret_key
+printf '%s' 'the SMTP password' > secrets/smtp_password
+chmod 644 secrets/secret_key secrets/smtp_password
+```
+
+Compose mounts each secret at `/run/secrets/<name>`. The settings marked `/ _FILE` in the table read a file this way; so do `file:/run/secrets/<name>` references in integrations, because `STACKURITY_SECRETS_DIR` is `/run/secrets`.
+
+Apply the change and check what the server received:
+
+```sh
+docker compose up -d                       # recreates the stackurity container when its configuration changed
+docker compose up -d --force-recreate stackurity   # after changing only the contents of a secret file, which Compose does not notice
+docker compose config stackurity           # the merged, interpolated service; it prints values, so do not paste it anywhere
+docker compose exec stackurity env | cut -d= -f1 | grep '^STACKURITY_' | sort   # the variables the container has, names only
+docker compose exec stackurity stackurity doctor
+docker compose logs stackurity | tail -n 50
+```
+
+`stackurity doctor` reads the settings as the server does and checks the database, licence, feeds, disk and memory ([Checking an installation](operations.md#checking-an-installation)); `stackurity support-bundle` lists every `STACKURITY_*` variable that is set, with values redacted. An integration configured only partly (one of Slack's three settings, a GitLab client ID without its secret) stops the server at start with a message in the log, and one that is complete logs a line when it is enabled, such as `Slack app enabled (Add to Slack)`.
 
 ## The free key
 
@@ -661,9 +724,50 @@ There are three ways to collect repository inventory:
   stackurity scan . --git-url "$CI_REPOSITORY_URL" --project 12
   ```
 
-  A scan replaces the asset's inventory. For merge-request pipelines, give the
-  scan its own `--name` (without `--git-url`) so the default branch's
-  inventory is not overwritten by a branch that may never merge.
+  **Branch and merge-request pipelines.** A scan replaces the asset's
+  inventory, and a different `--name` alone does not keep a branch scan
+  apart. The server files a scan under the asset that any of its
+  identifiers already belongs to, and a scan run at the root of a Git
+  checkout carries the checkout's `origin` URL as a `git-url` identifier,
+  which is also the identity of the default branch's asset. So a branch scan
+  sent with only a new name replaces the default branch's inventory, and
+  findings close or open to match the branch. The scan lands on the
+  repository's asset in the same way when:
+
+  - it is given `--git-url` or `STACKURITY_GIT_URL`;
+  - it uses a token exchanged from the CI job's ID token
+    ([below](#scans-in-ci-without-a-stored-secret)): such a token can report
+    only its repository, under its URL, and there is no way to give it
+    another identity.
+
+  There is no flag that turns off detecting the `origin` remote. To check a
+  branch without touching the default branch's inventory, choose one of:
+
+  - **Do not upload.** `stackurity scan . --output - --fail-on-leak high`
+    (or `--output scan.json` to keep the result as a job artefact) reads the
+    lockfiles and looks for leaked keys without contacting the server.
+    `--fail-on`, `--fail-on-priority` and `--fail-on-kev` need the server's
+    evaluation and cannot be combined with `--output`.
+  - **Upload as a separate asset**, with a stored collector token (not the
+    CI ID-token exchange). Unset `STACKURITY_GIT_URL`, and rename the
+    `origin` remote of the job's own checkout for the scan, since the scan
+    reads only the remote called `origin`:
+
+    ```sh
+    unset STACKURITY_GIT_URL
+    git remote rename origin source
+    stackurity scan . --name "shop-mr-$CI_MERGE_REQUEST_IID" --fail-on critical
+    git remote rename source origin
+    ```
+
+    The branch becomes its own repository asset named after the merge
+    request (without the `git_url` attribute, so applications deployed
+    from the repository stay linked to the default branch's asset). It
+    stays until it is deleted: remove it when the merge request closes,
+    under **Assets** or with `DELETE /api/v1/assets/{id}`.
+
+  With the ID-token exchange, limit the CI trust to the default branch, as
+  described below.
 
 #### Scans in CI without a stored secret
 
@@ -782,7 +886,7 @@ Java (Maven, Gradle) and Rust (Cargo) are read by [stack packs](packs.md) once i
 
 ### Windows hosts
 
-The same `stackurity` binary runs on Windows. It reads the OS build and installed programs from the registry, as "Apps & features" shows them, and only reads. Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Remediation and application directories are Linux-only.
+The same `stackurity` binary runs on Windows. It reads the OS build and installed programs from the registry, as "Apps & features" shows them, and only reads. Windows Update hotfixes and Microsoft Store apps are reported as unsupported coverage for now. Application directories (`--app-dir`, `--discover-apps`) work on Linux and macOS but not on Windows, where the agent refuses them; [automatic fixing](remediation.md) is Linux only.
 
 **The quick way.** Under **Assets → Add server**, create an install command as for Linux and choose the **Windows** tab. Open PowerShell with **Run as administrator** and paste it:
 
@@ -841,7 +945,7 @@ The script downloads the agent for the Mac's architecture (Apple silicon or Inte
 
 **Why its own account, not root or `nobody`.** Reading `/Applications`, Homebrew and the system's version needs no privileges, so the agent does not get them. `nobody` is shared by other daemons, and any of them could read the token; a dedicated account, as Apple's own daemons (`_www`, `_postgres`) have, keeps it private. The price is that users' home directories are private to their owners: `~/Applications` and version managers under home directories are reported as coverage gaps, not inventoried. The agent needs no Full Disk Access.
 
-**What it reads** is described in [compatibility: macOS](compatibility.md#macos): the OS version (end of life is evaluated; Apple's security updates are not), applications (inventory only), Homebrew formulae and casks, runtimes and JDKs (end of life), and global npm and pip packages (vulnerabilities). `--app-dir` and `--discover-apps` work as on Linux, for projects on a build server.
+**What it reads** is described in [compatibility: macOS](compatibility.md#macos): the OS version (end of life is evaluated; Apple's security updates are not), applications (inventory only), Homebrew formulae and casks, runtimes and JDKs (end of life), and global npm and pip packages (vulnerabilities). `--app-dir` and `--discover-apps` work as on Linux, for projects on a build server, with two differences: `--discover-apps` looks in the same places as on Linux (`/srv`, `/var/www`, `/opt`, `/app`, `/home/*` and the Apache and nginx configuration under `/etc`), so it does not search `/Users` or Homebrew's web server configuration, and the agent's `_stackurity` account must be able to read a directory given with `--app-dir`. [Automatic fixing](remediation.md) is not available on Macs.
 
 **Uninstall:**
 

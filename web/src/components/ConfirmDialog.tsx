@@ -5,16 +5,17 @@ import {
   confirmWord,
   DialogQueue,
   keyAction,
-  nextFocus,
   type ChoiceRequest,
   type ConfirmRequest,
   type PromptRequest,
 } from "../confirm";
+import { trapTab } from "../focus";
+import { useModalLayer } from "./useFocus";
 
 /**
  * One in-app dialog for every confirmation and text prompt, instead of the
  * browser's confirm and prompt: role=alertdialog, focus moves in and stays
- * in, Esc cancels, Enter never confirms a destructive action, and a
+ * in, the page behind is inert, Esc cancels, Enter never confirms a destructive action, and a
  * destructive action needs its resource's name typed first.
  *
  *   if (!(await confirmAction({ title: `Delete asset ${a.name}?`, consequence: "...",
@@ -55,13 +56,13 @@ function enqueue(p: Pending) {
   if (now) show?.(now);
 }
 
-const FOCUSABLE = 'button:not([disabled]), input:not([disabled]), [href], select, textarea, [tabindex]:not([tabindex="-1"])';
-
 export function ConfirmHost() {
   const [cur, setCur] = useState<Pending | null>(null);
   const [typed, setTyped] = useState("");
   const box = useRef<HTMLDivElement>(null);
   const back = useRef<HTMLElement | null>(null);
+  // The page behind is inert while a dialog is up (focus.ts).
+  useModalLayer(box, Boolean(cur));
 
   useEffect(() => {
     show = (p) => {
@@ -98,8 +99,10 @@ export function ConfirmHost() {
       setCur(null);
     } else {
       setCur(null);
-      back.current?.focus?.();
+      // Once the dialog is gone and the page is no longer inert.
+      const to = back.current;
       back.current = null;
+      setTimeout(() => to?.focus?.(), 0);
     }
   };
 
@@ -114,13 +117,7 @@ export function ConfirmHost() {
   };
 
   const onKey = (e: KeyboardEvent) => {
-    if (e.key === "Tab") {
-      const items = Array.from(box.current?.querySelectorAll<HTMLElement>(FOCUSABLE) ?? []);
-      const i = nextFocus(items.indexOf(document.activeElement as HTMLElement), items.length, e.shiftKey);
-      e.preventDefault();
-      items[i]?.focus();
-      return;
-    }
+    if (trapTab(e, box.current)) return;
     // Enter on Cancel cancels, as a click would.
     if (e.key === "Enter" && document.activeElement instanceof HTMLButtonElement && !document.activeElement.classList.contains("confirm-action")) return;
     const k = keyAction(e.key, asConfirm, typed);

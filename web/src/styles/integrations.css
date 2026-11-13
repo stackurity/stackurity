@@ -367,3 +367,16 @@ a.ix-card-name:hover {
 .ix-cred-muted {
   color: var(--muted);
 }
+
+/* --- a source's stored credential: the list and Refresh on one line */
+
+.ix-stored-pick {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+.ix-stored-pick select {
+  flex: 1 1 220px;
+  min-width: 0;
+}

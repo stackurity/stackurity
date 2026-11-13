@@ -172,30 +172,63 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
   const exceptions = r.exceptions ?? [];
   const drift = r.drift ?? [];
 
+  // Compact: what and where in the first columns, and the justification
+  // (reason, mitigation) as prose in one wide column, so it reads as
+  // sentences on screen and in print instead of a word per line.
   const exceptionColumns: Column<ReportException>[] = [
-    { key: "key", header: "Finding", cell: (e) => <Link to={`/findings/${e.finding_id}`} className="mono small break">{e.key}</Link> },
     {
-      key: "component",
-      header: "Component",
+      key: "key",
+      header: "Finding",
+      className: "ex-finding",
       cell: (e) => (
-        <span className="break">
-          {e.component}
-          {e.version && <span className="mono small">@{e.version}</span>}
+        <>
+          <Link to={`/findings/${e.finding_id}`} className="mono small break">
+            {e.key}
+          </Link>
+          <span className="ex-sub small break">
+            {e.component}
+            {e.version && <span className="mono">@{e.version}</span>}
+          </span>
+        </>
+      ),
+    },
+    { key: "asset", header: "Asset", className: "ex-asset", cell: (e) => <Link to={`/assets/${e.asset_id}`} className="break">{e.asset_name}</Link> },
+    {
+      key: "risk",
+      header: "Severity and priority",
+      cell: (e) => (
+        <span className="badges">
+          <SeverityBadge severity={e.severity} />
+          <PriorityBadge priority={e.priority} />
         </span>
       ),
     },
-    { key: "asset", header: "Asset", cell: (e) => <Link to={`/assets/${e.asset_id}`}>{e.asset_name}</Link> },
-    { key: "sev", header: "Severity", cell: (e) => <SeverityBadge severity={e.severity} /> },
-    { key: "prio", header: "Priority", cell: (e) => <PriorityBadge priority={e.priority} /> },
-    { key: "state", header: "State", cell: (e) => <StateBadge state={e.state} /> },
     {
-      key: "evidence",
-      header: "Evidence",
-      cell: (e) => (e.verification ? EVIDENCE_STATE_LABEL[e.verification] ?? e.verification : <span className="muted">not reported</span>),
+      key: "state",
+      header: "State",
+      cell: (e) => (
+        <>
+          <StateBadge state={e.state} />
+          <span className="ex-sub small">
+            Evidence: {e.verification ? EVIDENCE_STATE_LABEL[e.verification] ?? e.verification : <span className="muted">not reported</span>}
+          </span>
+        </>
+      ),
     },
-    { key: "reason", header: "Reason", cell: (e) => <span className="break">{e.reason || <span className="muted">—</span>}</span> },
-    { key: "mitigation", header: "Mitigation", cell: (e) => <span className="break">{e.mitigation || <span className="muted">none recorded</span>}</span> },
-    { key: "until", header: "Expires", cell: (e) => (e.until ? absTime(e.until) : <span className="muted">—</span>) },
+    {
+      key: "why",
+      header: "Reason and mitigation",
+      className: "ex-why",
+      cell: (e) => (
+        <dl className="ex-why-list small">
+          <dt>Reason</dt>
+          <dd>{e.reason || <span className="muted">none recorded</span>}</dd>
+          <dt>Mitigation</dt>
+          <dd>{e.mitigation || <span className="muted">none recorded</span>}</dd>
+        </dl>
+      ),
+    },
+    { key: "until", header: "Expires", className: "ex-until", cell: (e) => (e.until ? absTime(e.until) : <span className="muted">no expiry</span>) },
   ];
 
   const driftColumns: Column<ReportDrift>[] = [
@@ -351,7 +384,9 @@ function ReportBody({ r, from }: { r: EvidenceReport; from: string }) {
         {exceptions.length === 0 ? (
           <p className="muted">No active exceptions.</p>
         ) : (
-          <Table caption="Active exceptions" columns={exceptionColumns} rows={exceptions} rowKey={(e) => e.finding_id} />
+          <div className="report-exceptions">
+            <Table caption="Active exceptions" columns={exceptionColumns} rows={exceptions} rowKey={(e) => e.finding_id} />
+          </div>
         )}
         <TrialMore trial={r.trial} list="exceptions" />
       </section>

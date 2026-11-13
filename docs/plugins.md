@@ -116,11 +116,60 @@ This runs `metadata`, `validate` (with your config, then with an unknown field),
 
 ## Installing
 
+The server runs the executables in one directory, `STACKURITY_PLUGIN_DIR`. In the official image that is `/usr/local/lib/stackurity/plugins`, which already holds the bundled plugins (`aws-managed`, `gcp-managed`, `azure-managed` and `kubernetes`), owned by root so the server cannot change them. Install yours **next to them** rather than pointing `STACKURITY_PLUGIN_DIR` elsewhere: only that one directory is read, so another directory would hide the bundled plugins. Each plugin must be a regular file (a symbolic link is refused), executable by the server's user (UID 10001 in the image), not group- or world-writable, and named `[a-z0-9-]+`.
+
+The image is Alpine Linux with no language runtimes: no Python, Node.js or glibc. A plugin there must be a static binary, such as a Go program built with `CGO_ENABLED=0` (as the bundled plugins and [examples/plugins/json-endpoint](../examples/plugins/json-endpoint) are). Plugins run with `PATH=/usr/local/bin:/usr/bin:/bin`.
+
+**A static binary in Docker Compose.** Mount the file into the plugin directory, read-only, from `deploy/docker-compose.override.yml` ([Settings in Docker Compose](install.md#settings-in-docker-compose)). This works with the container's read-only filesystem and keeps the bundled plugins:
+
 ```sh
-install -m 0755 my-plugin /var/lib/stackurity/plugins/my-plugin   # STACKURITY_PLUGIN_DIR
+cd deploy
+CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o plugins/my-plugin ../path/to/my-plugin   # arm64 for an arm64 server
+sudo chown root:root plugins/my-plugin && sudo chmod 0755 plugins/my-plugin
 ```
 
-Then go to **Integrations → Add → Plugin**, or call the API:
+```yaml
+# deploy/docker-compose.override.yml
+services:
+  stackurity:
+    volumes:
+      - ./plugins/my-plugin:/usr/local/lib/stackurity/plugins/my-plugin:ro
+```
+
+```sh
+docker compose up -d
+docker compose exec stackurity ls -l /usr/local/lib/stackurity/plugins   # yours beside the bundled ones, -rwxr-xr-x
+```
+
+The mounted file keeps the permissions it has on the host, so `chmod` it there.
+
+**A plugin that needs a runtime** (the Python example above) needs an image with that runtime. Build one from the release you run and copy the plugin in:
+
+```dockerfile
+# Dockerfile.plugins
+ARG STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:latest
+FROM ${STACKURITY_IMAGE}
+USER root
+RUN apk add --no-cache python3
+COPY --chmod=0755 my-plugin /usr/local/lib/stackurity/plugins/my-plugin
+USER 10001
+```
+
+```sh
+docker build -f Dockerfile.plugins --build-arg STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:<version> -t stackurity-with-plugins:<version> .
+```
+
+Then set `STACKURITY_IMAGE=stackurity-with-plugins:<version>` in `deploy/.env` and run `docker compose up -d`. Rebuild it for every upgrade, from the new release. A runtime added to the image is more software for image scans to report and for you to keep patched.
+
+**Outside a container**, install the executable into the directory `STACKURITY_PLUGIN_DIR` names, owned by root:
+
+```sh
+sudo install -o root -g root -m 0755 my-plugin /usr/local/lib/stackurity/plugins/my-plugin
+```
+
+Plugins appear under **Integrations → Add → Plugin** (`GET /api/v1/plugins`) once the server can read their metadata; an executable whose metadata cannot be read is listed with the error, and a file that is not executable is not listed.
+
+To use one, go to **Integrations → Add → Plugin**, or call the API:
 
 ```json
 {"kind": "plugin", "config": {"plugin": "my-plugin", "config": {...}}, "secret_ref": "file:/run/secrets/my-plugin.json", "schedule_minutes": 360}

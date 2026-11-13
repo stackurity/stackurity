@@ -16,6 +16,7 @@ import { useLoad } from "../hooks";
 import {
   connectedSince,
   connectionSource,
+  followHandoff,
   handoffBadge,
   handoffPlan,
   handoffStatusLine,
@@ -162,13 +163,20 @@ export function AskHandoffCard({
         },
       });
     });
+  // A failed start keeps the card and its error in view; a second click
+  // while the first is pending does nothing.
   const follow = (ev: MouseEvent<HTMLAnchorElement>, to: string) => {
     ev.preventDefault();
-    void run(async () => {
-      await call("start");
-      onNavigate?.();
-      navigate(to);
-    });
+    if (busy) return;
+    void run(() =>
+      followHandoff(
+        () => call("start"),
+        () => {
+          onNavigate?.();
+          navigate(to);
+        },
+      ),
+    );
   };
 
   const badge = handoffBadge(p, args, connected);
@@ -226,8 +234,13 @@ export function AskHandoffCard({
               {busy ? `Opening ${SERVICE[args.kind]}…` : plan.label}
             </button>
           ) : plan.type === "link" ? (
-            <a className="btn btn-sm btn-primary" href={plan.to} onClick={(ev) => follow(ev, plan.to)}>
-              {plan.label}
+            <a
+              className="btn btn-sm btn-primary"
+              href={plan.to}
+              aria-disabled={busy || undefined}
+              onClick={(ev) => follow(ev, plan.to)}
+            >
+              {busy ? "Opening…" : plan.label}
             </a>
           ) : (
             <button type="button" className="btn btn-sm btn-primary" disabled={busy} onClick={() => void run(() => call("apply"))}>

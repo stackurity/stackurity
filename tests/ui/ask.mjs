@@ -196,7 +196,9 @@ for (const width of [1280, 390]) {
   ok(await panel.locator(".ask-history-current").isVisible(), `${tag} History marks the open conversation`);
   await tab("Feedback").click();
   ok(await panel.getByRole("heading", { name: "Feedback on Ask" }).isVisible(), `${tag} Feedback opens inside the panel`);
-  ok((await page.locator('[role=dialog][aria-modal="true"]').count()) === 0, `${tag} Feedback on Ask is not a dialog over the page`);
+  // On a phone the panel itself is modal (R003-53); Feedback adds no dialog of its own.
+  ok((await page.locator('[role=dialog][aria-modal="true"]:not(.ask-panel)').count()) === 0, `${tag} Feedback on Ask is not a dialog over the page`);
+  ok((await panel.getAttribute("aria-modal")) === (width < 700 ? "true" : "false"), `${tag} the panel is modal only at phone width`);
   await panel.getByRole("button", { name: "Cancel" }).click();
   ok((await tab("Chat").getAttribute("aria-selected")) === "true", `${tag} Cancel goes back to the chat`);
 

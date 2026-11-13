@@ -40,8 +40,6 @@ export function EnableRemediation({ asset }: { asset: Asset }) {
     if (r) setCreated(r);
   };
 
-  const server = window.location.origin;
-  const env = asset.environment || "production";
   const allow = [
     "# Package patterns this host may upgrade (one per line, shell globs).",
     "# Only listed packages can ever be changed, whatever the server asks.",
@@ -49,27 +47,47 @@ export function EnableRemediation({ asset }: { asset: Asset }) {
       ? ["# Packages with open findings on this host; uncomment the ones you allow:", ...created.suggestions.map((s) => `# ${s}`)]
       : ["# libssl*", "# openssl"]),
   ].join("\n");
+  // docs/remediation.md, Enabling a host: the token goes in a file of its
+  // own, readable by root only; /etc/stackurity/token stays as it is (the
+  // installer gives the stackurity user read access to it and treats it as
+  // "already enrolled" on upgrade).
   const shell = created
     ? `# On ${asset.name}, as root:
-install -d -m 700 /etc/stackurity
-printf '%s\\n' '${created.secret}' > /etc/stackurity/token && chmod 600 /etc/stackurity/token
+install -m 600 -o root -g root /dev/null /etc/stackurity/remediation-token
+printf '%s\\n' '${created.secret}' > /etc/stackurity/remediation-token
 cat > /etc/stackurity/remediation-allow <<'EOF'
 ${allow}
-EOF`
+EOF
+chmod 644 /etc/stackurity/remediation-allow`
     : "";
+  // The installer's settings file keeps the server, environment, application
+  // directories, application discovery and Docker containers as they were;
+  // --token-file takes precedence over its STACKURITY_TOKEN_FILE.
   const unit = `# /etc/systemd/system/stackurity-remediate.service
 [Unit]
 Description=Stackurity agent (remediation enabled)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-Environment=STACKURITY_SERVER=${server}
-Environment=STACKURITY_TOKEN_FILE=/etc/stackurity/token
-Environment=STACKURITY_ENVIRONMENT=${env}
-ExecStart=/usr/local/bin/stackurity agent --remediate --interval 6h --action-interval 5m
+# The installer's settings: server, environment, application directories,
+# application discovery and Docker containers.
+EnvironmentFile=/etc/stackurity/agent.env
+ExecStart=/usr/local/bin/stackurity agent --remediate --token-file /etc/stackurity/remediation-token --interval 6h --action-interval 5m
+Restart=on-failure
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target`;
+  const start = `# One agent reports for the host: stop the read-only one, then start this one.
+systemctl disable --now stackurity-agent
+systemctl daemon-reload
+systemctl enable --now stackurity-remediate`;
+  const check = `systemctl status stackurity-remediate
+journalctl -u stackurity-remediate -f
+# The approved changes waiting for this host (none until a plan covering it is approved):
+. /etc/stackurity/agent.env
+curl -fsS -H "Authorization: Bearer $(cat /etc/stackurity/remediation-token)" "$STACKURITY_SERVER/api/v1/agent/actions"`;
 
   if (!open && !created) {
     return (
@@ -114,15 +132,31 @@ WantedBy=multi-user.target`;
             </p>
             <CopyBox value={created.secret} label={`Remediation token for ${asset.name}`} />
           </div>
+          <p className="small">
+            The host must already be reporting. Before you start, note what it collects now (<span className="mono">cat /etc/stackurity/agent.env</span>),
+            to compare after the switch.
+          </p>
           <h4 className="h-sm">1. Token and allowlist</h4>
           <CodeBlock label="Host setup commands" text={shell} />
+          <p className="hint">
+            The token gets a file of its own, readable by root only. Leave <span className="mono">/etc/stackurity/token</span> as it is: the read-only
+            agent and the installer use it.
+          </p>
           <h4 className="h-sm">2. systemd unit</h4>
           <CodeBlock label="systemd unit" text={unit} />
-          <h4 className="h-sm">3. Start it</h4>
-          <CodeBlock label="Start commands" text={"systemctl daemon-reload\nsystemctl enable --now stackurity-remediate.service"} />
           <p className="hint">
-            Stop the existing read-only agent on this host if it uses a different token, so only one agent reports for it. Nothing is
-            changed until a plan covering this host is approved.
+            It reads the installer&apos;s settings from <span className="mono">/etc/stackurity/agent.env</span>, so applications and Docker
+            containers stay checked. An agent installed by hand has no such file: copy the <span className="mono">Environment=</span> lines from{" "}
+            <span className="mono">systemctl cat stackurity-agent</span> instead.
+          </p>
+          <h4 className="h-sm">3. Switch services</h4>
+          <CodeBlock label="Switch commands" text={start} />
+          <h4 className="h-sm">4. Check it</h4>
+          <CodeBlock label="Check commands" text={check} />
+          <p className="hint">
+            The first collection should list as much as before (the host, its applications and images). Running the agent installer again
+            re-enables <span className="mono">stackurity-agent</span>: disable it again and restart <span className="mono">stackurity-remediate</span>.
+            Once the new agent reports, revoke the old collector token. Nothing is changed until a plan covering this host is approved.
           </p>
           <button
             type="button"

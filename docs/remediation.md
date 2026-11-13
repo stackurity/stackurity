@@ -93,51 +93,142 @@ Agents older than this release refuse yum and zypper actions as an unsupported p
 
 ### Enabling a host
 
+A host is enabled by moving it from the read-only agent the installer set up (`stackurity-agent.service`, running as the unprivileged `stackurity` user) to a second service that runs the same agent as root with `--remediate`. The new service reads the same settings file, so the server address, environment, application directories, application discovery and Docker containers stay as they were; only the token changes. The host must already be reporting: a remediation token can only use the identities the host has registered.
+
+**1. Note what the host collects now.** The installer keeps its settings in `/etc/stackurity/agent.env` (`STACKURITY_SERVER`, `STACKURITY_TOKEN_FILE`, `STACKURITY_ENVIRONMENT`, `STACKURITY_APP_DIRS`, `STACKURITY_DISCOVER_APPS`, and `STACKURITY_DOCKER=true` when Docker containers are checked). Look at it, and at what the last collection sent, to compare with later:
+
 ```sh
-# 1. In the dashboard: Assets → web-1 → Enable remediation. Copy the token.
-# 2. On the host, as root:
-install -d -m 700 /etc/stackurity
-printf '%s\n' 'stk_...' > /etc/stackurity/token && chmod 600 /etc/stackurity/token
+cat /etc/stackurity/agent.env
+journalctl -u stackurity-agent --since -7d | grep ' stored ' | tail -n 20   # one line per batch: the host, each application, each image
+```
+
+An agent installed by hand ([manual install](install.md#linux-hosts)) has no `agent.env`; its settings are the `Environment=` lines and flags in `systemctl cat stackurity-agent`. Copy them into the new unit below instead of `EnvironmentFile=`.
+
+**2. Create the token.** In the dashboard, **Assets →** the host **→ Enable remediation** (an admin; Pro or Enterprise) creates a collector token bound to that host and shows it once. Store it in its own file, readable by root only. Leave `/etc/stackurity/token` as it is: the installer gives the `stackurity` user read access to that file, and treats its presence as "already enrolled" when you upgrade.
+
+```sh
+install -m 600 -o root -g root /dev/null /etc/stackurity/remediation-token
+printf '%s\n' 'stk_...' > /etc/stackurity/remediation-token
+```
+
+**3. Write the allowlist.** Only installed packages that match a line can be changed, whatever the server asks. The agent refuses to start with `--remediate` when the file is missing or lists nothing.
+
+```sh
 cat > /etc/stackurity/remediation-allow <<'EOF'
 # Package patterns this host may upgrade (one per line, shell globs)
 libssl*
 openssl
 libexpat1
 EOF
+chmod 644 /etc/stackurity/remediation-allow
 ```
+
+`--allowlist <file>` reads another file.
+
+**4. Install the remediation unit.** It runs as root, without the read-only service's sandboxing, because the package manager writes to the system. `--token-file` on the command line takes precedence over `STACKURITY_TOKEN_FILE` from `agent.env`.
 
 ```ini
 # /etc/systemd/system/stackurity-remediate.service
 [Unit]
 Description=Stackurity agent (remediation enabled)
 After=network-online.target
+Wants=network-online.target
 
 [Service]
-Environment=STACKURITY_SERVER=https://stackurity.example.com
-Environment=STACKURITY_TOKEN_FILE=/etc/stackurity/token
-Environment=STACKURITY_ENVIRONMENT=production
-ExecStart=/usr/local/bin/stackurity agent --remediate --interval 6h --action-interval 5m
+# The installer's settings: server, environment, application directories,
+# application discovery and Docker containers.
+EnvironmentFile=/etc/stackurity/agent.env
+ExecStart=/usr/local/bin/stackurity agent --remediate --token-file /etc/stackurity/remediation-token --interval 6h --action-interval 5m
+Restart=on-failure
+RestartSec=60
 
 [Install]
 WantedBy=multi-user.target
 ```
 
-The agent reads the allowlist from `/etc/stackurity/remediation-allow`; `stackurity agent --remediate --allowlist <file>` reads another file. The remediation agent must run as root to use the package manager. Hosts you don't enrol keep running the unprivileged, read-only agent.
+**5. Switch services.** Stop and disable the read-only agent, so one agent reports for the host, then start the new one:
+
+```sh
+systemctl disable --now stackurity-agent
+systemctl daemon-reload
+systemctl enable --now stackurity-remediate
+```
+
+**6. Check inventory and action polling.**
+
+```sh
+systemctl status stackurity-remediate
+journalctl -u stackurity-remediate -f
+```
+
+The first collection runs at start and prints one `asset N: ... stored` line per batch: as many as the read-only agent sent in step 1 (the host, its applications and images). An error saying `this token is bound to another asset` or `the batch does not identify it` means the token was made for another host, or for a host that has not reported yet. The agent then asks for approved changes every `--action-interval`; it logs nothing while there are none, and `fetch remediation actions:` with the reason when the request fails. To ask the server directly with the host's token:
+
+```sh
+. /etc/stackurity/agent.env
+curl -fsS -H "Authorization: Bearer $(cat /etc/stackurity/remediation-token)" "$STACKURITY_SERVER/api/v1/agent/actions"
+```
+
+It answers the actions waiting for the host, none until a plan covering it is approved. The host's page in the dashboard shows the new collection, with its applications and images still listed.
+
+**Upgrades.** Running the installer again (`curl .../install/agent.sh | sudo sh`) replaces the binary in `/usr/local/bin`, which the remediation unit uses too, but it also rewrites, enables and restarts `stackurity-agent`. Afterwards, switch back:
+
+```sh
+systemctl disable --now stackurity-agent
+systemctl restart stackurity-remediate
+```
+
+**Afterwards.** The original collector token in `/etc/stackurity/token` is no longer used; revoke it under **Integrations → API tokens** once the new agent reports. To stop remediation on the host, revoke the remediation token, then `systemctl disable --now stackurity-remediate` and `systemctl enable --now stackurity-agent` (with a valid collector token in `/etc/stackurity/token`). Hosts you don't enable keep running the unprivileged, read-only agent.
 
 ## Repositories
 
-For npm and Composer, Stackurity never edits code and never runs package managers on the server. Approved repository plans are published as [Renovate](https://docs.renovatebot.com/) configuration, so updates arrive as ordinary pull requests and go through your normal review, tests and deployment approvals:
+For npm and Composer, Stackurity never edits code and never runs package managers on the server. Approved repository plans are published as [Renovate](https://docs.renovatebot.com/) configuration, so updates arrive as ordinary pull requests and go through your normal review, tests and deployment approvals.
 
-```json5
-// renovate.json in the repository
-{
-  "extends": ["config:recommended"],
-  // Fetched by your Renovate runner with a Stackurity token:
-  // GET /api/v1/remediation/renovate.json?repository=<git url>[&mode=exclusive]
-}
+The rules come from `GET /api/v1/remediation/renovate.json` (licensed build; 402 in Community), with a collector token or the token of an engineer or above. Its query names the repository by the URL Stackurity knows it by, its `git-url` identity (`https://github.com/<owner>/<repository>`), and `mode=exclusive` disables every update the policy has not approved. Generated rules never auto-merge. A repository plan's page shows the full address.
+
+Stackurity does not run Renovate or schedule it: your runner fetches the rules before each run and gives them to Renovate as its configuration file. A complete runner as a scheduled GitHub Actions workflow, in a repository of its own, one job per repository:
+
+```yaml
+# .github/workflows/stackurity-renovate.yml
+name: Stackurity approved updates
+on:
+  schedule:
+    - cron: "0 6 * * 1-5"     # weekdays at 06:00 UTC, after the plans approved overnight
+  workflow_dispatch:
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        repository: [acme/shop, acme/billing]   # the repositories the policy covers
+    steps:
+      - name: Fetch the approved rules from Stackurity
+        env:
+          STACKURITY_SERVER: https://stackurity.example.com
+          STACKURITY_TOKEN: ${{ secrets.STACKURITY_TOKEN }}   # a collector token
+        run: |
+          curl -fsS --get -H "Authorization: Bearer $STACKURITY_TOKEN" \
+            --data-urlencode "repository=https://github.com/${{ matrix.repository }}" \
+            --data-urlencode "mode=exclusive" \
+            "$STACKURITY_SERVER/api/v1/remediation/renovate.json" -o stackurity-renovate.json
+      - name: Run Renovate with them
+        env:
+          RENOVATE_CONFIG_FILE: stackurity-renovate.json
+          RENOVATE_PLATFORM: github
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}   # may push branches and open pull requests in the repository
+          RENOVATE_REPOSITORIES: ${{ matrix.repository }}
+          RENOVATE_ONBOARDING: "false"
+          RENOVATE_REQUIRE_CONFIG: optional
+        run: npx --yes renovate
 ```
 
-`mode=exclusive` disables every update the policy has not approved. Generated rules never auto-merge. Once the repository is scanned again (by a Git integration or `stackurity scan` in CI) and shows the target version, the plan's action is verified.
+`curl -f` fails the job when Stackurity refuses (a wrong token, an unknown repository, or 402 on a Community server), so Renovate never runs without the rules. Renovate reads `RENOVATE_CONFIG_FILE` as its configuration and applies it to the repository it is given; `RENOVATE_REQUIRE_CONFIG=optional` lets it run on a repository with no `renovate.json` of its own. If the repository has one, Renovate applies its rules after Stackurity's, so a rule there can turn on updates that `mode=exclusive` turned off: keep it free of `packageRules`, or remove it. Pin `renovate` to a version you have tested (`npx --yes renovate@<version>`). On GitLab or another platform, run the same two steps in a scheduled pipeline with `RENOVATE_PLATFORM` and `RENOVATE_ENDPOINT` set for it.
+
+To check the result:
+
+1. After the run, the repository has pull requests moving the approved packages to the plans' target versions, and no others with `mode=exclusive`. Review, test and merge them as usual. Renovate's log in the job says what it did and why.
+2. Once it is merged, the default branch is scanned again: by a Git integration (on a lockfile change, or its schedule) or by `stackurity scan` in the default branch's CI.
+3. That scan shows the target version, so the plan's action is **verified** on its page (or `GET /api/v1/remediation/plans/{id}`), and the findings it fixes close.
 
 Renovate is AGPL-3.0 licensed and runs as your own separate tool. Stackurity only produces configuration for it.
 

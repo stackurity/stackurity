@@ -9,7 +9,7 @@ import { assetKindLabel } from "../format";
 import { AssetKindCell, Badge, ExposureBadge, RebootBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { InventorySummary } from "./InventorySummary";
-import { Code, EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { Code, EmptyState, ErrorBox, PageHeader, Pager, RelativeTime, PhoneFilters } from "../components/ui";
 import { FilterChips, TableToolbar } from "../components/FilterChips";
 import { TableSkeleton } from "../components/Skeleton";
 import { TruncatedName } from "../components/Truncate";
@@ -181,7 +181,7 @@ export function AssetsPage() {
         <summary>Inventory at a glance</summary>
         <InventorySummary />
       </details>
-      <form className="filters" role="search" onSubmit={(e) => e.preventDefault()}>
+      <PhoneFilters active={activeFilters(params, filterDefs).length} search>
         <ProjectFilter id="f-project" />
         <div className="field">
           <label htmlFor="f-q">Search</label>
@@ -251,7 +251,7 @@ export function AssetsPage() {
             <input type="checkbox" checked={unfiled} onChange={(e) => update({ unfiled: e.target.checked ? "true" : "" })} /> Not in a project
           </label>
         )}
-      </form>
+      </PhoneFilters>
       <TableToolbar>
         <FilterChips
           filters={activeFilters(params, filterDefs)}

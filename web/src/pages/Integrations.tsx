@@ -18,6 +18,7 @@ import {
   NO_GITLAB,
   type GitHubAppStatus,
   type GitLabStatus,
+  type SecretInfo,
 } from "../api";
 import { InstallOnGitHubButton } from "./settings/GitHubApp";
 import { ConnectGitLabButton } from "./settings/GitLab";
@@ -43,6 +44,7 @@ import {
 } from "../components/ui";
 import { sourcesEmpty } from "../emptyCopy";
 import { confirmAction } from "../components/ConfirmDialog";
+import "../styles/integrations.css";
 
 function healthOf(i: Integration): { status: string; tone?: "good" | "bad" | "muted" | "warn" } {
   if (!i.enabled) return { status: "disabled", tone: "muted" };
@@ -325,6 +327,60 @@ interface CommonState {
   secret_ref: string;
 }
 
+/**
+ * A credential for a source, chosen from this workspace's Stored
+ * credentials (Integrations → Stored credentials) as secret:NAME, so an
+ * administrator who cannot configure the server can still connect a private
+ * repository or registry. The page to add one opens in a new tab, so this
+ * form keeps what was typed; Refresh reads the list again.
+ */
+function StoredCredentialPick({ idp, value, onPick }: { idp: string; value: string; onPick: (ref: string) => void }) {
+  const res = useLoad(() => api.get<{ items: SecretInfo[]; enabled: boolean }>("/secrets").catch(() => null), []);
+  const list = res.data;
+  if (!list) return null;
+  const names = list.items.map((x) => x.name);
+  const picked = value.startsWith("secret:") ? value.slice("secret:".length) : "";
+  const add = (
+    <a href="/integrations/secrets" target="_blank" rel="noopener">
+      Integrations → Stored credentials<span className="sr-only"> (opens in a new tab)</span>
+    </a>
+  );
+  if (!list.enabled)
+    return (
+      <p className="hint field-span">
+        Stored credentials are turned off on this server (the operator sets <Code>STACKURITY_SECRET_KEY</Code> to turn them on), so the reference
+        below must name an environment variable or a file on the server.
+      </p>
+    );
+  return (
+    <div className="field field-span">
+      <label htmlFor={`${idp}-stored`}>Stored credential</label>
+      <div className="ix-stored-pick">
+        <select
+          id={`${idp}-stored`}
+          value={names.includes(picked) ? picked : ""}
+          onChange={(e) => onPick(e.target.value ? `secret:${e.target.value}` : "")}
+          disabled={names.length === 0}
+        >
+          <option value="">{names.length === 0 ? "None stored yet" : "None: type a reference below"}</option>
+          {names.map((n) => (
+            <option key={n} value={n}>
+              {`secret:${n}`}
+            </option>
+          ))}
+        </select>
+        <button type="button" className="btn btn-sm" onClick={res.reload} disabled={res.loading}>
+          Refresh
+        </button>
+      </div>
+      <p className="hint">
+        Save the token once under {add} (it opens in a new tab, so this form keeps what you typed), then pick it here or type{" "}
+        <Code>secret:NAME</Code> below. Stackurity keeps the value encrypted and never shows it again.
+      </p>
+    </div>
+  );
+}
+
 function CommonFields({
   idp,
   v,
@@ -350,9 +406,16 @@ function CommonFields({
       <FieldGroup title={accessTitle} description={accessDescription}>
         <div className="form-grid">
           {accessExtra}
+          <StoredCredentialPick idp={idp} value={v.secret_ref} onPick={(ref) => set({ ...v, secret_ref: ref })} />
           <div className="field field-span">
             <label htmlFor={`${idp}-secret`}>Secret reference (optional)</label>
-            <input id={`${idp}-secret`} className="mono" value={v.secret_ref} onChange={(e) => set({ ...v, secret_ref: e.target.value })} placeholder="env:STACKURITY_SECRET_… or file:/run/secrets/…" />
+            <input
+              id={`${idp}-secret`}
+              className="mono"
+              value={v.secret_ref}
+              onChange={(e) => set({ ...v, secret_ref: e.target.value })}
+              placeholder="secret:NAME, env:STACKURITY_SECRET_… or file:/run/secrets/…"
+            />
             <p className="hint">{secretHelp}</p>
           </div>
         </div>
@@ -524,8 +587,9 @@ function GitForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: () 
         }
         secretHelp={
           <>
-            For private repositories: a reference to the access token on the server, never the token itself, e.g.{" "}
-            <Code>env:STACKURITY_SECRET_GITHUB</Code>.
+            For private repositories: a reference to the access token, never the token itself. A stored credential is{" "}
+            <Code>secret:GITHUB_TOKEN</Code>; one set on the server by its operator is <Code>env:STACKURITY_SECRET_GITHUB</Code> or{" "}
+            <Code>file:/run/secrets/github</Code>.
           </>
         }
       />
@@ -591,8 +655,8 @@ function ImageForm({ onCancel, onCreated }: { onCancel: () => void; onCreated: (
         }
         secretHelp={
           <>
-            For private registries: a reference to the registry password or token on the server, e.g. <Code>env:STACKURITY_SECRET_GHCR</Code>.
-            Public images need none.
+            For private registries: a reference to the registry password or token, such as a stored credential (<Code>secret:GHCR_TOKEN</Code>)
+            or one on the server (<Code>env:STACKURITY_SECRET_GHCR</Code>). Public images need none.
           </>
         }
       />

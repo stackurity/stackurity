@@ -250,8 +250,8 @@ function PlaceState({
   return <NotOnDemand o={o} where={where} compact={recentOnly} />;
 }
 
-/** Why a place cannot be checked now, and what to do instead. */
-function NotOnDemand({
+/** Why a place cannot be checked now, and what to do instead (also the asset page's Check again). */
+export function NotOnDemand({
   o,
   where,
   compact,

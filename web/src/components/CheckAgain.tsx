@@ -1,11 +1,12 @@
 import { useEffect, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type Asset, type Check, type List } from "../api";
+import { api, type Asset, type Check, type CheckOption, type List } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { absTime, plural } from "../format";
 import { Badge, type Tone } from "./Badge";
 import { Code, CodeBlock, ErrorBox, RelativeTime } from "./ui";
+import { NotOnDemand } from "./FixVerify";
 
 /** How recently an agent must have asked for us to call it a 0.7 agent that polls. */
 const POLL_FRESH_MS = 15 * 60 * 1000;
@@ -118,6 +119,9 @@ export function CheckResultText({ c, issuesLink }: { c: Check; issuesLink?: stri
 /**
  * Check again for an asset or one fix on it: the last check and its result,
  * what it waits for, and the buttons to ask again or say a fix was applied.
+ * Where a check cannot get a report on demand (an upload, a CI scan, an
+ * older agent; GET /checks/options, as FixVerify uses), it first says how
+ * to send fresh evidence, and its button says it waits for the next report.
  * A check that is not done is polled every 10 seconds.
  */
 export function CheckAgain({
@@ -138,6 +142,20 @@ export function CheckAgain({
     [fixGroup, asset?.id],
   );
   const c = last.data?.items[0];
+  // Whether a check gets a fresh report within minutes, as FixVerify asks:
+  // a server whose agent takes requests, or a connected repository. Uploads,
+  // CI scans and older agents only report on their own.
+  const options = useLoad(
+    () =>
+      fixGroup || asset
+        ? api.get<{ items: CheckOption[] }>("/checks/options", fixGroup ? { fix_group: fixGroup } : { asset_id: asset!.id })
+        : Promise.resolve(null),
+    [fixGroup, asset?.id, c?.id],
+  );
+  const opt = options.data?.items[0];
+  // Unknown (an older server, or the request failed): as before, the button only.
+  const known = Boolean(opt && opt.reason !== "not_found");
+  const onDemand = !known || Boolean(opt?.on_demand);
   const open = c && c.status !== "done";
   useEffect(() => {
     if (!open) return;
@@ -180,23 +198,40 @@ export function CheckAgain({
           {c.status === "done" ? <CheckResultText c={c} issuesLink={issuesLink} /> : <Waiting c={c} asset={asset} />}
         </div>
       )}
-      {!c && asset.kind === "host" && !agentPolls(asset.agent_polled_at) && (
+      {known && !onDemand && opt && (!c || c.status === "done") && (
+        <div className="check-how">
+          <NotOnDemand o={opt} where={null} compact={false} />
+        </div>
+      )}
+      {!known && !c && asset.kind === "host" && !agentPolls(asset.agent_polled_at) && (
         <p className="small muted">
           Agents older than 0.7 report every 6 hours and when they start. Restart the agent to report now, or upgrade it so Check again works
           within a minute.
         </p>
       )}
-      {!c && asset.kind === "repository" && (
+      {!known && !c && asset.kind === "repository" && (
         <>
           <p className="small">Scan the repository again, or press Check again if it is connected through Integrations.</p>
           <CodeBlock label="Scan now" text={scanCommand(asset)} />
         </>
       )}
-      {can("engineer") && (
+      {can("engineer") && !options.loading && (
         <div className="form-actions check-actions">
-          <button type="button" className="btn btn-sm btn-primary" disabled={act.pending || Boolean(open && c?.status === "waiting")} onClick={check}>
-            {open ? "Checking" : "Check again"}
-          </button>
+          {onDemand ? (
+            <button type="button" className="btn btn-sm btn-primary" disabled={act.pending || Boolean(open && c?.status === "waiting")} onClick={check}>
+              {open ? "Checking" : "Check again"}
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={act.pending || Boolean(open && c?.status === "waiting")}
+              onClick={check}
+              title="Does not start a scan: it checks the next report that arrives."
+            >
+              {open ? "Waiting for the next report" : "Check the next report"}
+            </button>
+          )}
           {fixGroup && (
             <button
               type="button"
@@ -209,6 +244,12 @@ export function CheckAgain({
             </button>
           )}
         </div>
+      )}
+      {!onDemand && can("engineer") && !options.loading && (
+        <p className="hint">
+          Stackurity cannot ask {asset.name} to report now. Check the next report does not start a scan: send fresh evidence as above, and the
+          next report is checked against these issues (the request lapses after 7 days without one).
+        </p>
       )}
       {fixGroup && can("engineer") && (
         <p className="hint">

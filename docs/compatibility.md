@@ -395,7 +395,7 @@ Robustness, as for the other feeds: a program that cannot be read (an HTTP error
 
 **Action plan.** A host's findings on one program are one fix: "Update Google Chrome to 156.0.8078.73", the highest fixed version among them, with how the program is usually updated. Programs whose release lines install side by side (.NET and ASP.NET Core per major, Python per minor) get one update per line: "Update .NET Runtime 8 to 8.0.32" and "Update .NET Runtime 9 to 9.0.21", never one update that leaves the other line vulnerable. Hosts that need the same program (and line) at the same version are one fix in the plan's "by fix" view, whatever version each has.
 
-**Not covered**: programs installed for one user only (`HKCU`, such as Python's default install or a user's Chrome) are not inventoried (the agent's `windows:user-programs` scope is unsupported coverage); Microsoft Store apps; programs without an Add/Remove Programs entry (portable copies); OpenSSL linked into other programs; beta and pre-release builds; OpenSSL 1.1.1 and older (letter versions); and the macOS agent's programs (there is no macOS agent yet).
+**Not covered**: programs installed for one user only (`HKCU`, such as Python's default install or a user's Chrome) are not inventoried (the agent's `windows:user-programs` scope is unsupported coverage); Microsoft Store apps; programs without an Add/Remove Programs entry (portable copies); OpenSSL linked into other programs; beta and pre-release builds; OpenSSL 1.1.1 and older (letter versions); and applications on Macs: the [macOS agent](#macos) lists them, but this catalogue is not applied to them, so they get no vulnerability findings.
 
 ## macOS
 

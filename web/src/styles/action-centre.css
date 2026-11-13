@@ -564,14 +564,29 @@ a.ac-tile:focus-visible {
     grid-area: prio;
     align-self: start;
   }
+  /* The desktop minimum width would push the fix past its grid area and
+     under the issue count; on a phone its line under the title wraps. */
   .ac-table td.ac-col-fix {
     grid-area: fix;
     width: auto;
+    min-width: 0;
     max-width: none;
+  }
+  .ac-table td.ac-col-fix .ac-sub {
+    max-width: none;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   .ac-table td.ac-col-issues {
     grid-area: issues;
+    align-self: start;
+    min-width: 0;
     font-weight: 600;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .ac-table td.ac-col-issues .ac-sub {
+    overflow: visible;
   }
   .ac-table td.ac-col-where {
     grid-area: meta;

@@ -2,7 +2,7 @@ import { useState, type ReactNode } from "react";
 import { Link, useParams } from "react-router";
 import { api, safeHttpUrl, type ComponentIntel, type Finding, type InventoryRow, type LifecycleCycle, type List, type VersionUpgrade } from "../api";
 import { useLoad } from "../hooks";
-import { componentName, displayPurl, humanize } from "../format";
+import { componentName, displayPurl, humanize, plural } from "../format";
 import { Badge } from "../components/Badge";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
@@ -359,6 +359,21 @@ function ComponentUpgrades({ componentId }: { componentId: number }) {
     { key: "assets", header: "Assets", numeric: true, cell: (u) => u.asset_count.toLocaleString() },
     { key: "findings", header: "Open findings", numeric: true, cell: (u) => u.open_findings.toLocaleString() },
     {
+      key: "resolves",
+      header: "Upgrade resolves",
+      cell: (u) => {
+        const r = resolveCounts(u);
+        if (r.total === 0) return <span className="muted">—</span>;
+        if (r.resolved === 0) return <span className="muted">none yet: no fixed version published</span>;
+        return (
+          <span>
+            {r.resolved.toLocaleString()} of {r.total.toLocaleString()} issues
+            {r.remaining > 0 && <span className="muted small"> ({r.remaining.toLocaleString()} stay open)</span>}
+          </span>
+        );
+      },
+    },
+    {
       key: "min",
       header: "Minimum fixed",
       cell: (u) => (u.minimum_fixed_version ? <span className="mono">{u.minimum_fixed_version}</span> : <span className="muted">none listed</span>),
@@ -373,7 +388,6 @@ function ComponentUpgrades({ componentId }: { componentId: number }) {
           {u.requires_major && <Badge status="major" tone="warn" label="major upgrade" />}
           {u.release_data === "none" && <Badge status="none" tone="muted" label="no release data" />}
           {u.release_data === "failed" && <Badge status="failed" tone="warn" label="registry lookup failed" />}
-          {(u.unfixed?.length ?? 0) > 0 && <Badge status="unfixed" tone="warn" label={`${u.unfixed!.length} not resolved`} />}
         </span>
       ),
     },
@@ -384,9 +398,11 @@ function ComponentUpgrades({ componentId }: { componentId: number }) {
         Upgrade recommendations{res.data ? ` (${res.data.total})` : ""}
       </h2>
       <p className="hint section-hint">
-        Which version to move to so the open findings close, one row per installed version. Recommended is the newest stable release in the
-        same major line that fixes them (from registry release data; without it, the minimum fixed version). Select a row for the reasons.
+        Which version to move to, one row per installed version. It fixes the issues that have a published fix: Upgrade resolves says how many of
+        the open issues that is, and how many stay open because no version fixes them yet. Recommended is the newest stable release in the same
+        major line that fixes them (from registry release data; without it, the minimum fixed version). Select a row for the reasons.
       </p>
+      {res.data && <UnresolvedNote rows={res.data.items} />}
       <ErrorBox error={res.error} title="Could not load recommendations" />
       {!res.data && !res.error && <Loading />}
       {res.data && res.data.items.length === 0 && <p className="muted">No installed version has open findings: nothing to upgrade for security.</p>}
@@ -405,6 +421,27 @@ function ComponentUpgrades({ componentId }: { componentId: number }) {
         <p className="hint">Showing {res.data.items.length} of {res.data.total} installed versions, most findings first.</p>
       )}
     </section>
+  );
+}
+
+/** Issues a recommendation fixes and those no version fixes yet (distinct issues, not findings). */
+export function resolveCounts(u: Pick<VersionUpgrade, "fixes" | "unfixed">): { resolved: number; remaining: number; total: number } {
+  const resolved = u.fixes?.length ?? 0;
+  const remaining = u.unfixed?.length ?? 0;
+  return { resolved, remaining, total: resolved + remaining };
+}
+
+/** Says so plainly when, for some installed versions, no version fixes every open issue. */
+function UnresolvedNote({ rows }: { rows: VersionUpgrade[] }) {
+  const partial = rows.filter((u) => resolveCounts(u).remaining > 0);
+  if (partial.length === 0) return null;
+  const left = new Set(partial.flatMap((u) => u.unfixed ?? [])).size;
+  return (
+    <Notice kind="warn">
+      No version fixes every open issue {partial.length === rows.length ? "here" : `on ${plural(partial.length, "installed version")}`}:{" "}
+      {plural(left, "issue")} {left === 1 ? "has" : "have"} no published fix yet and stay open after the upgrade. Watch them, or look at
+      mitigations on each issue.
+    </Notice>
   );
 }
 

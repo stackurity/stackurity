@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
-import { api, type FindingDetail, type FixGroupDetail } from "../api";
+import { api, type FindingDetail, type FixGroup, type FixGroupDetail } from "../api";
 import { answerRefs } from "../askRefs";
 import { readMoreLinks, type ReadMoreLink } from "../advisoryLinks";
-import { ActionInstruction, isCommand } from "./FixGroups";
+import { ActionInstruction, isBuildStep, isCommand } from "./FixGroups";
 
 /*
  * Under an Ask Stackurity answer: what the fix groups it links to say to
@@ -34,6 +34,9 @@ interface FixCard {
   id: string;
   title: string;
   action: string;
+  /** The fix's kind and, when every place is one, the asset kind: an image's fix is made in its build. */
+  kind: string;
+  assetKind?: string;
   asset: string;
   others: number;
   reboot: boolean;
@@ -43,6 +46,24 @@ interface ReadMore {
   id: string;
   name: string;
   links: ReadMoreLink[];
+}
+
+/**
+ * The asset kind to give the shared instructions: the group's own, or, for
+ * a fix listed with several places, the kind they all share (all images,
+ * say); mixed places get none, as on the Fixes page.
+ */
+export function fixAssetKind(g: Pick<FixGroup, "asset_kind" | "places">): string | undefined {
+  const places = g.places ?? [];
+  if (places.length <= 1) return g.asset_kind;
+  const kinds = new Set(places.map((p) => p.asset_kind));
+  return kinds.size === 1 ? places[0].asset_kind : undefined;
+}
+
+/** The card's heading: an image is fixed in its build, never by running a command in it. */
+export function fixHeading(action: string, assetKind: string | undefined, where: string): string {
+  if (assetKind === "image" || isBuildStep(action)) return `Change the build of ${where}`;
+  return isCommand(action) ? `Run this on ${where}` : `What to do on ${where}`;
 }
 
 export function AskAnswerExtras({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
@@ -59,7 +80,18 @@ export function AskAnswerExtras({ text, onNavigate }: { text: string; onNavigate
         rs.flatMap((r, i) => {
           const g = r?.group;
           if (!g || !g.action) return [];
-          return [{ id: refs.fixes[i], title: g.title, action: g.action, asset: g.asset_name, others: Math.max(0, (g.places?.length ?? 0) - 1), reboot: Boolean(g.reboot) }];
+          return [
+            {
+              id: refs.fixes[i],
+              title: g.title,
+              action: g.action,
+              kind: g.kind,
+              assetKind: fixAssetKind(g),
+              asset: g.asset_name,
+              others: Math.max(0, (g.places?.length ?? 0) - 1),
+              reboot: Boolean(g.reboot),
+            },
+          ];
         }),
       );
     });
@@ -83,18 +115,17 @@ export function AskAnswerExtras({ text, onNavigate }: { text: string; onNavigate
   return (
     <div className="ask-extras">
       {fixes.map((f) => {
-        const cmd = isCommand(f.action);
         const where = f.asset + (f.others > 0 ? ` and ${f.others} other ${f.others === 1 ? "place" : "places"}` : "");
         return (
           <section key={f.id} className="ask-cmd" aria-label={`Fix: ${f.title}`}>
             <p className="ask-cmd-head small">
-              <strong>{cmd ? `Run this on ${where}` : `What to do on ${where}`}</strong>
+              <strong>{fixHeading(f.action, f.assetKind, where)}</strong>
               {" · "}
               <Link to={`/fixes/${f.id}`} onClick={onNavigate}>
                 {f.title || "Open the fix"}
               </Link>
             </p>
-            <ActionInstruction action={f.action} />
+            <ActionInstruction action={f.action} assetKind={f.assetKind} kind={f.kind} />
             {f.reboot && <p className="small ask-cmd-note">Restart {f.asset} afterwards: the update only takes effect after a restart.</p>}
           </section>
         );

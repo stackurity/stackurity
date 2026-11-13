@@ -34,6 +34,7 @@ import { AskProposalCard } from "./AskProposalCard";
 import { looksLikeSecret, SECRET_REMOVED_NOTICE, SECRET_TYPING_WARNING } from "../askSecrets";
 import { changedLine, proposalsByAnswer, type AskProposal } from "../askProposal";
 import { AskAnswerExtras } from "./AskAnswerExtras";
+import { PHONE_QUERY, useMediaQuery, useModal } from "./useFocus";
 
 /**
  * Renders an answer. One the model wrote with the known headings
@@ -218,6 +219,8 @@ export function AskPanel({
   const [longChat, setLongChat] = useState(false);
   const abort = useRef<AbortController | null>(null);
   const input = useRef<HTMLTextAreaElement>(null);
+  const panel = useRef<HTMLElement>(null);
+  const notice = useRef<HTMLHeadingElement>(null);
   const end = useRef<HTMLDivElement>(null);
   const body = useRef<HTMLDivElement>(null);
   const scroll = useRef<number | null>(null);
@@ -230,11 +233,28 @@ export function AskPanel({
   useEffect(() => {
     if (open) end.current?.scrollIntoView({ block: "end" });
   }, [turns, draft, tool]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Opening moves focus into the panel: the question box, or the first-question
+  // notice's heading before the notice is accepted. Closing (or minimising)
+  // returns it to the control that opened the panel. On a phone the panel
+  // covers the page, so it is modal there: Tab stays in it and the page
+  // behind is inert.
+  const phone = useMediaQuery(PHONE_QUERY);
+  useModal(panel, open, { modal: phone, initial: () => input.current ?? notice.current });
   useEffect(() => {
     if (!open) return;
-    input.current?.focus();
     api.get<{ items: AskConversation[] }>("/ask/conversations").then((r) => setConvs(r.items), () => undefined);
   }, [open]);
+  // The status arrives (or the notice is accepted) after opening: focus
+  // follows to the question box or the notice, unless the person has moved
+  // it somewhere else in the meantime.
+  const ready = status ? (status.notice_accepted ? "chat" : "notice") : "";
+  useEffect(() => {
+    if (!open || !ready) return;
+    const a = document.activeElement;
+    const idle = !a || a === document.body || a === panel.current || Boolean(panel.current?.querySelector(".ask-head")?.contains(a));
+    if (!idle) return;
+    (input.current ?? notice.current)?.focus();
+  }, [open, ready]); // eslint-disable-line react-hooks/exhaustive-deps
   // Hidden and shown again (minimised, closed, Alt+K): the log comes back
   // where the person left it.
   useLayoutEffect(() => {
@@ -455,7 +475,15 @@ export function AskPanel({
       : "";
 
   return (
-    <aside className="ask-panel" role="dialog" aria-modal="false" aria-label="Ask Stackurity" onKeyDown={(e) => e.key === "Escape" && hide(false)}>
+    <aside
+      ref={panel}
+      className="ask-panel"
+      role="dialog"
+      aria-modal={phone ? "true" : "false"}
+      aria-label="Ask Stackurity"
+      tabIndex={-1}
+      onKeyDown={(e) => e.key === "Escape" && hide(false)}
+    >
       <header className="ask-head">
         <span className="ask-who">
           <AskAvatar />
@@ -518,7 +546,9 @@ export function AskPanel({
         <p className="muted ask-body">Loading…</p>
       ) : !s.notice_accepted ? (
         <div className="ask-body ask-notice">
-          <h3>Before your first question</h3>
+          <h3 ref={notice} tabIndex={-1}>
+            Before your first question
+          </h3>
           {noticeText(s.provider).map((p, i) => (
             <p key={i}>{p}</p>
           ))}
@@ -833,15 +863,15 @@ function BotTurn({ children }: { children: ReactNode }) {
  * The consent an administrator gives before Ask Stackurity is turned on:
  * the approved wording (ask.ts consentText), a box to tick, and Turn on,
  * which stays disabled until the box is ticked. Cancel, Escape or a click
- * outside leaves it off. The server records who agreed, when and to which
+ * outside leaves it off. Keyboard focus stays in it while it is open. The server records who agreed, when and to which
  * version (ask.consent in the audit log).
  */
 export function AskConsentDialog({ provider, onConsent, onCancel }: { provider: string; onConsent: () => void; onCancel: () => void }) {
   const [agreed, setAgreed] = useState(false);
   const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    box.current?.querySelector<HTMLElement>("input")?.focus();
-  }, []);
+  // As the confirmation dialog: focus moves to the box to tick and stays in
+  // the dialog, the page behind is inert, and focus goes back on closing.
+  useModal(box, true, { onEscape: onCancel, initial: () => box.current?.querySelector<HTMLElement>("input") });
   return (
     <div className="confirm-backdrop" onMouseDown={(e) => e.target === e.currentTarget && onCancel()}>
       <div
@@ -852,12 +882,6 @@ export function AskConsentDialog({ provider, onConsent, onCancel }: { provider: 
         aria-labelledby="ask-consent-title"
         aria-describedby="ask-consent-body"
         tabIndex={-1}
-        onKeyDown={(e) => {
-          if (e.key === "Escape") {
-            e.preventDefault();
-            onCancel();
-          }
-        }}
       >
         <h2 id="ask-consent-title" className="confirm-title">
           Turn on Ask Stackurity for this organisation?
