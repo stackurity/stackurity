@@ -195,6 +195,9 @@ func TestThirdPartyBuild(t *testing.T) {
 		{"deb", "5:27.3.1-1~ubuntu.22.04~jammy", "22.04", true},
 		{"deb", "8.0.39-1ubuntu22.04", "22.04", true},
 		{"deb", "8.0.39-1debian12", "12", true},
+		// Zabbix and Icinga: "+" between the revision and the release.
+		{"deb", "1:7.0.5-1+ubuntu24.04", "24.04", true},
+		{"deb", "2.14.2-1+debian12", "12", true},
 		// Ubuntu's own snapd ends in the release after a "+".
 		{"deb", "2.77.1+ubuntu24.04", "24.04", false},
 		{"deb", "2.77.1+ubuntu22.04.1", "22.04", false},

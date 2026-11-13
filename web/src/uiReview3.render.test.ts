@@ -92,7 +92,10 @@ test("Renovate: the rules are given to Renovate as its configuration file, not l
   assert.match(cmd, /^rm -f stackurity-renovate\.json$/m);
   assert.match(cmd, /-o stackurity-renovate\.json && \\\nRENOVATE_CONFIG_FILE=/);
   assert.match(cmd, /RENOVATE_CONFIG_FILE=stackurity-renovate\.json/);
-  assert.match(cmd, /RENOVATE_REPOSITORIES=acme\/shop/);
+  assert.match(cmd, /RENOVATE_REPOSITORIES='acme\/shop'/);
+  const odd: string = planDetail.renovateRun("https://s.example/x", "https://git.example/a/b;$(id)");
+  assert.match(odd, /RENOVATE_REPOSITORIES='<owner>\/<repository>'/);
+  assert.doesNotMatch(odd, /\$\(id\)/);
   assert.doesNotMatch(cmd, /-o renovate\.json/);
 });
 

@@ -145,7 +145,9 @@ function DecisionPanel({
  * configuration file (docs/remediation.md, Repositories).
  */
 export function renovateRun(url: string, repositoryUrl?: string | null): string {
-  const repo = repositoryUrl ? repositoryUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "") : "<owner>/<repository>";
+  const path = repositoryUrl ? repositoryUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "") : "";
+  // Only a plain owner/repository path goes into the shell command, quoted.
+  const repo = /^[A-Za-z0-9._/-]+$/.test(path) ? `'${path}'` : "'<owner>/<repository>'";
   return [
     "# RENOVATE_PLATFORM and RENOVATE_TOKEN set for your Git host, as for any Renovate run.",
     "# Old rules are removed first and Renovate starts only if the download succeeds.",
