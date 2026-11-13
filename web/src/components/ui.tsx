@@ -9,6 +9,7 @@ import { errorView } from "../errors";
 import type { EmptyActionCopy } from "../emptyCopy";
 import { reportShownError } from "../clientErrors";
 import { useRoutePattern } from "./ErrorReports";
+import { useMediaQuery } from "./useFocus";
 
 export function RelativeTime({ iso, empty = "never" }: { iso: string | null | undefined; empty?: string }) {
   // Re-render every minute so "x min ago" stays honest on an open page.
@@ -727,6 +728,27 @@ export function FilterPanel({ active, children, onClear }: { active: number; chi
         </form>
       </div>
     </div>
+  );
+}
+
+/**
+ * A list page's filter form, inline on wide screens and behind the Filters
+ * button (FilterPanel, as on Fixes) on phones, where the open form would
+ * fill more than the screen before the list starts. The active filters stay
+ * in view as chips (FilterChips) either way; the button counts them.
+ */
+export function PhoneFilters({ active, onClear, search, children }: { active: number; onClear?: () => void; search?: boolean; children: ReactNode }) {
+  const phone = useMediaQuery("(max-width: 720px)");
+  if (phone)
+    return (
+      <FilterPanel active={active} onClear={onClear}>
+        {children}
+      </FilterPanel>
+    );
+  return (
+    <form className="filters" role={search ? "search" : undefined} onSubmit={(e) => e.preventDefault()}>
+      {children}
+    </form>
   );
 }
 

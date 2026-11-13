@@ -240,3 +240,16 @@ export function handoffChangedLine(p: Pick<AskProposal, "status">, a: HandoffArg
   if (p.status === "applied") return "Ask changed nothing itself: you created the install code.";
   return "Changed nothing.";
 }
+
+/**
+ * A setup link on a handoff card: the card is marked started first, and the
+ * panel leaves for the setup page only when that worked. When it failed,
+ * the card stays in view with its error (the proposal is still proposed,
+ * or has failed), so the person sees why and a connection made later is
+ * still matched to the card. True when it navigated.
+ */
+export async function followHandoff(start: () => Promise<boolean>, leave: () => void): Promise<boolean> {
+  if (!(await start())) return false;
+  leave();
+  return true;
+}

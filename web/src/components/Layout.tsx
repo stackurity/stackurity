@@ -51,6 +51,7 @@ import {
   type NavPrefs,
 } from "../navModel";
 import { ErrorBox } from "./ui";
+import { useMenu, useModal } from "./useFocus";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
 import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
@@ -120,6 +121,11 @@ function Shell() {
   const collapsed = prefs.collapsed;
   const [more, setMore] = useState(false);
   const feedback = useRef<FeedbackHandle>(null);
+  // The phone More sheet is modal: focus moves to its first destination and
+  // stays in it, the page behind is inert, Escape closes it, and focus
+  // returns to More.
+  const moreSheet = useRef<HTMLDivElement>(null);
+  useModal(moreSheet, more, { onEscape: () => setMore(false) });
   useEffect(() => writePrefs(prefs), [prefs]);
   useEffect(() => setMore(false), [pathname]);
   // The group of the page being shown opens, so its item is in view; it can be closed again.
@@ -373,13 +379,12 @@ function Shell() {
         <div className="sheet-backdrop" onClick={() => setMore(false)}>
           <div
             id="more-sheet"
+            ref={moreSheet}
             className="sheet"
             role="dialog"
+            aria-modal="true"
             aria-label="More"
             onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => {
-              if (e.key === "Escape") setMore(false);
-            }}
           >
             {sheetGroups.map((g) => (
               <section key={g.id} className="sheet-group" aria-labelledby={`sheet-group-${g.id}`}>
@@ -414,7 +419,8 @@ function Shell() {
                     aria-haspopup="dialog"
                     onClick={() => {
                       setMore(false);
-                      feedback.current?.open();
+                      // After the sheet has closed and the page is no longer inert.
+                      setTimeout(() => feedback.current?.open(), 0);
                     }}
                   >
                     <IconMessage />
@@ -450,32 +456,17 @@ function Shell() {
   );
 }
 
-/** Closes a popup on a click outside it, Escape, or navigation. */
+/**
+ * A menu in the top bar (useMenu: focus on its first item, arrow keys,
+ * Escape back to the button, a click outside closes it), also closed by
+ * navigation.
+ */
 function usePopup() {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  const button = useRef<HTMLButtonElement>(null);
+  const m = useMenu();
   const { pathname } = useLocation();
-  useEffect(() => setOpen(false), [pathname]);
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e: MouseEvent) => {
-      if (box.current && !box.current.contains(e.target as Node)) setOpen(false);
-    };
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setOpen(false);
-        button.current?.focus();
-      }
-    };
-    document.addEventListener("mousedown", onDown);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("mousedown", onDown);
-      document.removeEventListener("keydown", onKey);
-    };
-  }, [open]);
-  return { open, setOpen, box, button };
+  const { setOpen } = m;
+  useEffect(() => setOpen(false), [pathname, setOpen]);
+  return m;
 }
 
 /**
@@ -519,10 +510,8 @@ function WorkspaceSwitcher() {
         type="button"
         ref={pop.button}
         className="workspace-button"
-        aria-haspopup="menu"
-        aria-expanded={pop.open}
+        {...pop.buttonProps}
         disabled={busy}
-        onClick={() => pop.setOpen(!pop.open)}
         title="Switch workspace"
       >
         <span className="workspace-name">{me.workspace.name}</span>
@@ -533,7 +522,7 @@ function WorkspaceSwitcher() {
         <span className="sr-only"> (switch workspace)</span>
       </button>
       {pop.open && (
-        <div className="menu menu-left" role="menu" aria-label="Workspaces">
+        <div className="menu menu-left" role="menu" aria-label="Workspaces" ref={pop.menu} onKeyDown={pop.onMenuKeyDown}>
           <div className="menu-label">Switch workspace</div>
           {list.map((m) => (
             <button
@@ -576,9 +565,7 @@ function ProjectSwitcher() {
         type="button"
         ref={pop.button}
         className={`workspace-button project-button${project ? " project-chosen" : ""}`}
-        aria-haspopup="menu"
-        aria-expanded={pop.open}
-        onClick={() => pop.setOpen(!pop.open)}
+        {...pop.buttonProps}
         title="Choose a project"
       >
         <span className="sr-only">Project: </span>
@@ -588,7 +575,7 @@ function ProjectSwitcher() {
         </span>
       </button>
       {pop.open && (
-        <div className="menu menu-left project-pop" role="menu" aria-label="Projects">
+        <div className="menu menu-left project-pop" role="menu" aria-label="Projects" ref={pop.menu} onKeyDown={pop.onMenuKeyDown}>
           <div className="menu-label">Show</div>
           <button type="button" role="menuitemradio" aria-checked={!project} className="menu-item" onClick={() => pick(0)}>
             <span className="menu-item-main">{allLabel}</span>
@@ -629,9 +616,7 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
         type="button"
         ref={pop.button}
         className="avatar-button"
-        aria-haspopup="menu"
-        aria-expanded={pop.open}
-        onClick={() => pop.setOpen(!pop.open)}
+        {...pop.buttonProps}
         title={who}
       >
         <span className="avatar" aria-hidden="true">
@@ -640,7 +625,7 @@ function AvatarMenu({ onFeedback, onLogout, version }: { onFeedback?: () => void
         <span className="sr-only">Account menu for {who}</span>
       </button>
       {pop.open && (
-        <div className="menu menu-right" role="menu" aria-label="Account">
+        <div className="menu menu-right" role="menu" aria-label="Account" ref={pop.menu} onKeyDown={pop.onMenuKeyDown}>
           <div className="menu-head">
             <span className="menu-email break">{who}</span>
             {me && (

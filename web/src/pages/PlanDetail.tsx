@@ -140,6 +140,24 @@ function DecisionPanel({
   return null;
 }
 
+/**
+ * Fetches the approved rules and runs Renovate with them as its
+ * configuration file (docs/remediation.md, Repositories).
+ */
+export function renovateRun(url: string, repositoryUrl?: string | null): string {
+  const repo = repositoryUrl ? repositoryUrl.replace(/^https?:\/\/[^/]+\//, "").replace(/\.git$/, "") : "<owner>/<repository>";
+  return [
+    "# RENOVATE_PLATFORM and RENOVATE_TOKEN set for your Git host, as for any Renovate run.",
+    `curl -fsS -H "Authorization: Bearer $STACKURITY_TOKEN" \\`,
+    `  "${url}" \\`,
+    `  -o stackurity-renovate.json`,
+    `RENOVATE_CONFIG_FILE=stackurity-renovate.json \\`,
+    `RENOVATE_REPOSITORIES=${repo} \\`,
+    `RENOVATE_ONBOARDING=false RENOVATE_REQUIRE_CONFIG=optional \\`,
+    `  npx --yes renovate`,
+  ].join("\n");
+}
+
 function RenovateHelp({ plan, assetId }: { plan: Plan; assetId: number | undefined }) {
   const q = plan.repository_url ? `repository=${encodeURIComponent(plan.repository_url)}` : assetId ? `asset_id=${assetId}` : null;
   const url = q ? `${window.location.origin}/api/v1/remediation/renovate.json?${q}&mode=exclusive` : null;
@@ -162,11 +180,17 @@ function RenovateHelp({ plan, assetId }: { plan: Plan; assetId: number | undefin
             disables every update that is not approved):
           </p>
           <CodeBlock label="Renovate configuration URL" text={url} />
-          <p className="small">Example: fetch it in the Renovate job before running Renovate:</p>
-          <CodeBlock
-            label="Renovate fetch snippet"
-            text={`curl -fsS -H "Authorization: Bearer $STACKURITY_TOKEN" \\\n  "${url}" \\\n  -o renovate.json`}
-          />
+          <p className="small">
+            In your Renovate job, fetch it before each run and give it to Renovate as its configuration file (<span className="mono">RENOVATE_CONFIG_FILE</span>
+            ). A <span className="mono">renovate.json</span> left in the working directory is not read as configuration. <span className="mono">curl -f</span>{" "}
+            fails the job when Stackurity refuses, so Renovate never runs without the rules.
+          </p>
+          <CodeBlock label="Renovate fetch and run" text={renovateRun(url, plan.repository_url)} />
+          <p className="hint">
+            A <span className="mono">renovate.json</span> in the repository itself is applied after these rules, so a rule there can turn updates back
+            on: keep it free of <span className="mono">packageRules</span>. The full scheduled workflow is in{" "}
+            <Link to="/help/remediation-overview">Help</Link>.
+          </p>
         </>
       )}
     </Card>

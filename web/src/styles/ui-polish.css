@@ -226,6 +226,12 @@
 .table td .trunc {
   max-width: min(34rem, 60vw);
 }
+/* In a sticky first column (capped at min(22rem, 45vw) in styles.css) the
+   name and its copy button stay inside the cell, less its padding, instead
+   of painting over the next column. */
+.table-sticky-first > tbody > tr:not(.expanded) > td:first-child .trunc {
+  max-width: calc(min(22rem, 45vw) - 24px);
+}
 .copy-value {
   flex: none;
   display: inline-grid;

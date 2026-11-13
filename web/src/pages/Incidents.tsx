@@ -6,7 +6,7 @@ import { useLoad } from "../hooks";
 import { humanize, plural } from "../format";
 import { Badge, EscalationBadge, PriorityBadge, SosBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
-import { EmptyState, ErrorBox, PageHeader, Pager, RelativeTime } from "../components/ui";
+import { EmptyState, ErrorBox, PageHeader, Pager, RelativeTime, PhoneFilters } from "../components/ui";
 import { FilterChips, TableToolbar } from "../components/FilterChips";
 import { TableSkeleton } from "../components/Skeleton";
 import { activeFilters, withoutFilter, withoutFilters, type FilterDef } from "../filterChips";
@@ -161,7 +161,7 @@ export function IncidentsPage() {
           )}
         </div>
       )}
-      <form className="filters" onSubmit={(e) => e.preventDefault()}>
+      <PhoneFilters active={activeFilters(params, filterDefs).length}>
         <div className="field">
           <label htmlFor="in-status">Status</label>
           <select id="in-status" value={status} onChange={(e) => update({ status: e.target.value === "open" ? "" : e.target.value })}>
@@ -217,7 +217,7 @@ export function IncidentsPage() {
           <input type="checkbox" checked={escalated} onChange={(e) => update({ escalated: e.target.checked ? "true" : "" })} /> Escalated
           (deadline missed)
         </label>
-      </form>
+      </PhoneFilters>
       <TableToolbar>
         <FilterChips filters={activeFilters(params, filterDefs)} onRemove={(key) => setParams(withoutFilter(params, key), { replace: true })} onClear={clearFilters} />
       </TableToolbar>

@@ -4,6 +4,7 @@ import {
   api,
   importVEX,
   vexExportURL,
+  type Asset,
   type List,
   type Token,
   type VEXDocument,
@@ -21,6 +22,7 @@ import { Card, CheckCard, EmptyState, ErrorBox, FieldGroup, GoodToKnow, KeyValue
 import { vexEmpty } from "../../emptyCopy";
 import { PlanLimitNote } from "../../components/PlanLimit";
 import { GroupCrumb } from "../../components/nav";
+import { AssetPicker } from "../../components/AssetPicker";
 
 const LIMIT = 50;
 
@@ -45,14 +47,14 @@ function ImportCard({ sources, onDone }: { sources: VEXSource[]; onDone: () => v
   const act = useAction();
   const [file, setFile] = useState<File | null>(null);
   const [source, setSource] = useState("");
-  const [asset, setAsset] = useState("");
+  const [asset, setAsset] = useState<Asset | null>(null);
   const [result, setResult] = useState<VEXImportResult | null>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     if (!file) return;
     setResult(null);
     const r = await act.run(() =>
-      importVEX(file, { filename: file.name, source_id: Number(source) || undefined, asset_id: Number(asset) || undefined }),
+      importVEX(file, { filename: file.name, source_id: Number(source) || undefined, asset_id: asset?.id }),
     );
     if (r) {
       setResult(r);
@@ -83,9 +85,12 @@ function ImportCard({ sources, onDone }: { sources: VEXSource[]; onDone: () => v
           </select>
         </div>
         <div className="field">
-          <label htmlFor="vex-asset">Asset id (optional)</label>
-          <input id="vex-asset" inputMode="numeric" pattern="[0-9]*" value={asset} onChange={(e) => setAsset(e.target.value)} />
-          <p className="hint">Match only on this asset. Needed for a document about a product with no package URL or digest of its own.</p>
+          <label htmlFor="vex-asset">Asset (optional)</label>
+          <AssetPicker id="vex-asset" value={asset} onChange={setAsset} allProjects />
+          <p className="hint">
+            Match only on this asset: search by name and pick it; its kind and environment show once picked. Needed for a document about a product
+            with no package URL or digest of its own. Leave it empty to match on every asset.
+          </p>
         </div>
         <GoodToKnow>
           <ul>

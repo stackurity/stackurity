@@ -1349,7 +1349,8 @@ select:disabled {
   border-color: color-mix(in srgb, var(--accent) 35%, var(--border-strong));
   text-decoration: none;
 }
-.btn:disabled {
+.btn:disabled,
+.btn[aria-disabled="true"] {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -2556,6 +2557,58 @@ details.json pre {
 }
 .report-grid {
   margin-bottom: 16px;
+}
+/* Active exceptions: the reason and mitigation read as prose in a column
+   wide enough for sentences; the other columns stay compact. */
+.report-exceptions .ex-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+}
+.report-exceptions .ex-finding,
+.report-exceptions .ex-asset {
+  min-width: 10rem;
+  max-width: 16rem;
+}
+.report-exceptions .ex-why {
+  min-width: 22rem;
+  max-width: 40rem;
+  white-space: normal;
+}
+.report-exceptions .ex-until {
+  white-space: nowrap;
+}
+.ex-why-list {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px var(--s2);
+  margin: 0;
+}
+.ex-why-list dt {
+  color: var(--text-2);
+  font-weight: 600;
+}
+.ex-why-list dd {
+  margin: 0;
+  overflow-wrap: break-word;
+}
+@media print {
+  /* Printed, the table fits the page: nothing is cut off at the right. */
+  .report-exceptions .table-wrap {
+    overflow: visible;
+    max-height: none;
+  }
+  .report-exceptions .table-more {
+    display: none;
+  }
+  .report-exceptions .ex-why {
+    min-width: 0;
+    max-width: none;
+  }
+  .report-exceptions .ex-finding,
+  .report-exceptions .ex-asset {
+    min-width: 0;
+  }
 }
 
 /* Outcomes, executive summary: short, readable, printable on one or two pages. */
