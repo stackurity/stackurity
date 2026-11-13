@@ -89,7 +89,8 @@ test("filters: inline on a wide screen (no window here), the Filters button on p
 
 test("Renovate: the rules are given to Renovate as its configuration file, not left as renovate.json", () => {
   const cmd: string = planDetail.renovateRun("https://s.example/api/v1/remediation/renovate.json?repository=x&mode=exclusive", "https://github.com/acme/shop");
-  assert.match(cmd, /-o stackurity-renovate\.json/);
+  assert.match(cmd, /^rm -f stackurity-renovate\.json$/m);
+  assert.match(cmd, /-o stackurity-renovate\.json && \\\nRENOVATE_CONFIG_FILE=/);
   assert.match(cmd, /RENOVATE_CONFIG_FILE=stackurity-renovate\.json/);
   assert.match(cmd, /RENOVATE_REPOSITORIES=acme\/shop/);
   assert.doesNotMatch(cmd, /-o renovate\.json/);
