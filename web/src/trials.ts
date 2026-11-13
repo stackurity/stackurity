@@ -33,6 +33,41 @@ export interface TrialOrg {
   active_7d: boolean;
   active_30d: boolean;
   flags: TrialFlag[];
+  /** Who the organisation is (absent from servers before this field). */
+  contact?: TrialContact;
+}
+
+/** Who an organisation is: whoever signed up and its billing details. */
+export interface TrialContact {
+  name: string;
+  email: string;
+  /** Social sign-ins of whoever signed up: "github:octocat", "google"; none = email and password. */
+  sign_ins: string[];
+  billing_email: string;
+  billing_legal_name: string;
+  /** ISO 3166 code; empty before the first payment asks for it. */
+  billing_country: string;
+  /** Where the sign-up came from (badge-acme from a trust badge). */
+  ref: string;
+}
+
+const PROVIDER_LABEL: Record<string, string> = { github: "GitHub", google: "Google", microsoft: "Microsoft" };
+
+/** How whoever signed up signs in: "GitHub @octocat", "Google", or "email and password". */
+export function signInLabel(signIns: string[]): string {
+  if (signIns.length === 0) return "email and password";
+  return signIns
+    .map((s) => {
+      const [p, login] = s.split(":", 2);
+      const label = PROVIDER_LABEL[p] ?? p;
+      return login ? `${label} @${login}` : label;
+    })
+    .join(", ");
+}
+
+/** Where a sign-up came from, in words ("trust badge of acme"). */
+export function refLabel(ref: string): string {
+  return ref.startsWith("badge-") ? `trust badge of ${ref.slice("badge-".length)}` : ref;
 }
 
 export interface TrialCohort {

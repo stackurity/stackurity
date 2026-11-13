@@ -10396,7 +10396,7 @@
    "get": {
     "operationId": "get_admin_trials",
     "summary": "Trial report: cloud organisations by sign-up week (hosted edition)",
-    "description": "Stackurity Cloud (hosted) only. Every organisation that signed up, by the week it signed up (`cohorts`, `totals`), and `orgs` with trial dates, `state` (trialing, converted, expired, cancelled), `billing_status`, first asset, last sign-in, collection, agent check-in and API use, `active_7d`, `active_30d` and `flags` (never_activated, went_quiet, trial_ended_not_converted). `excluded` lists the workspaces left out. Read only\n\nRole: instance admin",
+    "description": "Stackurity Cloud (hosted) only. Every organisation that signed up, by the week it signed up (`cohorts`, `totals`), and `orgs` with trial dates, `state` (trialing, converted, expired, cancelled), `billing_status`, first asset, last sign-in, collection, agent check-in and API use, `active_7d`, `active_30d`, `flags` (never_activated, went_quiet, trial_ended_not_converted) and `contact` (who signed up: `name`, `email`, `sign_ins`; billing: `billing_email`, `billing_legal_name`, `billing_country`; `ref`). `excluded` lists the workspaces left out. Read only\n\nRole: instance admin",
     "tags": [
      "Instance administration"
     ],
