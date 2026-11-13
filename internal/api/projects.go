@@ -84,6 +84,7 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   accountScope,
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": accountScope,
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    accountScope,
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/start":   accountScope,
 
 	// Connecting AI assistants: the consent page and the caller's own
 	// connections, in every workspace they belong to.

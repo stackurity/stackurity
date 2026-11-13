@@ -4,6 +4,7 @@ import { api, ApiError } from "../api";
 import { useAuth } from "../auth";
 import { ErrorBox, Loading, Notice } from "../components/ui";
 import { planInstall } from "../slackInstall";
+import { INTEGRATIONS_RETURN, startSlackInstall } from "../integrationStart";
 
 /*
  * /integrations/slack/install (the Slack app's Direct install URL, signed
@@ -26,8 +27,7 @@ export function SlackInstallPage() {
     setGoing(name);
     try {
       if (id !== me?.workspace?.id) await api.post(`/workspaces/${id}/activate`);
-      const r = await api.post<{ url: string }>("/integrations/slack/install", { return_to: "/integrations" });
-      window.location.assign(r.url);
+      await startSlackInstall(INTEGRATIONS_RETURN);
     } catch (e) {
       setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e)));
       setGoing(null);

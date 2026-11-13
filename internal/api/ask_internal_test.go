@@ -62,7 +62,10 @@ func TestAskActingAPIRoutes(t *testing.T) {
 		{"DELETE", "/api/v1/assets/12", false},
 		{"POST", "/api/v1/projects", false},
 		{"POST", "/api/v1/invitations", false},
-		{"POST", "/api/v1/enrollments", false},
+		// A server hand-off's Apply creates one install code (askApplyEnrollment).
+		{"POST", "/api/v1/enrollments", true},
+		{"DELETE", "/api/v1/enrollments/1", false},
+		{"POST", "/api/v1/enrollments?fleet=1", false},
 		{"POST", "/api/v1/tokens", false},
 		{"PATCH", "/api/v1/users/3", false},
 		{"POST", "/api/v1/auth/mfa/step-up", false},

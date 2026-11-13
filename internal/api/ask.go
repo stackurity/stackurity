@@ -471,6 +471,7 @@ var askBusy sync.Map
 //	event: reset  {}                      drop the text so far (a refusal or a fallback model)
 //	event: proposal {...}                 a change Ask proposed (ask_proposals.go); nothing is changed
 //	event: proposals_dropped {}           the turn is answered again: drop its proposals
+//	event: secret_removed {"text"}        text shaped like a secret was removed from the question; text is the question as kept
 //	event: done   {"stop_reason", "questions_used", "questions_limit", "long_chat"}
 //	event: error  {"code", "message"}
 func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
@@ -493,6 +494,10 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	in.Text = strings.TrimSpace(ask.CleanText(in.Text))
+	// A secret pasted into the question is removed before it is stored,
+	// titles the conversation or reaches the model (ask.RedactUserText).
+	var secretRemoved bool
+	in.Text, secretRemoved = ask.RedactUserText(in.Text)
 	if in.Text == "" || utf8.RuneCountInString(in.Text) > maxQuestion {
 		writeError(w, 400, "bad_request", fmt.Sprintf("a question is 1 to %d characters", maxQuestion))
 		return
@@ -594,7 +599,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		_ = s.Store.TitleAskConversation(ctx, p.User.ID, conv.ID, in.Text)
 	}
 	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project,
-		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api, Propose: l.Propose}, func(e ask.Event) {
+		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api, Propose: l.Propose, SecretRemoved: secretRemoved}, func(e ask.Event) {
 		switch e.Kind {
 		case "text":
 			send("text", map[string]string{"text": e.Text})
@@ -606,6 +611,8 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 			send("proposal", e.Proposal)
 		case "proposals_dropped":
 			send("proposals_dropped", map[string]any{})
+		case "secret_removed":
+			send("secret_removed", map[string]string{"text": e.Text})
 		}
 	})
 	answerSeq := s.askSignals(context.WithoutCancel(ctx), p.User.ID, conv, out, err)

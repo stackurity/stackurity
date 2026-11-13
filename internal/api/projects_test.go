@@ -451,6 +451,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   "account",
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": "account",
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    "account",
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/start":   "account",
 }
 
 // --- one organisation, two projects

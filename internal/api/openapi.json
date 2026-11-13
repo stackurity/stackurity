@@ -16089,7 +16089,7 @@
    "post": {
     "operationId": "post_ask_conversations_id_proposals_pid_apply",
     "summary": "Apply a change Ask Stackurity proposed",
-    "description": "The person's click on Apply: runs the proposed write tool's confirm path as the caller, through the same API, role and project checks as the dashboard, and answers `proposal` (`status` `applied`, `link`, `can_undo`). A browser session only (API tokens and connected assistants are refused), for a proposal of the caller's own conversation (404 otherwise), while the organisation lets Ask propose changes (403 `proposals_off`). Each proposal applies once (409 `proposal_applied`, `proposal_dismissed`, `proposal_failed`) and within 15 minutes (410 `proposal_expired`). When what the change covers changed since the preview, nothing is applied: 409 `changed` with the new preview in `error.proposal`, to apply again. The API's own refusal (403 for a role too low) is returned as it is, with the proposal marked `failed`. The activity log names the caller \"(via Ask Stackurity)\"\n\nRole: a browser session",
+    "description": "The person's click on Apply: runs the proposed write tool's confirm path as the caller, through the same API, role and project checks as the dashboard, and answers `proposal` (`status` `applied`, `link`, `can_undo`). A browser session only (API tokens and connected assistants are refused), for a proposal of the caller's own conversation (404 otherwise), while the organisation lets Ask propose changes (403 `proposals_off`). Each proposal applies once (409 `proposal_applied`, `proposal_dismissed`, `proposal_failed`) and within 15 minutes (410 `proposal_expired`). When what the change covers changed since the preview, nothing is applied: 409 `changed` with the new preview in `error.proposal`, to apply again. The API's own refusal (403 for a role too low) is returned as it is, with the proposal marked `failed`. The activity log names the caller \"(via Ask Stackurity)\". A server hand-off (`tool` `connect`, `args.kind` `server`) creates a one-server install code as the caller and answers `install` (`code`, `enrollment`) too; the code is in this response only\n\nRole: a browser session",
     "tags": [
      "Ask Stackurity"
     ],
@@ -16204,6 +16204,63 @@
     "operationId": "post_ask_conversations_id_proposals_pid_undo",
     "summary": "Undo a change applied from Ask Stackurity",
     "description": "Reverses an applied change that has a clean reverse (`can_undo`: a snooze, whose issues are reopened, or a project rename, back to the old name), once, within 15 minutes of applying it, through the same API and checks: `proposal` with `status` `undone`\n\nRole: a browser session",
+    "tags": [
+     "Ask Stackurity"
+    ],
+    "x-stackurity-role": "a browser session",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success: `proposal`",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/ask/conversations/{id}/proposals/{pid}/start": {
+   "post": {
+    "operationId": "post_ask_conversations_id_proposals_pid_start",
+    "summary": "Start a connection Ask Stackurity handed off",
+    "description": "Records that the caller clicked a hand-off's button or link (`tool` `connect`, any kind but `server`): `proposal` with `status` `started`. The dashboard then starts the service's own flow, or opens its setup page; the connection is made by that flow's endpoints. Once, within 15 minutes of the hand-off: 409 `proposal_started` after that, 410 `proposal_expired`, 400 `not_started` for a server hand-off or a change, 403 `proposals_off`\n\nRole: a browser session",
     "tags": [
      "Ask Stackurity"
     ],

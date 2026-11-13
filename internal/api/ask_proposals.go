@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stackurity/stackurity/internal/ask"
 	"github.com/stackurity/stackurity/internal/client"
 	"github.com/stackurity/stackurity/internal/mcp"
 	"github.com/stackurity/stackurity/internal/store"
@@ -24,6 +25,7 @@ import (
 //	POST /ask/conversations/{id}/proposals/{pid}/apply
 //	POST /ask/conversations/{id}/proposals/{pid}/dismiss
 //	POST /ask/conversations/{id}/proposals/{pid}/undo
+//	POST /ask/conversations/{id}/proposals/{pid}/start
 //
 // They take a browser session only (askPerson: no API token, no connected
 // assistant, never Ask's own tool calls), with the CSRF header like every
@@ -37,6 +39,15 @@ import (
 // of being proposed. The audit log records each change as the person's,
 // with "(via Ask Stackurity)" after their name and, for issue actions,
 // detail.source "ask" (as Slack's actions have "slack").
+//
+// Hand-offs (tool "connect", internal/ask/handoff.go) are proposals too.
+// One that starts a service's own flow or opens a setup page is started
+// (POST …/start, when the person clicks its button or link): the
+// connection is then made by the service's normal endpoints, as the
+// person, and audited there. A server hand-off is applied: Apply creates
+// an install code (POST /api/v1/enrollments) as the person, audited
+// "(via Ask Stackurity)", and returns the code in this response only. It
+// is not stored with the proposal, and the model never sees it.
 
 // The source of a change applied from an Ask proposal, in the audit log.
 const askApplySource = "ask"
@@ -45,6 +56,7 @@ func (s *Server) askProposalRoutes(r chi.Router) {
 	r.Post("/ask/conversations/{id}/proposals/{pid}/apply", s.askApplyProposal)
 	r.Post("/ask/conversations/{id}/proposals/{pid}/dismiss", s.askDismissProposal)
 	r.Post("/ask/conversations/{id}/proposals/{pid}/undo", s.askUndoProposal)
+	r.Post("/ask/conversations/{id}/proposals/{pid}/start", s.askStartProposal)
 }
 
 // askProposalTarget checks the person and the switch and parses the ids.
@@ -107,6 +119,7 @@ func proposalStateError(w http.ResponseWriter, err error) bool {
 		"undone":    "This change was undone.",
 		"undoing":   "This change is being undone.",
 		"proposed":  "This change has not been applied, so there is nothing to undo.",
+		"started":   "This connection was started already. Finish it on its page.",
 	}[p.Status]
 	if msg == "" {
 		msg = "This proposal cannot do that now."
@@ -134,6 +147,10 @@ func (s *Server) askApplyProposal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := r.Context()
+	if cur, err := s.Store.GetAskProposal(ctx, p.User.ID, conv, pid); err == nil && cur.Tool == ask.ConnectProposal && connectKind(cur) != "server" {
+		proposalError(w, 400, "not_applied", "This connection starts on its own page: use the card's button or link.", cur)
+		return
+	}
 	pr, err := s.Store.ClaimAskProposal(ctx, p.User.ID, conv, pid)
 	if proposalStateError(w, err) {
 		return
@@ -150,6 +167,10 @@ func (s *Server) askApplyProposal(w http.ResponseWriter, r *http.Request) {
 		args = nil
 	}
 	api := s.askActingAPI(r, p)
+	if pr.Tool == ask.ConnectProposal {
+		s.askApplyEnrollment(w, r, api, pr)
+		return
+	}
 	done, fresh, err := mcp.ApplyChange(actx, api, pr.Tool, args, pr.Code)
 	switch {
 	case err != nil:
@@ -238,6 +259,97 @@ func (s *Server) askUndoProposal(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, map[string]any{"proposal": undone})
 }
 
+// connectKind is a hand-off's kind ("" : not a hand-off).
+func connectKind(p *store.AskProposal) string {
+	if p.Tool != ask.ConnectProposal {
+		return ""
+	}
+	var c ask.Connect
+	_ = json.Unmarshal(p.Args, &c)
+	return c.Kind
+}
+
+// askApplyEnrollment applies a server hand-off the person claimed: it
+// creates a one-server install code as them (POST /api/v1/enrollments, the
+// Add server page's request) and answers with the code, which the card
+// turns into the install command. Only the enrollment's id, prefix and
+// expiry are stored with the proposal; the code is in this response only.
+func (s *Server) askApplyEnrollment(w http.ResponseWriter, r *http.Request, api *askActingAPI, pr *store.AskProposal) {
+	actx := context.WithoutCancel(r.Context())
+	var c ask.Connect
+	err := json.Unmarshal(pr.Args, &c)
+	if err == nil && (c.Kind != "server" || !c.CheckCode(pr.Code)) {
+		err = errors.New("not done: this hand-off cannot be applied")
+	}
+	var created struct {
+		Enrollment map[string]any `json:"enrollment"`
+		Code       string         `json:"code"`
+	}
+	if err == nil {
+		body := map[string]any{"label": c.Name, "environment": c.Environment, "uses": 1, "ttl_hours": 24, "discover_apps": true}
+		if c.ProjectID > 0 {
+			body["project_id"] = c.ProjectID
+		}
+		b, _ := json.Marshal(body)
+		err = api.Do(actx, "POST", "/api/v1/enrollments", bytes.NewReader(b), nil, &created)
+	}
+	if err == nil && created.Code == "" {
+		err = errors.New("not done: no install code was created")
+	}
+	if err != nil {
+		status, code, msg := askApplyError(err)
+		failed, ferr := s.Store.FinishAskProposal(actx, pr.ID, false, nil, msg, "", nil)
+		if ferr != nil {
+			s.fail(w, r, ferr)
+			return
+		}
+		proposalError(w, status, code, msg, failed)
+		return
+	}
+	kept := map[string]any{}
+	for _, k := range []string{"id", "prefix", "label", "environment", "uses_left", "expires_at", "project_id", "discover_apps"} {
+		if v, ok := created.Enrollment[k]; ok {
+			kept[k] = v
+		}
+	}
+	applied, err := s.Store.FinishAskProposal(actx, pr.ID, true, map[string]any{"enrollment": kept}, "", "/assets/add", nil)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, 200, map[string]any{"proposal": applied, "install": map[string]any{"code": created.Code, "enrollment": created.Enrollment}})
+}
+
+// POST /ask/conversations/{id}/proposals/{pid}/start: the person clicked a
+// hand-off's button or link (not a server's: that one is applied). The
+// card then starts the service's own flow, or opens the setup page; the
+// proposal shows as started.
+func (s *Server) askStartProposal(w http.ResponseWriter, r *http.Request) {
+	p, conv, pid, ok := s.askProposalTarget(w, r)
+	if !ok || !s.askProposalsAllowed(w, r) {
+		return
+	}
+	cur, err := s.Store.GetAskProposal(r.Context(), p.User.ID, conv, pid)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if k := connectKind(cur); k == "" || k == "server" {
+		proposalError(w, 400, "not_started", "Only a connection that finishes on its own page can be started.", cur)
+		return
+	}
+	pr, err := s.Store.StartAskProposal(r.Context(), p.User.ID, conv, pid)
+	if proposalStateError(w, err) {
+		return
+	}
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"proposal": pr})
+}
+
 // askApplyError turns an error of the change into what the person is told:
 // the API's own refusal as it is (status, code, message), or a change the
 // tool would not make (400 not_applied).
@@ -297,7 +409,8 @@ func (s *Server) askActingAPI(r *http.Request, p *Principal) *askActingAPI {
 
 // askActRoutes are the calls the proposable write tools make (internal/mcp
 // write.go: assign, snooze, ignore, check_again, add_assets_to_project,
-// rename_project) and their undo (propose.go).
+// rename_project) and their undo (propose.go), and the install code a
+// server hand-off creates (askApplyEnrollment).
 var askActRoutes = []struct {
 	method string
 	path   *regexp.Regexp
@@ -314,6 +427,7 @@ var askActRoutes = []struct {
 	{"POST", regexp.MustCompile(`^/api/v1/assets/[0-9]+/check$`)},
 	{"POST", regexp.MustCompile(`^/api/v1/projects/[0-9]+/assets$`)},
 	{"PATCH", regexp.MustCompile(`^/api/v1/projects/[0-9]+$`)},
+	{"POST", regexp.MustCompile(`^/api/v1/enrollments$`)},
 }
 
 func askActAllowed(method, path string) bool {

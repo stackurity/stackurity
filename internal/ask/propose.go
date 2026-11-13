@@ -44,7 +44,7 @@ const notRunProposal = "Not run: an answer may propose at most one change. Tell 
 var changeWords = regexp.MustCompile(`(?i)\b(assign|reassign|give (it|them|these|those) to|hand (it|them) (over|to)|take (it|them|these|those|this)|` +
 	`snooze|mute|silence|postpone|defer|ignore|suppress|dismiss|accept (the )?risk|mark (it|them|these|those|this|as)|` +
 	`(check|scan)(\s+\S+){0,4}\s+again|re-?check|re-?scan|re-?run|` +
-	`rename|call (it|the project)|add|put|move|change|apply|propose|` +
+	`rename|call (it|the project)|add|put|move|change|apply|propose|connect|set ?up|install|enrol+|hook (it |them )?up|integrate|` +
 	`do (it|that|this|so)|go ahead|please do|yes|yep|confirm)\b`)
 
 // AskedForChange reports whether text, the person's latest message, has

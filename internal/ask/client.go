@@ -122,7 +122,8 @@ func toolParams() []anthropic.BetaToolUnionParam {
 
 // proposeToolParams are the propose tools (mcp.ProposeTools), after the
 // read-only ones and in their fixed order, offered only to organisations
-// that let Ask propose changes. Calling one only previews (engine.go).
+// that let Ask propose changes, then the hand-off tool propose_connect
+// (handoff.go). Calling one only previews or hands off (engine.go).
 func proposeToolParams() []anthropic.BetaToolUnionParam {
 	var out []anthropic.BetaToolUnionParam
 	for _, t := range mcp.ProposeTools() {
@@ -136,7 +137,14 @@ func proposeToolParams() []anthropic.BetaToolUnionParam {
 		}
 		out = append(out, anthropic.BetaToolUnionParam{OfTool: &tp})
 	}
-	return out
+	cs := connectSchema()
+	tp := anthropic.BetaToolParam{
+		Name:        ConnectTool,
+		Description: anthropic.String(connectDescription),
+		InputSchema: anthropic.BetaToolInputSchemaParam{Properties: cs["properties"], Required: cs["required"].([]string),
+			ExtraFields: map[string]any{"additionalProperties": false}},
+	}
+	return append(out, anthropic.BetaToolUnionParam{OfTool: &tp})
 }
 
 // Call is one model call.

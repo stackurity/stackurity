@@ -240,9 +240,12 @@ export function ChannelForm({
   extraDirty = false,
   afterSave,
   onDiscard,
+  initialName,
 }: {
   channel?: Channel;
   kind?: ChannelKind;
+  /** A new integration's name, filled in (from the address: ?name=, as Ask Stackurity links it). */
+  initialName?: string;
   options: NotificationOptions;
   members: DirectoryUser[] | undefined;
   onCancel?: () => void;
@@ -276,7 +279,7 @@ export function ChannelForm({
   const [slackWebhook, setSlackWebhook] = useState(false);
   const [pdPaste, setPdPaste] = useState(false);
   const [teamsWebhook, setTeamsWebhook] = useState(false);
-  const [name, setName] = useState(channel?.name ?? "");
+  const [name, setName] = useState(channel?.name ?? initialName ?? "");
   const [secretRef, setSecretRef] = useState(channel?.secret_ref ?? "");
   const [url, setUrl] = useState(cfg.url ?? "");
   const [host, setHost] = useState(cfg.host ?? "");

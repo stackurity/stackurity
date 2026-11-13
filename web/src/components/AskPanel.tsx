@@ -31,6 +31,7 @@ import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
 import { AskProposalCard } from "./AskProposalCard";
+import { looksLikeSecret, SECRET_REMOVED_NOTICE, SECRET_TYPING_WARNING } from "../askSecrets";
 import { changedLine, proposalsByAnswer, type AskProposal } from "../askProposal";
 import { AskAnswerExtras } from "./AskAnswerExtras";
 
@@ -221,6 +222,7 @@ export function AskPanel({
   const body = useRef<HTMLDivElement>(null);
   const scroll = useRef<number | null>(null);
   const page: AskPage | null = pageOf(pathname);
+  const secretTyped = looksLikeSecret(text);
   const { project, projects, choose } = useProject();
   const projectName = (id: number | null) => (id ? projects.find((p) => p.id === id)?.name ?? "" : "");
 
@@ -397,6 +399,18 @@ export function AskPanel({
           case "proposals_dropped":
             proposals = [];
             break;
+          case "secret_removed": {
+            // The server took a secret out of the question before it was
+            // kept or sent to the model: show the question as kept, and why.
+            const kept = String(e.data.text ?? "");
+            setTurns((t) => {
+              const at = t.map((x) => x.role).lastIndexOf("user");
+              const next = at < 0 ? t : t.map((x, i) => (i === at ? { ...x, text: kept } : x));
+              return [...next, { role: "notice", text: SECRET_REMOVED_NOTICE }];
+            });
+            setConvs((cs) => cs.map((c) => (c.id === id ? { ...c, title: kept } : c)));
+            break;
+          }
           case "done":
             answerSeq = Number(e.data.answer_seq) || 0;
             if (e.data.message) closing = { role: "notice", text: String(e.data.message) };
@@ -594,7 +608,16 @@ export function AskPanel({
                 <BotTurn key={`${conv ?? "new"}:${i}`}>
                   <AskAnswer text={t.text} onNavigate={onLinkClick} />
                   {conv !== null &&
-                    t.proposals?.map((p) => <AskProposalCard key={p.id} conv={conv} proposal={p} onChange={proposalChanged} onNavigate={onLinkClick} />)}
+                    t.proposals?.map((p) => (
+                      <AskProposalCard
+                        key={p.id}
+                        conv={conv}
+                        proposal={p}
+                        onChange={proposalChanged}
+                        onNavigate={onLinkClick}
+                        onLeave={() => update({ open: true, minimised: false })}
+                      />
+                    ))}
                   <AskAnswerExtras text={t.text} onNavigate={onLinkClick} />
                   <AskReadOnly tools={t.tools} onNavigate={onLinkClick} proposal={t.proposals?.[0]} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
@@ -643,7 +666,13 @@ export function AskPanel({
                   void send();
                 }
               }}
+              aria-describedby={secretTyped ? "ask-secret-warning" : undefined}
             />
+            {secretTyped && (
+              <p id="ask-secret-warning" className="ask-secret-warning small" role="alert">
+                {SECRET_TYPING_WARNING}
+              </p>
+            )}
             <div className="ask-form-row">
               <span className="small muted">{left}</span>
               {busy ? (
@@ -738,7 +767,7 @@ export function AskSettingsCard() {
             disabled={busy}
             onChange={setPropose}
             label="Ask may propose changes"
-            description="When someone asks for a change (assign, snooze or ignore issues, check again, add assets to a project, rename a project), Ask shows it as a card with Apply and Dismiss. Nothing changes until that person clicks Apply, and only within their own role. Ask never makes a change by itself."
+            description="When someone asks for a change (assign, snooze or ignore issues, check again, add assets to a project, rename a project), Ask shows it as a card with Apply and Dismiss. Nothing changes until that person clicks Apply, and only within their own role. When an admin asks to connect something (GitHub, Jira, Slack, a new server and more), the card starts it on the service's own page. Ask never makes a change by itself."
           />
           <p className="small muted">
             {s.questions_this_month} questions this month

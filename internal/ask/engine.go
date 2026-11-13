@@ -55,19 +55,30 @@ type Question struct {
 	// then offered the propose tools (propose.go); otherwise it never sees
 	// them.
 	Propose bool
+	// SecretRemoved: the caller already removed text shaped like a secret
+	// from Text (RedactUserText), before titling the conversation. Ask
+	// removes any that is left, and warns either way.
+	SecretRemoved bool
 }
 
 // Event is what the engine reports while it answers.
 type Event struct {
-	Kind string `json:"-"` // text, reset, tool
+	Kind string `json:"-"` // text, reset, tool, proposal, proposals_dropped, secret_removed
 	Text string `json:"text,omitempty"`
 	// Tool describes a tool that runs, for the person ("Reading finding 12").
 	Tool string `json:"tool,omitempty"`
 	// Proposal is a change Ask proposed (kind proposal); the person applies
 	// it or not. Kind proposals_dropped: the turn is answered again, so the
-	// proposals shown for it are gone.
+	// proposals shown for it are gone. Kind secret_removed: text shaped like
+	// a secret was removed from the question (Text is the question as
+	// stored and sent), so the panel warns.
 	Proposal *store.AskProposal `json:"-"`
 }
+
+// secretNote goes to the model after a question a secret was removed from.
+const secretNote = "<stackurity-note>Stackurity removed text that looked like a secret (a token, password, key or webhook address) " +
+	"from this message before you saw it. Tell the person in one short sentence not to paste secrets into Ask, and to enter them on the " +
+	"setup page instead. Never ask them to paste it again.</stackurity-note>"
 
 // Outcome is how a question ended.
 type Outcome struct {
@@ -124,6 +135,14 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if c.ContextTokens > MaxContextTokens {
 		return out, ErrTooLong
 	}
+	// A secret pasted into the question never reaches the model or the
+	// stored conversation, and the person is warned.
+	text, found := RedactUserText(q.Text)
+	q.Text = text
+	secret := found || q.SecretRemoved
+	if secret {
+		emit(Event{Kind: "secret_removed", Text: q.Text})
+	}
 	history, err := e.Store.AskMessages(ctx, q.UserID, c.ID)
 	if err != nil {
 		return out, err
@@ -175,7 +194,11 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if q.Page != nil {
 		page, _ = json.Marshal(q.Page)
 	}
-	um := userMessage(textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text))
+	blocks := []map[string]any{textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text)}
+	if secret {
+		blocks = append(blocks, textBlock(secretNote))
+	}
+	um := userMessage(blocks...)
 	qSeq, err := e.Store.AppendAskMessage(ctx, q.UserID, c.ID, store.AskMessage{Role: "user", Content: um, VisibleText: q.Text, Page: page}, 0)
 	if err != nil {
 		return out, err
@@ -511,12 +534,16 @@ func (e *Engine) runTools(ctx context.Context, api mcp.API, uses []ToolUse, last
 			out[i] = toolResult(u.ID, msg, true)
 			continue
 		}
-		if _, ok := mcp.ProposedTool(u.Name); ok && prop != nil && prop.done {
+		if isProposeCall(u.Name) && prop != nil && prop.done {
 			out[i] = toolResult(u.ID, notRunProposal, true)
 			continue
 		}
 		emit(Event{Kind: "tool", Tool: toolLabel(u)})
 		ran[i] = true
+		if u.Name == ConnectTool && prop != nil {
+			out[i] = prop.runConnect(ctx, api, u, emit)
+			continue
+		}
 		if _, ok := mcp.ProposedTool(u.Name); ok && prop != nil {
 			out[i] = prop.run(ctx, api, u, emit)
 			continue
@@ -605,8 +632,18 @@ func toolLabel(u ToolUse) string {
 	case "notification_settings":
 		return "Reading notification rules"
 	}
+	if u.Name == ConnectTool {
+		return "Preparing a connection"
+	}
 	if _, ok := mcp.ProposedTool(u.Name); ok {
 		return "Preparing a change"
 	}
 	return "Reading"
+}
+
+// isProposeCall reports whether name is a propose tool or the hand-off
+// tool: together they may make one proposal per answer.
+func isProposeCall(name string) bool {
+	_, ok := mcp.ProposedTool(name)
+	return ok || name == ConnectTool
 }

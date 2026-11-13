@@ -640,6 +640,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/apply":   {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/dismiss": {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
 	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/undo":    {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
+	"POST /api/v1/ask/conversations/{id}/proposals/{pid}/start":   {class: "object", obj: map[string]string{"id": "askconv", "pid": "askprop"}},
 }
 
 // tenantFx is one workspace's data and credentials. Every name contains

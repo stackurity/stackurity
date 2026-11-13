@@ -1,6 +1,5 @@
 import { useState } from "react";
 import {
-  api,
   summaryText,
   type DirectoryUser,
   type NotificationOptions,
@@ -9,6 +8,7 @@ import {
   type SummaryChoice,
 } from "../api";
 import { useAction } from "../hooks";
+import { startPagerDutyConnect, startSlackInstall } from "../integrationStart";
 import { SMTP_PRESETS } from "../smtpPresets";
 import { ChoiceCards, ErrorBox, FieldGroup, OptionBadge, type ChoiceOption } from "./ui";
 import { errorView } from "../errors";
@@ -103,8 +103,7 @@ export function AddToSlackButton({
   const act = useAction();
   const go = async () => {
     beforeRedirect?.();
-    const r = await act.run(() => api.post<{ url: string }>(startPath, { return_to: returnTo }));
-    if (r?.url) window.location.assign(r.url);
+    await act.run(() => startSlackInstall(returnTo, startPath));
   };
   const button = (
     <button
@@ -142,10 +141,7 @@ export function AddToSlackButton({
  */
 export function ConnectPagerDutyButton({ returnTo, label = "Connect PagerDuty" }: { returnTo: string; label?: string }) {
   const act = useAction();
-  const go = async () => {
-    const r = await act.run(() => api.post<{ url: string }>("/integrations/pagerduty/connect", { return_to: returnTo }));
-    if (r?.url) window.location.assign(r.url);
-  };
+  const go = () => act.run(() => startPagerDutyConnect(returnTo));
   return (
     <>
       <ErrorBox error={act.error} title="Could not open PagerDuty" />

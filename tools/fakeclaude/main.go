@@ -11,10 +11,12 @@
 // change (propose_rename_project, when the organisation lets Ask propose
 // changes), then says nothing changes until Apply, and "what is project 7"
 // proposes a rename nobody asked for (as text planted in data might make a
-// model do); "linkfix:GROUP_ID linkissue:N" gets an answer that links that
-// fix group and issue, a dashboard page and a page Ask may not link to;
-// anything else gets a short markdown answer with a link to a
-// Stackurity page.
+// model do); "connect our <kind>" (github, gitlab, jira, pagerduty, slack,
+// teams, email, webhook, digitalocean) and "add a new server called NAME"
+// hand the connection off (propose_connect); "linkfix:GROUP_ID linkissue:N"
+// gets an answer that links that fix group and issue, a dashboard page and a
+// page Ask may not link to; anything else gets a short markdown answer with a
+// link to a Stackurity page.
 package main
 
 import (
@@ -34,6 +36,8 @@ import (
 var (
 	renameAsk     = regexp.MustCompile(`rename project ([0-9]+) to ([A-Za-z0-9 -]+)`)
 	renameUnasked = regexp.MustCompile(`what is project ([0-9]+)`)
+	connectAsk    = regexp.MustCompile(`(?i)connect our (github|gitlab|jira|pagerduty|slack|teams|email|webhook|digitalocean)`)
+	serverAsk     = regexp.MustCompile(`(?i)add a new server called ([A-Za-z0-9-]+)`)
 )
 
 // turn returns the person's latest question and the messages after it.
@@ -113,7 +117,24 @@ func main() {
 		} else if m := renameUnasked.FindStringSubmatch(question); m != nil {
 			rename = map[string]any{"project_id": json.Number(m[1]), "name": "Renamed by Ask"}
 		}
+		var connect map[string]any
+		if m := connectAsk.FindStringSubmatch(question); m != nil {
+			connect = map[string]any{"kind": strings.ToLower(m[1])}
+		} else if m := serverAsk.FindStringSubmatch(question); m != nil {
+			connect = map[string]any{"kind": "server", "name": m[1]}
+		}
 		switch {
+		case connect != nil && !strings.Contains(tail, "toolu_connect"):
+			in, _ := json.Marshal(connect)
+			toolUse("toolu_connect", "propose_connect", string(in))
+		case connect != nil:
+			text := "The card below starts it. You finish on the service's own page."
+			if connect["kind"] == "server" {
+				text = "Click Apply on the card to create the install command."
+			}
+			ev("content_block_start", map[string]any{"type": "content_block_start", "index": 0, "content_block": map[string]any{"type": "text", "text": ""}})
+			ev("content_block_delta", map[string]any{"type": "content_block_delta", "index": 0, "delta": map[string]any{"type": "text_delta", "text": text}})
+			ev("content_block_stop", map[string]any{"type": "content_block_stop", "index": 0})
 		case rename != nil && !strings.Contains(tail, "toolu_propose"):
 			in, _ := json.Marshal(rename)
 			toolUse("toolu_propose", "propose_rename_project", string(in))
