@@ -34,13 +34,23 @@ func TestIdentify(t *testing.T) {
 		{"rpm", "MariaDB-server", "mariadb", 1},
 		{"deb", "mysql-community-server", "mysql", 0},
 		{"deb", "vault", "vault", 0},
+		{"deb", "docker-ce", "docker-engine", 0},
+		{"rpm", "docker-ce", "docker-engine", 1},
+		{"deb", "docker-ce-cli", "docker-engine", 2},
+		{"deb", "docker-ce-rootless-extras", "docker-engine", 4},
+		{"deb", "containerd.io", "containerd", 0},
+		{"rpm", "containerd.io", "containerd", 1},
 		// Not the product's own version, or not listed.
 		{"deb", "php8.3-redis", "", 0},
 		{"deb", "php8.3-xdebug", "", 0},
 		{"deb", "libpq5", "", 0},
 		{"deb", "nginx-module-njs", "", 0},
 		{"apk", "nginx", "", 0},
-		{"deb", "docker-ce", "", 0},
+		{"deb", "docker.io", "", 0},
+		{"deb", "containerd", "", 0},
+		{"deb", "containerdXio", "", 0},
+		{"deb", "docker-compose-plugin", "", 0},
+		{"deb", "docker-buildx-plugin", "", 0},
 	} {
 		p, rank := c.Identify(tc.typ, tc.name)
 		got := ""
@@ -68,6 +78,10 @@ func TestUpstreamVersion(t *testing.T) {
 		{"mysql", "8.0.39-1ubuntu22.04", "8.0.39"},
 		{"elasticsearch", "8.15.2", "8.15.2"},
 		{"consul", "1.20.1-1", "1.20.1"},
+		{"docker-engine", "5:29.9.3-1~ubuntu.24.04~noble", "29.9.3"},
+		{"docker-engine", "29.9.3-1.el9", "29.9.3"},
+		{"containerd", "2.4.2-3~ubuntu.24.04~noble", "2.4.2"},
+		{"containerd", "2.4.2-4.el9", "2.4.2"},
 		// Editions and pre-releases are not read.
 		{"consul", "1.20.1+ent-1", ""},
 		{"vault", "1.18.1+ent-1", ""},
@@ -86,19 +100,20 @@ func TestNamePattern(t *testing.T) {
 	c := Default()
 	re := regexp.MustCompile("(?i)" + c.NamePattern())
 	for _, n := range []string{"nginx", "nodejs", "postgresql-16", "postgresql16-server", "php8.3-common", "php83-php-fpm",
-		"libapache2-mod-php8.1", "MariaDB-server", "mysql-community-server", "vault", "terraform"} {
+		"libapache2-mod-php8.1", "MariaDB-server", "mysql-community-server", "vault", "terraform",
+		"docker-ce", "docker-ce-cli", "containerd.io"} {
 		if !re.MatchString(n) {
 			t.Errorf("NamePattern does not select %s", n)
 		}
 	}
-	if re.MatchString("php8.3-redis") || re.MatchString("nginx-extras") {
+	if re.MatchString("php8.3-redis") || re.MatchString("nginx-extras") || re.MatchString("containerdXio") {
 		t.Error("NamePattern selects packages Identify does not read")
 	}
 }
 
 func TestOwnsCPE(t *testing.T) {
 	c := Default()
-	node, ngx, vault := c.Product("nodejs"), c.Product("nginx"), c.Product("vault")
+	node, ngx, vault, dock := c.Product("nodejs"), c.Product("nginx"), c.Product("vault"), c.Product("docker-engine")
 	for _, tc := range []struct {
 		p        *Product
 		criteria string
@@ -112,6 +127,12 @@ func TestOwnsCPE(t *testing.T) {
 		{vault, "cpe:2.3:a:hashicorp:vault:*:*:*:*:enterprise:*:*:*", false},
 		{node, "cpe:2.3:a:nodejs:node.js:*:*:*:*:-:windows:*:*", false},
 		{node, "cpe:2.3:a:nodejs:node.js:*:*:*:*:-:linux:*:*", true},
+		{dock, "cpe:2.3:a:docker:engine:*:*:*:*:*:*:*:*", true},
+		{dock, "cpe:2.3:a:mobyproject:moby:*:*:*:*:*:*:*:*", true},
+		{dock, "cpe:2.3:a:docker:docker:*:*:*:*:community:*:*:*", true},
+		{dock, "cpe:2.3:a:docker:docker:*:*:*:*:enterprise:*:*:*", false},
+		{dock, "cpe:2.3:a:docker:docker:*:*:*:*:community:windows:*:*", false},
+		{dock, "cpe:2.3:a:mobyproject:moby\\/v2:2.0.0:beta0:*:*:*:*:*:*", false},
 	} {
 		if got := tc.p.OwnsCPE(tc.criteria); got != tc.want {
 			t.Errorf("%s OwnsCPE(%s) = %v", tc.p.ID, tc.criteria, got)

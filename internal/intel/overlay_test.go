@@ -361,7 +361,8 @@ func TestOverlayEvaluation(t *testing.T) {
 				t.Errorf("mongodb-org-server note = %q", note)
 			}
 		case "docker-ce":
-			if r.Coverage != store.CoverageUnsupported || !strings.Contains(r.CoverageReason, "built by Docker's repository") {
+			// In the catalogue as Docker Engine, like mongodb-org-server.
+			if r.Coverage == store.CoverageUnsupported || !strings.Contains(r.CoverageReason, "nvd:vendor-builds") {
 				t.Errorf("docker-ce coverage = %s %q", r.Coverage, r.CoverageReason)
 			}
 		case "redis-server":
