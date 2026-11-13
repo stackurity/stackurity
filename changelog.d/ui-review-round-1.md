@@ -1,8 +1,0 @@
-### Fixed
-
-- **Container images are fixed in their build.** An image's security updates were shown as `sudo apt update && sudo apt upgrade`, which patches a running container until it is recreated. The fix is now "Rebuild the image with the available security updates" with a Dockerfile build step (`RUN apt-get update && apt-get upgrade -y …`, or the dnf, yum, apk or zypper equivalent), and the steps after it: rebuild and publish, redeploy the containers, scan the new image.
-- **An asset's Coverage says how much was checked.** The asset header said "Not checked" whenever one component was unsupported; it now says "Partly checked (90%)", with the components checked and not supported in its tooltip, and "Not checked" only when nothing was.
-- **Updates available no longer says its upgrades fix no known vulnerability.** It lists every package behind its latest stable release, security or not; a new Security column links an install's open issues, and the page points to Fixes for what to do first.
-- **Approvals: the note and the Approve and Decline buttons sit together under the request**, instead of the note stretching the card.
-- **Fix counts say what the fix does.** "Issues cleared" is now "issues this fixes", and "issues awaiting a fix" on a card with no published fix.
-- **Tables with long identifiers stay readable.** Package paths (Automatic fixes), inventory locations (an asset's Inventory) and delivery titles (Delivery log) no longer wrap a few characters per line: the columns keep a minimum width, identifiers are cut in the middle with the full value on hover, focus and copy, and long titles stop at two lines.

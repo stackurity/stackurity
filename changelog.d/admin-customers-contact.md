@@ -1,3 +1,0 @@
-### Changed
-
-- **Instance administration: Trials is now Customers, and shows who each organisation is.** Stackurity Cloud only. The page lists every organisation that signed up, whether in trial, paying or ended, so it is now called Customers (same address, `/admin/trials`). A new Customer column shows the name and email of whoever signed up (an email link), how they sign in (GitHub username, Google, Microsoft, or email and password), the billing name, email and country once given at checkout, and where the sign-up came from (such as a trust badge). `GET /admin/trials` returns these as `contact` on each organisation. Operators also get a sales alert, by email and in Slack, each time a free self-hosted key is issued. See [API](docs/api.md#get-admintrials).
