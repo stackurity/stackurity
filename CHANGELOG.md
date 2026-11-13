@@ -6,6 +6,31 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.6
+
+### Added
+
+- **Docker Engine and containerd from Docker's repository are checked.** `docker-ce`, `docker-ce-cli`, `docker-ce-rootless-extras` and `containerd.io` from download.docker.com (deb and rpm) are matched by upstream version against NVD's records for Docker Engine (`docker:engine`, `mobyproject:moby`, `docker:docker` Community Edition) and containerd (`linuxfoundation:containerd`), instead of being listed as not supported yet. Docker Compose and Buildx stay coverage gaps: NVD's records for them name no product or versions. See [Vendor builds](docs/compatibility.md#vendor-builds).
+
+### Changed
+
+- **Check again says when an asset cannot report on demand.** For uploaded applications, container images, CI-scanned repositories and older agents, the asset page first shows how to send fresh evidence, and the button says "Check the next report" (it does not start a scan).
+- **Component upgrades show what they resolve.** The upgrade table has an "Upgrade resolves" column (N of M issues, and how many stay open) and says so when no published version fixes every open issue.
+- **Pick assets and stored credentials by name.** Importing a VEX document for one asset uses the asset search instead of a numeric id, and the Git, registry and plugin source forms list stored credentials to fill in `secret:NAME`.
+- **Phone filters fold away.** On Assets and Incidents the filters sit behind a Filters button with a count; the active filters stay visible as chips.
+- **The evidence report's exceptions table is compact** and shows the reason and mitigation as readable prose, also in print.
+- **Remediation setup keeps the inventory agent's settings.** The Enable remediation steps and [Remediation](docs/remediation.md#enabling-a-host) use a separate root-only token, reuse `/etc/stackurity/agent.env`, stop `stackurity-agent` and say how to check both services. The Renovate example sets `RENOVATE_CONFIG_FILE`.
+- Docs: Compose settings beyond the forwarded ones ([Install](docs/install.md)), where secrets are kept, isolating merge-request scans, macOS application directories, and installing plugins in the container ([Plugins](docs/plugins.md)).
+
+### Fixed
+
+- **Ubuntu's own snapd is no longer reported as a vendor build.** A version such as `2.77.1+ubuntu24.04` was mistaken for MySQL's APT repository (`8.0.39-1ubuntu22.04`), so snapd on Ubuntu 24.04 hosts showed under "not supported yet" and was not checked against Ubuntu's advisories.
+- Keyboard and screen readers: the workspace, project, account and leaked-key menus take focus and follow arrow keys, Home, End and Escape; the phone More sheet, the Ask panel on phones, the Ask consent dialog and confirmations keep focus inside and return it when closed.
+- Ask: image fixes show the rebuild, publish, redeploy and scan steps, with "Change the build of" as their heading; a connection hand-off that fails to start shows its error instead of navigating away.
+- Phone: fix descriptions no longer overlap the issue count on Fixes, and long asset names no longer paint over the Kind column.
+- **Zabbix and Icinga builds from their own repositories are recognised again.** The snapd fix above narrowed the rule to MySQL's version form, so versions such as `1:7.0.5-1+ubuntu24.04` were checked against Ubuntu's advisories, which do not cover them. They are flagged as vendor builds again; snapd (`2.77.1+ubuntu24.04`, no packaging revision) stays the distribution's build.
+- **The Renovate command on a plan quotes the repository.** Only a plain `owner/repository` path is put into the copy-and-paste command, in single quotes.
+
 ## 0.20.5
 
 ### Security
