@@ -1524,7 +1524,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/AssetList"
         }
        }
       }
@@ -1593,7 +1593,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/AssetDetail"
         }
        }
       }
@@ -2525,18 +2525,25 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/LoginRequest"
        }
       }
      }
     },
     "responses": {
      "2XX": {
-      "description": "Success",
+      "description": "Signed in: the user, and the stackurity_session cookie is set. Or, for an account with a second factor, mfa_required and no session yet.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/User"
+          },
+          {
+           "$ref": "#/components/schemas/MFARequired"
+          }
+         ]
         }
        }
       }
@@ -2559,19 +2566,9 @@
      "Account"
     ],
     "x-stackurity-role": "any signed-in user",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
     "responses": {
      "2XX": {
-      "description": "Success (usually 204 No Content)"
+      "description": "Signed out: the session ends and its cookie is cleared. No body."
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -2597,7 +2594,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/Me"
         }
        }
       }
@@ -2687,7 +2684,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/PasswordChangeRequest"
        }
       }
      }
@@ -2698,7 +2695,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/PasswordChangeResult"
         }
        }
       }
@@ -2937,18 +2934,18 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/MFAVerifyRequest"
        }
       }
      }
     },
     "responses": {
      "2XX": {
-      "description": "Success",
+      "description": "Signed in: the user, and the stackurity_session cookie is set. 401 mfa_invalid: a wrong code; 401 mfa_expired: start again with POST /auth/login.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/User"
         }
        }
       }
@@ -5093,7 +5090,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FindingList"
         }
        }
       }
@@ -18714,6 +18711,1363 @@
       "type": "boolean"
      }
     }
+   },
+   "User": {
+    "type": "object",
+    "description": "An account, as the organisation the request works in sees it (internal/store.User).",
+    "required": [
+     "id",
+     "email",
+     "name",
+     "role",
+     "disabled",
+     "created_at"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       1
+      ]
+     },
+     "email": {
+      "type": "string",
+      "format": "email",
+      "examples": [
+       "alex@example.com"
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "Alex Demo"
+      ]
+     },
+     "role": {
+      "type": "string",
+      "description": "Organisation-wide role in this organisation; empty for a member with project access only (access is then projects).",
+      "examples": [
+       "admin",
+       "security",
+       "engineer",
+       "viewer",
+       ""
+      ]
+     },
+     "disabled": {
+      "type": "boolean"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_login_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "teams": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     },
+     "instance_admin": {
+      "type": "boolean"
+     },
+     "access": {
+      "type": "string",
+      "enum": [
+       "organisation",
+       "projects",
+       ""
+      ]
+     },
+     "mfa_enabled": {
+      "type": "boolean"
+     },
+     "mfa_methods": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string",
+       "enum": [
+        "passkey",
+        "totp",
+        "email"
+       ]
+      }
+     },
+     "phone": {
+      "type": "string"
+     },
+     "project_grants": {
+      "type": "integer"
+     },
+     "asset_grants": {
+      "type": "integer"
+     },
+     "access_teams": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "LoginRequest": {
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "properties": {
+     "email": {
+      "type": "string",
+      "format": "email"
+     },
+     "password": {
+      "type": "string",
+      "format": "password"
+     }
+    },
+    "examples": [
+     {
+      "email": "alex@example.com",
+      "password": "correct horse battery staple"
+     }
+    ]
+   },
+   "MFARequired": {
+    "type": "object",
+    "description": "The account has a second factor: no session yet. A short-lived challenge cookie is set for /api/v1/auth/mfa; finish with POST /auth/mfa/verify (a code) or POST /auth/mfa/passkey/begin and /finish.",
+    "required": [
+     "mfa_required",
+     "methods"
+    ],
+    "properties": {
+     "mfa_required": {
+      "const": true
+     },
+     "methods": {
+      "type": "array",
+      "description": "What the second step offers, strongest first. email appears only for an account with no other method.",
+      "items": {
+       "type": "string",
+       "enum": [
+        "passkey",
+        "totp",
+        "recovery",
+        "email"
+       ]
+      }
+     }
+    },
+    "examples": [
+     {
+      "mfa_required": true,
+      "methods": [
+       "totp",
+       "recovery"
+      ]
+     }
+    ]
+   },
+   "MFAVerifyRequest": {
+    "type": "object",
+    "required": [
+     "code"
+    ],
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "A 6-digit code from the authenticator app or the email, or one recovery code."
+     }
+    },
+    "examples": [
+     {
+      "code": "123456"
+     }
+    ]
+   },
+   "PasswordChangeRequest": {
+    "type": "object",
+    "required": [
+     "current_password",
+     "new_password"
+    ],
+    "properties": {
+     "current_password": {
+      "type": "string",
+      "format": "password"
+     },
+     "new_password": {
+      "type": "string",
+      "format": "password",
+      "description": "Must meet the organisation's password rules; otherwise 400 password_too_weak with the rules missed in details."
+     },
+     "revoke_tokens": {
+      "type": "boolean",
+      "default": false,
+      "description": "Also revoke your API tokens."
+     },
+     "revoke_assistants": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also disconnect the AI assistants connected as you."
+     }
+    },
+    "examples": [
+     {
+      "current_password": "old passphrase",
+      "new_password": "a new, longer passphrase",
+      "revoke_tokens": false
+     }
+    ]
+   },
+   "PasswordChangeResult": {
+    "type": "object",
+    "required": [
+     "revoked",
+     "tokens_kept"
+    ],
+    "properties": {
+     "revoked": {
+      "type": "object",
+      "description": "What the new password ended. This session stays signed in (with a new session ID).",
+      "required": [
+       "sessions",
+       "tokens",
+       "assistants"
+      ],
+      "properties": {
+       "sessions": {
+        "type": "integer"
+       },
+       "tokens": {
+        "type": "integer"
+       },
+       "assistants": {
+        "type": "integer"
+       }
+      }
+     },
+     "tokens_kept": {
+      "type": "integer",
+      "description": "Your API tokens that still work."
+     }
+    },
+    "examples": [
+     {
+      "revoked": {
+       "sessions": 2,
+       "tokens": 0,
+       "assistants": 1
+      },
+      "tokens_kept": 3
+     }
+    ]
+   },
+   "Me": {
+    "type": "object",
+    "description": "The caller. Fields not listed here may be added; clients should ignore what they do not know.",
+    "required": [
+     "user",
+     "role",
+     "access",
+     "edition",
+     "features",
+     "workspace",
+     "workspaces",
+     "projects",
+     "default_project_id",
+     "invite_only"
+    ],
+    "properties": {
+     "user": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/User"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "null for a collector token"
+     },
+     "role": {
+      "type": "string",
+      "description": "Organisation-wide role; empty with project access only."
+     },
+     "access": {
+      "type": "string",
+      "enum": [
+       "organisation",
+       "projects"
+      ]
+     },
+     "project_role": {
+      "type": "string"
+     },
+     "edition": {
+      "type": "string",
+      "enum": [
+       "community",
+       "pro",
+       "enterprise"
+      ]
+     },
+     "features": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "remediation",
+        "teams",
+        "evidence_report",
+        "sso"
+       ]
+      ]
+     },
+     "feedback_enabled": {
+      "type": "boolean"
+     },
+     "workspace": {
+      "oneOf": [
+       {
+        "type": "null"
+       },
+       {
+        "type": "object",
+        "required": [
+         "id",
+         "name",
+         "slug"
+        ],
+        "properties": {
+         "id": {
+          "type": "integer"
+         },
+         "name": {
+          "type": "string"
+         },
+         "slug": {
+          "type": "string"
+         },
+         "read_only": {
+          "oneOf": [
+           {
+            "type": "null"
+           },
+           {
+            "type": "object",
+            "required": [
+             "since",
+             "reason"
+            ],
+            "properties": {
+             "since": {
+              "type": "string",
+              "format": "date-time"
+             },
+             "reason": {
+              "type": "string"
+             }
+            }
+           }
+          ],
+          "description": "Set when the organisation is read-only: since when and why."
+         },
+         "report_mode": {
+          "type": "string"
+         }
+        }
+       }
+      ]
+     },
+     "workspaces": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Organisations the caller belongs to."
+     },
+     "projects": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Projects for the project switcher."
+     },
+     "default_project_id": {
+      "type": "integer",
+      "description": "0: All projects."
+     },
+     "mfa_enrolment_required": {
+      "type": "boolean"
+     },
+     "mfa_step_up_required": {
+      "type": "boolean"
+     },
+     "mfa_accepted": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     },
+     "mfa_recovery_accepted": {
+      "type": "boolean"
+     },
+     "password_change_required": {
+      "type": "boolean"
+     },
+     "invite_only": {
+      "type": "boolean",
+      "description": "People join by invitation: POST /users is refused."
+     }
+    }
+   },
+   "ProjectRef": {
+    "type": "object",
+    "description": "A project, by ID and name (internal/store.ProjectRef).",
+    "required": [
+     "id",
+     "name"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       3
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "demo-shop"
+      ]
+     }
+    }
+   },
+   "Reporting": {
+    "type": "object",
+    "description": "How an asset reports and what is expected of it (internal/store.Reporting).",
+    "required": [
+     "source",
+     "override",
+     "mode",
+     "runs",
+     "usual_seconds",
+     "due_after_seconds"
+    ],
+    "properties": {
+     "source": {
+      "type": "string",
+      "description": "What reports this asset (agent, an integration, a CLI or CI upload).",
+      "examples": [
+       "agent"
+      ]
+     },
+     "override": {
+      "type": "string",
+      "description": "A reporting mode set by hand; empty when learned."
+     },
+     "mode": {
+      "type": "string",
+      "description": "What the dashboard shows: agent, scheduled (a learned or set cadence), one_off (no further report expected), integration, or unknown (no report yet).",
+      "examples": [
+       "agent",
+       "scheduled",
+       "one_off",
+       "integration",
+       "unknown"
+      ]
+     },
+     "runs": {
+      "type": "integer",
+      "description": "Reports seen an hour apart or more, up to 6.",
+      "examples": [
+       6
+      ]
+     },
+     "usual_seconds": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Median gap between those reports (2 runs or more).",
+      "examples": [
+       21600
+      ]
+     },
+     "due_after_seconds": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "How long after the last report the asset is overdue; null when nothing is expected.",
+      "examples": [
+       43200
+      ]
+     },
+     "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The date the results are from when no further report is expected (one-off); absent otherwise."
+     }
+    }
+   },
+   "Asset": {
+    "type": "object",
+    "description": "A server, application, repository, image or other asset (internal/store.Asset).",
+    "required": [
+     "id",
+     "kind",
+     "name",
+     "environment",
+     "owner_team_id",
+     "owner_team",
+     "provider",
+     "region",
+     "criticality",
+     "internet_exposed",
+     "exposed",
+     "tags",
+     "attributes",
+     "first_seen",
+     "last_seen",
+     "collection_status",
+     "component_count",
+     "agent_polled_at",
+     "projects",
+     "reporting"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "description": "host, application, repository, image, managed_service, sbom, cluster or workload.",
+      "examples": [
+       "host",
+       "application",
+       "repository",
+       "image",
+       "managed_service",
+       "sbom",
+       "cluster",
+       "workload"
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "owner_team_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The owning team; null when none."
+     },
+     "owner_team": {
+      "type": "string",
+      "description": "The owning team's name; empty when none.",
+      "examples": [
+       "Platform"
+      ]
+     },
+     "provider": {
+      "type": "string",
+      "description": "Cloud or platform, when known (aws, gcp, kubernetes...).",
+      "examples": [
+       "aws"
+      ]
+     },
+     "region": {
+      "type": "string",
+      "examples": [
+       "eu-west-1"
+      ]
+     },
+     "criticality": {
+      "type": "string",
+      "examples": [
+       "high"
+      ]
+     },
+     "internet_exposed": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Internet exposure set by hand; null when not set."
+     },
+     "exposed": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "The exposure risk scoring uses: internet_exposed when set, else what collectors observed; null when not known."
+     },
+     "tags": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "demo"
+       ]
+      ]
+     },
+     "attributes": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "Facts collectors reported, such as os, os_version and arch."
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "collection_status": {
+      "type": "string",
+      "description": "ok, partial, stale (overdue) or removed.",
+      "examples": [
+       "ok",
+       "partial",
+       "stale",
+       "removed"
+      ]
+     },
+     "component_count": {
+      "type": "integer",
+      "description": "Components currently installed or declared.",
+      "examples": [
+       412
+      ]
+     },
+     "agent_polled_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the asset's agent last asked whether to report now; null for older agents and assets without one."
+     },
+     "projects": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProjectRef"
+      },
+      "description": "The active projects the asset belongs to that the caller may see."
+     },
+     "reporting": {
+      "$ref": "#/components/schemas/Reporting"
+     }
+    }
+   },
+   "Identifier": {
+    "type": "object",
+    "description": "One of the identifiers an asset is matched by across reports (internal/store.Identifier).",
+    "required": [
+     "scheme",
+     "value",
+     "first_seen"
+    ],
+    "properties": {
+     "scheme": {
+      "type": "string",
+      "examples": [
+       "hostname",
+       "machine-id",
+       "image-ref",
+       "git-url",
+       "demo"
+      ]
+     },
+     "value": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "AssetDetail": {
+    "type": "object",
+    "required": [
+     "asset",
+     "identifiers"
+    ],
+    "properties": {
+     "asset": {
+      "$ref": "#/components/schemas/Asset"
+     },
+     "identifiers": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "$ref": "#/components/schemas/Identifier"
+      }
+     }
+    }
+   },
+   "AssetList": {
+    "type": "object",
+    "description": "One page of results: the items, the number of matches and the page asked for.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Asset"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FindingList": {
+    "type": "object",
+    "description": "One page of results: the items, the number of matches and the page asked for.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Finding"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FindingVEX": {
+    "type": "object",
+    "description": "A VEX statement about a finding (internal/store.FindingVEX).",
+    "properties": {
+     "statement_id": {
+      "type": "integer"
+     },
+     "document_id": {
+      "type": "integer"
+     },
+     "source": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string",
+      "examples": [
+       "not_affected",
+       "affected",
+       "fixed",
+       "under_investigation"
+      ]
+     },
+     "justification": {
+      "type": "string"
+     },
+     "impact_statement": {
+      "type": "string"
+     },
+     "action_statement": {
+      "type": "string"
+     },
+     "status_notes": {
+      "type": "string"
+     },
+     "vulnerability": {
+      "type": "string",
+      "examples": [
+       "CVE-2024-45337"
+      ]
+     },
+     "effective_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "request_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "request_status": {
+      "type": "string",
+      "description": "For a not_affected statement: pending, approved or declined; empty otherwise or when the caller cannot see the inbox.",
+      "examples": [
+       "pending",
+       "approved",
+       "declined",
+       ""
+      ]
+     },
+     "applied": {
+      "type": "boolean",
+      "description": "The finding is ignored by a rule made from this statement."
+     }
+    },
+    "required": [
+     "statement_id",
+     "document_id",
+     "source",
+     "status",
+     "justification",
+     "impact_statement",
+     "action_statement",
+     "status_notes",
+     "vulnerability",
+     "effective_at",
+     "request_id",
+     "request_status",
+     "applied"
+    ]
+   },
+   "Finding": {
+    "type": "object",
+    "description": "A vulnerability or end-of-life issue of one component on one asset (internal/store.Finding).",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       173
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "description": "vulnerability, end_of_life and the other finding kinds.",
+      "examples": [
+       "vulnerability",
+       "end_of_life"
+      ]
+     },
+     "key": {
+      "type": "string",
+      "description": "The CVE or other advisory ID, or the end-of-life product and cycle.",
+      "examples": [
+       "CVE-2024-45337"
+      ]
+     },
+     "inventory_id": {
+      "type": "integer"
+     },
+     "asset_id": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "asset_name": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "asset_kind": {
+      "type": "string",
+      "examples": [
+       "host"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "component_id": {
+      "type": "integer"
+     },
+     "component_name": {
+      "type": "string",
+      "examples": [
+       "golang.org/x/crypto"
+      ]
+     },
+     "component_type": {
+      "type": "string",
+      "examples": [
+       "go"
+      ]
+     },
+     "version": {
+      "type": "string",
+      "examples": [
+       "0.26.0"
+      ]
+     },
+     "location": {
+      "type": "string",
+      "description": "Where the component was found (a path or manifest).",
+      "examples": [
+       "/usr/local/bin/app"
+      ]
+     },
+     "direct": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "A direct dependency (true) or a transitive one (false); null when not known."
+     },
+     "status": {
+      "type": "string",
+      "description": "open or resolved.",
+      "examples": [
+       "open",
+       "resolved"
+      ]
+     },
+     "verification": {
+      "type": "string",
+      "description": "How certain the match is.",
+      "examples": [
+       "confirmed",
+       "needs_validation",
+       "stale"
+      ]
+     },
+     "severity": {
+      "type": "string",
+      "examples": [
+       "critical",
+       "high",
+       "medium",
+       "low",
+       "unknown"
+      ]
+     },
+     "score": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "CVSS base score; null when not known.",
+      "examples": [
+       9.1
+      ]
+     },
+     "title": {
+      "type": "string"
+     },
+     "fixed_version": {
+      "type": "string",
+      "description": "The first version that fixes it; empty when none is known.",
+      "examples": [
+       "0.31.0"
+      ]
+     },
+     "sources": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      },
+      "description": "IDs of the advisories that matched."
+     },
+     "evidence": {
+      "description": "Why it matched (JSON; shape depends on the collector)."
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "resolved_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "resolution": {
+      "type": "string",
+      "description": "How it was resolved; empty while open."
+     },
+     "known_exploited": {
+      "type": "boolean",
+      "description": "Listed in CISA's Known Exploited Vulnerabilities."
+     },
+     "state": {
+      "type": "string",
+      "description": "Workflow state."
+     },
+     "priority": {
+      "type": "string",
+      "examples": [
+       "P1",
+       "P2",
+       "P3",
+       "P4",
+       "lower_priority"
+      ]
+     },
+     "priority_score": {
+      "type": "number"
+     },
+     "priority_factors": {
+      "description": "What made up the priority (JSON)."
+     },
+     "sos": {
+      "type": "boolean",
+      "description": "Matched an urgent (SOS) rule of the risk policy."
+     },
+     "sos_rule": {
+      "type": "string"
+     },
+     "assignee_user_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "assignee_email": {
+      "type": "string"
+     },
+     "assignee_team_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "assignee_team": {
+      "type": "string"
+     },
+     "ack_due": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "fix_due": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "acknowledged_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "suppressed_until": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "state_reason": {
+      "type": "string"
+     },
+     "mitigation": {
+      "type": "string"
+     },
+     "escalation_level": {
+      "type": "integer"
+     },
+     "incident_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "overdue": {
+      "type": "boolean"
+     },
+     "fix_group": {
+      "type": "string",
+      "description": "The fix (upgrade) this finding is part of."
+     },
+     "priority_policy_version": {
+      "type": "string",
+      "description": "The version of the risk policy that produced priority, priority_score, priority_factors and sos."
+     },
+     "regressed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the issue last came back after it was fixed."
+     },
+     "until_fix": {
+      "type": "boolean",
+      "description": "Snoozed or ignored until a free fixed version exists."
+     },
+     "ignore_reason": {
+      "type": "string",
+      "description": "accepted_risk, false_positive, mitigated or no_fix.",
+      "examples": [
+       "accepted_risk",
+       "false_positive",
+       "mitigated",
+       "no_fix",
+       ""
+      ]
+     },
+     "exception_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The ignore rule that set or last set the state."
+     },
+     "display_state": {
+      "type": "string",
+      "description": "The state the dashboard shows.",
+      "examples": [
+       "new",
+       "to_do",
+       "in_progress",
+       "fixed",
+       "regressed",
+       "snoozed",
+       "accepted"
+      ]
+     },
+     "second_check": {
+      "type": "string",
+      "description": "Result of the independent second check: agreed, disagreed or could_not_check; empty when none. A disagreement asks a person to look; it changes nothing.",
+      "examples": [
+       "agreed",
+       "disagreed",
+       "could_not_check",
+       ""
+      ]
+     },
+     "second_check_reason": {
+      "type": "string",
+      "description": "What the second check found."
+     },
+     "resolution_kind": {
+      "type": "string",
+      "description": "Why it closed; empty while open.",
+      "examples": [
+       "remediated",
+       "removed",
+       "superseded",
+       "advisory_withdrawn",
+       "advisory_changed",
+       "not_evaluated",
+       "other",
+       ""
+      ]
+     },
+     "resolution_detail": {
+      "description": "The facts behind resolution_kind (JSON: advisories, source, withdrawn_at, version, plan_id, successor)."
+     },
+     "epss": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "FIRST's probability (0 to 1) that the CVE is exploited in the next 30 days; null when there is no score.",
+      "examples": [
+       0.94
+      ]
+     },
+     "epss_percentile": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "The score's rank among all scored CVEs (0 to 1)."
+     },
+     "epss_date": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "The day the EPSS score is from."
+     },
+     "epss_model_version": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "epss_cve": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "The CVE the EPSS score is for (the highest-scored of the finding's CVEs)."
+     },
+     "as_of": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "For an asset scanned once: the scan's date, which the finding is true as of. Null for assets that report regularly."
+     },
+     "vex": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/FindingVEX"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The latest imported VEX statement about this component version and vulnerability; null when none."
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "key",
+     "inventory_id",
+     "asset_id",
+     "asset_name",
+     "asset_kind",
+     "environment",
+     "component_id",
+     "component_name",
+     "component_type",
+     "version",
+     "location",
+     "direct",
+     "status",
+     "verification",
+     "severity",
+     "score",
+     "title",
+     "fixed_version",
+     "sources",
+     "evidence",
+     "first_seen",
+     "last_seen",
+     "resolved_at",
+     "resolution",
+     "known_exploited",
+     "state",
+     "priority",
+     "priority_score",
+     "priority_factors",
+     "sos",
+     "sos_rule",
+     "assignee_user_id",
+     "assignee_email",
+     "assignee_team_id",
+     "assignee_team",
+     "ack_due",
+     "fix_due",
+     "acknowledged_at",
+     "suppressed_until",
+     "state_reason",
+     "mitigation",
+     "escalation_level",
+     "incident_id",
+     "overdue",
+     "fix_group",
+     "priority_policy_version",
+     "regressed_at",
+     "until_fix",
+     "ignore_reason",
+     "exception_id",
+     "display_state",
+     "second_check",
+     "second_check_reason",
+     "resolution_kind",
+     "resolution_detail",
+     "epss",
+     "epss_percentile",
+     "epss_date",
+     "epss_model_version",
+     "epss_cve",
+     "as_of",
+     "vex"
+    ]
    }
   },
   "responses": {
