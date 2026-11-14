@@ -10,8 +10,8 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 )
 
-// TestOpenAPIAuthSchemas: the sign-in and account operations publish real
-// request and response bodies, not a bare {"type": "object"} that tells an
+// TestOpenAPIAuthSchemas: the sign-in and account operations, and the asset
+// and finding lists, publish real request and response bodies, not a bare {"type": "object"} that tells an
 // API reader nothing (UI review R003-31). Where the body is a named Go type,
 // its JSON fields and the schema's properties must be the same set, so the
 // reference cannot drift from the code.
@@ -48,6 +48,9 @@ func TestOpenAPIAuthSchemas(t *testing.T) {
 		{"post", "/auth/mfa/verify", true},
 		{"post", "/auth/password", true},
 		{"get", "/auth/me", false},
+		{"get", "/assets", false},
+		{"get", "/assets/{id}", false},
+		{"get", "/findings", false},
 	} {
 		op := spec.Paths[c.path][c.method]
 		where := strings.ToUpper(c.method) + " " + c.path
@@ -69,6 +72,13 @@ func TestOpenAPIAuthSchemas(t *testing.T) {
 	for name, typ := range map[string]reflect.Type{
 		"User":         reflect.TypeFor[store.User](),
 		"LoginRequest": reflect.TypeFor[loginRequest](),
+		"Asset":        reflect.TypeFor[store.Asset](),
+		"ProjectRef":   reflect.TypeFor[store.ProjectRef](),
+		"Reporting":    reflect.TypeFor[store.Reporting](),
+		"Identifier":   reflect.TypeFor[store.Identifier](),
+		"Finding":      reflect.TypeFor[store.Finding](),
+		"FindingVEX":   reflect.TypeFor[store.FindingVEX](),
+		"AssetList":    reflect.TypeFor[list[store.Asset]](),
 	} {
 		props, _ := spec.Components.Schemas[name]["properties"].(map[string]any)
 		var got, want []string
