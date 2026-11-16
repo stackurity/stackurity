@@ -25,8 +25,14 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// honour project_id (the CLI's --project); "app_list" means a host
 	// batch may list its application directories (apps.dirs);
 	// "kubernetes_report" means POST /kubernetes/report exists.
+	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks}
+	// "device_login": a command-line tool can sign in from the browser
+	// (POST /device/code and /device/token, device_login.go).
+	if s.BaseURL != "" {
+		features = append(features, FeatureDeviceLogin)
+	}
 	meta := map[string]any{"name": "stackurity", "version": s.Version, "api": "v1", "setup_required": n == 0,
-		"features": []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks}, "password_reset": s.passwordResetMode()}
+		"features": features, "password_reset": s.passwordResetMode()}
 	if sso := s.ssoMeta(r); sso != nil {
 		meta["sso"] = sso
 	}

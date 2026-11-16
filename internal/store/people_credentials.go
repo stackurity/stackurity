@@ -26,7 +26,9 @@ type PeopleCredentialsRevoked struct {
 //
 // Credentials of machines stay: collector tokens (agents, including tokens
 // bound to one asset) and the short-lived tokens of CI jobs. Those have no
-// user; a person's token always has one (CreateToken).
+// user; a person's token always has one (CreateToken), including the
+// upload-only collector token a terminal gets by device sign-in
+// (ApproveDeviceAuthorization), which goes with the person's other tokens.
 //
 // It runs in tx so that the caller can commit it with the change that
 // called for it. tx must be scoped to workspace ws (tenant.WithWorkspace);
@@ -55,7 +57,7 @@ func RevokePeopleCredentials(ctx context.Context, tx pgx.Tx, ws, keep int64) (Pe
 	}
 	tag, err := tx.Exec(ctx, `UPDATE api_tokens SET revoked_at = now()
 		WHERE workspace_id = $1 AND revoked_at IS NULL AND (expires_at IS NULL OR expires_at > now())
-		AND user_id IS NOT NULL AND user_id <> $2 AND role <> 'collector' AND ci_trust_id IS NULL`, ws, keep)
+		AND user_id IS NOT NULL AND user_id <> $2 AND ci_trust_id IS NULL`, ws, keep)
 	if err != nil {
 		return out, err
 	}
