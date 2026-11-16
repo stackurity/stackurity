@@ -9,9 +9,10 @@ Status: October 2026.
 | Inventory: hosts, applications, repositories, images, SBOMs, AWS | Automatic fixing: policies, approvals, canary rollouts, verification, rollback, Renovate pull requests | Everything in Pro |
 | Intelligence: OSV, KEV, end of life, releases | Several teams, routing alerts by team, escalation | Enterprise stack packs (SAP, Oracle, network firmware, ...) |
 | Priorities, incidents, alerts, one team, Action plan | Evidence report | |
+| Reachability: whether each package is imported or running, with evidence | Reachability downgrade (one priority level for packages not imported or not running) and the reachability filters and views | |
 | CI gate, MCP, workspaces, official stack packs | Single sign-on | |
 
-Detection is never paid for: a free install that hides vulnerabilities would leave its users unsafe.
+Detection is never paid for: a free install that hides vulnerabilities would leave its users unsafe. The one paid input to priority is the reachability downgrade (owner decision, November 2026): every edition sees the same findings and the same reachability evidence, and the downgrade only moves a finding with that evidence one level, never hides it, and never lowers a known-exploited finding on an asset that is or may be internet-facing ([reachability.md](../reachability.md)).
 
 ## Mechanism
 

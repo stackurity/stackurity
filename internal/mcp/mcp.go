@@ -617,7 +617,10 @@ func init() {
 			"check (agreed, disagreed with what differs, or could not check and why). A confirmed match is not proof that the issue " +
 			"can be exploited on the asset. Also: each risk factor and its points, FIRST's EPSS for the CVE (why.epss: the probability " +
 			"of exploitation in the next 30 days, its percentile, model and date, the policy threshold, and whether and why it counts " +
-			"towards the priority), the risk policy version and its SLA, the stored " +
+			"towards the priority), reachability (why.reachability: reachable, not_imported, not_running or unknown, the collector's " +
+			"evidence lines, and whether it lowered the priority one level or was kept because the finding is known exploited on an " +
+			"asset that is or may be internet-facing; cite the evidence when you mention it, and never call an unknown finding " +
+			"unreachable), the risk policy version and its SLA, the stored " +
 			"evidence, the advisories that matched (ids, feeds, links), how fresh those feeds are, and when the asset last reported.",
 		schema: obj(map[string]any{"finding_id": num("The id of a finding")}, "finding_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {

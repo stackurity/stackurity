@@ -6,6 +6,7 @@ import { absTime } from "../format";
 import { Badge, Chip, ClosureBadge, KevBadge, PriorityBadge, SeverityBadge, VERIFICATION_EXPLAINED } from "../components/Badge";
 import { EvidencePills, kindLabel, VexBadge, vexSummary } from "../components/Findings";
 import { FindingSummary } from "../components/FindingSummary";
+import { ReachabilityBadge } from "../components/Reachability";
 import { FindingHistory, PriorityWhy, WorkflowAlerts, WorkflowBadges, WorkflowDetails } from "../components/FindingWorkflow";
 import { EvidenceStateBadge, Provenance } from "../components/Provenance";
 import { isBehind } from "../behind";
@@ -373,7 +374,7 @@ export function FindingDetailPage() {
         badges={<PriorityBadge priority={f.priority} score={f.priority_score} />}
         forceOpen={opens("priority")}
       >
-        <PriorityWhy f={f} epss={why?.epss} />
+        <PriorityWhy f={f} epss={why?.epss} reachability={why?.reachability} />
       </DisclosureCard>
 
       <DisclosureCard
@@ -399,6 +400,7 @@ export function FindingDetailPage() {
             ["installed version", <span className="mono">{f.version || "unknown"}</span>],
             ["fixed version", f.fixed_version ? <span className="mono">{f.fixed_version}</span> : <span className="muted">none listed</span>],
             ["dependency", f.direct === null ? <span className="muted">unknown</span> : f.direct ? "direct" : "transitive"],
+            ["reachability", <ReachabilityBadge status={f.reachability} />],
             ["location", f.location ? <span className="mono small break">{f.location}</span> : <span className="muted">none</span>],
             ["asset", <Link to={`/assets/${f.asset_id}?tab=findings`}>{f.asset_name}</Link>],
             ["asset kind", f.asset_kind],

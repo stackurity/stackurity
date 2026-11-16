@@ -114,18 +114,21 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 			}
 			// Duplicate rows within one batch (e.g. the same npm package nested
 			// twice in one lockfile) collapse to one inventory row; any direct
-			// occurrence wins.
+			// occurrence wins, then the safer reachability (reachable, then
+			// unknown, before a claim that it is not reached).
 			if _, err := tx.Exec(ctx, `INSERT INTO inventory AS i
 				(asset_id, component_id, purl, version, location, collector_id, direct, scope, confidence, evidence,
-				 first_seen, last_seen, last_collection_id)
+				 reachability, reachability_evidence, first_seen, last_seen, last_collection_id)
 				SELECT DISTINCT ON (c.id, o.version, o.location)
 				       $1, c.id, o.purl, o.version, o.location, $2, o.direct, o.scope, o.confidence, o.evidence,
-				       $3, $3, $4
+				       o.reachability, o.reachability_evidence, $3, $3, $4
 				FROM obs_in o JOIN components c USING (purl_key)
-				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST
+				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST,
+				  CASE o.reachability WHEN 'reachable' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END
 				ON CONFLICT (asset_id, component_id, version, location, collector_id) DO UPDATE SET
 				  purl = EXCLUDED.purl, direct = EXCLUDED.direct, scope = EXCLUDED.scope,
 				  confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence,
+				  reachability = EXCLUDED.reachability, reachability_evidence = EXCLUDED.reachability_evidence,
 				  last_seen = GREATEST(i.last_seen, EXCLUDED.last_seen),
 				  last_collection_id = EXCLUDED.last_collection_id, removed_at = NULL`,
 				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID); err != nil {
@@ -209,7 +212,8 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) error {
 	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE obs_in (
 		purl_key text, type text, namespace text, name text, purl text, version text,
-		location text, direct boolean, scope text, confidence text, evidence jsonb) ON COMMIT DROP`); err != nil {
+		location text, direct boolean, scope text, confidence text, evidence jsonb,
+		reachability text, reachability_evidence jsonb) ON COMMIT DROP`); err != nil {
 		return err
 	}
 	rows := make([][]any, 0, len(b.Observations))
@@ -223,10 +227,20 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 			ev = map[string]string{}
 		}
 		evJSON, _ := json.Marshal(ev)
-		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON})
+		// Not assessed is unknown, never the status an earlier batch sent.
+		reach, reachEv := model.ReachUnknown, []byte(nil)
+		if o.Reachability != nil {
+			reach = o.Reachability.Status
+			if len(o.Reachability.Evidence) > 0 {
+				reachEv, _ = json.Marshal(o.Reachability.Evidence)
+			}
+		}
+		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON,
+			reach, reachEv})
 	}
 	_, err := tx.CopyFrom(ctx, pgx.Identifier{"obs_in"},
-		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence"},
+		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence",
+			"reachability", "reachability_evidence"},
 		pgx.CopyFromRows(rows))
 	return err
 }

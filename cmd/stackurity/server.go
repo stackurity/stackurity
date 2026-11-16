@@ -178,6 +178,7 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 			gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 30*time.Second)}
+			setPolicySteps(st, gate)
 			keyReq, err := keyRequirement(ctx, st, holder, log)
 			if err != nil {
 				return err
