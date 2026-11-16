@@ -10,6 +10,8 @@ import { createServer, type ViteDevServer } from "vite";
 let vite: ViteDevServer;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let B: Record<string, ComponentType<any>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let R: Record<string, ComponentType<any>>;
 let timeToFix: (f: { first_seen: string; resolved_at?: string | null; fix_due?: string | null }) => string;
 
 before(async () => {
@@ -21,6 +23,7 @@ before(async () => {
     optimizeDeps: { noDiscovery: true, include: [] },
   });
   B = (await vite.ssrLoadModule("/src/components/Badge.tsx")) as typeof B;
+  R = (await vite.ssrLoadModule("/src/pages/Reports.tsx")) as typeof R;
   timeToFix = ((await vite.ssrLoadModule("/src/pages/FindingDetail.tsx")) as { timeToFix: typeof timeToFix }).timeToFix;
 });
 after(async () => {
@@ -43,4 +46,12 @@ test("time to fix against the fix-by date", () => {
   assert.equal(timeToFix({ first_seen: "2026-11-01T00:00:00Z", resolved_at: "2026-11-20T00:00:00Z", fix_due: "2026-11-15T00:00:00Z" }), "19 days, after the fix-by date");
   assert.equal(timeToFix({ first_seen: "2026-11-01T00:00:00Z", resolved_at: "2026-11-01T05:00:00Z" }), "less than a day (no fix-by date)");
   assert.equal(timeToFix({ first_seen: "2026-11-01T00:00:00Z", resolved_at: null }), "");
+});
+
+test("closure proofs: a CSV download of the period, explained on hover", () => {
+  const html = renderToStaticMarkup(h(R.ClosureProofsLink, { from: "2026-10-01", to: "2026-10-31" }));
+  assert.match(html, /href="\/api\/v1\/reports\/closures\?format=csv&amp;from=2026-10-01&amp;to=2026-10-31"/);
+  assert.match(html, /download=""/);
+  assert.match(html, />Download closure proofs \(CSV\)</);
+  assert.match(html, /title="Every finding closed in this period: whether a check saw the fix/);
 });
