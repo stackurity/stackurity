@@ -1,0 +1,38 @@
+# Security fixes from Dependabot merge themselves once the required checks
+# pass. Dependabot opens a pull request as soon as GitHub publishes an
+# advisory for one of our dependencies. Only pull requests that fix an
+# advisory (a GHSA id in the metadata) are queued. Routine version bumps
+# still wait for a person. Auto-merge never skips a required check: a red
+# check leaves the pull request open.
+name: dependabot-security-automerge
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  automerge:
+    if: ${{ github.event.pull_request.user.login == 'dependabot[bot]' }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      # Reads the pull request's metadata only; no code from the pull
+      # request is checked out or run.
+      - id: meta
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Queue the security fix to merge
+        if: ${{ steps.meta.outputs.ghsa-id != '' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          GHSA: ${{ steps.meta.outputs.ghsa-id }}
+        run: |
+          gh pr merge --auto --squash "$PR_URL"
+          echo "Queued to merge when required checks pass: fixes $GHSA" >> "$GITHUB_STEP_SUMMARY"
