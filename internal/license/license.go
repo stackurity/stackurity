@@ -41,6 +41,10 @@ const (
 	// PhishingResistantMFA: a workspace may require admins to sign in with
 	// a passkey or security key (docs/install.md, "Two-factor sign-in").
 	PhishingResistantMFA Feature = "phishing_resistant_mfa"
+	// ComplianceAddon: the Compliance add-on (included in Enterprise):
+	// add-on evidence frameworks and files, and the evidence connectors
+	// that send the evidence pack to Vanta and Drata on a schedule.
+	ComplianceAddon Feature = "compliance_addon"
 )
 
 // Edition is a plan: the set of features it includes.
@@ -55,7 +59,7 @@ const (
 var editionFeatures = map[Edition][]Feature{
 	Community:  nil,
 	Pro:        {Remediation, Teams, EvidenceReport, SSO},
-	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA},
+	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, ComplianceAddon},
 }
 
 // Features lists what an edition includes.
