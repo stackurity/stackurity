@@ -645,7 +645,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -683,6 +683,18 @@ Each use is recorded (hostname, client address, the token issued) in the code's 
 **Who:** anyone (rate limited: 30 a minute per address)
 
 Exchanges a CI job's OpenID Connect ID token (`{"token", "trust_id"}`; `trust_id` optional) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`, its `git-url` identity). Send it with `X-Stackurity-CSRF: 1`, as every POST without `Authorization`. Answers `{"token", "expires_at", "repository_url", "project_id", "trust_id"}`. The token must be signed with an asymmetric key the issuer publishes (discovery and JWKS of an issuer a trust names exactly), carry `aud` equal to the server's CI audience (`ci_audience` in `GET /meta`), and be within `exp`, `nbf` and `iat` (one minute's allowance). 401 `invalid_token` when it does not verify, 403 when no trust accepts the job (the message names the ref, environment or workflow that differed), 400 `trust_required` without `trust_id` on a server with several organisations, 409 when trusts of different organisations or projects accept it (send `trust_id`), 503 `not_configured` without `STACKURITY_BASE_URL` or `STACKURITY_CI_AUDIENCE`. Audited as `ci.token` or `ci.token_refused`. See [install.md](install.md#scans-in-ci-without-a-stored-secret).
+
+### `POST /device/code`
+
+**Who:** anyone (rate limited: 10 a minute and 60 an hour per address)
+
+Starts signing in a command-line tool from the browser, the OAuth 2.0 Device Authorization Grant (RFC 8628; see [device-login.md](device-login.md)). Form-encoded or JSON, with no credentials and no `X-Stackurity-CSRF` header: `client_id` (`stackurity-scan` or `stackurity`), optional `host` (a host name, at most 63 letters, digits, dots, hyphens or underscores, shown on the approval page and in the token's name) and optional `scope` (`upload`, the only one). Answers `{"device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"}`: the user code is eight letters shown as `XXXX-XXXX`, the verification URI is the dashboard's `/device` under `STACKURITY_BASE_URL`, the codes last 600 seconds and the tool polls every 5. Only hashes of the two codes are stored. Errors are OAuth errors (`{"error", "error_description"}`): 401 `invalid_client`, 400 `invalid_request` or `invalid_scope`; 404 `not_configured` without `STACKURITY_BASE_URL` (then `GET /meta` does not list `device_login`).
+
+### `POST /device/token`
+
+**Who:** anyone (rate limited: 120 a minute per address, answered `slow_down`)
+
+The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts a year: it may `POST /ingest` and `POST /sbom/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
 
 ### `GET /ci-trusts`
 
@@ -3001,6 +3013,18 @@ The consent page's view of an authorization request (`response_type`, `client_id
 **Who:** a browser session
 
 The same parameters with `decision` (`allow` or `deny`), `workspace_id` (409 if the session switched organisation), `project_id` (0: the whole organisation), `role` and `allow_changes` (default false). Answers `redirect`: the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize`.
+
+### `POST /api/v1/device/preview`
+
+**Who:** a browser session
+
+The approval page's view of a device sign-in code (`{"user_code"}`, any case, with or without the hyphen): `client` (`id`, `name`), `host` (as the tool reported it), `request_ip`, `requested_at`, `expires_at`, `signed_in_as`, the session's `workspace`, `your_role`, `can_approve` (with `cannot_approve`, why not: approving needs the engineer role or above organisation-wide), `projects` (for admins: where the token's new assets may go), `token_name` and `token_days`. 404 for an unknown code; 410 `code_used` or `code_expired`. 20 codes per person and 40 per address in 15 minutes (429).
+
+### `POST /api/v1/device/decision`
+
+**Who:** a browser session
+
+`user_code`, `decision` (`approve` or `deny`), `workspace_id` (the organisation the page showed; 409 if the session switched since) and `project_id` (0: none; admins only, 403 otherwise). Approving makes an API token of the caller named `<client> on <host>` with the collector role, a year's expiry and the chosen project, listed under `GET /tokens` and revoked with `DELETE /tokens/{id}`; the tool collects its secret with its next poll of `POST /device/token`. Answers `{"status"}` and, when approved, `token` (`id`, `name`, `expires_at`, `project_id`). Only a browser session of the person's own (403 for API tokens); besides `X-Stackurity-CSRF`, a request whose `Sec-Fetch-Site` is not `same-origin` is refused. Audited as `device.approve` (and `token.create`, `via` `device_login`) or `device.deny`. A plan's limit on API tokens applies (402 `plan_limit`).
 
 ### `GET /api/v1/assistants`
 

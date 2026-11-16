@@ -283,6 +283,9 @@ func (s *Server) Handler() http.Handler {
 	s.feedbackQueueRoutes(r)
 	// The trust badge image, public (trust_badge.go; Stackurity Cloud only).
 	s.trustBadgePublicRoutes(r)
+	// Signing in a command-line tool from the browser: the tool's two
+	// endpoints take no credentials (device_login.go).
+	s.deviceRootRoutes(r)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Use(s.authenticate, noteWorkspace, csrfGuard, s.keyGate)
@@ -336,6 +339,7 @@ func (s *Server) Handler() http.Handler {
 			r.Put("/auth/email-preferences", s.setMyEmailPreferences)
 			s.mfaAccountRoutes(r)
 			s.accountSessionRoutes(r)
+			s.deviceAccountRoutes(r)
 			if editionAccountRoutes != nil {
 				editionAccountRoutes(s, r)
 			}

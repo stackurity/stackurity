@@ -10,6 +10,7 @@ import { TableSkeleton } from "../../components/Skeleton";
 import { tokensEmpty } from "../../emptyCopy";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { PlanLimitNote } from "../../components/PlanLimit";
+import { tokenRoleLabel } from "../../deviceLogin";
 
 function tokenState(t: Token): string {
   if (t.revoked_at) return "revoked";
@@ -45,7 +46,9 @@ export function TokensPage() {
   const columns: Column<Token>[] = [
     { key: "name", header: "Name", cell: (t) => t.name },
     { key: "prefix", header: "Prefix", cell: (t) => <span className="mono">{t.prefix}…</span> },
-    { key: "role", header: "Role", cell: (t) => <span className={`role-pill role-${t.role}`}>{t.role}</span> },
+    // A person's collector token was made by signing in from a terminal
+    // (/device): it only uploads.
+    { key: "role", header: "Role", cell: (t) => <span className={`role-pill role-${t.role}`}>{tokenRoleLabel(t)}</span> },
   ];
   if (admin)
     columns.push({
