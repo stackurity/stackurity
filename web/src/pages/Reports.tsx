@@ -12,6 +12,7 @@ import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, ErrorBox, GoodToKnow, KeyValues, Loading, PageHeader } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
+import { EvidencePackPanel } from "../components/EvidencePack";
 
 function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -132,6 +133,7 @@ function EvidenceReportPage() {
           {utcDay(from)} to {utcDay(to)}. The period can be one day to one year. Dates are UTC days.
         </p>
       </form>
+      <EvidencePackPanel projectID={project?.id ?? 0} from={from} to={to} />
       <GoodToKnow title="How this report is counted">
         <ul>
           <li>Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated.</li>

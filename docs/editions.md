@@ -19,6 +19,8 @@ What Community, Pro and Enterprise include, their limits and what each capabilit
 | Routing alerts by team | | ✓ | ✓ | Community: a route with teams answers `402 plan_required` |
 | Escalation of overdue incidents (overdue reminders: summary section, daily overdue message, Jira comments) | | ✓ | ✓ | Licensed build only. Community: an escalation route answers `402 plan_required` |
 | Evidence report (patch-management evidence for audits) | | ✓ | ✓ | Licensed build only. Periods of up to a year, default the last 30 days |
+| Audit evidence pack: SOC 2 and ISO 27001:2022 (PDF, ZIP of CSV tables, JSON) | | ✓ | ✓ | Licensed build only ([api.md](api.md#audit-evidence-pack)). On Stackurity Cloud: Team and Business |
+| Compliance add-on: PCI DSS 4.0 and EU Cyber Resilience Act evidence, SBOM and VEX files in the pack, Vanta and Drata connectors | | Add-on | ✓ | A Pro licence with `"addons": ["compliance_addon"]`; on Stackurity Cloud, a plan that lists `compliance_addon` |
 | Single sign-on (OpenID Connect or SAML) | | ✓ | ✓ | Licensed build only. The `STACKURITY_OIDC_*` or `STACKURITY_SAML_*` settings ([install.md](install.md#single-sign-on)), one provider of each kind per installation; people join `STACKURITY_OIDC_WORKSPACE` or `STACKURITY_SAML_WORKSPACE`, whose plan must include it. On Stackurity Cloud each organisation connects its own SAML provider instead (on plans that include it; [install.md](install.md#your-organisations-own-single-sign-on-stackurity-cloud)) |
 | Automatic fixing on hosts | | ✓ | ✓ | Licensed build only. See [prerequisites](#automatic-fixing-prerequisites) below |
 | Renovate pull requests for repositories | | ✓ | ✓ | Licensed build only. npm and Composer; you run Renovate, which reads the configuration from Stackurity with a token |

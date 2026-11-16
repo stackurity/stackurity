@@ -763,7 +763,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "compliance_addon";
 
 export interface LicenseInfo {
   status: {
@@ -3717,6 +3717,25 @@ export interface ReportDrift {
   primary_id: number;
   primary_name: string;
   counts: Record<string, number> | null;
+}
+
+/** GET /reports/evidence-pack: the compliance evidence pack (the fields the page shows; the JSON has more). */
+export interface EvidencePack {
+  schema_version: number;
+  generated_at: string;
+  scope: { workspace_id: number; workspace_name: string; project_id?: number; project_name?: string };
+  period: { from: string; to: string; label: string };
+  frameworks: {
+    id: string;
+    name: string;
+    controls: { id: string; title: string; evidence: string; sections: string[]; limit?: string }[];
+  }[];
+  monitoring: { assets_total: number; components: number; checks_expected: number; checks_completed: number; check_ratio: number };
+  findings: { open_at_start: number; open_at_end: number; opened: number; closed: number; open_overdue: number; open_known_exploited: number };
+  time_to_fix: { resolved: number; within_sla: number; with_deadline: number; median_days: number | null };
+  exceptions: unknown[];
+  closures: unknown[];
+  limits: string[];
 }
 
 /** GET /reports/evidence: patch-management evidence for a period. */

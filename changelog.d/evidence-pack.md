@@ -1,0 +1,3 @@
+### Added
+
+- Reports: the **audit evidence pack** (licensed build). Choose a quarter or your own dates and download a PDF for the auditor, a ZIP (PDF, CSV tables, SHA-256 manifest) or JSON, mapped to SOC 2 CC7.1 and CC8.1 and ISO 27001:2022 A.8.8 and A.8.9: what is monitored and how often it was checked, what was found, time to fix against your deadlines, and every exception with its approver. The Compliance add-on adds PCI DSS 4.0, the EU Cyber Resilience Act, an SBOM of each asset and the VEX statements. It is evidence for these controls, never a claim of compliance. `GET /reports/evidence-pack`.

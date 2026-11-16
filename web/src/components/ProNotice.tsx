@@ -9,15 +9,28 @@ const NAMES: Record<Feature, string> = {
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Requiring passkeys for admins",
+  compliance_addon: "PCI DSS and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending it to Vanta or Drata",
 };
 
 /** Explains that a feature is part of a paid plan, and how to get it. */
 export function ProNotice({ feature, children }: { feature: Feature; children?: React.ReactNode }) {
   const { me } = useAuth();
-  const plan = feature === "enterprise_packs" || feature === "phishing_resistant_mfa" ? "Enterprise" : "Pro";
+  const plan =
+    feature === "compliance_addon"
+      ? "Compliance add-on"
+      : feature === "enterprise_packs" || feature === "phishing_resistant_mfa"
+        ? "Enterprise"
+        : "Pro";
   return (
     <div className="alert alert-info pro-notice" role="note">
-      <span className="pro-badge">{plan}</span> {NAMES[feature]} is part of Stackurity {plan}.{" "}
+      <span className="pro-badge">{plan}</span>{" "}
+      {feature === "compliance_addon" ? (
+        <>{NAMES[feature]} need the Compliance add-on, on any paid plan (Enterprise includes it).</>
+      ) : (
+        <>
+          {NAMES[feature]} is part of Stackurity {plan}.
+        </>
+      )}{" "}
       {children}
       {me?.user?.instance_admin ? (
         <>

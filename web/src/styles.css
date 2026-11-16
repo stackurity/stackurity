@@ -8195,3 +8195,16 @@ a.cov-chip:hover {
     z-index: 41;
   }
 }
+
+/* Audit evidence pack (Reports). */
+.evidence-pack fieldset.field { border: 0; padding: 0; margin: 0 0 var(--space-3, 12px); }
+.evidence-pack fieldset.field legend { font-weight: 600; margin-bottom: 4px; }
+.evidence-pack label.check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.evidence-pack label.check.locked { color: var(--muted, #6b7280); }
+.evidence-pack .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.evidence-pack .btn.disabled { pointer-events: none; opacity: 0.5; }
+.evidence-pack .pack-figures { margin: 12px 0; padding-left: 18px; }
+.evidence-pack .pack-framework h3 { margin: 16px 0 4px; font-size: 1rem; }
+.evidence-pack .pack-framework dl { margin: 0; }
+.evidence-pack .pack-framework dt { font-weight: 600; margin-top: 8px; }
+.evidence-pack .pack-framework dd { margin: 2px 0 0; }
