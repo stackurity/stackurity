@@ -217,3 +217,22 @@ func fixedBy(x Closure, planID *int64, applier, method *string) ClosureFixedBy {
 	}
 	return fb
 }
+
+// LinkRemediationProof records that a remediation plan fixed the findings
+// closed on one inventory row. The paid edition's verifier calls it when it
+// marks a plan's action verified: the evaluation that saw the new version
+// may already have closed them as "upgraded to V", before the action was
+// verified, without the plan. It returns how many findings it linked.
+func (s *Store) LinkRemediationProof(ctx context.Context, planID, inventoryID int64, toVersion string) (int64, error) {
+	tag, err := s.Pool.Exec(ctx, `WITH r AS (UPDATE findings f SET
+		  resolution = 'fixed by remediation plan #' || $1::bigint || ' (upgraded to ' || COALESCE(NULLIF(f.resolution_detail->>'version', ''), $3) || ')',
+		  resolution_detail = f.resolution_detail || jsonb_build_object('plan_id', $1::bigint)
+		WHERE f.inventory_id = $2 AND f.status = 'resolved' AND f.resolution_kind = 'remediated' AND NOT f.resolution_detail ? 'plan_id'
+		RETURNING f.id, f.resolved_at, f.resolution)
+		UPDATE finding_events e SET note = r.resolution, detail = e.detail || jsonb_build_object('plan_id', $1::bigint)
+		FROM r WHERE e.finding_id = r.id AND e.action = 'resolved' AND e.at = r.resolved_at`, planID, inventoryID, toVersion)
+	if err != nil {
+		return 0, err
+	}
+	return tag.RowsAffected(), nil
+}

@@ -1,6 +1,6 @@
 ### Added
 
-- **Verified closure: every closed finding says whether a check saw the fix.** Resolved findings show **Verified fixed**, **Verified removed**, **Disappeared (not verified)** or **Closed, not a fix**, in the findings list and on the finding. A fixed finding lists its proof: the version before and after, the check (agent report, repository or image scan…) that saw it and when, and the remediation plan if one fixed it. `GET /api/v1/findings/{id}/closure` returns the proof as one record. See [Why a finding closed](docs/api.md#verified-closure).
+- **Verified closure: every closed finding says whether a check saw the fix.** Resolved findings show **Verified fixed**, **Verified removed**, **Disappeared (not verified)** or **Closed, not a fix**, in the findings list and on the finding. A fixed finding lists its proof: the version before and after, the check (agent report, repository or image scan…) that saw it and when, and the remediation plan if one fixed it. `GET /api/v1/findings/{id}/closure` returns the proof as one record. In the licensed edition, `GET /api/v1/reports/closures` exports every proof in a period as JSON or CSV (the fix loop), and a verified remediation plan is linked to the findings it fixed even when the scan closed them first. See [Why a finding closed](docs/api.md#verified-closure).
 
 ### Changed
 
