@@ -60,7 +60,7 @@ function render(addon: boolean, ids: string[]) {
 test("Team: SOC 2 and ISO 27001, PCI DSS and the CRA locked behind the add-on", () => {
   const html = render(false, ["soc2", "iso27001_2022"]);
   for (const c of ["CC7.1", "CC8.1", "A.8.8", "A.8.9"]) {
-    assert.match(html, new RegExp(`data-control="${c.replace(/[.()]/g, "\\$&")}"`), c);
+    assert.ok(html.includes(`data-control="${c}"`), c);
     assert.ok(html.includes(`evidence for ${c}`), c);
   }
   assert.ok(!html.includes('data-control="6.3.3"'));
