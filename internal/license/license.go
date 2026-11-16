@@ -112,6 +112,25 @@ type License struct {
 	MaxAssets int       `json:"max_assets"` // 0 = unlimited
 	IssuedAt  time.Time `json:"issued_at"`
 	ExpiresAt time.Time `json:"expires_at"`
+	// Addons are features bought on top of a paid edition (Addons()), for
+	// example the Compliance add-on on a Pro licence.
+	Addons []Feature `json:"addons,omitempty"`
+}
+
+// addonFeatures are the features sold as add-ons to a paid edition.
+var addonFeatures = []Feature{ComplianceAddon}
+
+// Addons lists the features that can be bought as add-ons.
+func Addons() []Feature { return append([]Feature{}, addonFeatures...) }
+
+// IsAddon reports whether f is sold as an add-on.
+func IsAddon(f Feature) bool {
+	for _, x := range addonFeatures {
+		if x == f {
+			return true
+		}
+	}
+	return false
 }
 
 // State says where a licence stands.
@@ -243,6 +262,14 @@ func Issue(l License, priv ed25519.PrivateKey) (string, error) {
 	if l.ExpiresAt.IsZero() {
 		return "", errors.New("the licence needs an expiry")
 	}
+	for _, a := range l.Addons {
+		if !IsAddon(a) {
+			return "", fmt.Errorf("%q is not an add-on", a)
+		}
+		if l.Edition == Community {
+			return "", errors.New("add-ons need a paid edition")
+		}
+	}
 	body, err := json.Marshal(l)
 	if err != nil {
 		return "", err
@@ -266,6 +293,13 @@ func StatusAt(l *License, now time.Time) Status {
 		st.State, st.Edition = StateExpired, Community
 	}
 	st.Features = append([]Feature{}, st.Edition.Features()...)
+	if st.Edition != Community {
+		for _, a := range l.Addons {
+			if IsAddon(a) && !st.Edition.Includes(a) {
+				st.Features = append(st.Features, a)
+			}
+		}
+	}
 	return st
 }
 
@@ -318,16 +352,30 @@ type Gate struct {
 	Plan    PlanFunc
 }
 
-// Has reports whether the feature is on for the workspace in ctx.
+// Has reports whether the feature is on for the workspace in ctx. An
+// add-on on the licence is on for every workspace whose plan is a paid
+// edition (on Stackurity Cloud the organisation's plan decides instead).
 func (g *Gate) Has(ctx context.Context, f Feature) bool {
 	if g == nil || g.Licence == nil {
 		return false
 	}
-	e := g.Licence.Edition()
+	st := g.Licence.Status()
+	e := st.Edition
 	if g.Plan != nil {
 		e = Min(e, g.Plan(ctx))
 	}
-	return e.Includes(f)
+	if e.Includes(f) {
+		return true
+	}
+	if !IsAddon(f) || e == Community {
+		return false
+	}
+	for _, x := range st.Features {
+		if x == f {
+			return true
+		}
+	}
+	return false
 }
 
 // Edition is the edition in effect for the workspace in ctx.

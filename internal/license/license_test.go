@@ -77,3 +77,71 @@ func TestGateCapsByWorkspacePlan(t *testing.T) {
 		t.Error("nil gate allowed a feature")
 	}
 }
+
+func TestAddons(t *testing.T) {
+	pub, priv, _ := ed25519.GenerateKey(rand.Reader)
+	now := time.Date(2026, 11, 16, 0, 0, 0, 0, time.UTC)
+	base := License{ID: "lic_2", Customer: "Acme", Edition: Pro, IssuedAt: now, ExpiresAt: now.AddDate(1, 0, 0)}
+	withAddon := base
+	withAddon.Addons = []Feature{ComplianceAddon}
+	signed, err := Issue(withAddon, priv)
+	if err != nil {
+		t.Fatal(err)
+	}
+	l, err := parseWith(signed, pub)
+	if err != nil || len(l.Addons) != 1 || l.Addons[0] != ComplianceAddon {
+		t.Fatalf("parse: %+v %v", l, err)
+	}
+	has := func(s Status, f Feature) bool {
+		for _, x := range s.Features {
+			if x == f {
+				return true
+			}
+		}
+		return false
+	}
+	if s := StatusAt(l, now); !has(s, ComplianceAddon) || !has(s, EvidenceReport) {
+		t.Errorf("active Pro with the add-on: %+v", s.Features)
+	}
+	if s := StatusAt(&base, now); has(s, ComplianceAddon) {
+		t.Error("Pro without the add-on has it")
+	}
+	if s := StatusAt(l, now.AddDate(1, 2, 0)); has(s, ComplianceAddon) {
+		t.Error("an expired licence keeps its add-on")
+	}
+	if !Enterprise.Includes(ComplianceAddon) || Pro.Includes(ComplianceAddon) {
+		t.Error("Enterprise includes the add-on; Pro does not")
+	}
+	bad := base
+	bad.Addons = []Feature{SSO}
+	if _, err := Issue(bad, priv); err == nil {
+		t.Error("issued a feature that is not an add-on as one")
+	}
+	bad = withAddon
+	bad.Edition = Community
+	if _, err := Issue(bad, priv); err == nil {
+		t.Error("issued an add-on on Community")
+	}
+
+	// The gate: a Pro licence with the add-on turns it on for paid
+	// workspaces only, never above the workspace's plan.
+	h := &Holder{now: func() time.Time { return now }}
+	h.Set(l)
+	type key struct{}
+	g := &Gate{Licence: h, Plan: func(ctx context.Context) Edition {
+		if e, ok := ctx.Value(key{}).(Edition); ok {
+			return e
+		}
+		return Community
+	}}
+	if !g.Has(context.WithValue(context.Background(), key{}, Pro), ComplianceAddon) {
+		t.Error("Pro workspace on a licence with the add-on lacks it")
+	}
+	if g.Has(context.Background(), ComplianceAddon) {
+		t.Error("Community workspace got the add-on")
+	}
+	h.Set(&base)
+	if g.Has(context.WithValue(context.Background(), key{}, Enterprise), ComplianceAddon) {
+		t.Error("add-on without it on the licence")
+	}
+}
