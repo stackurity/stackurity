@@ -62,7 +62,8 @@ export function ReportsPage() {
       <>
         <PageHeader title="Reports" />
         <ProNotice feature="evidence_report">
-          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires.{" "}
+          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires, and an audit
+          evidence pack (PDF and ZIP) mapped to SOC 2 and ISO 27001 controls.{" "}
         </ProNotice>
       </>
     );
