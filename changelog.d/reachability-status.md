@@ -5,4 +5,4 @@
 
 ### Upgrading
 
-- Migration `0108_inventory_reachability` adds `reachability` (default `unknown`) and `reachability_evidence` to inventory rows. Adding the columns does not rewrite the table.
+- Migration `0112_inventory_reachability` adds `reachability` (default `unknown`) and `reachability_evidence` to inventory rows. Adding the columns does not rewrite the table.
