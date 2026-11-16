@@ -2057,6 +2057,60 @@ The projects of one of the connection's sites (`?site=` the cloud id, optional `
 
 A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
 
+### `GET /integrations/evidence`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+The compliance evidence connectors ([evidence-connectors.md](evidence-connectors.md)): `{"vanta": {"available", "connection"}, "drata": {"available", "connection"}}`. `available` is false for Vanta when the operator has not set up the Vanta app (`STACKURITY_VANTA_CLIENT_ID`), and always true for Drata. `connection` is null until connected, otherwise `id`, `vendor`, `region` (`us`, `eu`, `aus` or `apac`), `status` (`active`, `paused`, or `reconnect_needed` after the vendor refused the token or key), `status_reason`, `interval_hours` (6, 12, 24 or 168), `next_sync_at`, `last_sync_at`, `last_sync_status` (`ok`, `partial`, `failed` or null), `last_sync_summary` (`assets`, `vulnerabilities`, `evidence_uploaded`, `message`), `config` (the vendor's ids only: Vanta `document_id` and `document_title`; Drata `workspace_id`), `connected_by` and `connected_at`. Tokens and API keys are never returned. Every route here answers `402 plan_required` without the Compliance add-on; the Community build does not serve them.
+
+### `POST /integrations/evidence/vanta/connect`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Starts Connect Vanta: `{"region"}` (`us`, `eu` or `aus`); answers `authorize_url`, Vanta's consent page in that region, with a single-use state bound to the caller and organisation (10 minutes; only its SHA-256 is stored). 404 `not_configured` without the Vanta app.
+
+### `GET /auth/vanta/callback`
+
+**Who:** anyone (the browser, with the single-use state) · licensed build
+
+Where Vanta sends the browser back (`code`, `state`, or `error`). The code is exchanged at once (Vanta's codes last 30 seconds) and the tokens are stored sealed. Redirects to `/settings/integrations?evidence=vanta-connected`, or `/settings/integrations?evidence=vanta-error&reason=<reason>` with `reason` one of `access_denied` (cancelled on Vanta's page), `state` (unknown, used, expired or someone else's state; checked before Vanta is called), `exchange_failed` (Vanta refused the code), `not_configured`, `plan_required` or `forbidden`. Audited as `evidence_connection.create` or `evidence_connection.reconnect`.
+
+### `POST /integrations/evidence/drata`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Connects Drata, or replaces the key of a connection that needs it: `{"api_key", "region", "drata_workspace_id"}` (`region` `us`, `eu` or `apac`). The key is checked with one read call to Drata before it is stored sealed; 400 `drata_key_rejected` when Drata answers 401, 400 `drata_key_forbidden` on 403 (the key lacks a permission, or Custom Connections and Tests is not enabled), 400 `invalid` for a missing field. Answers the connection (201, or 200 when replacing the key). Audited as `evidence_connection.create`.
+
+### `GET /integrations/evidence/vanta/documents`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+The connected Vanta account's documents, `items` each with `id` and `title`, to choose where the evidence file goes. 404 when Vanta is not connected; 409 `reconnect_needed`; 502 when Vanta refuses.
+
+### `PUT /integrations/evidence/{vendor}`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Changes a connection (`vendor` `vanta` or `drata`): any of `interval_hours` (6, 12, 24 or 168), `status` (`active` or `paused`) and, for Vanta, `vanta_document_id` (one from `GET /integrations/evidence/vanta/documents`). Answers the connection. 404 when that vendor is not connected. Audited as `evidence_connection.update`.
+
+### `DELETE /integrations/evidence/{vendor}`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Disconnects: for Vanta, first asks Vanta to suspend the token (`POST /v1/oauth/token/suspend`, best effort), then deletes the connection, its tokens or key, and its sync history. What was already sent stays in the vendor. Audited as `evidence_connection.delete`.
+
+### `POST /integrations/evidence/{vendor}/sync`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Queues a sync now: 202 `{"queued": true}`. At most once every 5 minutes per connection (429 `rate_limited`); 409 when the connection is paused or needs reconnecting.
+
+### `GET /integrations/evidence/{vendor}/runs`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+The connection's newest 50 syncs, `items` each with `id`, `started_at`, `finished_at`, `status` (`running`, `ok`, `partial` or `failed`), `counts` (`assets`, `vulnerabilities`, `evidence_uploaded`) and `error`.
+
 ### `POST /integrations/slack/events`
 
 **Who:** Slack (the app's signing secret)

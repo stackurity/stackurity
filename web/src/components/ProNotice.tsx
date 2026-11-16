@@ -9,15 +9,37 @@ const NAMES: Record<Feature, string> = {
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Requiring passkeys for admins",
+  compliance_addon: "Sending evidence to Vanta and Drata",
 };
+
+/**
+ * The plan that includes a feature. The Compliance add-on is bought on top
+ * of any paid plan (Enterprise includes it).
+ */
+const PLAN: Partial<Record<Feature, string>> = {
+  enterprise_packs: "Enterprise",
+  phishing_resistant_mfa: "Enterprise",
+  compliance_addon: "Compliance add-on",
+};
+
+/** The plan name ProNotice shows for a feature ("Pro" unless listed above). */
+export function planFor(feature: Feature): string {
+  return PLAN[feature] ?? "Pro";
+}
 
 /** Explains that a feature is part of a paid plan, and how to get it. */
 export function ProNotice({ feature, children }: { feature: Feature; children?: React.ReactNode }) {
   const { me } = useAuth();
-  const plan = feature === "enterprise_packs" || feature === "phishing_resistant_mfa" ? "Enterprise" : "Pro";
+  const plan = planFor(feature);
+  const addon = feature === "compliance_addon";
   return (
     <div className="alert alert-info pro-notice" role="note">
-      <span className="pro-badge">{plan}</span> {NAMES[feature]} is part of Stackurity {plan}.{" "}
+      <span className="pro-badge">{plan}</span>{" "}
+      {addon ? (
+        <>{NAMES[feature]} is part of the Stackurity {plan}, available on any paid plan and included in Enterprise. </>
+      ) : (
+        <>{NAMES[feature]} is part of Stackurity {plan}. </>
+      )}
       {children}
       {me?.user?.instance_admin ? (
         <>

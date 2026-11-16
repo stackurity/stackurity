@@ -14,6 +14,7 @@ const FEATURE_LABEL: Record<string, string> = {
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Passkeys required for admins",
+  compliance_addon: "Compliance add-on (evidence to Vanta and Drata)",
 };
 
 /** Instance administration: the installation's licence. */
