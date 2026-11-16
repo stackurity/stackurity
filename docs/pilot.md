@@ -7,7 +7,7 @@ A pilot answers one question: **does Stackurity find something important on your
 | | Stackurity Cloud | On your own server |
 |---|---|---|
 | What you install | Only the agents and, if you like, a CI step | Stackurity itself (Docker Compose or Helm) plus the agents |
-| How to start | Sign up at [app.stackurity.dev](https://app.stackurity.dev) for a 14-day free trial, no card needed | [install.md](install.md) |
+| How to start | Sign up at [app.stackurity.dev](https://app.stackurity.dev) for a 30-day free trial, no card needed | [install.md](install.md) |
 | Where your inventory lives | In your own organisation on app.stackurity.dev, isolated from every other organisation by the database itself. If you do not choose a [plan](https://stackurity.ai/pricing.html) by the end of the trial, the organisation becomes read-only (you can still sign in and export), and its data is deleted after 30 days read-only | On your server; nothing leaves it except anonymous downloads of public vulnerability data |
 | Setup time | About 15 minutes | About 30 minutes |
 | Best when | You want to see results quickly | Your policies do not allow inventory data to leave your network |
