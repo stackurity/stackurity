@@ -974,7 +974,7 @@ func (o *org) betaFixture() *tenantFx {
 	ids["slacktoken"] = "slk_guessed"
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
-		"plan", "policy", "action", "collector-token", "invitation", "assistant", "oauthclient"} {
+		"plan", "policy", "gatepolicy", "action", "collector-token", "invitation", "assistant", "oauthclient"} {
 		ids[k] = "999999999"
 	}
 	ids["secret"] = "BETA_TOKEN"

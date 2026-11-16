@@ -59,6 +59,10 @@
    "name": "Notifications"
   },
   {
+   "name": "Policy gates",
+   "description": "Rules an organisation writes once (known exploited vulnerabilities, end of life, finding age, leaked keys), scoped like notifications, and their violations. See docs/policy-gates.md."
+  },
+  {
    "name": "Projects and people"
   },
   {
@@ -18169,6 +18173,719 @@
         }
        }
       }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/gate-policies": {
+   "get": {
+    "operationId": "get_assets_id_gate_policies",
+    "summary": "A asset's policy gates",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. What the asset inherits (`inherited`, each with `from`, `state` `on`, `off` or `edit` and `copy_id`) and its own `policies`, with `can_manage`.\n\nRole: security on the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security on the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_assets_id_gate_policies",
+    "summary": "Add a policy gate of the asset",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Adds a policy owned by the asset, with the fields of `POST /gate-policies`.\n\nRole: admin of the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/gate-policies/inherited/{pid}": {
+   "put": {
+    "operationId": "put_assets_id_gate_policies_inherited_pid",
+    "summary": "Turn an inherited policy gate on, off, or edit it for the asset",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. `state`: `off` (turned off here, audited as `gate_policy.exclude`), `on` (applies again; an edited copy is deleted) or `edit` (the asset gets its own copy, audited as `gate_policy.customise`). Answers like the GET.\n\nRole: admin of the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/gate-policies/{pid}": {
+   "put": {
+    "operationId": "put_assets_id_gate_policies_pid",
+    "summary": "Replace a policy gate of the asset",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Replaces one of the asset's own policies (404 for another owner's).\n\nRole: admin of the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_assets_id_gate_policies_pid",
+    "summary": "Delete a policy gate of the asset",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Deletes one of the asset's own policies; deleting an edited copy turns the inherited policy on again.\n\nRole: admin of the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies": {
+   "get": {
+    "operationId": "get_gate_policies",
+    "summary": "List policy gates",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Every policy of the organisation, its projects and assets, each with `off_projects` and `off_assets` (where an inherited policy is turned off); also `kinds` and `modes`.\n\nRole: security",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_gate_policies",
+    "summary": "Add a policy gate",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Adds an organisation policy: `name`, `description`, `kind`, `params`, `filters`, `mode`. Audited as `gate_policy.create`.\n\nRole: admin",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies/violations": {
+   "get": {
+    "operationId": "get_gate_policies_violations",
+    "summary": "Policy gate violations",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Current violations of the policies that are not off, computed now: each with `policy_id`, `policy_name`, `mode`, `kind`, `asset_id`, `asset_name`, `reason`, `finding_id` or `leak_id`, `component`, `key`, `link`, `violation_key`.\n\nRole: security",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "policy_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "project_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies/{id}": {
+   "get": {
+    "operationId": "get_gate_policies_id",
+    "summary": "A policy gate",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. One policy, with `off_projects` and `off_assets`.\n\nRole: security",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_gate_policies_id",
+    "summary": "Replace a policy gate",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Replaces a policy (a `mode` left out keeps the current one). Audited as `gate_policy.mode` when only the mode changes, else `gate_policy.update`.\n\nRole: admin",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_gate_policies_id",
+    "summary": "Delete a policy gate",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Deletes a policy; its daily history is kept. Audited as `gate_policy.delete`.\n\nRole: admin",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/gate-policies": {
+   "get": {
+    "operationId": "get_projects_id_gate_policies",
+    "summary": "A project's policy gates",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. What the project inherits (`inherited`, each with `from`, `state` `on`, `off` or `edit` and `copy_id`) and its own `policies`, with `can_manage`.\n\nRole: security on the project",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_projects_id_gate_policies",
+    "summary": "Add a policy gate of the project",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Adds a policy owned by the project, with the fields of `POST /gate-policies`.\n\nRole: admin of the project",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/gate-policies/inherited/{pid}": {
+   "put": {
+    "operationId": "put_projects_id_gate_policies_inherited_pid",
+    "summary": "Turn an inherited policy gate on, off, or edit it for the project",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. `state`: `off` (turned off here, audited as `gate_policy.exclude`), `on` (applies again; an edited copy is deleted) or `edit` (the project gets its own copy, audited as `gate_policy.customise`). Answers like the GET.\n\nRole: admin of the project",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/projects/{id}/gate-policies/{pid}": {
+   "put": {
+    "operationId": "put_projects_id_gate_policies_pid",
+    "summary": "Replace a policy gate of the project",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Replaces one of the project's own policies (404 for another owner's).\n\nRole: admin of the project",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_projects_id_gate_policies_pid",
+    "summary": "Delete a policy gate of the project",
+    "description": "Policy gates: rules written once and scoped like notifications (docs/policy-gates.md). `kind` is `known_exploited`, `end_of_life`, `finding_age` or `leaked_key`, with its `params`; `filters` (`asset_kinds`, `environments`, `exposure` `any`|`exposed`, `tags`); `mode` `off`, `warn` (default) or `enforce`. Deletes one of the project's own policies; deleting an edited copy turns the inherited policy on again.\n\nRole: admin of the project",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "admin of the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "pid",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success (usually 204 No Content)"
      },
      "4XX": {
       "$ref": "#/components/responses/Error"

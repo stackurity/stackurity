@@ -235,6 +235,18 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/assets/{id}/notifications/channels/{cid}/test":   scopedWrite,
 	"POST /api/v1/projects/{id}/notifications/slack/install":       scopedWrite,
 	"POST /api/v1/projects/{id}/notifications/teams/install":       scopedWrite,
+	// Policy gates of a project or asset (gate_policies.go): security on
+	// it reads, admin on it changes, as notifications.
+	"GET /api/v1/projects/{id}/gate-policies":                 scopedRead,
+	"POST /api/v1/projects/{id}/gate-policies":                scopedWrite,
+	"PUT /api/v1/projects/{id}/gate-policies/{pid}":           scopedWrite,
+	"DELETE /api/v1/projects/{id}/gate-policies/{pid}":        scopedWrite,
+	"PUT /api/v1/projects/{id}/gate-policies/inherited/{pid}": scopedWrite,
+	"GET /api/v1/assets/{id}/gate-policies":                   scopedRead,
+	"POST /api/v1/assets/{id}/gate-policies":                  scopedWrite,
+	"PUT /api/v1/assets/{id}/gate-policies/{pid}":             scopedWrite,
+	"DELETE /api/v1/assets/{id}/gate-policies/{pid}":          scopedWrite,
+	"PUT /api/v1/assets/{id}/gate-policies/inherited/{pid}":   scopedWrite,
 	// Add to Slack finishes here for an install started from a project
 	// too; the handler checks the role the install's state asks for.
 	"POST /api/v1/integrations/slack/oauth": scopedWrite,

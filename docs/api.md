@@ -1883,6 +1883,106 @@ One-click "never email me again" with the token as `?t=`. Same effect and answer
 
 One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, with an unsubscribe link's token as `?t=`: that category is turned off for that person (`source` `header`). Answers 200 `{"status": "unsubscribed", "category"}`, also when it was already off, and never redirects. The body must be the form field `List-Unsubscribe=One-Click` (URL-encoded or multipart), else 400 `one_click_required` and nothing changes. A `GET` changes nothing. Same 410 answers; an Email preferences token is `link_invalid` here.
 
+## Policy gates
+
+[Policy gates](policy-gates.md): rules an organisation writes once and every asset is held to. A policy has `name`, `description`, `kind` (`known_exploited`, `end_of_life`, `finding_age` or `leaked_key`), `params` for its kind (`end_of_life`: `after`, `products`; `finding_age`: `min_severity`, `max_days`, `only_fixable`; `leaked_key`: `min_severity`, `served_only`; none for `known_exploited`), `filters` (`asset_kinds`, `environments` where `production` means the risk policy's production environments, `exposure` `any` or `exposed`, `tags`), `mode` (`off`, `warn`, the default, or `enforce`), `owner_project_id` and `owner_asset_id` (both null for the organisation's), `inherits_policy_id` for an edited copy, `rule_version` (raised by every change of kind, params or filters), and who created and last changed it. Policies are scoped like [notifications of projects and assets](#notifications-of-projects-and-assets). Every change is audited (`gate_policy.create`, `gate_policy.update`, `gate_policy.mode`, `gate_policy.delete`, `gate_policy.exclude`, `gate_policy.include`, `gate_policy.customise`), with a one-line `summary` and the policy `before` and `after`. `enforce` is accepted in every edition for now.
+
+### `GET /gate-policies`
+
+**Who:** security
+
+Every policy (the organisation's, its projects' and assets'), each with `off_projects` and `off_assets` (where it is turned off), plus `kinds` and `modes`.
+
+### `POST /gate-policies`
+
+**Who:** admin
+
+Adds a policy of the organisation. 400 for an unknown kind, mode or parameter; 409 for a name the organisation already uses.
+
+### `GET /gate-policies/violations`
+
+**Who:** security
+
+The current violations of every policy that is not off, worked out now from open findings and leaked keys: `policy_id`, `policy_name`, `mode`, `kind`, `asset_id`, `asset_name`, `reason` (a sentence), `finding_id` or `leak_id`, `component`, `key`, `link` (a dashboard path) and `violation_key`. Snoozed, risk-accepted and rejected findings never count; an approved exception that has not expired takes out what it covers. Query: `policy_id`, `asset_id`, `project_id`.
+
+### `GET /gate-policies/{id}`
+
+**Who:** security
+
+One policy, as in the list.
+
+### `PUT /gate-policies/{id}`
+
+**Who:** admin
+
+Replaces a policy's name, description, kind, params, filters and mode (a `mode` left out keeps the current one); its owner never changes.
+
+### `DELETE /gate-policies/{id}`
+
+**Who:** admin
+
+Deletes a policy. Its daily history is kept. Deleting an edited copy turns the inherited policy on again where the copy was.
+
+### `GET /projects/{id}/gate-policies`
+
+**Who:** security on the project
+
+`inherited` (the organisation's policies, each with `from`, `state` `on`, `off` or `edit` and `copy_id` for an edited one), `policies` (the project's own) and `can_manage`.
+
+### `POST /projects/{id}/gate-policies`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Adds a policy of the project, with the fields of `POST /gate-policies`.
+
+### `PUT /projects/{id}/gate-policies/{pid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Changes a policy of the project (404 for another owner's), as `PUT /gate-policies/{id}`.
+
+### `DELETE /projects/{id}/gate-policies/{pid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+Deletes a policy of the project.
+
+### `PUT /projects/{id}/gate-policies/inherited/{pid}`
+
+**Who:** admin of the project (an organisation-wide admin, or an admin grant on it)
+
+`{"state": "off"}` turns an inherited policy off for the project, `"on"` turns it on again (deleting an edited copy), `"edit"` gives the project its own copy to change. Answers like `GET`. 404 for a policy the project does not inherit.
+
+### `GET /assets/{id}/gate-policies`
+
+**Who:** security on the asset
+
+As for a project; an asset inherits the organisation's policies and its projects'.
+
+### `POST /assets/{id}/gate-policies`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Adds a policy of the asset.
+
+### `PUT /assets/{id}/gate-policies/{pid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Changes a policy of the asset.
+
+### `DELETE /assets/{id}/gate-policies/{pid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+Deletes a policy of the asset.
+
+### `PUT /assets/{id}/gate-policies/inherited/{pid}`
+
+**Who:** admin of the asset (an organisation-wide admin, or an admin grant on it)
+
+As for a project.
+
 ## Integrations
 
 ### `GET /integrations`

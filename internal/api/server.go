@@ -535,6 +535,13 @@ func (s *Server) Handler() http.Handler {
 				// (the handler checks the role on that project or asset).
 				r.Get("/projects/{id}/notifications", s.getScopeNotifications)
 				r.Get("/assets/{id}/notifications", s.getScopeNotifications)
+				// Policy gates (gate_policies.go): the organisation's, and a
+				// project's or asset's with security on it (checked inside).
+				r.Get("/gate-policies", s.listGatePolicies)
+				r.Get("/gate-policies/violations", s.listGateViolations)
+				r.Get("/gate-policies/{id}", s.getGatePolicy)
+				r.Get("/projects/{id}/gate-policies", s.getScopeGatePolicies)
+				r.Get("/assets/{id}/gate-policies", s.getScopeGatePolicies)
 				r.Get("/notification-options", s.notificationOptions)
 				r.Get("/email-recipients", s.listEmailRecipients)
 				r.Post("/ignore-requests/{id}/decision", s.decideIgnoreRequest)
@@ -608,6 +615,19 @@ func (s *Server) Handler() http.Handler {
 				r.With(s.requireWritable).Post("/assets/{id}/notifications/channels/{cid}/test", s.testScopeChannel)
 				r.With(s.requireWritable).Post("/projects/{id}/notifications/slack/install", s.startProjectSlackInstall)
 				r.With(s.requireWritable).Post("/projects/{id}/notifications/teams/install", s.startProjectTeamsInstall)
+				// Policy gates: the organisation's, and a project's or asset's
+				// with admin on it (the handlers check the role there).
+				r.Post("/gate-policies", s.createGatePolicy)
+				r.Put("/gate-policies/{id}", s.updateGatePolicy)
+				r.Delete("/gate-policies/{id}", s.deleteGatePolicy)
+				r.Post("/projects/{id}/gate-policies", s.createScopeGatePolicy)
+				r.Put("/projects/{id}/gate-policies/{pid}", s.updateScopeGatePolicy)
+				r.Delete("/projects/{id}/gate-policies/{pid}", s.deleteScopeGatePolicy)
+				r.Put("/projects/{id}/gate-policies/inherited/{pid}", s.setInheritedGatePolicy)
+				r.Post("/assets/{id}/gate-policies", s.createScopeGatePolicy)
+				r.Put("/assets/{id}/gate-policies/{pid}", s.updateScopeGatePolicy)
+				r.Delete("/assets/{id}/gate-policies/{pid}", s.deleteScopeGatePolicy)
+				r.Put("/assets/{id}/gate-policies/inherited/{pid}", s.setInheritedGatePolicy)
 				// Which VEX sources may apply on their own is the admins' call.
 				r.Post("/vex/sources", s.saveVEXSource(true))
 				r.Patch("/vex/sources/{id}", s.saveVEXSource(false))
