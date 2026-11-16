@@ -111,7 +111,8 @@ func TestVerifiedClosureBackfill(t *testing.T) {
 		Scan(&kind, &detail); err != nil {
 		t.Fatal(err)
 	}
-	if kind != store.ResolutionDisappeared || detail["collection_id"] != float64(lostColl) || detail["method"] != "repository" {
+	if kind != store.ResolutionDisappeared || detail["collection_id"] != float64(lostColl) || detail["method"] != "repository" ||
+		detail["previous_resolution_kind"] != "removed" || detail["previous_resolution"] != "component no longer installed" {
 		t.Errorf("lost access: %s %v", kind, detail)
 	}
 	if err := owner.QueryRow(context.Background(), `SELECT resolution_kind FROM findings WHERE id = $1`, seen).Scan(&kind); err != nil {

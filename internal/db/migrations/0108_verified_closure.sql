@@ -28,6 +28,12 @@ WHERE c.proves_absence AND c.observation_count = 0 AND EXISTS (SELECT 1 FROM cov
 
 -- Findings those collections closed as 'removed': the removing collection is
 -- the one whose time is the removal time of the finding's inventory row.
+-- The kind and sentence they had are kept in resolution_detail
+-- (previous_resolution_kind, previous_resolution), so this can be undone:
+--   UPDATE findings SET resolution_kind = resolution_detail->>'previous_resolution_kind',
+--     resolution = resolution_detail->>'previous_resolution',
+--     resolution_detail = resolution_detail - 'previous_resolution_kind' - 'previous_resolution'
+--   WHERE resolution_kind = 'disappeared' AND resolution_detail ? 'previous_resolution_kind';
 WITH d AS (SELECT f.id, c.id AS collection_id, c.method, c.observed_at
   FROM findings f JOIN inventory i ON i.id = f.inventory_id
   JOIN collections c ON c.asset_id = f.asset_id AND c.absence_unverified AND c.observed_at = i.removed_at
@@ -35,7 +41,7 @@ WITH d AS (SELECT f.id, c.id AS collection_id, c.method, c.observed_at
 UPDATE findings f SET resolution_kind = 'disappeared',
   resolution = 'disappeared: Stackurity can no longer see this asset, so the fix was not verified',
   resolution_detail = f.resolution_detail || jsonb_build_object('collection_id', d.collection_id, 'method', d.method,
-    'checked_at', d.observed_at)
+    'checked_at', d.observed_at, 'previous_resolution_kind', f.resolution_kind, 'previous_resolution', f.resolution)
 FROM d WHERE d.id = f.id;
 
 UPDATE finding_events e SET detail = e.detail || jsonb_build_object('resolution_kind', 'disappeared')
