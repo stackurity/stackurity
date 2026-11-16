@@ -1,0 +1,10 @@
+{
+  "packages": [
+    { "name": "monolog/monolog", "version": "3.5.0", "type": "library", "autoload": { "psr-4": { "Monolog\\": "src/Monolog" } } },
+    { "name": "guzzlehttp/guzzle", "version": "7.8.0", "type": "library", "autoload": { "psr-4": { "GuzzleHttp\\": "src/" }, "files": ["src/functions_include.php"] } },
+    { "name": "symfony/yaml", "version": "6.4.0", "type": "library", "autoload": { "psr-4": { "Symfony\\Component\\Yaml\\": "" } } },
+    { "name": "acme/legacy", "version": "1.0.0", "type": "library", "autoload": { "classmap": ["lib/"] } },
+    { "name": "psr/log", "version": "3.0.0", "type": "library", "autoload": { "psr-4": { "Psr\\Log\\": "src" } } }
+  ],
+  "packages-dev": []
+}

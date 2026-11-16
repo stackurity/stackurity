@@ -1,0 +1,3 @@
+### Added
+
+- **Not imported, from the source:** repository scans and `stackurity scan` read first-party Go, JavaScript/TypeScript, PHP and Python files (as data, within the scan's limits) and mark each lockfile package reachable (with the file that imports it), not imported (with what was searched; development and transitive dependencies say so) or not assessed. A package named as a string, a computed `require()`, a Composer package loaded without its namespace, or any Python package without an import stays not assessed. The coverage entry `reachability` says what was read. See [docs/reachability.md](docs/reachability.md#repositories-and-stackurity-scan-not-imported).

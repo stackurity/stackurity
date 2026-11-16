@@ -39,6 +39,15 @@ type Reachability struct {
 	Evidence []string `json:"evidence,omitempty"`
 }
 
+// StripReachability removes every observation's reachability, for a
+// server that does not list the reachability feature (it would refuse the
+// batch).
+func (b *ObservationBatch) StripReachability() {
+	for i := range b.Observations {
+		b.Observations[i].Reachability = nil
+	}
+}
+
 // ValidReachStatus reports whether s is a known status.
 func ValidReachStatus(s string) bool {
 	switch s {

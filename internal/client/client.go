@@ -230,6 +230,10 @@ const FeatureLeaks = "leaks"
 // GitHub Actions workflows). Older servers refuse the field.
 const FeatureConfigFindings = "config_findings"
 
+// FeatureReachability, in Meta.Features, means the server takes
+// observations' reachability. Older servers refuse the field.
+const FeatureReachability = "reachability"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`

@@ -372,9 +372,18 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	if !info.IsDir() {
 		return nil, errors.New("not a directory: " + dir)
 	}
-	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, gitIgnored(ctx, dir))
+	ignored := gitIgnored(ctx, dir)
+	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, ignored)
 	if err != nil {
 		return nil, err
+	}
+	// Whether first-party source imports each package
+	// (docs/reachability.md). Its coverage item is added after the batch's
+	// completeness is decided: the inventory is whole either way.
+	var reach *model.CoverageItem
+	if len(obs) > 0 {
+		c := annotateReach(ctx, os.DirFS(dir), ignored, obs)
+		reach = &c
 	}
 	if names := JoinPackageNames(ManifestNames(regularFile(dir))); names != "" {
 		attrs := make(map[string]string, len(asset.Attributes)+1)
@@ -398,6 +407,9 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 		if c.Status == "failed" || c.Status == "skipped" || c.Status == "partial" {
 			b.Complete = false
 		}
+	}
+	if reach != nil {
+		b.Coverage = addCoverage(b.Coverage, *reach)
 	}
 	return b, nil
 }
@@ -512,6 +524,23 @@ func capCoverage(cov []model.CoverageItem) []model.CoverageItem {
 	out := append(cov[:keep:keep], model.CoverageItem{Scope: "coverage-limit", Status: "partial",
 		Reason: fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left, model.MaxCoverageItems)})
 	return out
+}
+
+// addCoverage appends an item to a capped list. When the list is full, the
+// last kept entry before the coverage-limit summary makes room and the
+// summary counts it.
+func addCoverage(cov []model.CoverageItem, c model.CoverageItem) []model.CoverageItem {
+	if len(cov) < model.MaxCoverageItems {
+		return append(cov, c)
+	}
+	sum := cov[len(cov)-1]
+	left := 0
+	if sum.Scope != "coverage-limit" || func() bool { _, err := fmt.Sscanf(sum.Reason, "%d more", &left); return err != nil }() {
+		return cov // not a list capCoverage made: leave it whole
+	}
+	keep := cov[: len(cov)-2 : len(cov)-2]
+	sum.Reason = fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left+1, model.MaxCoverageItems)
+	return append(keep, c, sum)
 }
 
 // maxIgnoredOutput bounds git's list of ignored paths.

@@ -1,0 +1,1 @@
+{ "require": { "monolog/monolog": "^3.0", "guzzlehttp/guzzle": "^7.0", "symfony/yaml": "^6.0", "acme/legacy": "^1.0" } }

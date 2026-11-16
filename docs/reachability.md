@@ -13,6 +13,21 @@ Most findings are in packages that are installed but never used: a library a dep
 
 Reachability is a statement about the asset as it was last collected: a package that is not running now may be started later, and code that does not import a package today may import it after the next deploy. That is why it lowers a priority by at most one level and never hides a finding.
 
+## Repositories and `stackurity scan`: not imported
+
+When the server scans a repository, or `stackurity scan` scans a directory, it reads the first-party source files after the lockfiles, as data (nothing is run or built), with the scan's limits: 50,000 source files, 1 MiB of each and 256 MiB in all, the walk's own limits, and the same skipped directories (`node_modules`, `vendor`, `.git`, ignored files, nested checkouts). The coverage entry `reachability` says how many files of each language were read, and is `partial` with the reason when a limit was reached; a partial scan reports nothing as not imported.
+
+| Ecosystem | Reachable when | Not imported when | Otherwise not assessed |
+|---|---|---|---|
+| Go | A non-test `.go` file imports a package of the module | No `.go` file imports it, or only `_test.go` files do (so it is not in the built program) | No Go files; a file that does not parse |
+| npm | An `import`, `export … from`, `require()` or `import()` names the package (`lodash/fp` counts as `lodash`) | No file imports it and nothing names it as a string | No JavaScript or TypeScript files; any `require()` or `import()` with a computed argument; the package is named as a string in source or configuration (`client: 'pg'`, a plugin list, a `package.json` script), since it may be loaded by name |
+| PHP (Composer) | A name in its autoload namespace (from `composer.lock`) appears in PHP or configuration files (`use Monolog\Logger`, a class name in YAML) | No PHP or configuration file names anything in its namespaces | The package autoloads files on every request, is a Composer plugin or Symfony bundle, registers itself with Laravel, has only a class map, or autoloads from the root namespace |
+| Python | An `import` or `from` names the package (dashes as underscores) | Never: a distribution's import name can differ from its name (PyYAML is `yaml`), so a missing import proves nothing | Every package that is not reachable |
+
+Each claim carries its evidence: the file that imports the package, or what was searched ("no import or require of left-pad in 214 JavaScript/TypeScript files, and not named in scripts or configuration"). A development dependency says so, and a transitive one says that it may still run through a package that imports it: not imported means first-party code does not import it, not that nothing does.
+
+Servers before reachability refuse the field, so `stackurity scan` sends it only to servers whose `GET /meta` lists `reachability`.
+
 ## What it does to a priority
 
 | Edition | Effect |
