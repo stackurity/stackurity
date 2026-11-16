@@ -212,6 +212,48 @@ func (s *Server) verifySince(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, 200, rep)
 }
 
+// findingClosure is the proof behind a closed finding: verified fixed,
+// verified removed, disappeared (not verified) or closed without
+// remediation, with the versions before and after, the collection that saw
+// it, who fixed it and its time to fix against the fix-by date. An open
+// finding has none (404).
+func (s *Server) findingClosure(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	f, err := s.Store.GetFinding(r.Context(), id) // checks the caller may see it
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if f.Status != "resolved" || f.ResolvedAt == nil {
+		s.fail(w, r, store.ErrNotFound)
+		return
+	}
+	pol, err := s.Store.RiskPolicy(r.Context())
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	fixDays := map[string]int{}
+	for p, sla := range pol.SLA {
+		fixDays[p] = sla.FixDays
+	}
+	list, err := s.Store.Closures(r.Context(), store.ClosureFilter{From: *f.ResolvedAt, To: f.ResolvedAt.Add(time.Microsecond),
+		FindingID: f.ID, Limit: 1}, fixDays)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	if len(list) == 0 {
+		s.fail(w, r, store.ErrNotFound)
+		return
+	}
+	writeJSON(w, 200, list[0])
+}
+
 // outcomesReport measures remediation over the last `days` days (default
 // 90, at most 365).
 func (s *Server) outcomesReport(w http.ResponseWriter, r *http.Request) {

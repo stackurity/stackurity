@@ -108,6 +108,34 @@ func TestClosedFindingsSayWhy(t *testing.T) {
 	if curl.status != "resolved" || curl.kind != store.ResolutionRemediated || curl.resolution != "upgraded to 7.88.1-10+deb12u6" {
 		t.Errorf("upgraded curl: %+v", curl)
 	}
+	// The proof: the version before, the row after, and the collection that saw it.
+	if curl.detail["from_version"] != "7.88.1-10+deb12u5" || curl.detail["to_inventory_id"] == nil ||
+		curl.detail["collection_id"] == nil || curl.detail["checked_at"] == nil || curl.detail["method"] == nil {
+		t.Errorf("upgraded curl proof: %+v", curl.detail)
+	}
+	closures, err := e.st.Closures(e.ctx, store.ClosureFilter{From: time.Now().Add(-time.Hour), AssetID: e.host}, map[string]int{"P1": 3})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var seen bool
+	for _, x := range closures {
+		if x.ResolutionKind != store.ResolutionRemediated {
+			if x.Verification == store.VerifiedFixed || x.SLA.Met != nil || x.FixedBy.Type != store.FixedByUnknown {
+				t.Errorf("not remediation, closure %+v", x)
+			}
+			continue
+		}
+		seen = true
+		if x.SchemaVersion != 1 || x.Verification != store.VerifiedFixed || x.Before.Version != "7.88.1-10+deb12u5" ||
+			x.After == nil || x.After.Version != "7.88.1-10+deb12u6" || x.After.InventoryID == nil ||
+			x.Check == nil || x.Check.CollectionID == 0 || !x.Check.Complete || x.TimeToFixSeconds < 0 ||
+			x.FixedBy.Type == "" || x.ClosedAt.Before(x.OpenedAt) {
+			t.Errorf("curl closure %+v (after %+v, check %+v)", x, x.After, x.Check)
+		}
+	}
+	if !seen {
+		t.Error("no remediated closure listed")
+	}
 	if libxml2New.status != "open" || successor == 0 {
 		t.Fatalf("libxml2 on the new build: %+v", libxml2New)
 	}
@@ -228,5 +256,58 @@ func TestVendorBuildClosesAsNotEvaluated(t *testing.T) {
 	if coverage != 1 || r.Remediated != 0 || r.Resolved != 0 || r.NotRemediation.ByKind[store.ResolutionNotEvaluated] != 1 {
 		t.Errorf("outcomes: coverage %d, remediated %d, resolved %d, not remediation %+v (causes %+v)",
 			coverage, r.Remediated, r.Resolved, r.NotRemediation, r.Causes)
+	}
+}
+
+// When Stackurity loses sight of an asset (here, as when a repository is no
+// longer granted to the GitHub App: an empty collection that proves absence
+// without anyone seeing the software go), its findings close as
+// disappeared, which reports do not count as remediation.
+func TestLostSightClosesAsDisappeared(t *testing.T) {
+	e := newChangeEnv(t)
+	e.evaluate(e.sync(baseRecords))
+	var coll int64
+	if err := e.st.Pool.QueryRow(e.ctx, `INSERT INTO collections
+		(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, proves_absence, absence_unverified)
+		VALUES ($1, 'lockfile-scanner', '', 'repository', now(), true, 0, true, true) RETURNING id`, e.host).Scan(&coll); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(e.ctx, `UPDATE inventory SET removed_at = (SELECT observed_at FROM collections WHERE id = $2)
+		WHERE asset_id = $1 AND removed_at IS NULL`, e.host, coll); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.ev.Evaluate(e.ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	c := e.closures()
+	if len(c) == 0 {
+		t.Fatal("no findings")
+	}
+	for k, x := range c {
+		if x.status != "resolved" || x.kind != store.ResolutionDisappeared || !strings.HasPrefix(x.resolution, "disappeared:") ||
+			x.detail["collection_id"] != float64(coll) || x.detail["from_version"] == nil {
+			t.Errorf("%s = %+v", k, x)
+		}
+	}
+	closures, err := e.st.Closures(e.ctx, store.ClosureFilter{From: time.Now().Add(-time.Hour)}, nil)
+	if err != nil || len(closures) != len(c) {
+		t.Fatalf("closures %d of %d, %v", len(closures), len(c), err)
+	}
+	for _, x := range closures {
+		if x.Verification != store.DisappearedUnverified || x.After != nil || x.Check == nil || x.Check.CollectionID != coll ||
+			x.Check.Source != "repository" || x.SLA.Met != nil || x.FixedBy.Type != store.FixedByUnknown {
+			t.Errorf("disappeared closure %+v", x)
+		}
+	}
+	if store.CountsAsRemediation(store.ResolutionDisappeared) {
+		t.Error("disappeared counts as remediation")
+	}
+	now := time.Now()
+	r, err := e.st.OutcomesReport(e.ctx, now.Add(-time.Hour), now.Add(time.Minute), map[string]int{"P1": 3, "P2": 14, "P3": 45, "P4": 90})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if r.Remediated != 0 || r.Removed != 0 || r.NotRemediation.ByKind[store.ResolutionDisappeared] != int64(len(c)) {
+		t.Errorf("outcomes: remediated %d, removed %d, not remediation %+v", r.Remediated, r.Removed, r.NotRemediation)
 	}
 }

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
@@ -123,5 +124,39 @@ func TestOutcomesLeaveOutWithdrawnAdvisories(t *testing.T) {
 	if code := view.do("GET", "/api/v1/findings/"+itoa(fid), nil, &one); code != 200 || one.Finding.ResolutionKind != "advisory_withdrawn" ||
 		len(one.Finding.ResolutionDetail) == 0 {
 		t.Errorf("finding: %d %+v", code, one.Finding)
+	}
+}
+
+// GET /findings/{id}/closure returns the proof behind a closed finding, and
+// 404 while it is open.
+func TestFindingClosure(t *testing.T) {
+	e := newEnv(t)
+	e.user("view@x.io", auth.RoleViewer)
+	view := e.login("view@x.io")
+	fid, _ := upgradeFixture(t, e)
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	path := "/api/v1/findings/" + strconv.FormatInt(fid, 10) + "/closure"
+	if code := view.do("GET", path, nil, nil); code != 404 {
+		t.Fatalf("open finding: %d", code)
+	}
+	rows, _, err := e.st.ListInventory(ctx, store.InventoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int64
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	// No evaluation produces it any more: it closes with nothing changed on the host.
+	if _, _, err := e.st.SyncFindings(ctx, []string{"vulnerability"}, ids, nil); err != nil {
+		t.Fatal(err)
+	}
+	var c store.Closure
+	if code := view.do("GET", path, nil, &c); code != 200 {
+		t.Fatalf("closed finding: %d", code)
+	}
+	if c.FindingID != fid || c.SchemaVersion != 1 || c.Verification != store.ClosedNotRemediation || c.Before.Version == "" ||
+		c.After != nil || c.SLA.Met != nil || c.FixedBy.Type != store.FixedByUnknown || c.ClosedAt.Before(c.OpenedAt) {
+		t.Errorf("closure = %+v", c)
 	}
 }

@@ -448,6 +448,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/second-checks", s.secondChecks)
 				r.Get("/findings/{id}/events", s.findingEvents)
 				r.Get("/findings/{id}/upgrade", s.findingUpgrade)
+				r.Get("/findings/{id}/closure", s.findingClosure)
 				r.Get("/findings/{id}/explain", s.explainFinding)
 				r.Get("/reports/outcomes", s.outcomesReport)
 				r.Get("/incidents", s.listIncidents)

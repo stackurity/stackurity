@@ -522,16 +522,27 @@ func (s *Store) SyncFindings(ctx context.Context, kinds []string, inventoryIDs [
 // ResolveRemovedFindings closes findings whose inventory row is gone, saying
 // why: fixed by a remediation plan or upgraded to another version
 // (remediated), upgraded to a version that is still affected (superseded:
-// the issue continues as the open finding on the new version), or removed.
+// the issue continues as the open finding on the new version), removed, or
+// disappeared (Stackurity lost sight of the asset, so nothing was verified).
+// The detail is the proof: the version before (from_version) and after
+// (version, to_inventory_id), and the collection that saw it (collection_id,
+// method, checked_at).
 func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 	// Locked in id order before they change (see SyncFindings).
 	tag, err := s.Pool.Exec(ctx, `WITH l AS (SELECT f.id FROM findings f JOIN inventory i ON i.id = f.inventory_id
 		  WHERE f.status = 'open' AND i.removed_at IS NOT NULL ORDER BY f.id FOR NO KEY UPDATE OF f),
-		g AS (SELECT f.id, ra.plan_id, ra.to_version, cur.version AS current, p.id AS successor
-		  FROM l JOIN findings f ON f.id = l.id
+		g AS (SELECT f.id, ra.plan_id, ra.to_version, cur.version AS current, cur.id AS current_id, p.id AS successor,
+		    fi.version AS from_version, pc.id AS collection_id, pc.method, pc.observed_at AS checked_at,
+		    COALESCE(pc.absence_unverified, false) AS unverified
+		  FROM l JOIN findings f ON f.id = l.id JOIN inventory fi ON fi.id = f.inventory_id
+		  -- The collection that removed the row: it was written at the
+		  -- removal time (Ingest, removeGone and the integration and
+		  -- registry paths all use one time for both).
+		  LEFT JOIN LATERAL (SELECT c.id, c.method, c.observed_at, c.absence_unverified FROM collections c
+		    WHERE c.asset_id = f.asset_id AND c.observed_at = fi.removed_at ORDER BY c.id DESC LIMIT 1) pc ON true
 		  LEFT JOIN LATERAL (SELECT ra.plan_id, ra.to_version FROM remediation_actions ra
 		    WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified' ORDER BY ra.verified_at DESC LIMIT 1) ra ON true
-		  LEFT JOIN LATERAL (SELECT cur.version FROM inventory cur
+		  LEFT JOIN LATERAL (SELECT cur.id, cur.version FROM inventory cur
 		    WHERE cur.asset_id = f.asset_id AND cur.component_id = f.component_id AND cur.removed_at IS NULL
 		    ORDER BY cur.last_seen DESC LIMIT 1) cur ON true
 		  -- The same issue open on the version now installed at the same
@@ -541,15 +552,19 @@ func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 		    WHERE `+twin+` AND p.status = 'open' ORDER BY p.id LIMIT 1) p ON true),
 		r AS (UPDATE findings f SET status = 'resolved', resolved_at = now(),
 		resolution_kind = CASE WHEN g.successor IS NOT NULL THEN 'superseded'
-		  WHEN g.plan_id IS NOT NULL OR g.current IS NOT NULL THEN 'remediated' ELSE 'removed' END,
+		  WHEN g.plan_id IS NOT NULL OR g.current IS NOT NULL THEN 'remediated'
+		  WHEN g.unverified THEN 'disappeared' ELSE 'removed' END,
 		resolution = CASE
 		  WHEN g.successor IS NOT NULL THEN 'upgraded to ' || COALESCE(g.current, g.to_version, 'another version') ||
 		    ', which is still affected (finding #' || g.successor || ')'
 		  WHEN g.plan_id IS NOT NULL THEN 'fixed by remediation plan #' || g.plan_id || ' (upgraded to ' || g.to_version || ')'
 		  WHEN g.current IS NOT NULL THEN 'upgraded to ' || g.current
+		  WHEN g.unverified THEN 'disappeared: Stackurity can no longer see this asset, so the fix was not verified'
 		  ELSE 'component no longer installed' END,
 		resolution_detail = jsonb_strip_nulls(jsonb_build_object('plan_id', g.plan_id,
-		  'version', COALESCE(g.current, g.to_version), 'successor', g.successor))
+		  'version', COALESCE(g.current, g.to_version), 'successor', g.successor,
+		  'from_version', g.from_version, 'to_inventory_id', g.current_id,
+		  'collection_id', g.collection_id, 'method', g.method, 'checked_at', g.checked_at))
 		FROM g WHERE g.id = f.id AND f.status = 'open'
 		RETURNING f.workspace_id, f.id, f.resolution, f.resolution_kind, f.resolution_detail)
 		`+resolvedEvents)

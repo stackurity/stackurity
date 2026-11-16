@@ -5753,6 +5753,45 @@
     }
    }
   },
+  "/findings/{id}/closure": {
+   "get": {
+    "operationId": "get_findings_id_closure",
+    "summary": "The proof behind a closed finding (verified closure): verification (verified_fixed, verified_removed, disappeared_unverified or closed_not_remediation), the version before and after, the check that saw it, who fixed it, and time to fix against the fix-by date. 404 while the finding is open",
+    "description": "The proof behind a closed finding (verified closure): verification (verified_fixed, verified_removed, disappeared_unverified or closed_not_remediation), the version before and after, the check that saw it, who fixed it, and time to fix against the fix-by date. 404 while the finding is open\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/fix-groups": {
    "get": {
     "operationId": "get_fix_groups",
