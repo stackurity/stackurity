@@ -2091,7 +2091,7 @@ The connected Vanta account's documents, `items` each with `id` and `title`, to 
 
 **Who:** admin · licensed build (Compliance add-on)
 
-Changes a connection (`vendor` `vanta` or `drata`): any of `interval_hours` (6, 12, 24 or 168), `status` (`active` or `paused`) and, for Vanta, `vanta_document_id` (one from `GET /integrations/evidence/vanta/documents`). Answers the connection. 404 when that vendor is not connected. Audited as `evidence_connection.update`.
+Changes a connection (`vendor` `vanta` or `drata`): any of `interval_hours` (6, 12, 24 or 168), `status` (`active` or `paused`) and, for Vanta, `vanta_document_id` (one from `GET /integrations/evidence/vanta/documents`; Stackurity looks it up in Vanta for its title, and an unknown id answers 400 `invalid`). Answers the connection. 404 when that vendor is not connected. Audited as `evidence_connection.update`.
 
 ### `DELETE /integrations/evidence/{vendor}`
 

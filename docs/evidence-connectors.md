@@ -37,7 +37,7 @@ Stackurity Cloud has the app. On your own server:
 
 1. Register an application in Vanta's developer portal as a partner integration, with the redirect URI `https://<your server>/api/v1/auth/vanta/callback` (the server's `STACKURITY_BASE_URL` with that path) and the scopes above.
 2. Set `STACKURITY_VANTA_CLIENT_ID` / `_FILE` and `STACKURITY_VANTA_CLIENT_SECRET` / `_FILE` (the `_FILE` form names a file holding the value), with `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY`, and restart.
-3. Note the resource ids Vanta assigns to the app's resource types (vulnerable components and package vulnerabilities): the connector stores them in each connection's settings.
+3. Set the resource ids Vanta assigns to the app's resource types: `STACKURITY_VANTA_COMPONENT_RESOURCE_ID` / `_FILE` (vulnerable components) and `STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID` / `_FILE` (package vulnerabilities). A connection's own settings can override them.
 
 Both or neither: neither set means Vanta is not available on this server; only one set stops the server with a configuration error.
 

@@ -36,3 +36,7 @@ STACKURITY_VANTA_CLIENT_ID  Vanta evidence connector, licensed build
 STACKURITY_VANTA_CLIENT_ID_FILE  Vanta evidence connector, licensed build
 STACKURITY_VANTA_CLIENT_SECRET  Vanta evidence connector, licensed build
 STACKURITY_VANTA_CLIENT_SECRET_FILE  Vanta evidence connector, licensed build
+STACKURITY_VANTA_COMPONENT_RESOURCE_ID  Vanta evidence connector, licensed build
+STACKURITY_VANTA_COMPONENT_RESOURCE_ID_FILE  Vanta evidence connector, licensed build
+STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID  Vanta evidence connector, licensed build
+STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID_FILE  Vanta evidence connector, licensed build

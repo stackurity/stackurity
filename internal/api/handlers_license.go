@@ -29,6 +29,8 @@ func featureName(f license.Feature) string {
 		return "Single sign-on"
 	case license.EnterprisePacks:
 		return "This stack pack (Enterprise)"
+	case license.ComplianceAddon:
+		return "The Compliance add-on"
 	}
 	return string(f)
 }
