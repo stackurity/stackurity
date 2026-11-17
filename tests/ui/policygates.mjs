@@ -8,6 +8,10 @@
 //   - Fixes → Policy violations lists policy, mode, asset, component and
 //     reason, a filter shows as a chip, and Clear all removes it;
 //   - the Dashboard's Needs your attention has a policy violations row;
+//   - a violation row asks for an exception (the form opens above the
+//     table, the request is sent and a notice says so), one already asked
+//     says it is waiting, and exceptions in force are listed below;
+//   - Approvals → Policy exceptions lists a request and approves it;
 //   - no horizontal scroll on any of them.
 // The settings and violations routes are also in layout.mjs's sweep (they
 // come from App.tsx).
@@ -67,6 +71,42 @@ const violations = [
   violation({ policy_id: 4, policy_name: "No known exploited", mode: "enforce", kind: "known_exploited", reason: "CVE-2026-1234 in openssl 3.0.2 is known to be exploited", component: "openssl 3.0.2", finding_id: 9103, violation_key: "finding:9103", link: "/findings/9103" }),
 ];
 
+const soon = new Date(Date.now() + 10 * 86_400_000).toISOString();
+const exception = (over) => ({
+  id: 12,
+  policy_id: 3,
+  policy_name: "No old criticals",
+  rule_version: 1,
+  target_kind: "finding",
+  asset_id: 2,
+  asset_name: "demo-web-2",
+  finding_id: 9102,
+  leak_id: null,
+  component_key: "",
+  target_label: "CVE-2026-0042 in zlib 1.2.11",
+  reason: "mitigated",
+  note: "A WAF rule blocks it",
+  status: "pending",
+  requested_by_id: 2,
+  requested_by: "Eng",
+  requested_at: "2026-11-16T09:00:00Z",
+  requested_expires_at: soon,
+  decided_by_id: null,
+  decided_by: "",
+  decided_at: null,
+  decision_note: "",
+  expires_at: null,
+  ended_at: null,
+  ended_by: "",
+  end_reason: "",
+  end_note: "",
+  ...over,
+});
+const exceptions = [
+  exception(),
+  exception({ id: 13, policy_id: 4, policy_name: "No known exploited", asset_id: 3, asset_name: "demo-db-1", status: "approved", decided_by: "Sec", decided_at: "2026-11-16T10:00:00Z", expires_at: soon }),
+];
+
 const browser = await chromium.launch();
 for (const width of [1280, 390]) {
   const tag = `${width}px`;
@@ -85,6 +125,23 @@ for (const width of [1280, 390]) {
     const q = new URL(r.request().url()).searchParams;
     const items = violations.filter((v) => !q.get("policy_id") || String(v.policy_id) === q.get("policy_id"));
     return r.fulfill({ json: { items, total: items.length } });
+  });
+  let asked = null;
+  let decided = null;
+  await page.route("**/api/v1/gate-policies/exceptions**", (r) => {
+    const req = r.request();
+    const url = new URL(req.url());
+    if (req.method() === "POST" && url.pathname.endsWith("/decision")) {
+      decided = req.postDataJSON();
+      return r.fulfill({ json: { ...exceptions[0], status: "approved", decided_by: "UI", decided_at: new Date().toISOString(), expires_at: soon } });
+    }
+    if (req.method() === "POST") {
+      asked = req.postDataJSON();
+      return r.fulfill({ status: 201, json: exception({ id: 21, asset_id: asked.asset_id, asset_name: "demo-web-1", finding_id: asked.finding_id, note: asked.note }) });
+    }
+    const status = url.searchParams.get("status");
+    const items = exceptions.filter((x) => !status || status === "all" || x.status === status);
+    return r.fulfill({ json: { items, total: items.length, can_decide: true } });
   });
   const noScroll = async (what) =>
     ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${tag} no horizontal scroll on ${what}`);
@@ -122,6 +179,34 @@ for (const width of [1280, 390]) {
   ok(await page.locator(".filter-chip").count() === 1, `${tag} the policy filter shows as a chip`);
   await page.getByRole("button", { name: "Clear all" }).click();
   ok(await page.locator(".filter-chip").count() === 0, `${tag} Clear all removes it`);
+
+  // Exceptions from the violations page.
+  const visible = (sel) => page.locator(sel).filter({ visible: true });
+  ok(await visible(':text("is waiting for a decision")').count() === 1, `${tag} a violation with a request says it is waiting`);
+  ok((await page.locator(".exceptions-in-force summary").innerText()).includes("1 exception is in force"), `${tag} exceptions in force are listed below`);
+  await visible('button:text-is("Ask for an exception")').first().click();
+  const askForm = page.locator('form[aria-label="Ask for an exception to No old criticals"]');
+  await askForm.waitFor();
+  ok(await askForm.getByRole("radio", { name: /^This issue only/ }).isChecked(), `${tag} the form covers this issue by default`);
+  await noScroll("the exception form");
+  await askForm.getByRole("button", { name: "Ask for an exception" }).click();
+  ok((await askForm.getByRole("alert").innerText()).includes("Say why"), `${tag} the form asks why first`);
+  await askForm.getByLabel("Why", { exact: true }).fill("Behind the VPN only");
+  await askForm.getByRole("button", { name: "Ask for an exception" }).click();
+  await page.getByText("Exception #21 asked for").waitFor();
+  ok(asked?.policy_id === 3 && asked?.target_kind === "finding" && asked?.finding_id === 9101 && asked?.note === "Behind the VPN only" && Boolean(asked?.expires_at),
+    `${tag} the request names the policy, the issue, why and an end date`);
+
+  // Approvals → Policy exceptions.
+  await page.goto(base + "/approvals?tab=policy");
+  await page.getByRole("heading", { name: "Approvals" }).waitFor();
+  const inbox = page.locator('ul[aria-label="Policy exceptions"]');
+  await inbox.waitFor();
+  ok((await inbox.innerText()).includes("Waiting for a decision"), `${tag} the pending exception is in the inbox`);
+  await noScroll("Approvals → Policy exceptions");
+  await inbox.getByRole("button", { name: "Approve" }).click();
+  await page.getByText("Exception #12 approved").waitFor();
+  ok(decided?.decision === "approve", `${tag} approving sends the decision`);
 
   // Dashboard: a row in Needs your attention.
   await page.goto(base + "/");
