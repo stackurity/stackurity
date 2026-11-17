@@ -254,6 +254,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/findings/{id}":                                    "scoped",
 	"GET /api/v1/findings/{id}/events":                             "scoped",
 	"GET /api/v1/findings/{id}/upgrade":                            "scoped",
+	"GET /api/v1/findings/{id}/closure":                            "scoped",
 	"GET /api/v1/findings/{id}/explain":                            "scoped",
 	"GET /api/v1/fix-groups":                                       "scoped",
 	"GET /api/v1/fix-groups/summary":                               "scoped",

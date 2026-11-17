@@ -235,6 +235,7 @@ jobs:
       - run: cd tests/ui && npm ci --ignore-scripts && npx playwright install --with-deps chromium
       - run: cd tests/ui && node layout.mjs http://127.0.0.1:8080
       - run: cd tests/ui && node ask.mjs http://127.0.0.1:8080
+      - run: cd tests/ui && node closure.mjs http://127.0.0.1:8080
       - if: failure()
         run: tail -100 /tmp/server.log
 

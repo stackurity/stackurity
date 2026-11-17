@@ -1139,6 +1139,14 @@ Why the finding matched (`why`) and why it has its priority: `risk` (score, each
 
 The [upgrade recommendation](#upgrade-recommendations) for the installed copy the finding is on, covering every open finding on it.
 
+### `GET /findings/{id}/closure`
+
+**Who:** viewer
+
+The proof behind a closed finding ([verified closure](#verified-closure)); 404 while it is open. Returns `schema_version` (1), the finding (`finding_id`, `asset_id`, `asset_name`, `kind`, `key`, `severity`, `priority`, `resolution_kind`), `verification`, `before` (`component`, `version`, `inventory_id`, `last_seen_at`), `after` (`version`, `inventory_id`; null when the component was removed or the finding disappeared), `check` (the collection that saw the change: `collection_id`, `source` (its method: `agent`, `lockfile`, `repository`, `scanner`, `registry`, `plugin` or `sbom`), `observed_at`, `complete`; null for findings closed before proofs were recorded, and for closures by advisory changes), `opened_at` and `closed_at`. With the fix loop (paid, `fix_loop`) it also returns `fixed_by` (`type`: `remediation_run`, `pull_request`, `agent_report`, `manual` or `unknown`; `ref`, `actor`, `approver`, `merged_at`), `time_to_fix_seconds` and `sla` (`policy_days`, `due_at`, `met`; null without a fix-by date, and `met` null when the closure is not remediation); without it those three are absent.
+
+`verification` is `verified_fixed` (a check saw a version the advisories do not list), `verified_removed` (a complete check saw the component gone), `disappeared_unverified` (Stackurity lost sight of the asset: a repository no longer granted to the GitHub App or no longer in the connected GitLab group, or an image deleted from its registry) or `closed_not_remediation`. Only the first two count as remediation.
+
 ### `GET /findings/{id}/events`
 
 **Who:** viewer
@@ -2475,6 +2483,7 @@ Downloads an enabled pack, for clients that run it themselves (`stackurity scan`
 
 Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; default the last 30 days, at most a year). See [Evidence report](#evidence-report).
 
+
 ### `GET /reports/outcomes`
 
 **Who:** viewer
@@ -3210,9 +3219,16 @@ A resolved finding has a `resolution` sentence and a machine-readable `resolutio
 | `advisory_withdrawn` | Every advisory behind it was withdrawn by its source (`source`, `feed`, `withdrawn_at`) | no |
 | `advisory_changed` | The advisory or lifecycle data no longer lists the installed version, which did not change | no |
 | `not_evaluated` | The row could no longer be evaluated (its feed was disabled, or the version could not be compared) | no |
+| `disappeared` | Stackurity lost sight of the asset: a repository no longer granted to the GitHub App or no longer in the connected GitLab group, or an image deleted from its registry. Nobody saw the fix (such closures were `removed` before migration 0108, which reclassified them) | no |
 | `other` | A resolution recorded before 0.13 that could not be classified | no |
 
 The `resolution` sentence gives the facts, for example "fixed by remediation plan #N (upgraded to V)", "advisory withdrawn by Ubuntu on 2026-10-27" or "advisory updated: UBUNTU-CVE-2026-2 no longer lists mysql-8.0 8.0.42". A WordPress `behind_latest_release` finding closes as `advisory_changed` with its own sentence and `resolution_detail.replaced_by`: "replaced by the end-of-life finding: wordpress 6.5 reached end of life" (`end_of_life`), "replaced by vulnerability matching: …" (`vulnerability_matching`, once a source evaluates the row), or "lifecycle data updated: … is no longer behind its release line's latest release". Reports count only `remediated` and `removed` as remediation. `GET /findings?status=resolved&resolution_kind=advisory_withdrawn,advisory_changed` lists the others. The matcher's `resolved` history events carry the kind and facts in `detail`.
+
+#### Verified closure
+
+Each closure records its proof in `resolution_detail`: `from_version` (the version before), `version` and `to_inventory_id` (the row installed after an upgrade), `collection_id`, `method` and `checked_at` (the collection that saw the change), and `plan_id` for a remediation plan. Findings closed before migration 0108 have only the facts above. The dashboard shows a badge on every resolved finding: **Verified fixed** (`remediated`), **Verified removed** (`removed`), **Disappeared (not verified)** (`disappeared`) or **Closed, not a fix** (the rest), and lists the proof on the finding. [`GET /findings/{id}/closure`](#get-findingsidclosure) returns it as one record, the form the paid edition's evidence pack uses.
+
+The fix loop (paid: the `fix_loop` feature) adds an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix (`fixed_by`), time to fix against the SLA per finding, and the proof export.
 
 Findings also carry `display_state`, `regressed_at`, `until_fix`, `ignore_reason` and `exception_id`; see [The seven states](#the-seven-states).
 

@@ -29,13 +29,17 @@ const (
 	// The row could no longer be evaluated (its feed was disabled, or the
 	// version could not be compared), so the matcher could not confirm it.
 	ResolutionNotEvaluated = "not_evaluated"
+	// Stackurity lost sight of the asset (a repository no longer granted or
+	// no longer in the connected group, an image deleted from its registry),
+	// so the fix was never seen: the finding disappeared, unverified.
+	ResolutionDisappeared = "disappeared"
 	// A resolution written before kinds existed that could not be classified.
 	ResolutionOther = "other"
 )
 
 // ResolutionKinds lists every kind, remediation first.
 var ResolutionKinds = []string{ResolutionRemediated, ResolutionRemoved, ResolutionSuperseded, ResolutionAdvisoryWithdrawn,
-	ResolutionAdvisoryChanged, ResolutionNotEvaluated, ResolutionOther}
+	ResolutionAdvisoryChanged, ResolutionNotEvaluated, ResolutionDisappeared, ResolutionOther}
 
 // CountsAsRemediation reports whether a resolution kind is remediation:
 // something changed on the asset that took the issue away.

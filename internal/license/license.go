@@ -41,6 +41,11 @@ const (
 	// PhishingResistantMFA: a workspace may require admins to sign in with
 	// a passkey or security key (docs/install.md, "Two-factor sign-in").
 	PhishingResistantMFA Feature = "phishing_resistant_mfa"
+	// FixLoop: verified closure's paid part: an immediate re-check after a
+	// merged pull request or a remediation run, the pull request that fixed
+	// each finding, time to fix against the SLA per finding, and the proof
+	// export.
+	FixLoop Feature = "fix_loop"
 )
 
 // Edition is a plan: the set of features it includes.
@@ -54,8 +59,8 @@ const (
 
 var editionFeatures = map[Edition][]Feature{
 	Community:  nil,
-	Pro:        {Remediation, Teams, EvidenceReport, SSO},
-	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA},
+	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop},
+	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop},
 }
 
 // Features lists what an edition includes.
