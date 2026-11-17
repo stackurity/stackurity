@@ -335,6 +335,7 @@ func hasProcessAccess(procDir string, uid uint32) bool {
 type pkgFacts struct {
 	programs bool     // ships a program under a bin directory
 	services []string // its systemd services ("nginx.service") and init scripts ("init.d/nginx")
+	progs    []string // its programs' paths, looked for in crontabs and inetd
 	other    string   // why it cannot be called not running, if it cannot
 	hit      *procRef // a running process uses one of its files
 	hitPath  string
@@ -369,6 +370,7 @@ func (f *pkgFacts) classify(p string, program func(string) string, isDir func(st
 			return
 		}
 		f.programs = true
+		f.progs = append(f.progs, p)
 	case strings.HasPrefix(p, "/etc/cron"), strings.HasPrefix(p, "/etc/periodic/"),
 		strings.HasSuffix(p, ".timer"), strings.HasSuffix(p, ".socket"), strings.HasSuffix(p, ".path"),
 		strings.HasPrefix(p, "/usr/share/dbus-1/"), strings.HasPrefix(p, "/etc/xinetd.d/"),
@@ -380,9 +382,15 @@ func (f *pkgFacts) classify(p string, program func(string) string, isDir func(st
 		other("its user services start when someone logs in")
 	case strings.HasPrefix(p, "/etc/init.d/") && path.Dir(p) == "/etc/init.d":
 		f.services = append(f.services, "init.d/"+base)
-	case strings.HasPrefix(p, "/usr/lib/systemd/"), strings.HasPrefix(p, "/lib/systemd/system/"),
+	case strings.HasPrefix(p, "/usr/lib/systemd/system/"), strings.HasPrefix(p, "/lib/systemd/system/"),
+		strings.HasPrefix(p, "/usr/lib/systemd/system-preset/"), strings.HasPrefix(p, "/usr/lib/systemd/user-preset/"),
+		strings.HasPrefix(p, "/usr/lib/systemd/network/"),
 		strings.HasPrefix(p, "/usr/lib/tmpfiles.d/"), strings.HasPrefix(p, "/usr/lib/sysusers.d/"):
-		// Other service definitions and settings.
+		// Other unit files, presets and settings.
+	case strings.HasPrefix(p, "/usr/lib/systemd/"), strings.HasPrefix(p, "/lib/systemd/"):
+		// system-generators, system-sleep, system-shutdown and helpers:
+		// systemd runs them by itself (on a merged /usr as elsewhere).
+		other("systemd runs its helpers (generators, sleep and shutdown hooks) by itself")
 	case strings.HasPrefix(p, "/usr/lib"), strings.HasPrefix(p, "/lib"), strings.HasPrefix(p, "/usr/libexec/"),
 		strings.HasPrefix(p, "/usr/local/"), strings.HasPrefix(p, "/opt/"):
 		other("libraries and helpers can be loaded or started on demand")
@@ -496,6 +504,10 @@ type procHistory struct {
 	// Seen: package ("deb/nginx") -> when it was last seen running and the
 	// evidence line then.
 	Seen map[string]seenRec `json:"seen"`
+	// Installed: package and version ("deb/nginx@1.22.1-9") -> when a
+	// reading first found it. Each package needs SeenFor of readings of
+	// its own, so one installed (or upgraded) an hour ago is not claimed.
+	Installed map[string]time.Time `json:"installed"`
 }
 
 type seenRec struct {
@@ -517,6 +529,9 @@ func (c *Collector) loadHistory() *procHistory {
 	}
 	if h.Seen == nil {
 		h.Seen = map[string]seenRec{}
+	}
+	if h.Installed == nil {
+		h.Installed = map[string]time.Time{}
 	}
 	c.hist = h
 	return h
@@ -540,23 +555,160 @@ func (c *Collector) saveHistory() bool {
 	return os.Rename(tmp, c.StateFile) == nil
 }
 
-// serviceEnabled names the first of services that starts at boot or with
-// another unit, or "" when none does. A systemd unit is enabled by a link
-// in a .wants or .requires directory or under /etc/systemd/system (masked,
-// a link to /dev/null, is not); one without an [Install] section is
-// static, started by other units, so it counts as enabled. An init script
-// is enabled by a runlevel link (OpenRC /etc/runlevels, SysV /etc/rc?.d).
-func (c *Collector) serviceEnabled(services []string) string {
+// startRefs is what on the host can start a service or program besides
+// its own enablement: units that name it (Wants=, Requires=, BindsTo=,
+// Upholds=, OnSuccess=, OnFailure=, Unit=, Also=, or a timer, socket or
+// path unit of the same name), and the words of crontabs and inetd. err
+// says what could not be read; then nothing is called not running.
+type startRefs struct {
+	units map[string]string // unit name -> first file naming it
+	words map[string]string // word in a crontab or inetd configuration -> file
+	err   string
+}
+
+// unitDirs are where systemd reads units: the administrator's, generated
+// ones, runtime ones and packages'.
+var unitDirs = []string{"etc/systemd/system", "run/systemd/system", "run/systemd/generator",
+	"run/systemd/generator.early", "run/systemd/generator.late", "usr/lib/systemd/system", "lib/systemd/system"}
+
+// cronFiles and cronDirs hold crontabs and what they run; inetd's
+// configuration starts programs on connections.
+var (
+	cronFiles = []string{"etc/crontab", "etc/anacrontab", "etc/inetd.conf"}
+	cronDirs  = []string{"etc/cron.d", "etc/cron.hourly", "etc/cron.daily", "etc/cron.weekly", "etc/cron.monthly",
+		"etc/periodic/15min", "etc/periodic/hourly", "etc/periodic/daily", "etc/periodic/weekly", "etc/periodic/monthly",
+		"etc/crontabs", "var/spool/cron", "var/spool/cron/crontabs", "etc/xinetd.d"}
+	unitRef  = regexp.MustCompile(`(?m)^\s*(?:Wants|Requires|Requisite|BindsTo|Upholds|OnSuccess|OnFailure|Unit|Also|PropagatesReloadTo|ReloadPropagatedFrom)\s*=\s*(.+)$`)
+	cronWord = regexp.MustCompile(`[\w@][\w.@/:-]*`)
+)
+
+const (
+	maxStartFiles = 20000
+	maxStartBytes = 256 << 10
+)
+
+func (c *Collector) readStartRefs() *startRefs {
+	r := &startRefs{units: map[string]string{}, words: map[string]string{}}
+	files := 0
+	read := func(rel string) ([]byte, bool) {
+		if files++; files > maxStartFiles {
+			r.err = "too many unit and cron files"
+			return nil, false
+		}
+		data, err := readSmall(c.path(rel), maxStartBytes)
+		if err != nil {
+			if !errors.Is(err, fs.ErrNotExist) {
+				r.err = "/" + rel + " could not be read"
+			}
+			return nil, false
+		}
+		return data, true
+	}
+	list := func(dir string) []os.DirEntry {
+		es, err := os.ReadDir(c.path(dir))
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			r.err = "/" + dir + " could not be read"
+		}
+		return es
+	}
+	unit := func(rel string) {
+		data, ok := read(rel)
+		if !ok {
+			return
+		}
+		name := path.Base(rel)
+		for _, m := range unitRef.FindAllSubmatch(data, -1) {
+			for _, u := range strings.Fields(string(m[1])) {
+				first(r.units, u, "/"+rel)
+			}
+		}
+		// A timer, socket or path unit starts the service of its name
+		// unless Unit= says otherwise (both are recorded).
+		if ext := path.Ext(name); ext == ".timer" || ext == ".socket" || ext == ".path" {
+			stem := strings.TrimSuffix(name, ext)
+			first(r.units, stem+".service", "/"+rel)
+			first(r.units, strings.TrimSuffix(stem, "@")+"@.service", "/"+rel)
+		}
+	}
+	for _, dir := range unitDirs {
+		for _, e := range list(dir) {
+			rel := dir + "/" + e.Name()
+			switch {
+			case e.Type()&fs.ModeSymlink != 0:
+				// enablement links: checked by name in serviceEnabled
+			case e.IsDir() && strings.HasSuffix(e.Name(), ".d"):
+				for _, d := range list(rel) {
+					if strings.HasSuffix(d.Name(), ".conf") {
+						unit(rel + "/" + d.Name())
+					}
+				}
+			case !e.IsDir():
+				unit(rel)
+			}
+		}
+	}
+	words := func(rel string) {
+		data, ok := read(rel)
+		if !ok {
+			return
+		}
+		for _, w := range cronWord.FindAll(data, -1) {
+			first(r.words, string(w), "/"+rel)
+			first(r.words, path.Base(string(w)), "/"+rel)
+		}
+	}
+	for _, f := range cronFiles {
+		words(f)
+	}
+	for _, dir := range cronDirs {
+		for _, e := range list(dir) {
+			if !e.IsDir() {
+				words(dir + "/" + e.Name())
+			}
+		}
+	}
+	return r
+}
+
+func first(m map[string]string, k, v string) {
+	if _, ok := m[k]; !ok && k != "" {
+		m[k] = v
+	}
+}
+
+// serviceEnabled names what starts one of services (or programs), or "" when
+// nothing does. A systemd unit is enabled by a link in a .wants, .requires
+// or .upholds directory (also generated ones) or under /etc/systemd/system
+// (masked, a link to /dev/null, is not); one without an [Install] section
+// is static, started by other units, so it counts as enabled; so does one
+// another unit names (refs.units). An init script is enabled by a runlevel
+// link (OpenRC /etc/runlevels, SysV /etc/rc?.d). A crontab or inetd line
+// naming the service or one of its programs starts it too.
+func (c *Collector) serviceEnabled(services, progs []string, refs *startRefs) string {
 	exists := func(pattern string) bool {
 		m, _ := filepath.Glob(c.path(pattern))
 		return len(m) > 0
 	}
+	for _, p := range progs {
+		for _, w := range []string{p, path.Base(p)} {
+			if f, ok := refs.words[w]; ok {
+				return f
+			}
+		}
+	}
 	for _, svc := range services {
+		stem := strings.TrimSuffix(strings.TrimPrefix(svc, "init.d/"), ".service")
+		if f, ok := refs.words[stem]; ok {
+			return f
+		}
 		if name, ok := strings.CutPrefix(svc, "init.d/"); ok {
 			if exists("etc/runlevels/*/"+name) || exists("etc/rc[2345S].d/S*"+name) {
 				return svc
 			}
 			continue
+		}
+		if f, ok := refs.units[svc]; ok {
+			return f
 		}
 		unit := svc
 		if b, ok := strings.CutSuffix(svc, "@.service"); ok {
@@ -565,9 +717,11 @@ func (c *Collector) serviceEnabled(services []string) string {
 		if t, err := os.Readlink(c.path("etc/systemd/system/" + svc)); err == nil && t == "/dev/null" {
 			continue // masked
 		}
-		for _, dir := range []string{"etc/systemd/system", "usr/lib/systemd/system", "lib/systemd/system", "run/systemd/system"} {
-			if exists(dir+"/*.wants/"+unit) || exists(dir+"/*.requires/"+unit) {
-				return svc
+		for _, dir := range unitDirs {
+			for _, kind := range []string{"wants", "requires", "upholds"} {
+				if exists(dir + "/*." + kind + "/" + unit) {
+					return svc
+				}
 			}
 		}
 		if exists("etc/systemd/system/" + unit) {
@@ -660,7 +814,23 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 			delete(h.Seen, k)
 		}
 	}
+	installed := map[string]bool{}
+	for _, o := range b.Observations {
+		if pu, err := packageurl.FromString(o.Purl); err == nil && (pu.Type == "deb" || pu.Type == "apk") {
+			k := pu.Type + "/" + pu.Name + "@" + pu.Version
+			installed[k] = true
+			if _, ok := h.Installed[k]; !ok {
+				h.Installed[k] = now
+			}
+		}
+	}
+	for k := range h.Installed {
+		if !installed[k] {
+			delete(h.Installed, k) // removed or upgraded: its time starts again
+		}
+	}
 	saved := c.saveHistory()
+	var starts *startRefs // read once, when a package could be called not running
 	settled := complete && saved && !h.Since.After(now.Add(-SeenFor))
 
 	for i := range b.Observations {
@@ -690,7 +860,13 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 				s.Line, "Seen " + s.At.Format("2006-01-02 15:04 UTC") + "; not running at " + when + ".",
 			})}
 		case settled && f.programs && f.other == "" && len(f.services) > 0:
-			if c.serviceEnabled(f.services) != "" {
+			if at := h.Installed[key+"@"+pu.Version]; at.IsZero() || at.After(now.Add(-SeenFor)) {
+				continue // installed or upgraded less than SeenFor ago
+			}
+			if starts == nil {
+				starts = c.readStartRefs()
+			}
+			if starts.err != "" || c.serviceEnabled(f.services, f.progs, starts) != "" {
 				continue
 			}
 			o.Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: capLines([]string{
@@ -717,7 +893,18 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
 			Reason: fmt.Sprintf("read %d processes; every process has been read since %s, and no package is called not running until that is 7 days", snap.read, h.Since.Format("2006-01-02 15:04 UTC"))}, true
 	}
+	if starts != nil && starts.err != "" {
+		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
+			Reason: clipReason(fmt.Sprintf("read %d processes; %s, so what else could start a service is not known and no package is called not running", snap.read, starts.err))}, true
+	}
 	return model.CoverageItem{Scope: ProcessScope, Status: "checked", Reason: fmt.Sprintf("read %d processes", snap.read)}, true
+}
+
+func clipReason(s string) string {
+	if len(s) > 500 {
+		return s[:500]
+	}
+	return s
 }
 
 func hitLine(r *procRef, path string) string {

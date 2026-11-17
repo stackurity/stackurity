@@ -51,7 +51,9 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	}
 	link("lib", "usr/lib")
 	var status strings.Builder
+	fixturePackages = nil
 	pkg := func(name string, files ...string) {
+		fixturePackages = append(fixturePackages, name)
 		status.WriteString("Package: " + name + "\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\n\n")
 		// Like dpkg's, the list names directories too.
 		write("var/lib/dpkg/info/"+name+":amd64.list", "/.\n/usr\n/usr/lib\n/lib\n/lib/systemd\n/lib/systemd/system\n/etc\n/etc/cron.d\n"+strings.Join(files, "\n")+"\n")
@@ -144,9 +146,17 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	return root, c
 }
 
+// writeHistory writes the agent's state: whole readings since since, the
+// last at last, and every fixture package installed since since.
 func writeHistory(t *testing.T, file string, since, last time.Time) {
 	t.Helper()
-	data, err := json.Marshal(procHistory{Since: since, Last: last})
+	h := procHistory{Since: since, Last: last, Installed: map[string]time.Time{}}
+	if !since.IsZero() {
+		for _, n := range fixturePackages {
+			h.Installed["deb/"+n+"@1.0-1"] = since
+		}
+	}
+	data, err := json.Marshal(h)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -154,6 +164,8 @@ func writeHistory(t *testing.T, file string, since, last time.Time) {
 		t.Fatal(err)
 	}
 }
+
+var fixturePackages []string
 
 func reachOf(t *testing.T, b *model.ObservationBatch) map[string]*model.Reachability {
 	t.Helper()
@@ -536,5 +548,122 @@ func TestProcessReachabilityMissingData(t *testing.T) {
 	}
 	if cov := coverage(b); !strings.HasPrefix(cov.Reason, "unsupported: ") {
 		t.Errorf("no file lists: coverage %+v", cov)
+	}
+}
+
+// Each package needs SeenFor of readings of its own: one installed (or
+// upgraded) an hour ago is not claimed, however long the host was read.
+func TestProcessReachabilityNewPackage(t *testing.T) {
+	_, c := procHost(t)
+	now := c.Now()
+	h := procHistory{Since: now.Add(-30 * 24 * time.Hour), Last: now.Add(-time.Hour), Installed: map[string]time.Time{}}
+	for _, n := range fixturePackages {
+		h.Installed["deb/"+n+"@1.0-1"] = now.Add(-30 * 24 * time.Hour)
+	}
+	h.Installed["deb/memcached@1.0-1"] = now.Add(-time.Hour)
+	h.Installed["deb/memcached@0.9-1"] = now.Add(-30 * 24 * time.Hour) // the version before an upgrade
+	data, _ := json.Marshal(h)
+	if err := os.WriteFile(c.StateFile, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b, err := c.Collect(context.Background(), "web1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s := status(reachOf(t, b)["memcached"]); s != model.ReachUnknown {
+		t.Errorf("memcached installed an hour ago: %s", s)
+	}
+	var after procHistory
+	data, _ = os.ReadFile(c.StateFile)
+	if err := json.Unmarshal(data, &after); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := after.Installed["deb/memcached@0.9-1"]; ok {
+		t.Error("a version no longer installed is kept")
+	}
+}
+
+// Anything else that can start the service keeps it unknown; so does a
+// crontab the agent cannot read.
+func TestProcessReachabilityStartedOtherwise(t *testing.T) {
+	cases := map[string]func(t *testing.T, root string){
+		"an administrator's timer": func(t *testing.T, root string) {
+			writeFile(t, root, "etc/systemd/system/memcached.timer", "[Timer]\nOnCalendar=daily\n")
+		},
+		"another unit's Wants=": func(t *testing.T, root string) {
+			writeFile(t, root, "usr/lib/systemd/system/cache-warm.service", "[Unit]\nWants=memcached.service\n")
+		},
+		"a drop-in's Upholds=": func(t *testing.T, root string) {
+			writeFile(t, root, "etc/systemd/system/app.service.d/override.conf", "[Unit]\nUpholds=memcached.service\n")
+		},
+		"a generated wants link": func(t *testing.T, root string) {
+			dir := filepath.Join(root, "run/systemd/generator/multi-user.target.wants")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink("/usr/lib/systemd/system/memcached.service", filepath.Join(dir, "memcached.service")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a crontab line": func(t *testing.T, root string) {
+			writeFile(t, root, "etc/cron.d/warm", "*/5 * * * * root /usr/bin/memcached -d\n")
+		},
+		"inetd": func(t *testing.T, root string) {
+			writeFile(t, root, "etc/inetd.conf", "cache stream tcp nowait root /usr/bin/memcached memcached\n")
+		},
+		"an unreadable crontab directory": func(t *testing.T, root string) {
+			if os.Geteuid() == 0 {
+				t.Skip("root reads every directory")
+			}
+			dir := filepath.Join(root, "var/spool/cron/crontabs")
+			if err := os.MkdirAll(dir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Chmod(dir, 0o300); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { os.Chmod(dir, 0o755) })
+		},
+	}
+	for name, setup := range cases {
+		t.Run(name, func(t *testing.T) {
+			root, c := procHost(t)
+			setup(t, root)
+			b, err := c.Collect(context.Background(), "web1", "")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if s := status(reachOf(t, b)["memcached"]); s != model.ReachUnknown {
+				t.Errorf("memcached: %s", s)
+			}
+			if name == "an unreadable crontab directory" && !strings.Contains(coverage(b).Reason, "/var/spool/cron/crontabs could not be read") {
+				t.Errorf("coverage %q", coverage(b).Reason)
+			}
+		})
+	}
+}
+
+// systemd's own helpers (generators, sleep and shutdown hooks) run without
+// a process to see, on a merged /usr as elsewhere.
+func TestProcessReachabilitySystemdHelpers(t *testing.T) {
+	f := &pkgFacts{}
+	never := func(string) string { return "" }
+	notDir := func(string) bool { return false }
+	for _, p := range []string{"/usr/bin/x", "/usr/lib/systemd/system/x.service", "/usr/lib/systemd/system-generators/x-generator"} {
+		f.classify(p, never, notDir)
+	}
+	if f.other == "" {
+		t.Error("a system generator did not keep the package unknown")
+	}
+}
+
+func writeFile(t *testing.T, root, rel, data string) {
+	t.Helper()
+	full := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte(data), 0o644); err != nil {
+		t.Fatal(err)
 	}
 }
