@@ -33,7 +33,9 @@ type gateCheckAnswer struct {
 	PoliciesEvaluated int    `json:"policies_evaluated"`
 	PoliciesEnforced  int    `json:"policies_enforced"`
 	DryRun            bool   `json:"dry_run"`
-	Violations        []struct {
+	// DeployRequiresPlan: a deploy check without the deploy gate.
+	DeployRequiresPlan bool `json:"deploy_requires_plan"`
+	Violations         []struct {
 		PolicyID            int64  `json:"policy_id"`
 		PolicyName          string `json:"policy_name"`
 		Mode                string `json:"mode"`
@@ -117,7 +119,10 @@ func TestGatePolicyCheckAPI(t *testing.T) {
 	if code := o.admin.do("PUT", fmt.Sprintf("/api/v1/gate-policies/%d", kev.ID), map[string]any{"name": "No KEV", "kind": "known_exploited", "mode": "enforce"}, nil); code != 200 {
 		t.Fatalf("enforce: %d", code)
 	}
+	// Set explicitly: the licensed build's hooks follow the test licence.
+	noEnforce := api.SetGateEnforce(false)
 	code, a = check(o.admin, map[string]any{"asset_id": alpha})
+	noEnforce()
 	if code != 200 || a.Result != "warn" || a.PoliciesEnforced != 0 || !a.Violations[0].EnforceRequiresPlan || a.Violations[0].Mode != "enforce" {
 		t.Errorf("enforce without the plan: %d %+v", code, a)
 	}
@@ -126,6 +131,20 @@ func TestGatePolicyCheckAPI(t *testing.T) {
 	code, a = check(o.admin, map[string]any{"asset_id": alpha})
 	if code != 200 || a.Result != "fail" || a.PoliciesEnforced != 1 || a.Violations[0].EnforceRequiresPlan {
 		t.Errorf("enforced: %d %+v", code, a)
+	}
+	// A deploy check needs the deploy gate as well: without it the answer
+	// is given but never fails.
+	noDeploy := api.SetGateDeploy(false)
+	code, a = check(o.admin, map[string]any{"asset_id": alpha, "source": "deploy"})
+	noDeploy()
+	if code != 200 || a.Result != "warn" || !a.DeployRequiresPlan || a.PoliciesEnforced != 0 || !a.Violations[0].EnforceRequiresPlan {
+		t.Errorf("deploy without the deploy gate: %d %+v", code, a)
+	}
+	restoreDeploy := api.SetGateDeploy(true)
+	code, a = check(o.admin, map[string]any{"asset_id": alpha, "source": "deploy"})
+	restoreDeploy()
+	if code != 200 || a.Result != "fail" || a.DeployRequiresPlan || a.PoliciesEnforced != 1 {
+		t.Errorf("deploy with the deploy gate: %d %+v", code, a)
 	}
 
 	// A dry run says what applies, reads no finding and records nothing.

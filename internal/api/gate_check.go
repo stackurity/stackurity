@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -9,6 +8,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
+	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -31,12 +31,24 @@ import (
 // POST /gate-policies/check.
 const FeatureGatePolicies = "gate_policies"
 
-// gateEnforceAllowed reports whether a policy in enforce mode may fail a
-// check for the workspace in ctx. In the Community build it never may: an
-// enforce policy is reported as a warning, with enforce_requires_plan
-// (docs/design/policy-gates.md, section 7). The licensed build sets it from
-// the licence feature in delivery step 4.
-var gateEnforceAllowed = func(ctx context.Context) bool { return false }
+// The paid part of policy gates (docs/design/policy-gates.md, section 7)
+// is two hooks the licensed build sets (stackurity-pro,
+// internal/api/gate_plan_ee.go) from the licence and workspace ws's plan:
+// the gate_enforce and gate_deploy features. In the Community build both
+// answer false.
+var (
+	// gateEnforceAllowed reports whether a policy in enforce mode may fail
+	// a check. Without it an enforce policy is reported as a warning, with
+	// enforce_requires_plan.
+	gateEnforceAllowed = func(s *Server, r *http.Request, ws int64) bool { return false }
+	// gateDeployAllowed reports whether a deploy check (source deploy:
+	// stackurity policy check in a deploy pipeline or an admission hook)
+	// may fail. Without it the deploy check still answers, so a pipeline
+	// that asks keeps working and sees the violations, but its result is
+	// never fail, and deploy_requires_plan says why. A 402 was rejected:
+	// it would break pipelines set up on a trial the day it ends.
+	gateDeployAllowed = func(s *Server, r *http.Request, ws int64) bool { return false }
+)
 
 // gateCheckRequest names the asset by exactly one of AssetID,
 // RepositoryURL and ImageDigest, or by CollectionID (an upload) alone; a
@@ -93,6 +105,10 @@ type gateCheckResponse struct {
 	PoliciesEnforced  int                  `json:"policies_enforced"`
 	Violations        []gateCheckViolation `json:"violations"`
 	DryRun            bool                 `json:"dry_run,omitempty"`
+	// DeployRequiresPlan: a deploy check (source deploy) on an edition or
+	// plan without the deploy gate. Violations are reported but the result
+	// is never fail.
+	DeployRequiresPlan bool `json:"deploy_requires_plan,omitempty"`
 }
 
 // gateCheckSources are the values of source.
@@ -175,6 +191,27 @@ func gateCheckOutcome(vs []store.GateViolation, enforce bool, base string) (stri
 	return result, out
 }
 
+// gateCheckPlan decides what a check may do on the workspace's plan:
+// whether enforce-mode policies may fail it, and whether it is a deploy
+// check the plan does not cover (deployLocked: it never fails).
+func gateCheckPlan(source string, enforceAllowed, deployAllowed bool) (enforce, deployLocked bool) {
+	if source == store.GateSourceDeploy && !deployAllowed {
+		return false, true
+	}
+	return enforceAllowed, false
+}
+
+// gateEnforceDowngraded reports whether an enforce-mode violation counted
+// as a warning because of the plan.
+func gateEnforceDowngraded(vs []gateCheckViolation) bool {
+	for _, v := range vs {
+		if v.EnforceRequiresPlan {
+			return true
+		}
+	}
+	return false
+}
+
 // gateCheckCaller reports whether the caller may ask for checks at all:
 // readers (viewer or more, organisation-wide or on a project) and
 // collector tokens.
@@ -230,13 +267,14 @@ func (s *Server) checkGatePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	wctx := tenant.WithWorkspace(ctx, ws)
-	enforce := gateEnforceAllowed(wctx)
+	enforce, deployLocked := gateCheckPlan(req.Source, gateEnforceAllowed(s, r, ws), gateDeployAllowed(s, r, ws))
 	policies, err := s.Store.EffectiveGatePolicies(wctx, a.ID)
 	if err != nil {
 		s.fail(w, r, err)
 		return
 	}
-	res := gateCheckResponse{AssetID: a.ID, AssetName: a.Name, Violations: []gateCheckViolation{}, DryRun: req.DryRun}
+	res := gateCheckResponse{AssetID: a.ID, AssetName: a.Name, Violations: []gateCheckViolation{}, DryRun: req.DryRun,
+		DeployRequiresPlan: deployLocked}
 	evaluated := []int64{}
 	for _, gp := range policies {
 		if gp.Mode == store.GateModeOff {
@@ -258,6 +296,13 @@ func (s *Server) checkGatePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res.Result, res.Violations = gateCheckOutcome(vs, enforce, s.BaseURL)
+	// Counted as a refusal (usage counts) when the plan changed the answer.
+	switch {
+	case deployLocked:
+		s.countUsage(r, store.UsageLimitRefused, "feature_"+string(license.GateDeploy))
+	case gateEnforceDowngraded(res.Violations):
+		s.countUsage(r, store.UsageLimitRefused, "feature_"+string(license.GateEnforce))
+	}
 
 	repo := req.RepositoryURL
 	if repo == "" {
