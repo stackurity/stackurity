@@ -2,7 +2,7 @@
 
 A policy gate is a rule your organisation writes once, such as "no known exploited vulnerability on an internet-facing asset", that every asset is held to. Instead of each pipeline deciding for itself with `stackurity scan --fail-on high`, the security team keeps the rules in Stackurity, and the Dashboard, CI jobs and deploy pipelines all read the same answer.
 
-This page describes what is available now: rules, where they apply, their modes, checking a build or a deploy against them, and the API. The dashboard pages and asking for exceptions come in later releases ([design](design/policy-gates.md)).
+This page describes what is available now: rules, where they apply, their modes, the dashboard pages, the weekly summary, checking a build or a deploy against them, and the API. Asking for exceptions comes in a later release ([design](design/policy-gates.md)).
 
 ## Rules
 
@@ -53,6 +53,17 @@ Enforce mode needs a paid plan. In the Community edition a policy can be set to 
 Violations are worked out from the current findings and leaked keys each time they are read, so they are never out of date. Each one names the policy and its mode, the asset, the component, a sentence saying why (for example "CVE-2026-1234 in openssl 3.0.2 is known to be exploited") and a link to the finding or to the asset's leaked keys.
 
 Once an hour Stackurity counts each policy's violations into a daily history (violations and assets at the end of the day, and how many were opened and closed that day). A deleted policy keeps its history.
+
+## In the dashboard
+
+- **Settings → Policy gates** lists the organisation's policies: each one's rule in words, its mode, the assets it looks at, where it is turned off ("Off for 2 projects") and how many violations it has, with a link to them. Organisation admins add, edit and delete policies here; anyone with the security role can read them. The form asks for the rule and its settings, the assets it looks at (kinds of asset, environments, internet-facing only, tags) and the mode. A new policy starts in warn mode. On a plan without enforce, the Enforce option carries a Pro badge and notice; it can still be chosen, and checks then report its violations as warnings.
+- **A project's page and an asset's page** have a **Policy gates** card, like their Notifications card: the policies they inherit from the organisation (and, for an asset, from its projects), each **On**, **Off for this project** or **Edited for this project**, with buttons to turn one off, turn it on again, or edit it for this project or asset only; and their own policies, which their admins add, edit and delete.
+- **Fixes → Policy violations** lists every current violation: the policy and its mode, the asset, the component, why it fails and a link to the issue or the leaked key. Filter it by policy, mode or rule; each filter on shows as a chip. Links from the weekly summary and the project and asset cards open it filtered by policy, asset or project. It needs the security role across the organisation.
+- **The Dashboard's Needs your attention** band has a row such as "5 policy violations on 2 assets" while any policy has violations, opening the Violations page. It is shown to the security role and above.
+
+## In the weekly summary
+
+A weekly summary has a **Policy gates** section when any policy has violations on the assets the notification rule covers (its projects, teams and environments, as for the rest of the summary): one line per policy with its mode and how many violations on how many assets, the assets with most under it, each linking to the Violations page. Violations alone do not send a summary: the section rides along with the week's news. Daily summaries leave it out.
 
 ## In CI
 
