@@ -2486,7 +2486,7 @@ Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; def
 
 ### `GET /reports/closures`
 
-**Who:** viewer (licensed edition: the fix loop, `fix_loop`; 402 otherwise)
+**Who:** viewer · licensed build (the fix loop, `fix_loop`; 402 otherwise)
 
 The proof export: the [verified-closure](#verified-closure) record of every finding closed in a period, as [`GET /findings/{id}/closure`](#get-findingsidclosure) returns each, with `policy_days` from the risk policy. `from` and `to` are dates (`to` inclusive; default the last 30 days, at most a year). `format=json` (default) returns `from`, `to` and `closures`; `format=csv` downloads one row per closure (cells that would start a spreadsheet formula are prefixed with `'`).
 ### `GET /reports/outcomes`
