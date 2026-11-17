@@ -763,7 +763,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "reachability";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "reachability" | "compliance_addon";
 
 export interface LicenseInfo {
   status: {
