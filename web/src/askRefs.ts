@@ -8,7 +8,7 @@ import { parseBlocks, parseInline, type Inline } from "./ask.ts";
 export const MAX_REFS = 5;
 
 // Pages under /fixes that are not a fix group (App.tsx routes them first).
-const NOT_A_GROUP = new Set(["issues", "mine", "leaks", "automatic"]);
+const NOT_A_GROUP = new Set(["issues", "mine", "leaks", "config", "automatic"]);
 
 export interface AnswerRefs {
   /** Fix group ids, as written in /fixes/GROUP_ID. */

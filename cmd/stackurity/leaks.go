@@ -22,6 +22,23 @@ func scanLeaks(ctx context.Context, dir string) *model.LeakScan {
 	return out
 }
 
+// printConfigFindings lists the risky settings found, most severe first,
+// with what to change.
+func printConfigFindings(w io.Writer, s *model.ConfigScan) {
+	if s == nil {
+		return
+	}
+	for _, f := range s.Found {
+		if f.Severity == "info" {
+			continue
+		}
+		fmt.Fprintf(w, "config: %s %s at %s:%d (%s)\n  why: %s\n  fix: %s\n", f.Severity, f.Title, f.Path, f.Line, f.Subject, f.Why, f.Fix)
+	}
+	if !s.Complete {
+		fmt.Fprintf(w, "partial: config checks %s\n", s.Reason)
+	}
+}
+
 // printLeaks lists the leaks found, never their values, and returns the
 // gate's exitError when one has failOn's severity or higher.
 func printLeaks(w io.Writer, s *model.LeakScan, failOn string) error {

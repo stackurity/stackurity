@@ -431,6 +431,9 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/leaks", s.assetLeaks)
 				r.Get("/leaks", s.listLeaks)
 				r.Get("/leaks/summary", s.leakSummary)
+				r.Get("/assets/{id}/config-findings", s.listConfigFindings)
+				r.Get("/config-findings", s.listConfigFindings)
+				r.Get("/config-findings/summary", s.configSummary)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -510,6 +513,8 @@ func (s *Server) Handler() http.Handler {
 				// security-only, checked inside like finding actions
 				r.Post("/leaks/{id}/dismiss", s.dismissLeak)
 				r.Post("/leaks/{id}/undismiss", s.undismissLeak)
+				r.Post("/config-findings/{id}/dismiss", s.dismissConfigFinding)
+				r.Post("/config-findings/{id}/undismiss", s.undismissConfigFinding)
 				// engineer, checked on the leak's asset like Check again
 				r.Post("/leaks/{id}/assign", s.assignLeak)
 				r.Post("/leaks/{id}/rotated", s.leakRotated)

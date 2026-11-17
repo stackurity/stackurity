@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/linux"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -47,6 +48,11 @@ func linuxHostCollector(o *hostOptions) (func(context.Context) ([]*model.Observa
 		}
 		batches := []*model.ObservationBatch{osBatch, col.CollectSoftware(ctx, osBatch, scanner.ScanGlobal)}
 		batches = append(batches, scanAppDirs(ctx, o, osBatch, scanner, AppsCollectorID)...)
+		if o.configChecks {
+			// AI agent hooks in the homes, their projects and the
+			// applications, and SSH access for root; on the host's batch.
+			osBatch.ConfigFindings = confcheck.Host(ctx, o.root, scanner.Apps)
+		}
 		if o.docker != nil {
 			// Its own time limit: reading a new image can take minutes, and
 			// each image has a limit of its own.

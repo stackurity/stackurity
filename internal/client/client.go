@@ -225,6 +225,11 @@ const FeatureHostImages = "host_images"
 // (keys and passwords found in files). Older servers refuse the field.
 const FeatureLeaks = "leaks"
 
+// FeatureConfigFindings, in Meta.Features, means the server takes a
+// batch's config_findings (risky settings: AI agent hooks, SSH access,
+// GitHub Actions workflows). Older servers refuse the field.
+const FeatureConfigFindings = "config_findings"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`

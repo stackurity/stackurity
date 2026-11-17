@@ -24,6 +24,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
@@ -173,6 +174,9 @@ type hostOptions struct {
 	// leaks scans application directories for keys and passwords
 	// written in their files (off with --no-leaks).
 	leaks bool
+	// configChecks reads the host's AI agent hooks and SSH access for
+	// risky settings (off with --no-config-checks).
+	configChecks bool
 }
 
 // dockerWorkDir is where images are unpacked while they are read: TMPDIR
@@ -242,7 +246,7 @@ func writeJSON(path string, v any) error {
 func agentCmd() *cobra.Command {
 	var c conn
 	var interval, actionInterval, checkInterval time.Duration
-	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker, noLeaks bool
+	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker, noLeaks, noConfigChecks bool
 	var root, envName, output, allowFile, dockerSocket string
 	var dockerMaxMB int64
 	var appDirs []string
@@ -296,7 +300,8 @@ again only when its image ID changes or after 7 days. Images larger than
 must be able to use the Docker socket, which is equivalent to root on the
 host; see docs/install.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps, leaks: !noLeaks}
+			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps, leaks: !noLeaks,
+				configChecks: !noConfigChecks}
 			if withDocker {
 				if runtime.GOOS == "windows" {
 					return errors.New("--docker is only supported on Linux hosts")
@@ -372,11 +377,12 @@ host; see docs/install.md.`,
 			var assetIDs []int64
 			// Servers before 0.14 refuse a batch with an app list (unknown
 			// field); ask once what the server takes.
-			appList, hostImages, takesLeaks := false, false, false
+			appList, hostImages, takesLeaks, takesConfig := false, false, false, false
 			if m, err := cl.Meta(ctx); err == nil {
 				appList = m.Has(client.FeatureAppList)
 				hostImages = m.Has(client.FeatureHostImages)
 				takesLeaks = m.Has(client.FeatureLeaks)
+				takesConfig = m.Has(client.FeatureConfigFindings)
 			}
 			if opts.docker != nil && !hostImages {
 				fmt.Fprintln(os.Stderr, "warning: the server does not take container images from the agent (Stackurity 0.14 or later is needed); --docker is ignored")
@@ -395,6 +401,11 @@ host; see docs/install.md.`,
 					// Older servers refuse the field.
 					for _, b := range bs {
 						b.Leaks = nil
+					}
+				}
+				if !takesConfig {
+					for _, b := range bs {
+						b.ConfigFindings = nil
 					}
 				}
 				if !hostImages {
@@ -535,6 +546,8 @@ host; see docs/install.md.`,
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not use the server's stack packs on application directories")
 	cmd.Flags().BoolVar(&noLeaks, "no-leaks", os.Getenv("STACKURITY_NO_LEAKS") == "true",
 		"do not look for keys and passwords written in application files (env STACKURITY_NO_LEAKS=true)")
+	cmd.Flags().BoolVar(&noConfigChecks, "no-config-checks", os.Getenv("STACKURITY_NO_CONFIG_CHECKS") == "true",
+		"do not check AI coding-agent hooks and SSH access for risky settings (env STACKURITY_NO_CONFIG_CHECKS=true)")
 	cmd.Flags().StringSliceVar(&appDirs, "app-dir", splitList(os.Getenv("STACKURITY_APP_DIRS")),
 		"directory of a deployed application to inventory (repeatable; env STACKURITY_APP_DIRS, comma-separated)")
 	cmd.Flags().BoolVar(&discoverApps, "discover-apps", os.Getenv("STACKURITY_DISCOVER_APPS") == "true",
@@ -588,7 +601,7 @@ func scanCmd() *cobra.Command {
 	c := conn{ci: true}
 	var g gate
 	var name, envName, output, gitURL, failOnLeak string
-	var noPacks, noLeaks bool
+	var noPacks, noLeaks, noConfigChecks bool
 	cmd := &cobra.Command{
 		Use:   "scan DIR",
 		Short: "Scan a project directory's lockfiles and report them",
@@ -616,7 +629,14 @@ The scan also looks for keys, tokens and passwords written in the project's
 files (in a Git checkout, only the files Git tracks). They are printed here
 with their value masked and sent without the value. --fail-on-leak exits with
 status 3 when one has the given severity or higher; it needs no server. A line
-containing "stackurity:allow" is not reported.`,
+containing "stackurity:allow" is not reported.
+
+It also checks the project's GitHub Actions workflows (third-party actions
+not pinned to a commit, especially where a job hands them an SSH key, cloud
+credentials or a deploy token; pull_request_target jobs that check out the
+pull request's code) and AI coding-agent hooks or MCP start commands checked
+into it that download and run code. These are printed here and sent as
+config findings; --no-config-checks turns them off.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := g.validate(); err != nil {
@@ -694,6 +714,9 @@ containing "stackurity:allow" is not reported.`,
 			if !noLeaks {
 				b.Leaks = scanLeaks(cmd.Context(), dir)
 			}
+			if !noConfigChecks {
+				b.ConfigFindings = confcheck.Repo(cmd.Context(), dir)
+			}
 			if err := b.Validate(); err != nil {
 				return err
 			}
@@ -703,6 +726,7 @@ containing "stackurity:allow" is not reported.`,
 				}
 			}
 			leakErr := printLeaks(os.Stderr, b.Leaks, failOnLeak)
+			printConfigFindings(os.Stderr, b.ConfigFindings)
 			if output != "" {
 				if err := writeBatch(output, b); err != nil {
 					return err
@@ -713,6 +737,12 @@ containing "stackurity:allow" is not reported.`,
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureLeaks) {
 					fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
 					b.Leaks = nil
+				}
+			}
+			if b.ConfigFindings != nil {
+				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureConfigFindings) {
+					fmt.Fprintln(os.Stderr, "warning: the server does not take config findings (Stackurity 0.21 or later is needed); they are not sent")
+					b.ConfigFindings = nil
 				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)
@@ -736,6 +766,8 @@ containing "stackurity:allow" is not reported.`,
 	g.flags(cmd)
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not download and run the stack packs installed on the server")
 	cmd.Flags().BoolVar(&noLeaks, "no-leaks", false, "do not look for keys and passwords written in the project's files")
+	cmd.Flags().BoolVar(&noConfigChecks, "no-config-checks", false,
+		"do not check GitHub Actions workflows and AI agent hooks for risky settings")
 	cmd.Flags().StringVar(&failOnLeak, "fail-on-leak", "", "exit 3 when a leaked key or password has this severity or higher (low, medium, high, critical)")
 	cmd.Flags().StringVar(&name, "name", "", "asset name (default: directory name)")
 	cmd.Flags().StringVar(&gitURL, "git-url", os.Getenv("STACKURITY_GIT_URL"), "repository URL; used as the asset identity so CI runs and server scans match")
