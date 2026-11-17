@@ -1,0 +1,3 @@
+### Security
+
+- **Terminal sign-in approvals are harder to abuse.** Where an organisation requires two-factor sign-in, approving a sign-in on `/device` now needs a second factor confirmed in the last 15 minutes; the page asks for it first. Once the whole server has seen 1,000 wrong codes in 15 minutes, every code lookup is slowed (1 to 5 seconds) until the window ends, so guessing spread over many accounts and addresses is slowed too; nobody is refused. An approved token that its tool never collected is revoked within 5 minutes of the code expiring, by a periodic task, rather than when the next sign-in starts. See [Signing in a terminal from the browser](docs/device-login.md).

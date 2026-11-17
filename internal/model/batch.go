@@ -82,6 +82,9 @@ type Observation struct {
 	Scope      string            `json:"scope,omitempty"`    // runtime, dev, os
 	Confidence Confidence        `json:"confidence"`
 	Evidence   map[string]string `json:"evidence,omitempty"`
+	// Reachability is sent only to servers that list the "reachability"
+	// feature in GET /meta; nil means not assessed (unknown).
+	Reachability *Reachability `json:"reachability,omitempty"`
 }
 
 // CoverageItem records what a collector did and did not check (FR-16).

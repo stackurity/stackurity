@@ -241,7 +241,7 @@ func (s *Store) OutcomesReport(ctx context.Context, from, to time.Time, fixDays 
 	// first, then what closed findings without it.
 	rows, err = s.Pool.Query(ctx, closedInWindow+`SELECT cause, resolution_kind,
 		  CASE WHEN resolution_kind IN ('advisory_withdrawn', 'advisory_changed') THEN 'intelligence'
-		    WHEN resolution_kind = 'not_evaluated' THEN 'coverage'
+		    WHEN resolution_kind IN ('not_evaluated', 'disappeared') THEN 'coverage'
 		    WHEN resolution_kind IN ('remediated', 'removed', 'superseded') THEN 'fresh_collection' ELSE 'unknown' END,
 		  count(*), counted
 		FROM res GROUP BY 1, 2, 5 ORDER BY 5 DESC, 4 DESC, 1`, from, to)

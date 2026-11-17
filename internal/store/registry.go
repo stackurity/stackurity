@@ -142,8 +142,8 @@ func (s *Store) RemoveRegistryImages(ctx context.Context, ids []int64, version s
 			}
 			var coll int64
 			if err := tx.QueryRow(ctx, `INSERT INTO collections
-				(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, proves_absence)
-				SELECT a.id, $2, $3, 'scanner', $4, true, 0, true FROM assets a WHERE a.id = $1 AND a.merged_into IS NULL
+				(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, proves_absence, absence_unverified)
+				SELECT a.id, $2, $3, 'scanner', $4, true, 0, true, true FROM assets a WHERE a.id = $1 AND a.merged_into IS NULL
 				RETURNING id`, *g.asset, ImageScanCollector, version, now).Scan(&coll); err != nil {
 				if err == pgx.ErrNoRows {
 					continue // merged into another asset meanwhile

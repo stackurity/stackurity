@@ -913,7 +913,7 @@ export function MfaStepUpPage() {
  * code from the app or the email, or (where recovery is set) a recovery
  * code.
  */
-function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; recovery: boolean; onDone: () => Promise<void> | void }) {
+export function ConfirmFactor({ methods, recovery, onDone }: { methods: MfaMethod[]; recovery: boolean; onDone: () => Promise<void> | void }) {
   const passkey = methods.includes("passkey") && passkeysSupported();
   const app = methods.includes("totp");
   const email = methods.includes("email");

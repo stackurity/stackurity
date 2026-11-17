@@ -763,7 +763,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "reachability";
 
 export interface LicenseInfo {
   status: {
@@ -1635,6 +1635,22 @@ export interface Finding {
   epss_cve?: string | null;
   /** The latest imported VEX statement about this component version and vulnerability. */
   vex?: FindingVEX | null;
+  /** Whether the package is imported or running on the asset; "unknown" means not assessed. */
+  reachability?: ReachabilityStatus;
+  reachability_evidence?: string[] | null;
+}
+
+export type ReachabilityStatus = "unknown" | "reachable" | "not_imported" | "not_running";
+
+/** The reachability part of "why this priority" (internal/why). */
+export interface ReachabilityDetail {
+  status: ReachabilityStatus;
+  evidence: string[];
+  /** The priority is one level lower because of it (paid plans). */
+  lowered: boolean;
+  /** Not lowered: known exploited on an asset that is or may be internet-facing. */
+  kept: boolean;
+  text: string;
 }
 
 export interface FindingSummary {
@@ -1863,6 +1879,8 @@ export interface FindingWhy {
   needs_review?: boolean;
   /** FIRST EPSS for the finding's CVE and what it does to the priority; absent without a CVE. */
   epss?: EpssDetail | null;
+  /** Whether the package is imported or running, with evidence, and what that does to the priority. */
+  reachability?: ReachabilityDetail | null;
 }
 
 /** The EPSS part of "why this priority" (internal/why). */
@@ -2006,6 +2024,38 @@ export interface ResolutionDetail {
   plan_id?: number;
   successor?: number;
   reason?: string;
+  /** Verified closure proof (new closures): the version before, the row after, and the collection that saw it. */
+  from_version?: string;
+  to_inventory_id?: number;
+  collection_id?: number;
+  /** How that collection was made: agent, lockfile, repository, scanner, registry, plugin or sbom. */
+  method?: string;
+  checked_at?: string;
+}
+
+/** GET /findings/{id}/closure: the proof behind a closed finding (store.Closure). */
+export interface Closure {
+  schema_version: number;
+  finding_id: number;
+  asset_id: number;
+  asset_name: string;
+  kind: string;
+  key: string;
+  severity: string;
+  priority: string;
+  resolution_kind: string;
+  verification: "verified_fixed" | "verified_removed" | "disappeared_unverified" | "closed_not_remediation";
+  before: { component: string; version: string; inventory_id: number; last_seen_at: string | null };
+  after: { version: string; inventory_id: number | null } | null;
+  check: { collection_id: number; source: string; observed_at: string; complete: boolean } | null;
+  /** Fix loop (paid) only: absent without it. */
+  fixed_by?: { type: "remediation_run" | "pull_request" | "agent_report" | "manual" | "unknown"; ref: string; actor: string; approver: string; merged_at: string | null };
+  opened_at: string;
+  closed_at: string;
+  /** Fix loop (paid) only: absent without it. */
+  time_to_fix_seconds?: number;
+  /** Fix loop (paid) only: absent without it. */
+  sla?: { policy_days: number | null; due_at: string | null; met: boolean | null };
 }
 
 /** Findings that closed with nothing changed on the asset: not remediation. */

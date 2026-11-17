@@ -14,6 +14,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/risk"
 	"github.com/stackurity/stackurity/internal/store"
@@ -74,6 +75,11 @@ type Explanation struct {
 	// highest-scored one when its advisories cover several) and what it does
 	// to the priority; nil for findings without a CVE.
 	EPSS *EPSSDetail `json:"epss,omitempty"`
+
+	// Reachability says whether the package is imported or running on the
+	// asset, with the collector's evidence, and what that does to the
+	// priority. Always set: unknown says it was not assessed.
+	Reachability *ReachabilityDetail `json:"reachability"`
 
 	Package   *PackageDetail   `json:"package,omitempty"`
 	OS        *OSDetail        `json:"os_package,omitempty"`
@@ -347,6 +353,7 @@ func Build(in Input, now time.Time) Explanation {
 	if in.Policy != nil && f.Kind == "vulnerability" && (strings.HasPrefix(f.Key, "CVE-") || f.EPSSCVE != nil) {
 		e.EPSS = epssDetail(f, *in.Policy)
 	}
+	e.Reachability = reachabilityDetail(f, in.Policy)
 	if f.AssetKind == "image" {
 		e.Image = &ImageDetail{Image: f.AssetName, Inner: e.Type}
 		e.Type = TypeContainerImage
@@ -626,4 +633,60 @@ func firstNonEmpty(a ...string) string {
 		}
 	}
 	return ""
+}
+
+// ReachabilityDetail is the reachability part of "why this priority".
+type ReachabilityDetail struct {
+	// Status is unknown, reachable, not_imported or not_running.
+	Status   string   `json:"status"`
+	Evidence []string `json:"evidence"`
+	// Lowered says the stored priority is one level lower because of it
+	// (paid plans); Kept that the step left it because the finding is known
+	// exploited on an asset that is or may be internet-facing.
+	Lowered bool   `json:"lowered"`
+	Kept    bool   `json:"kept"`
+	Text    string `json:"text"`
+}
+
+var reachLead = map[string]string{
+	model.ReachReachable:   "Reachable: first-party code imports this package, or a running process uses it.",
+	model.ReachNotImported: "Not imported: this is a direct dependency that no first-party source file imports, and no package that is imported depends on it. It may still run: code can load a package in ways a source scan does not see (by a name built at run time, from a template or a script).",
+	model.ReachNotRunning:  "Not running: this package's service is not enabled, and none of its programs was running in any reading over at least 7 days. It may still run: it can be started by hand or by another program.",
+}
+
+// reachabilityDetail says what is known about whether the finding's package
+// is reached, and what that does to its priority. p may be nil.
+func reachabilityDetail(f *store.Finding, p *risk.Policy) *ReachabilityDetail {
+	d := &ReachabilityDetail{Status: f.Reachability, Evidence: f.ReachabilityEvidence,
+		Lowered: hasFactor(f, risk.FactorNotReached), Kept: hasFactor(f, risk.FactorNotReachedKept)}
+	if d.Evidence == nil {
+		d.Evidence = []string{}
+	}
+	lead, ok := reachLead[d.Status]
+	if !ok {
+		d.Status = model.ReachUnknown
+		d.Text = "Not assessed: there is no evidence about whether this package is imported or running, so it counts as reachable."
+		return d
+	}
+	d.Text = lead
+	if d.Status == model.ReachReachable {
+		return d
+	}
+	stepOn := false
+	if p != nil {
+		for _, s := range p.Steps {
+			stepOn = stepOn || s.Name == risk.StepReachability
+		}
+	}
+	switch {
+	case d.Lowered:
+		d.Text += " Its priority is one level lower because of it."
+	case d.Kept:
+		d.Text += " Its priority is not lowered: it is known to be exploited and its asset is or may be internet-facing."
+	case stepOn:
+		d.Text += " Its priority will be one level lower after the next prioritisation pass."
+	default:
+		d.Text += " This plan shows it but does not change the priority; paid plans lower it by one level."
+	}
+	return d
 }

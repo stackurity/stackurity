@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Link } from "react-router";
 import type { Feature } from "../api";
 import { useAuth } from "../auth";
+import { countTeaserView, countUsage } from "../usage";
 
 const NAMES: Record<Feature, string> = {
   remediation: "Automatic fixing",
@@ -9,14 +11,22 @@ const NAMES: Record<Feature, string> = {
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Requiring passkeys for admins",
+  fix_loop: "The fix loop (an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix, time to fix against your SLA, and the proof export)",
+  reachability: "Lowering the priority of packages nothing imports or runs",
 };
 
 /** Explains that a feature is part of a paid plan, and how to get it. */
 export function ProNotice({ feature, children }: { feature: Feature; children?: React.ReactNode }) {
   const { me } = useAuth();
   const plan = feature === "enterprise_packs" || feature === "phishing_resistant_mfa" ? "Enterprise" : "Pro";
+  // Counted for the operator: which locked features people see and follow
+  // up (usage.ts; the organisation and feature only).
+  useEffect(() => countTeaserView(feature), [feature]);
+  const clicked = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a")) countUsage("teaser_click", feature);
+  };
   return (
-    <div className="alert alert-info pro-notice" role="note">
+    <div className="alert alert-info pro-notice" role="note" onClick={clicked}>
       <span className="pro-badge">{plan}</span> {NAMES[feature]} is part of Stackurity {plan}.{" "}
       {children}
       {me?.user?.instance_admin ? (

@@ -21,8 +21,8 @@ type ProConfig struct{}
 // Edition of this build.
 const BuildEdition = "community"
 
-func needs(f license.Feature) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) { planRequired(w, f) }
+func (s *Server) needs(f license.Feature) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) { s.planRequired(w, r, f) }
 }
 
 func (s *Server) proPublicRoutes(r chi.Router) {}
@@ -30,23 +30,23 @@ func (s *Server) proPublicRoutes(r chi.Router) {}
 func (s *Server) proIngestRoutes(r chi.Router) {
 	// Hosts enrolled for remediation poll for changes: there are none.
 	r.Get("/agent/actions", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, all([]struct{}{})) })
-	r.Get("/remediation/renovate.json", needs(license.Remediation))
+	r.Get("/remediation/renovate.json", s.needs(license.Remediation))
 }
 
 func (s *Server) proViewerRoutes(r chi.Router) {
-	r.Get("/reports/evidence", needs(license.EvidenceReport))
-	r.Get("/remediation/plans", needs(license.Remediation))
+	r.Get("/reports/evidence", s.needs(license.EvidenceReport))
+	r.Get("/remediation/plans", s.needs(license.Remediation))
 	r.Get("/assets/{id}/remediation", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, all([]struct{}{})) })
 }
 
 func (s *Server) proSecurityRoutes(r chi.Router) {
-	r.Get("/remediation/policies", needs(license.Remediation))
-	r.Post("/remediation/plans/{id}/decision", needs(license.Remediation))
+	r.Get("/remediation/policies", s.needs(license.Remediation))
+	r.Post("/remediation/plans/{id}/decision", s.needs(license.Remediation))
 }
 
 func (s *Server) proAdminRoutes(r chi.Router) {
-	r.Post("/remediation/policies", needs(license.Remediation))
-	r.Post("/assets/{id}/remediation-token", needs(license.Remediation))
+	r.Post("/remediation/policies", s.needs(license.Remediation))
+	r.Post("/assets/{id}/remediation-token", s.needs(license.Remediation))
 }
 
 // ssoMeta describes single sign-on for the sign-in page; none here.

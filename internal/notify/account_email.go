@@ -2,6 +2,7 @@ package notify
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -169,5 +170,27 @@ func alertConfirmEmail(organisation, confirm, block, blockOneClick string, at ti
 		},
 		Link: confirm, LinkLabel: "Confirm email"}
 	m.unsubscribe, m.unsubscribeLabel, m.oneClick = block, "Never email me again (from any organisation)", blockOneClick
+	return m
+}
+
+// DeviceTokenEmail tells the person who approved a terminal sign-in that an
+// upload-only token was made in their name, with where to revoke it. It is
+// sent for every approval and cannot be turned off: a sign-in approved by
+// mistake (or by phishing) is found by the person it affects.
+func DeviceTokenEmail(base, to, tokenName, workspace, requestIP, approverIP string, days int, at time.Time) Message {
+	m := Message{Event: "device_token_created", Title: "A command-line tool can now upload scans as you", At: at}
+	where := "the computer that asked"
+	if requestIP != "" {
+		where = requestIP
+	}
+	m.Summary = []string{
+		"You approved a sign-in at " + accountWhere(base) + " on " + at.UTC().Format("2 Jan 2006 15:04 UTC") + ", from " + approverIP + ". It made an upload-only API token, \u201c" + tokenName + "\u201d, in your name for " + workspace + ".",
+		"The tool that asked was at " + where + ". The token can upload scans to " + workspace + " and read their results, nothing else, and stops working after " + strconv.Itoa(days) + " days.",
+		"If you did not start this sign-in yourself, revoke the token now under Integrations \u2192 API tokens, and tell your administrator: someone may have sent you their code.",
+		"You get this email whenever a sign-in you approve makes a token; it cannot be turned off.",
+	}
+	if base != "" {
+		m.Link, m.LinkLabel = strings.TrimRight(base, "/")+"/settings/integrations/tokens", "Review API tokens"
+	}
 	return m
 }

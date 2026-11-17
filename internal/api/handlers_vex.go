@@ -474,6 +474,11 @@ func (s *Server) exportVEX(w http.ResponseWriter, r *http.Request) {
 	}
 	meta := vex.ExportMeta{Author: author, Tool: "stackurity " + s.Version, Timestamp: time.Now(), Scope: scope}
 	if format == vex.FormatCycloneDX {
+		s.countUsage(r, store.UsageExport, store.ExportVEXCycloneDX)
+	} else {
+		s.countUsage(r, store.UsageExport, store.ExportVEXOpenVEX)
+	}
+	if format == vex.FormatCycloneDX {
 		w.Header().Set("Content-Type", "application/vnd.cyclonedx+json")
 		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.vex.cdx.json"`, file))
 		err = vex.WriteCycloneDX(w, meta, sts)
