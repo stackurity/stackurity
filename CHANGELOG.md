@@ -6,6 +6,24 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.10
+
+### Added
+
+- **Send compliance evidence to Vanta and Drata** (licensed build, Compliance add-on). Under **Integrations → Compliance evidence** an admin connects Vanta (OAuth, once the operator has set `STACKURITY_VANTA_CLIENT_ID` and `STACKURITY_VANTA_CLIENT_SECRET`) or Drata (an API key). On a schedule (every 6 or 12 hours, daily or weekly) Stackurity replaces the monitored assets and open vulnerabilities there and attaches the evidence pack, with each vulnerability's SLA status. Each sync is recorded with its counts and any error; **Sync now**, Pause and Disconnect are on the card. Without the add-on the card shows what it does and how to get it; if the plan loses the add-on, existing connections stay listed with **Disconnect** and nothing is sent. See [Compliance evidence connectors](docs/evidence-connectors.md).
+- **Not imported, from the source:** repository scans and `stackurity scan` read first-party Go, JavaScript/TypeScript, PHP and Python files (as data, within the scan's limits) and mark each lockfile package reachable (with the file that imports it), not imported, or not assessed. Not imported is claimed only for a direct npm or Composer dependency that no source, template, script or configuration names, from a lockfile that records the dependency graph (`package-lock.json` version 2 or 3, `composer.lock`) in which no other package depends on it. Transitive dependencies, Go modules, Python packages, Composer packages that provide or replace another, computed `require()` calls, minified bundles, packages whose program is named in a script, and anything named by string, by its `node_modules/` path, by a stylesheet, by `node -r` or by `npx` stay not assessed. Skipped first-party source (gitignored files, nested checkouts, a `vendor/` that is not Go's or Composer's, code outside the tree) makes the reading partial. The coverage entry `reachability` says what was read. See [docs/reachability.md](docs/reachability.md#repositories-and-stackurity-scan-not-imported).
+- **Running or not running, on hosts:** the Linux agent reads which installed dpkg and apk packages its host's running processes use (each process's program, the file names in its memory map and its listening sockets, under `/proc`) and marks them reachable with that evidence, remembered for 7 days across restarts. Not running is claimed only for a service that is off: nothing starts it (it is not enabled, no other unit, timer, socket, path unit, crontab or inetd line names it), its programs are neither scripts, links, setuid/setgid nor given file capabilities, and none ran in 7 days of readings that covered every process at least every 13 hours while that version was installed. If a crontab directory or unit file cannot be read, nothing is called not running. Command-line tools, libraries, helpers, scripts and anything started on a schedule or on demand stay not assessed. See [docs/reachability.md](docs/reachability.md#hosts-running-or-not-running).
+- **Process access, opt-in:** **Add server** has a **See which packages are running** option, and `agent.sh` takes `STACKURITY_PROCESSES=1`. It gives the agent's service `CAP_SYS_PTRACE` (equivalent to root on the host, as the installer and the dashboard say) and a state directory, `/var/lib/stackurity-agent`. Without it the agent never marks a package not running. A host's page shows whether it is on (attribute `process_access`) and the command that turns it on.
+
+### Changed
+
+- Reachability coverage entries (`reachability`, `reachability/processes`) are always `checked`, with any limit in the reason, so they never count as a coverage gap. The agent sends reachability only to servers whose `GET /meta` lists it.
+
+### Upgrading
+
+- Migration `0115_evidence_connections` adds the tables `evidence_connections`, `evidence_oauth_states` and `evidence_sync_runs`. Additive; nothing is rewritten.
+- Operators registering the Vanta app: its redirect URI is `https://<your server>/integrations/vanta/oauth/callback` (a dashboard page; see [evidence-connectors.md](docs/evidence-connectors.md#setting-up-the-vanta-app-operators)).
+
 ## 0.20.9
 
 ### Added
