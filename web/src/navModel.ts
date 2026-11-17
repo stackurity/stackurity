@@ -91,13 +91,19 @@ export type Tabbed = "fixes" | "assets" | "activity" | "reports" | "integrations
 const INTEGRATION_PAGES = ["/integrations/sources", "/integrations/channels", "/integrations/new", "/integrations/aws", "/integrations/kubernetes"];
 
 export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
-  // What to do (default), every issue, leaked keys, and automatic fixes (Pro).
+  // What to do (default), every issue, leaked keys, policy violations, and automatic fixes (Pro).
   fixes: {
     label: "Fixes",
     tabs: [
-      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks")) || under(p, "/action-plan") },
+      {
+        to: "/fixes",
+        label: "Fixes",
+        match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/policy-violations")) || under(p, "/action-plan"),
+      },
       { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
       { to: "/fixes/leaks", label: "Leaked keys" },
+      // Policy gates (docs/policy-gates.md): reading violations needs the security role organisation-wide.
+      { to: "/fixes/policy-violations", label: "Policy violations", min: "security" },
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
     ],
   },
