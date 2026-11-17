@@ -47,8 +47,11 @@ func (s *Server) postUsage(w http.ResponseWriter, r *http.Request) {
 }
 
 // teaserFeatures are the paid features a locked notice (ProNotice in the
-// dashboard) can be about.
-var teaserFeatures = map[string]bool{
-	string(license.Remediation): true, string(license.Teams): true, string(license.EvidenceReport): true,
-	string(license.SSO): true, string(license.EnterprisePacks): true, string(license.PhishingResistantMFA): true,
-}
+// dashboard) can be about: every feature, which the top plan includes.
+var teaserFeatures = func() map[string]bool {
+	m := map[string]bool{}
+	for _, f := range license.Enterprise.Features() {
+		m[string(f)] = true
+	}
+	return m
+}()

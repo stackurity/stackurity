@@ -4,7 +4,9 @@ import (
 	"context"
 	"testing"
 
+	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -98,5 +100,14 @@ func TestCountUsageRefusesBadKeys(t *testing.T) {
 	}
 	if err := e.st.CountUsage(ctx, 0, store.UsageExport, store.ExportSBOM); err != nil {
 		t.Errorf("no organisation: %v", err)
+	}
+}
+
+// TestTeaserFeaturesCoverEveryFeature: every paid feature can be counted.
+func TestTeaserFeaturesCoverEveryFeature(t *testing.T) {
+	for _, f := range license.Enterprise.Features() {
+		if !api.TeaserFeature(string(f)) {
+			t.Errorf("%s not counted", f)
+		}
 	}
 }
