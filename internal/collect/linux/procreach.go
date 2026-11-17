@@ -66,12 +66,17 @@ type procSnapshot struct {
 	files  map[string]procRef  // normalised path -> first process seen with it
 	listen map[string][]string // normalised executable -> "0.0.0.0:443"
 	exes   map[string]string   // normalised executable -> comm, for listen evidence
+	hostNS bool                // kernel threads are visible: this is the host's PID namespace
 	read   int                 // processes whose maps were read
 	denied int                 // processes the agent may not read
 	capped bool                // a limit was reached
 }
 
-func (s *procSnapshot) complete() bool { return s.denied == 0 && !s.capped && s.read > 0 }
+// complete: every process of the host was read. Kernel threads (kthreadd
+// is pid 2) are visible only in the host's PID namespace, so an agent in a
+// container, which sees only the container's processes, is never complete;
+// nor is one under hidepid, which hides them.
+func (s *procSnapshot) complete() bool { return s.hostNS && s.denied == 0 && !s.capped && s.read > 0 }
 
 func (s *procSnapshot) add(path string, r procRef) {
 	if old, ok := s.files[path]; ok {
@@ -134,7 +139,12 @@ func readProcesses(procDir string, norm func(string) string) *procSnapshot {
 		comm := strings.TrimSpace(string(commB))
 		exe, exeErr := os.Readlink(filepath.Join(dir, "exe"))
 		if errors.Is(exeErr, fs.ErrNotExist) {
-			continue // a kernel thread, or the process has exited
+			// A kernel thread (it has a name but no program), or the
+			// process has exited.
+			if pid == 2 && comm == "kthreadd" {
+				s.hostNS = true
+			}
+			continue
 		}
 		mapsOK := exeErr == nil && readMaps(filepath.Join(dir, "maps"), pid, comm, s, norm)
 		if !mapsOK {
@@ -470,6 +480,9 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 	case !access:
 		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
 			Reason: "process access is off: only programs started by their full path are seen, so no package is called not running (install with STACKURITY_PROCESSES=1 to turn it on)"}, true
+	case snap.read > 0 && !snap.hostNS:
+		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
+			Reason: "partial: the host's kernel threads are not visible (the agent runs in a container's PID namespace, or /proc hides other processes), so only some processes were read; no package is called not running"}, true
 	case !complete:
 		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
 			Reason: fmt.Sprintf("partial: read %d processes, %d could not be read or a limit was reached; no package is called not running", snap.read, snap.denied)}, true

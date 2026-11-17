@@ -301,3 +301,67 @@ func TestProcessReachabilityOff(t *testing.T) {
 		}
 	}
 }
+
+// An agent in a container's PID namespace reads every process it can see,
+// but not the host's: no kernel threads, so nothing is called not running.
+func TestProcessReachabilityContainerNamespace(t *testing.T) {
+	root, c := procHost(t)
+	if err := os.RemoveAll(filepath.Join(root, "proc", "2")); err != nil {
+		t.Fatal(err)
+	}
+	b, err := c.Collect(context.Background(), "web1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cov := coverage(b); cov.Status != "checked" || !strings.Contains(cov.Reason, "kernel threads are not visible") {
+		t.Errorf("coverage %+v", cov)
+	}
+	got := reachOf(t, b)
+	for name, r := range got {
+		if s := status(r); s == model.ReachNotRunning || s == model.ReachNotImported {
+			t.Errorf("%s: %s without the host's processes", name, s)
+		}
+	}
+	if s := status(got["nginx"]); s != model.ReachReachable {
+		t.Errorf("nginx: %s (what was seen running still counts)", s)
+	}
+}
+
+// Missing data never claims not running: an unreadable /proc, or no
+// package file lists, leave every package unknown.
+func TestProcessReachabilityMissingData(t *testing.T) {
+	root, c := procHost(t)
+	c.ProcDir = filepath.Join(root, "no-such-proc")
+	b, err := c.Collect(context.Background(), "web1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, r := range reachOf(t, b) {
+		if r != nil {
+			t.Errorf("unreadable /proc: %s: %+v", name, r)
+		}
+	}
+	if cov := coverage(b); !strings.HasPrefix(cov.Reason, "partial: ") {
+		t.Errorf("unreadable /proc: coverage %+v", cov)
+	}
+
+	root, c = procHost(t)
+	lists, _ := filepath.Glob(filepath.Join(root, "var/lib/dpkg/info/*.list"))
+	for _, l := range lists {
+		if err := os.Remove(l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err = c.Collect(context.Background(), "web1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, r := range reachOf(t, b) {
+		if r != nil {
+			t.Errorf("no file lists: %s: %+v", name, r)
+		}
+	}
+	if cov := coverage(b); !strings.HasPrefix(cov.Reason, "unsupported: ") {
+		t.Errorf("no file lists: coverage %+v", cov)
+	}
+}
