@@ -6,6 +6,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"net/netip"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -380,8 +381,24 @@ func (u *keyUse) onlyIP() string {
 }
 
 // acceptedRE is sshd's log line for a key login:
-// "Accepted publickey for root from 203.0.113.5 port 52314 ssh2: ED25519 SHA256:…".
-var acceptedRE = regexp.MustCompile(`Accepted publickey for (\S+) from (\S+) port \d+ \S+: \S+ (SHA256:[A-Za-z0-9+/]{43})`)
+// "Nov 17 03:00:01 web sshd[123]: Accepted publickey for root from 203.0.113.5 port 52314 ssh2: ED25519 SHA256:…".
+// The program field must be sshd (or OpenSSH 9.8's sshd-session) with its
+// process ID, right after the timestamp and the host name: a line any user
+// can write with logger(1) carries their own name there, and "Accepted
+// publickey" further into a message is not sshd's.
+var acceptedRE = regexp.MustCompile(`^(?:[A-Z][a-z]{2} [ \d]\d \d\d:\d\d:\d\d|\d{4}-\d\d-\d\dT\S+) \S+ sshd(?:-session)?\[\d+\]: ` +
+	`Accepted publickey for (\S+) from (\S+) port \d+ \S+: \S+ (SHA256:[A-Za-z0-9+/]{43})`)
+
+// loginAddr is the address of an accepted login, or "" when it is not a
+// plain IP address: what is reported, and put into a suggested from="…",
+// is only ever a parsed address.
+func loginAddr(s string) string {
+	a, err := netip.ParseAddr(s)
+	if err != nil || a.Zone() != "" {
+		return ""
+	}
+	return a.Unmap().String()
+}
 
 // maxAuthLog bounds how much of each log is read: its most recent part.
 const maxAuthLog = 16 << 20
@@ -402,12 +419,16 @@ func (h *hostFS) rootKeyLogins() map[string]*keyUse {
 			if m == nil || m[1] != "root" {
 				continue
 			}
+			ip := loginAddr(m[2])
+			if ip == "" {
+				continue
+			}
 			u := out[m[3]]
 			if u == nil {
 				u = &keyUse{ips: map[string]int{}, days: map[string]bool{}}
 				out[m[3]] = u
 			}
-			u.ips[m[2]]++
+			u.ips[ip]++
 			u.count++
 			u.days[logDay(l)] = true
 		}
@@ -429,11 +450,12 @@ func logDay(l string) string {
 // tail reads the last limit bytes of a host file, from the start of a
 // line; nil when it cannot be read.
 func (h *hostFS) tail(p string, limit int64) []byte {
-	st, ok := h.regular(p)
-	if !ok {
+	f, err := h.open(p)
+	if err != nil {
 		return nil
 	}
-	data, err := readTail(h.full(p), st.Size(), limit)
+	defer f.Close()
+	data, err := readTail(f, limit)
 	if err != nil {
 		return nil
 	}

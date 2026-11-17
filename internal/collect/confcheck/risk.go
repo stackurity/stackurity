@@ -3,7 +3,6 @@ package confcheck
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"path/filepath"
 	"strings"
 	"unicode"
 
@@ -44,10 +43,10 @@ func HookRisk(client, display string, data []byte, c HookCommand, root string) (
 			Why: c.Noun + " " + why + ". " + consequence,
 			Fix: "Remove it, or check in a reviewed script that pins what it downloads."}, true
 	}
-	for _, s := range ScriptsIn(c.Command, root) {
-		if line, why := ScriptRemoteExec(filepath.Join(root, filepath.FromSlash(s))); why != "" {
-			return Risk{Severity: "high", Rule: RuleHookRemoteExec, File: s, Line: line,
-				Why: c.Noun + " in " + display + " runs " + s + ", which " + why + ". " + consequence,
+	for _, s := range scriptsIn(c.Command, root) {
+		if line, why := ScriptRemoteExec(s.real); why != "" {
+			return Risk{Severity: "high", Rule: RuleHookRemoteExec, File: s.rel, Line: line,
+				Why: c.Noun + " in " + display + " runs " + s.rel + ", which " + why + ". " + consequence,
 				Fix: "Remove it, or pin and review what it downloads."}, true
 		}
 	}
@@ -76,6 +75,9 @@ func Fingerprint(rule, path, subject string) string {
 // finding builds a model.ConfigFinding with its fingerprint, keeping each
 // field within the batch's limits.
 func finding(rule, category, title, severity, path string, line int, subject, why, fix string) model.ConfigFinding {
+	// Callers mask what they quote; this is the backstop for every place a
+	// finding goes (the server, Slack, email, the CLI).
+	subject, why = Redact(subject), Redact(why)
 	f := model.ConfigFinding{Rule: rule, Category: category, Title: clip(title, model.MaxShortField), Severity: severity,
 		Path: clip(path, model.MaxFieldLen), Line: line, Subject: clip(subject, model.MaxShortField),
 		Why: clip(why, model.MaxFieldLen), Fix: clip(fix, model.MaxFieldLen)}

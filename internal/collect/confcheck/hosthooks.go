@@ -41,7 +41,7 @@ func (h *hostFS) hostHooks(accounts []account, appDirs []string) []model.ConfigF
 		// A home directory that is itself a project has its .claude/ read
 		// above; its settings.local.json and other clients' files here.
 		s.project(a.Home, a.Home)
-		entries, _ := os.ReadDir(h.full(a.Home))
+		entries := h.readDir(a.Home)
 		n := 0
 		for _, e := range entries {
 			if n >= maxProjectDirs {
@@ -116,7 +116,11 @@ func (s *hookScan) risk(hf HookFile, data []byte, c HookCommand, home, proj stri
 		if !s.h.isScript(sp) {
 			continue
 		}
-		if line, why := ScriptRemoteExec(s.h.full(sp)); why != "" {
+		real, err := s.h.resolve(sp)
+		if err != nil {
+			continue
+		}
+		if line, why := ScriptRemoteExec(real); why != "" {
 			return Risk{Severity: "high", Rule: RuleHookRemoteExec, File: sp, Line: line,
 				Why: c.Noun + " in " + hf.Path + " runs " + sp + ", which " + why + ". " + consequence,
 				Fix: "Remove it, or pin and review what it downloads."}, true
@@ -141,11 +145,31 @@ func (s *hookScan) risk(hf HookFile, data []byte, c HookCommand, home, proj stri
 	return Risk{}, false
 }
 
+// fullOrEmpty is where project directory p is on this machine, resolved
+// (and inside a mounted root), or "" for none.
 func (h *hostFS) fullOrEmpty(p string) string {
 	if p == "" {
 		return ""
 	}
-	return h.full(p)
+	real, err := h.resolve(p)
+	if err != nil {
+		return ""
+	}
+	return real
+}
+
+// readDir lists a host directory; nothing when it is not a directory
+// (opening a FIFO would block) or leads out of a mounted root.
+func (h *hostFS) readDir(p string) []os.DirEntry {
+	real, err := h.resolve(p)
+	if err != nil {
+		return nil
+	}
+	if st, err := os.Lstat(real); err != nil || !st.IsDir() {
+		return nil
+	}
+	entries, _ := os.ReadDir(real)
+	return entries
 }
 
 // scriptsOf returns the host files a command runs that exist: absolute
@@ -195,7 +219,7 @@ func (h *hostFS) isScript(p string) bool {
 	if scriptExt[strings.ToLower(path.Ext(p))] {
 		return true
 	}
-	f, err := os.Open(h.full(p))
+	f, err := h.open(p)
 	if err != nil {
 		return false
 	}

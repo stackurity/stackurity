@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -32,7 +33,10 @@ func printConfigFindings(w io.Writer, s *model.ConfigScan) {
 		if f.Severity == "info" {
 			continue
 		}
-		fmt.Fprintf(w, "config: %s %s at %s:%d (%s)\n  why: %s\n  fix: %s\n", f.Severity, f.Title, f.Path, f.Line, f.Subject, f.Why, f.Fix)
+		// Findings are masked where they are made; mask again in case a
+		// scan from another build did not.
+		fmt.Fprintf(w, "config: %s %s at %s:%d (%s)\n  why: %s\n  fix: %s\n", f.Severity, f.Title, f.Path, f.Line,
+			confcheck.Redact(f.Subject), confcheck.Redact(f.Why), f.Fix)
 	}
 	if !s.Complete {
 		fmt.Fprintf(w, "partial: config checks %s\n", s.Reason)

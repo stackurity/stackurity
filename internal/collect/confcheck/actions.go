@@ -2,7 +2,6 @@ package confcheck
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -82,10 +81,11 @@ func Workflows(dir string) (found []model.ConfigFinding, problems []string) {
 			continue
 		}
 		rel = filepath.ToSlash(rel)
-		if st, err := os.Lstat(f); err != nil || !st.Mode().IsRegular() {
+		real, ok := insideDir(dir, f)
+		if !ok {
 			continue // a link may point out of the repository
 		}
-		data, truncated, err := ReadBounded(f)
+		data, truncated, err := ReadBounded(real)
 		if err != nil || truncated {
 			problems = append(problems, rel+" could not be read")
 			continue

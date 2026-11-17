@@ -11,7 +11,7 @@ These findings appear under **Security → Risky settings** and on each asset's 
 | Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access |
 | Repositories | repository integrations (GitHub, GitLab, Git URLs), `stackurity scan DIR` and the standalone scanner | GitHub Actions workflows; agent hooks and MCP servers checked into the repository |
 
-Files are only read, never run. SSH keys are reported by fingerprint (`SHA256:…`), comment and options, never the key itself. Passwords and tokens in commands and Git remote URLs are masked before anything is sent.
+Files are only read, never run. SSH keys are reported by fingerprint (`SHA256:…`), comment and options, never the key itself. Passwords and tokens in commands and Git remote URLs are masked before anything is sent: credentials in a URL, credential headers (`Authorization`, `Cookie`, `X-…-Token`, `X-Api-Key`, `Private-Token`), the value after `-u`/`--user`/`--token`/`--password`/`--api-key`/`--oauth2-bearer`, `token=`/`key=`/`sig=`-style query parameters, `NAME=value` where the name contains TOKEN, KEY, SECRET, PASS or AUTH, and known token formats. Only regular files are read: a FIFO or a device is skipped without waiting, and on a mounted root (`--root`) or in a repository a symbolic link that leads outside it is not followed.
 
 ### AI coding-agent hooks
 
@@ -42,7 +42,7 @@ The agent reads `/etc/ssh/sshd_config` and the files it includes (the settings b
 | Severity | Rule | When | Fix line |
 |---|---|---|---|
 | medium | `ssh-root-key-ci-unrestricted` | A root key whose comment marks it as a CI or deploy key (github, gitlab, actions, ci, deploy, runner, jenkins, …) has no `command=`, `from=` or `restrict`. | `restrict,command="/usr/local/sbin/deploy"` (plus `from="<ip>"` when the log shows one address) |
-| medium | `ssh-root-key-no-from` | Every root login with a key in the system log (`/var/log/auth.log` or `/var/log/secure`) came from one address: at least 20 logins over at least 3 days. The key has no `from=`. Skipped when the server logs only to the journal. | `from="<ip>"` |
+| medium | `ssh-root-key-no-from` | Every root login with a key in the system log (`/var/log/auth.log` or `/var/log/secure`) came from one address: at least 20 logins over at least 3 days. Only lines written by `sshd` (or `sshd-session`) count, and only an address that parses as an IP is suggested. The key has no `from=`. Skipped when the server logs only to the journal. | `from="<ip>"` |
 | medium | `ssh-root-password-login` | `PermitRootLogin yes` with password authentication on. | `PermitRootLogin prohibit-password` |
 | medium | `ssh-permit-root-login` | `PermitRootLogin yes` with password authentication off. | `PermitRootLogin prohibit-password` |
 | info | `ssh-root-key-unrestricted` | Any other root key with no restriction. This is normal for an administrator's own key on a small team; it is listed so you know which keys can log in as root. | — |

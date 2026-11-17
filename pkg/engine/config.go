@@ -3,6 +3,7 @@ package engine
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/stackurity/stackurity/internal/client"
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
@@ -73,8 +74,16 @@ func RedactCommand(c string) string { return confcheck.RedactCommand(c) }
 func StripJSONC(b []byte) []byte { return confcheck.StripJSONC(b) }
 
 // ReadHookFile reads at most MaxHookFile bytes of a file; truncated says
-// there was more.
-func ReadHookFile(p string) (data []byte, truncated bool, err error) { return confcheck.ReadBounded(p) }
+// there was more. A symbolic link is followed (dotfile managers link
+// ~/.claude/settings.json), but what it leads to must be a regular file:
+// a FIFO or a device is refused without blocking.
+func ReadHookFile(p string) (data []byte, truncated bool, err error) {
+	real, err := filepath.EvalSymlinks(p)
+	if err != nil {
+		return nil, false, err
+	}
+	return confcheck.ReadBounded(real)
+}
 
 // RepoConfig runs the repository config checks on the checkout at dir:
 // GitHub Actions workflows and agent hooks or MCP servers checked in.

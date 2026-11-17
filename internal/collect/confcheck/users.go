@@ -21,6 +21,8 @@ type hostFS struct {
 	// problems are files that exist but could not be read: the scan is not
 	// complete when there are any.
 	problems []string
+	// realRoot is Root with its links resolved, set on first use.
+	realRoot string
 }
 
 func (h *hostFS) full(p string) string { return filepath.Join(h.Root, filepath.FromSlash(p)) }
@@ -29,11 +31,56 @@ func (h *hostFS) full(p string) string { return filepath.Join(h.Root, filepath.F
 // links can be followed as they are written.
 func (h *hostFS) live() bool { return h.Root == "" || h.Root == "/" }
 
-// read reads a host file of at most limit bytes. A missing file is
-// (nil, nil); one that cannot be read or is too big is noted as a problem.
+// errOutsideRoot is a host path whose symbolic links lead out of a mounted
+// root: its target is the scanning machine's file, not the host's.
+var errOutsideRoot = errors.New("leads outside the mounted root")
+
+// resolve returns where host path p is on this machine with every
+// symbolic link followed. On a mounted root the result must stay inside
+// the root (a link to /root/.claude there names the scanning machine's
+// file); on the live host links are followed as they are written.
+func (h *hostFS) resolve(p string) (string, error) {
+	real, err := filepath.EvalSymlinks(h.full(p))
+	if err != nil || h.live() {
+		return real, err
+	}
+	if h.realRoot == "" {
+		r, err := filepath.EvalSymlinks(h.Root)
+		if err != nil {
+			return "", err
+		}
+		h.realRoot = r
+	}
+	if !within(h.realRoot, real) {
+		return "", errOutsideRoot
+	}
+	return real, nil
+}
+
+// open opens a host file that is a regular file, after resolve, without
+// blocking on a FIFO and without following a link swapped in since.
+func (h *hostFS) open(p string) (*os.File, error) {
+	real, err := h.resolve(p)
+	if err != nil {
+		return nil, err
+	}
+	return openRegular(real)
+}
+
+// skipped are open errors that mean "not a file to read" rather than "could
+// not read it": missing, not a regular file, or a link out of the root.
+func skipped(err error) bool {
+	return errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) || errors.Is(err, errNotRegular) ||
+		errors.Is(err, errOutsideRoot)
+}
+
+// read reads a host file of at most limit bytes. A missing file, or one
+// that is not a regular file (a FIFO, a device, a link out of a mounted
+// root), is (nil, nil); one that cannot be read or is too big is noted as
+// a problem.
 func (h *hostFS) read(p string, limit int64) ([]byte, error) {
-	f, err := os.Open(h.full(p))
-	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, fs.ErrInvalid) {
+	f, err := h.open(p)
+	if skipped(err) {
 		return nil, nil
 	}
 	if err != nil {
@@ -41,10 +88,6 @@ func (h *hostFS) read(p string, limit int64) ([]byte, error) {
 		return nil, err
 	}
 	defer f.Close()
-	st, err := f.Stat()
-	if err != nil || !st.Mode().IsRegular() {
-		return nil, nil
-	}
 	data, err := io.ReadAll(io.LimitReader(f, limit+1))
 	if err != nil {
 		h.problem(p, "cannot be read")

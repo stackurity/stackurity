@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -134,6 +133,18 @@ func commandTokens(command string) []string {
 // ScriptsIn returns the project files a command runs, relative to root,
 // that exist and stay inside it.
 func ScriptsIn(command, root string) []string {
+	var out []string
+	for _, s := range scriptsIn(command, root) {
+		out = append(out, s.rel)
+	}
+	return out
+}
+
+// projectScript is a project file a command runs: rel names it, real is
+// where it is with links resolved (inside the project).
+type projectScript struct{ rel, real string }
+
+func scriptsIn(command, root string) []projectScript {
 	if root == "" {
 		return nil
 	}
@@ -142,7 +153,7 @@ func ScriptsIn(command, root string) []string {
 		return nil
 	}
 	seen := map[string]bool{}
-	var out []string
+	var out []projectScript
 	for _, tok := range commandTokens(command) {
 		for _, v := range projectVars {
 			if strings.HasPrefix(tok, v+"/") {
@@ -157,29 +168,24 @@ func ScriptsIn(command, root string) []string {
 			continue
 		}
 		real, err := filepath.EvalSymlinks(filepath.Join(root, rel))
-		if err != nil {
-			continue
-		}
-		if r, err := filepath.Rel(realRoot, real); err != nil || r == ".." || strings.HasPrefix(r, ".."+string(filepath.Separator)) {
-			continue // a link out of the project
+		if err != nil || !within(realRoot, real) {
+			continue // missing, or a link out of the project
 		}
 		seen[rel] = true
-		out = append(out, filepath.ToSlash(rel))
+		out = append(out, projectScript{rel: filepath.ToSlash(rel), real: real})
 	}
 	return out
 }
 
 // ReadBounded reads at most MaxHookFile bytes of p; truncated says there
-// was more.
+// was more. p must be a regular file: a symbolic link is not followed and
+// a FIFO or a device is refused without blocking.
 func ReadBounded(p string) (data []byte, truncated bool, err error) {
-	f, err := os.Open(p)
+	f, err := openRegular(p)
 	if err != nil {
 		return nil, false, err
 	}
 	defer f.Close()
-	if st, err := f.Stat(); err == nil && !st.Mode().IsRegular() {
-		return nil, false, os.ErrInvalid // a FIFO or a device would block or never end
-	}
 	data, err = io.ReadAll(io.LimitReader(f, MaxHookFile+1))
 	if err != nil {
 		return nil, false, err
@@ -245,22 +251,6 @@ func ScriptRemoteExec(p string) (int, string) {
 	}
 	return 0, ""
 }
-
-// RedactCommand masks values that look like credentials in a listed
-// command (a token in a URL or a header) and bounds its length.
-func RedactCommand(c string) string {
-	c = credInURL.ReplaceAllString(c, "${1}***@")
-	c = authHeader.ReplaceAllString(c, "${1}***")
-	if len(c) > 300 {
-		c = c[:300] + "…"
-	}
-	return c
-}
-
-var (
-	credInURL  = regexp.MustCompile(`(https?://|ssh://|git\+ssh://)[^/\s:@]+:[^/\s@]+@`)
-	authHeader = regexp.MustCompile(`(?i)((?:authorization|x-api-key|api-key|private-token)\s*:\s*(?:bearer\s+|token\s+)?)\S+`)
-)
 
 // StripJSONC removes // and /* */ comments and trailing commas (VS Code's
 // settings are JSON with comments).

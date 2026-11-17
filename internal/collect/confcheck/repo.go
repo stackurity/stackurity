@@ -19,10 +19,11 @@ func Repo(ctx context.Context, dir string) *model.ConfigScan {
 		if ctx.Err() != nil {
 			break
 		}
-		if st, err := os.Lstat(hf.Path); err != nil || !st.Mode().IsRegular() {
-			continue
+		real, ok := insideDir(dir, hf.Path)
+		if !ok {
+			continue // missing, not a file, or a link out of the checkout (.claude -> /root/.claude)
 		}
-		data, truncated, err := ReadBounded(hf.Path)
+		data, truncated, err := ReadBounded(real)
 		if err != nil || truncated {
 			continue
 		}
@@ -41,10 +42,11 @@ func Repo(ctx context.Context, dir string) *model.ConfigScan {
 	}
 	for _, rel := range []string{".mcp.json", ".cursor/mcp.json", ".vscode/mcp.json"} {
 		p := filepath.Join(dir, filepath.FromSlash(rel))
-		if st, err := os.Lstat(p); err != nil || !st.Mode().IsRegular() {
+		real, ok := insideDir(dir, p)
+		if !ok {
 			continue
 		}
-		data, truncated, err := ReadBounded(p)
+		data, truncated, err := ReadBounded(real)
 		if err != nil || truncated {
 			continue
 		}

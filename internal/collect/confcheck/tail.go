@@ -6,14 +6,14 @@ import (
 	"os"
 )
 
-// readTail reads the last limit bytes of a file of the given size,
-// dropping a partial first line.
-func readTail(p string, size, limit int64) ([]byte, error) {
-	f, err := os.Open(p)
+// readTail reads the last limit bytes of an open regular file, dropping a
+// partial first line.
+func readTail(f *os.File, limit int64) ([]byte, error) {
+	st, err := f.Stat()
 	if err != nil {
 		return nil, err
 	}
-	defer f.Close()
+	size := st.Size()
 	off := int64(0)
 	if size > limit {
 		off = size - limit
