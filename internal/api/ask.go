@@ -540,6 +540,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 
 	counted, err := s.Store.CountAskQuestion(ctx, l.QuestionLimit, l.QuestionPeriod)
 	if errors.Is(err, store.ErrAskQuota) {
+		s.countUsage(r, store.UsageLimitRefused, "ask_questions")
 		writeError(w, 429, "quota_reached", "this organisation has used all its Ask Stackurity questions for now")
 		return
 	}

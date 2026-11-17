@@ -661,6 +661,12 @@ How the dashboard reports the errors people hit, to this server only. Takes `{"r
 
 The server checks every field and scrubs again: identifiers in paths become `:id` or `{id}` (the API route becomes the router's pattern when one matches), query strings and fragments are removed, and messages lose URLs, email addresses, UUIDs, tokens, IP addresses, quoted text and runs of five or more digits. Each report is counted under its fingerprint (kind, route, API route and method, status, code, error name and top frame), per day and organisation, with the latest report as the sample. Answers 204, also when reports are off (`STACKURITY_CLIENT_ERRORS=off`), which keeps and counts nothing. At most 30 requests a minute per address before sign-in and 60 a minute per person (429). The dashboard sends the last reports with `navigator.sendBeacon` as the page closes, which cannot set `X-Stackurity-CSRF`; such a request is accepted when the browser sends `Sec-Fetch-Site: same-origin`. See [install.md](install.md#error-reports).
 
+### `POST /usage-counts`
+
+**Who:** browser sessions (API tokens get 403)
+
+How the dashboard reports what only the browser sees, for the server's [usage counts](install.md#usage-counts): `{"event": "teaser_view" | "teaser_click", "key": "<feature>"}` when a notice that a feature needs a paid plan is shown or a link in it is followed, and `{"event": "export", "key": "evidence_json" | "evidence_print" | "outcomes_print"}` for exports made in the browser. Adds one to the organisation's count for the day; nothing about the person or the page is kept. Answers 204, also for a key the server does not know (nothing is counted); 400 for another event. It is not counted against a plan's API requests an hour.
+
 ### `POST /setup`
 
 **Who:** the setup token

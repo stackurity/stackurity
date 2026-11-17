@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/license"
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
@@ -13,7 +14,9 @@ func (s *Server) has(r *http.Request, f license.Feature) bool { return s.Gate.Ha
 
 // planRequired answers a request for a paid feature the workspace's plan
 // does not include. 402 lets clients tell it apart from a permissions error.
-func planRequired(w http.ResponseWriter, f license.Feature) {
+// The refusal is counted (usage counts, migration 0110).
+func (s *Server) planRequired(w http.ResponseWriter, r *http.Request, f license.Feature) {
+	s.countUsage(r, store.UsageLimitRefused, "feature_"+string(f))
 	writeError(w, 402, "plan_required", featureName(f)+" is part of Stackurity Pro. Ask your administrator to upgrade this workspace.")
 }
 
@@ -38,7 +41,7 @@ func (s *Server) requireFeature(f license.Feature) func(http.Handler) http.Handl
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if !s.has(r, f) {
-				planRequired(w, f)
+				s.planRequired(w, r, f)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -116,4 +119,20 @@ func (s *Server) deleteLicense(w http.ResponseWriter, r *http.Request) {
 	s.Licence.Set(nil)
 	_ = s.Store.Audit(tenant.System(r.Context()), principal(r).Actor(r), "license.remove", "license", "", nil)
 	w.WriteHeader(204)
+}
+
+// countUsage adds one to the request's organisation's usage count of event
+// and key (store.CountUsage). Best effort: a failure is logged, never
+// returned. Requests without an organisation are not counted.
+func (s *Server) countUsage(r *http.Request, event, key string) {
+	p := principal(r)
+	if p == nil || p.Workspace <= 0 {
+		return
+	}
+	if !store.UsageKeyOK(key) {
+		key = "other"
+	}
+	if err := s.Store.CountUsage(r.Context(), p.Workspace, event, key); err != nil {
+		s.Log.Warn("usage count", "event", event, "key", key, "err", err)
+	}
 }

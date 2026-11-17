@@ -1059,6 +1059,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if _, err := st.PurgeClientErrors(ctx); err != nil {
 			return err
 		}
+		// Usage counts after 400 days (internal/store/usage.go).
+		if _, err := st.PurgeUsageCounts(ctx); err != nil {
+			return err
+		}
 		return st.PurgeJobs(ctx, 14*24*time.Hour)
 	})
 }
