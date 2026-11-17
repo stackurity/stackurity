@@ -8,6 +8,7 @@ package lockfile
 // that loads it without an import; otherwise it stays unknown.
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -44,7 +45,13 @@ var (
 		"composer.lock": true, "yarn.lock": true, "pnpm-lock.yaml": true, "Pipfile.lock": true, "poetry.lock": true, "pubspec.lock": true,
 		"packages.lock.json": true, "Gemfile.lock": true, "go.sum": true, "bun.lock": true, "deno.lock": true}
 
-	jsImport = regexp.MustCompile(`(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bexport\s*\*\s*from\s*)['"]([^'"\n]+)['"]`)
+	// Templates, pages and scripts can load a package by its path in
+	// node_modules or run it with npx.
+	textExts       = map[string]bool{".html": true, ".htm": true, ".ejs": true, ".hbs": true, ".handlebars": true, ".pug": true, ".njk": true, ".twig": true, ".liquid": true, ".mustache": true, ".erb": true, ".sh": true, ".bash": true}
+	textNames      = map[string]bool{"Makefile": true, "makefile": true, "GNUmakefile": true, "Dockerfile": true, "Containerfile": true, "Procfile": true, "Justfile": true, "justfile": true}
+	nodeModulesRef = regexp.MustCompile(`node_modules/((?:@[\w.-]+/)?[\w.-]+)`)
+	npxRef         = regexp.MustCompile(`\b(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx|pnpx)\s+(?:--?[\w-]+(?:=\S+)?\s+)*((?:@[\w.-]+/)?[\w.-]+)`)
+	jsImport       = regexp.MustCompile(`(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bexport\s*\*\s*from\s*)['"]([^'"\n]+)['"]`)
 	// A require or import() whose argument is not a string literal: the
 	// imports of this tree cannot all be read.
 	jsDynamic = regexp.MustCompile(`\b(?:require|import)\s*\(\s*[^'"\s)]`)
@@ -62,6 +69,7 @@ type importIndex struct {
 	npm       map[string]string // package -> first file importing it
 	npmNamed  map[string]string // package -> first file naming it as a string (loaded by name)
 	npmDyn    string            // first file with a computed require or import()
+	npmBundle string            // first minified bundle, which may hold packages inlined
 	goImports map[string]goImport
 	php       map[string]string // namespace-qualified name prefix -> first file
 	py        map[string]string // top-level module -> first file
@@ -82,8 +90,9 @@ func annotateReach(ctx context.Context, fsys fs.FS, ignored map[string]bool, obs
 	}
 	ix := indexImports(ctx, fsys, ignored)
 	comp := composerAutoload(fsys, obs)
+	g := readDepGraphs(fsys, obs)
 	for i := range obs {
-		obs[i].Reachability = ix.decide(&obs[i], comp)
+		obs[i].Reachability = ix.decide(&obs[i], comp, g)
 	}
 	reason := fmt.Sprintf("read %d JavaScript/TypeScript, %d Go, %d PHP and %d Python source files", ix.jsFiles, ix.goFiles, ix.phpFiles, ix.pyFiles)
 	if ix.partial != "" {
@@ -125,10 +134,21 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			}
 			return nil
 		}
-		if ignored[p] || d.Type()&fs.ModeSymlink != 0 || !d.Type().IsRegular() {
+		name, ext := d.Name(), strings.ToLower(path.Ext(d.Name()))
+		if ignored[p] {
 			return nil
 		}
-		name, ext := d.Name(), strings.ToLower(path.Ext(d.Name()))
+		if d.Type()&fs.ModeSymlink != 0 {
+			// Not followed (it may leave the tree): source behind it is
+			// unread, so nothing is claimed.
+			if st, err := fs.Stat(fsys, p); err == nil && (st.IsDir() || jsExts[ext] || ext == ".go" || ext == ".php" || ext == ".py") {
+				ix.partial = "a symbolic link to source (" + p + ") was not followed"
+			}
+			return nil
+		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
 		lang := ""
 		switch {
 		case jsExts[ext]:
@@ -141,6 +161,8 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			lang = "py"
 		case name == "package.json", configExts[ext] && !notConfig[name], strings.HasPrefix(name, ".") && strings.HasSuffix(name, "rc"):
 			lang = "config"
+		case textExts[ext], textNames[name], strings.HasSuffix(name, ".dockerfile"):
+			lang = "text"
 		default:
 			return nil
 		}
@@ -165,6 +187,11 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 		case "js":
 			ix.jsFiles++
 			ix.readJS(p, data)
+			if ix.npmBundle == "" && minified(name, data) {
+				ix.npmBundle = p
+			}
+		case "text":
+			ix.readRefs(p, data)
 		case "go":
 			ix.goFiles++
 			ix.readGo(p, data)
@@ -183,6 +210,7 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 				}
 			}
 		case "config":
+			ix.readRefs(p, data)
 			if name == "package.json" {
 				ix.readPackageJSON(p, data)
 			} else {
@@ -227,6 +255,35 @@ func npmSpecPackage(spec string) string {
 	return strings.ToLower(parts[0])
 }
 
+// readRefs records packages named by path or run by a command in any
+// text: <script src="/node_modules/x/x.js">, npx x in a Makefile.
+func (ix *importIndex) readRefs(p string, data []byte) {
+	for _, re := range []*regexp.Regexp{nodeModulesRef, npxRef} {
+		for _, m := range re.FindAllSubmatch(data, -1) {
+			first(ix.npmNamed, npmSpecPackage(string(m[1])), p)
+		}
+	}
+}
+
+// minified: a bundler's output, which carries the packages it bundled
+// without a require or import of them.
+func minified(name string, data []byte) bool {
+	if strings.Contains(name, ".min.") || strings.Contains(name, ".bundle.") {
+		return true
+	}
+	for len(data) > 0 {
+		n := bytes.IndexByte(data, '\n')
+		if n < 0 {
+			n = len(data)
+		}
+		if n > minifiedLine {
+			return true
+		}
+		data = data[min(n+1, len(data)):]
+	}
+	return false
+}
+
 func (ix *importIndex) readJS(p string, data []byte) {
 	for _, m := range jsImport.FindAllSubmatch(data, -1) {
 		first(ix.npm, npmSpecPackage(string(m[1])), p)
@@ -235,6 +292,7 @@ func (ix *importIndex) readJS(p string, data []byte) {
 		ix.npmDyn = p
 	}
 	ix.readNames(p, data)
+	ix.readRefs(p, data)
 }
 
 // readNames records every quoted string that could be a package name: a
@@ -391,7 +449,7 @@ func composerAutoload(fsys fs.FS, obs []model.Observation) map[string]composerIn
 }
 
 // decide sets one observation's reachability from the index.
-func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo) *model.Reachability {
+func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo, g depGraphs) *model.Reachability {
 	pu, err := packageurl.FromString(o.Purl)
 	if err != nil {
 		return nil
@@ -402,13 +460,22 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 	reachable := func(name, file string) *model.Reachability {
 		return &model.Reachability{Status: model.ReachReachable, Evidence: []string{clip(name + " is imported by " + file)}}
 	}
-	notImported := func(line string) *model.Reachability {
-		ev := []string{clip(line)}
+	// Not imported is claimed only for a direct dependency that no other
+	// package in its lockfile depends on: a transitive one runs whenever
+	// the package that needs it does (body-parser under express), whatever
+	// first-party code imports.
+	notImported := func(name, line string) *model.Reachability {
+		switch {
+		case o.Direct == nil || !*o.Direct:
+			return unknown(name + " is not a direct dependency: it runs whenever a package that depends on it does, so not imported cannot be shown")
+		case !g.graphed[o.Location]:
+			return unknown(o.Location + " does not record which packages depend on which, so a package that uses " + name + " cannot be ruled out")
+		case g.dependents[g.key(o.Location, name)] != "":
+			return unknown(fmt.Sprintf("%s depends on %s (%s), so it runs when that package does", g.dependents[g.key(o.Location, name)], name, o.Location))
+		}
+		ev := []string{clip(line), clip("no other package in " + o.Location + " depends on it")}
 		if o.Scope == "dev" {
 			ev = append(ev, "development dependency")
-		}
-		if o.Direct != nil && !*o.Direct {
-			ev = append(ev, "transitive dependency: it may still run through a package that imports it")
 		}
 		return &model.Reachability{Status: model.ReachNotImported, Evidence: ev}
 	}
@@ -428,11 +495,13 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 			return unknown("not every source file was read: " + ix.partial)
 		case ix.npmDyn != "":
 			return unknown("a computed require or import() in " + ix.npmDyn + " means imports cannot all be read")
+		case ix.npmBundle != "":
+			return unknown("the minified bundle " + ix.npmBundle + " may hold packages without importing them")
 		}
 		if f, ok := ix.npmNamed[name]; ok {
 			return unknown(name + " is named in " + f + ", so it may be loaded by name without an import")
 		}
-		return notImported(fmt.Sprintf("no import or require of %s in %d JavaScript/TypeScript files, and not named in scripts or configuration", name, ix.jsFiles))
+		return notImported(name, fmt.Sprintf("no import or require of %s in %d JavaScript/TypeScript files, and not named in scripts, templates or configuration", name, ix.jsFiles))
 	case "golang":
 		mod := pu.Name
 		if pu.Namespace != "" {
@@ -441,27 +510,14 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 		if mod == "stdlib" || mod == "go" || mod == "toolchain" {
 			return nil
 		}
-		test := ""
-		for ip, g := range ix.goImports {
-			if ip != mod && !strings.HasPrefix(ip, mod+"/") {
-				continue
-			}
-			if g.file != "" {
-				return reachable(mod, g.file)
-			}
-			if test == "" {
-				test = g.testFile
+		for ip, gi := range ix.goImports {
+			if (ip == mod || strings.HasPrefix(ip, mod+"/")) && gi.file != "" {
+				return reachable(mod, gi.file)
 			}
 		}
-		switch {
-		case ix.goFiles == 0:
-			return unknown("no Go source files to check")
-		case ix.partial != "":
-			return unknown("not every source file was read: " + ix.partial)
-		case test != "":
-			return notImported(fmt.Sprintf("only test files import %s (first: %s), so it is not in the built program", mod, test))
-		}
-		return notImported(fmt.Sprintf("no import of a package of %s in %d Go files", mod, ix.goFiles))
+		// go.mod and go.sum do not record which module requires which, so
+		// a module the program uses may use this one: never not imported.
+		return unknown("go.mod does not record which modules use " + mod + ", so not imported cannot be shown")
 	case "composer":
 		name := strings.ToLower(pu.Namespace + "/" + pu.Name)
 		ci, ok := comp[name]
@@ -482,7 +538,7 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 		case ix.partial != "":
 			return unknown("not every source file was read: " + ix.partial)
 		}
-		return notImported(fmt.Sprintf("no reference to the namespace %s in %d PHP files or configuration", ci.shown[0], ix.phpFiles))
+		return notImported(name, fmt.Sprintf("no reference to the namespace %s in %d PHP files or configuration", ci.shown[0], ix.phpFiles))
 	case "pypi":
 		mod := strings.NewReplacer("-", "_", ".", "_").Replace(strings.ToLower(pu.Name))
 		if f, ok := ix.py[mod]; ok {
@@ -493,4 +549,102 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 		return unknown("Python import names can differ from package names, so not imported cannot be shown")
 	}
 	return nil
+}
+
+// minifiedLine: a line longer than this is a bundler's, not a person's.
+const minifiedLine = 5000
+
+// depGraphs says, for lockfiles that record the dependency graph, which
+// packages another (third-party) package depends on.
+type depGraphs struct {
+	graphed    map[string]bool   // lockfile -> its graph was read
+	dependents map[string]string // key(lockfile, package) -> first package depending on it
+}
+
+func (depGraphs) key(lockfile, pkg string) string { return lockfile + "\x00" + strings.ToLower(pkg) }
+
+// readDepGraphs reads the graph of each package-lock.json or
+// npm-shrinkwrap.json (lockfile version 2 or 3) and composer.lock the
+// observations come from. Other lockfiles (yarn, pnpm, npm version 1)
+// are not read, so nothing from them is claimed not imported.
+func readDepGraphs(fsys fs.FS, obs []model.Observation) depGraphs {
+	g := depGraphs{graphed: map[string]bool{}, dependents: map[string]string{}}
+	done := map[string]bool{}
+	for _, o := range obs {
+		loc := o.Location
+		if done[loc] {
+			continue
+		}
+		done[loc] = true
+		switch path.Base(loc) {
+		case "package-lock.json", "npm-shrinkwrap.json":
+			g.readNpm(fsys, loc)
+		case "composer.lock":
+			g.readComposer(fsys, loc)
+		}
+	}
+	return g
+}
+
+func (g depGraphs) add(loc, dependent, pkg string) {
+	if k := g.key(loc, pkg); g.dependents[k] == "" {
+		g.dependents[k] = dependent
+	}
+}
+
+func (g depGraphs) readNpm(fsys fs.FS, loc string) {
+	data, err := readLimited(fsys, loc)
+	if err != nil {
+		return
+	}
+	var lock struct {
+		LockfileVersion int `json:"lockfileVersion"`
+		Packages        map[string]struct {
+			Dependencies         map[string]string `json:"dependencies"`
+			OptionalDependencies map[string]string `json:"optionalDependencies"`
+			PeerDependencies     map[string]string `json:"peerDependencies"`
+		} `json:"packages"`
+	}
+	if json.Unmarshal(data, &lock) != nil || lock.LockfileVersion < 2 || len(lock.Packages) == 0 {
+		return
+	}
+	for key, p := range lock.Packages {
+		// "" is the project and paths outside node_modules are its
+		// workspaces: first-party code, whose dependencies are direct.
+		i := strings.LastIndex(key, "node_modules/")
+		if i < 0 {
+			continue
+		}
+		name := key[i+len("node_modules/"):]
+		for _, deps := range []map[string]string{p.Dependencies, p.OptionalDependencies, p.PeerDependencies} {
+			for d := range deps {
+				g.add(loc, name, d)
+			}
+		}
+	}
+	g.graphed[loc] = true
+}
+
+func (g depGraphs) readComposer(fsys fs.FS, loc string) {
+	data, err := readLimited(fsys, loc)
+	if err != nil {
+		return
+	}
+	type pkg struct {
+		Name    string            `json:"name"`
+		Require map[string]string `json:"require"`
+	}
+	var lock struct {
+		Packages    []pkg `json:"packages"`
+		PackagesDev []pkg `json:"packages-dev"`
+	}
+	if json.Unmarshal(data, &lock) != nil || lock.Packages == nil {
+		return
+	}
+	for _, p := range append(lock.Packages, lock.PackagesDev...) {
+		for d := range p.Require {
+			g.add(loc, p.Name, d)
+		}
+	}
+	g.graphed[loc] = true
 }
