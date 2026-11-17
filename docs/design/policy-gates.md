@@ -1,7 +1,7 @@
 # Policy gates
 
-Status: draft for owner sign-off (16 Nov 2026). Owner approved the feature;
-the edition split in section 7 is a plan question and needs a decision.
+Status: approved. Owner approved the feature on 16 Nov 2026 and the edition
+split in section 7 on 17 Nov 2026.
 
 ## 1. What it is
 
@@ -80,13 +80,15 @@ capped by the risk policy's `exception_max_days`. The flow, roles (`canDecide`)
 and audit names follow ignore requests (`policy_exception.request|approve|decline|end`);
 an expired exception ends itself and the violation returns.
 
-## 7. Edition split (needs owner decision)
+## 7. Edition split (decided 17 Nov 2026)
+
+Decision: the split below, as recommended. Free: rules, violations, CI warn
+mode and basic one-approver exceptions. Paid: enforce mode, the deploy gate
+and the exception workflow extras.
 
 Constraints already on record: `docs/design/open-core.md` lists the CI gate
 as free and says detection is never paid; approving ignore requests on
 findings is free today.
-
-Proposed:
 
 | Community (free) | Paid (pro, `//go:build ee`, locked teaser) |
 |---|---|
@@ -107,7 +109,7 @@ the evidence pack (shape agreed with stackurity-a9).
 
 ## 9. Delivery
 
-1. Core: migration `0108_gate_policies` (policies, exclusions, exceptions,
+1. Core: migration `0110_gate_policies` (policies, exclusions, exceptions,
    checks, daily rollup; RLS + same-workspace triggers), store engine, CRUD
    and violations API (routes classified in `projects.go`), tests.
 2. Core: check endpoint, CLI `--policy` and `policy check`; scan-action v1.x.

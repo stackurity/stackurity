@@ -13,7 +13,7 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-// Policy gates (docs/design/policy-gates.md, migration 0108): rules an
+// Policy gates (docs/design/policy-gates.md, migration 0110): rules an
 // organisation writes once and scopes like notifications. A policy is one
 // rule kind with its parameters, asset filters and a mode. Violations are
 // computed on read from findings and leaks (GateViolations); nothing stores

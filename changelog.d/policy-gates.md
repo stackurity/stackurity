@@ -4,4 +4,4 @@
 
 ### Upgrading
 
-- Migration `0108_gate_policies` adds the tables `gate_policies`, `gate_policy_exclusions`, `gate_policy_exceptions`, `gate_policy_checks`, `gate_policy_open` and `gate_policy_daily`. It only adds tables; nothing existing changes.
+- Migration `0110_gate_policies` adds the tables `gate_policies`, `gate_policy_exclusions`, `gate_policy_exceptions`, `gate_policy_checks`, `gate_policy_open` and `gate_policy_daily`. It only adds tables; nothing existing changes.
