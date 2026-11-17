@@ -125,3 +125,42 @@ func TestReachIgnoredSourceIsPartial(t *testing.T) {
 		}
 	}
 }
+
+// An installed checkout (npm ci), where node_modules and .env are
+// gitignored, is not partial: they are third-party code and settings.
+func TestReachInstalledCheckoutIsWhole(t *testing.T) {
+	direct := true
+	obs := []model.Observation{{Purl: "pkg:npm/left-pad@1.3.0", Scope: "runtime", Direct: &direct, Location: "package-lock.json"}}
+	dir := t.TempDir()
+	for name, data := range map[string]string{
+		"package-lock.json":              `{"lockfileVersion":3,"packages":{"":{"dependencies":{"left-pad":"^1.3.0"}},"node_modules/left-pad":{"version":"1.3.0"}}}`,
+		"src/app.js":                     `import { x } from "./x";`,
+		".env":                           "SECRET=x\n",
+		"node_modules/left-pad/index.js": "module.exports = 1;",
+		"node_modules/other/index.js":    `require("left-pad")`,
+	} {
+		full := filepath.Join(dir, name)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	cov := annotateReach(context.Background(), os.DirFS(dir), map[string]bool{"node_modules": true, ".env": true}, obs)
+	if strings.HasPrefix(cov.Reason, "partial: ") {
+		t.Errorf("coverage %q", cov.Reason)
+	}
+	if r := obs[0].Reachability; r == nil || r.Status != model.ReachNotImported {
+		t.Errorf("left-pad %+v", r)
+	}
+}
+
+func TestOutsideTree(t *testing.T) {
+	for p, want := range map[string]bool{"../x": true, "./../x": true, "a/../../x": true, "/opt/x": true, "file:../x": true,
+		"packages/x": false, "./packages/x": false, "a/../b": false, "": false} {
+		if got := outsideTree(p); got != want {
+			t.Errorf("%q: %v", p, got)
+		}
+	}
+}

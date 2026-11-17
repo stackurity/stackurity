@@ -137,27 +137,31 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			// Skipped directories that may hold first-party source make the
 			// reading partial: generated code (protobuf, GraphQL, Prisma) is
 			// often ignored, and a nested checkout is another tree.
+			// Third-party code the lockfile graph covers (installed
+			// node_modules, Go's and Composer's vendor), version control,
+			// Python environments and build output are skipped first, so an
+			// installed checkout (after npm ci), where they are gitignored,
+			// is not partial.
 			switch {
-			case ignored[p]:
-				ix.skipped("gitignored files under " + p + " were not read")
-				return fs.SkipDir
-			case nestedCheckout(fsys, p):
-				ix.skipped("a nested checkout (" + p + ") was not read")
-				return fs.SkipDir
 			case d.Name() == "vendor" && !thirdPartyVendor(fsys, p), d.Name() == "bower_components":
 				ix.skipped(p + " was not read")
 				return fs.SkipDir
 			case skipDirs[d.Name()]:
-				// Third-party code the lockfile graph covers (node_modules,
-				// Go's and Composer's vendor), version control, Python
-				// environments and build output.
+				return fs.SkipDir
+			case nestedCheckout(fsys, p):
+				ix.skipped("a nested checkout (" + p + ") was not read")
+				return fs.SkipDir
+			case ignored[p]:
+				ix.skipped("gitignored files under " + p + " were not read")
 				return fs.SkipDir
 			}
 			return nil
 		}
 		name, ext := d.Name(), strings.ToLower(path.Ext(d.Name()))
 		if ignored[p] {
-			if jsExts[ext] || ext == ".go" || ext == ".php" || ext == ".py" || textExts[ext] || textNames[name] || envFile(name) {
+			// A gitignored .env holds settings, not source: it is not read,
+			// and does not make the reading partial.
+			if jsExts[ext] || ext == ".go" || ext == ".php" || ext == ".py" || textExts[ext] || textNames[name] {
 				ix.skipped("gitignored source (" + p + ") was not read")
 			}
 			return nil
@@ -661,6 +665,19 @@ func readDepGraphs(fsys fs.FS, obs []model.Observation) depGraphs {
 	return g
 }
 
+// outsideTree: a path relative to the lockfile's directory ("../x",
+// "./../x", "a/../../x") or absolute, that leaves the scanned tree.
+func outsideTree(p string) bool {
+	if p == "" {
+		return false
+	}
+	if path.IsAbs(p) || strings.HasPrefix(p, "file:/") {
+		return true
+	}
+	c := path.Clean(strings.TrimPrefix(p, "file:"))
+	return c == ".." || strings.HasPrefix(c, "../")
+}
+
 func (g depGraphs) add(loc, dependent, pkg string) {
 	if k := g.key(loc, pkg); g.dependents[k] == "" {
 		g.dependents[k] = dependent
@@ -693,13 +710,13 @@ func (g depGraphs) readNpm(fsys fs.FS, loc string) {
 		if i < 0 {
 			// A workspace (or file: dependency) outside the scanned tree is
 			// first-party code that was not read.
-			if strings.HasPrefix(key, "../") || strings.HasPrefix(key, "/") {
+			if outsideTree(key) {
 				g.outside[loc] = key
 			}
 			continue
 		}
 		name := key[i+len("node_modules/"):]
-		if p.Link && (strings.HasPrefix(p.Resolved, "../") || strings.HasPrefix(p.Resolved, "/")) {
+		if p.Link && outsideTree(p.Resolved) {
 			g.outside[loc] = p.Resolved
 		}
 		var bins map[string]string
@@ -753,7 +770,7 @@ func (g depGraphs) readComposer(fsys fs.FS, loc string) {
 		for v := range p.Replace {
 			g.add(loc, "packages that require "+v+", which it replaces", p.Name)
 		}
-		if p.Dist.Type == "path" && (strings.HasPrefix(p.Dist.URL, "../") || strings.HasPrefix(p.Dist.URL, "/")) {
+		if p.Dist.Type == "path" && outsideTree(p.Dist.URL) {
 			g.outside[loc] = p.Dist.URL
 		}
 	}
