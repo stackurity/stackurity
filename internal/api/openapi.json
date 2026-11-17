@@ -18526,6 +18526,251 @@
     }
    }
   },
+  "/gate-policies/exceptions": {
+   "get": {
+    "operationId": "get_gate_policies_exceptions",
+    "summary": "List exceptions to policy gates",
+    "description": "Exceptions to policy gates (docs/policy-gates.md, \"Exceptions\"): a policy does not count against an asset, one component on it, or one finding or leaked key on it, until an expiry capped by the risk policy's `exception_max_days`. Asked by anyone who sees the asset, decided by security or admin on it. Each with `policy_id`, `policy_name`, `target_kind` (`asset`, `component`, `finding`), `asset_id`, `asset_name`, `finding_id` or `leak_id`, `component_key`, `target_label`, `reason`, `note`, `status` (`pending`, `approved`, `declined`, `ended`; an approved one past its expiry is `ended` with `end_reason` `expired`), who asked and decided, `requested_expires_at`, `expires_at`, `ended_at`, `end_reason`, `end_note`. Also `can_decide` and `second_approver`. Narrowed to the assets the caller can see.\n\nRole: viewer",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "policy_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_gate_policies_exceptions",
+    "summary": "Ask for an exception to a policy gate",
+    "description": "Exceptions to policy gates (docs/policy-gates.md, \"Exceptions\"): a policy does not count against an asset, one component on it, or one finding or leaked key on it, until an expiry capped by the risk policy's `exception_max_days`. Asked by anyone who sees the asset, decided by security or admin on it. `policy_id`, `asset_id`, `target_kind` (`asset`, `component` with `component_key`, or `finding` with `finding_id` or `leak_id`), `reason` (`accepted_risk`, `false_positive`, `mitigated`, `no_fix`), `note` (required) and optional `expires_at`. 201 with the pending exception; 400 when the policy does not apply to the asset or the target is not on it; 409 while one for the same target is pending or in force. Audited as `policy_exception.request`.\n\nRole: viewer on the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "viewer on the asset",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies/exceptions/{id}": {
+   "get": {
+    "operationId": "get_gate_policies_exceptions_id",
+    "summary": "An exception to a policy gate",
+    "description": "Exceptions to policy gates (docs/policy-gates.md, \"Exceptions\"): a policy does not count against an asset, one component on it, or one finding or leaked key on it, until an expiry capped by the risk policy's `exception_max_days`. Asked by anyone who sees the asset, decided by security or admin on it. One exception, as in the list; 404 for one on an asset the caller cannot see.\n\nRole: viewer",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies/exceptions/{id}/decision": {
+   "post": {
+    "operationId": "post_gate_policies_exceptions_id_decision",
+    "summary": "Approve or decline an exception to a policy gate",
+    "description": "Exceptions to policy gates (docs/policy-gates.md, \"Exceptions\"): a policy does not count against an asset, one component on it, or one finding or leaked key on it, until an expiry capped by the risk policy's `exception_max_days`. Asked by anyone who sees the asset, decided by security or admin on it. `{\"decision\": \"approve\" | \"decline\", \"note\", \"expires_at\"}`; a decline needs a note. An approval ends at `expires_at`, else at the date asked for, else at the limit, never later than the limit. 409 when already decided. Audited as `policy_exception.approve` or `policy_exception.decline`.\n\nRole: security on the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security on the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/gate-policies/exceptions/{id}/end": {
+   "post": {
+    "operationId": "post_gate_policies_exceptions_id_end",
+    "summary": "End an exception to a policy gate early",
+    "description": "Exceptions to policy gates (docs/policy-gates.md, \"Exceptions\"): a policy does not count against an asset, one component on it, or one finding or leaked key on it, until an expiry capped by the risk policy's `exception_max_days`. Asked by anyone who sees the asset, decided by security or admin on it. `{\"note\"}` (optional). The violations it covered count again (`end_reason` `revoked`). 409 for one not in force. Audited as `policy_exception.end`.\n\nRole: security on the asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "security on the asset",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/gate-policies/violations": {
    "get": {
     "operationId": "get_gate_policies_violations",
