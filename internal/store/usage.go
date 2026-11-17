@@ -8,7 +8,7 @@ import (
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
-// Usage counts (migration 0110): per organisation and UTC day, how often a
+// Usage counts (migration 0109): per organisation and UTC day, how often a
 // locked paid-plan notice was seen or clicked, the plan refused something,
 // or something was exported. Metadata only: an event and a key from the
 // lists below, never a user or any content.

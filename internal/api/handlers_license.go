@@ -14,7 +14,7 @@ func (s *Server) has(r *http.Request, f license.Feature) bool { return s.Gate.Ha
 
 // planRequired answers a request for a paid feature the workspace's plan
 // does not include. 402 lets clients tell it apart from a permissions error.
-// The refusal is counted (usage counts, migration 0110).
+// The refusal is counted (usage counts, migration 0109).
 func (s *Server) planRequired(w http.ResponseWriter, r *http.Request, f license.Feature) {
 	s.countUsage(r, store.UsageLimitRefused, "feature_"+string(f))
 	writeError(w, 402, "plan_required", featureName(f)+" is part of Stackurity Pro. Ask your administrator to upgrade this workspace.")
