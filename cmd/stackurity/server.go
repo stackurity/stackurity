@@ -178,6 +178,7 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 			gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 30*time.Second)}
+			setPolicySteps(st, gate)
 			keyReq, err := keyRequirement(ctx, st, holder, log)
 			if err != nil {
 				return err
@@ -861,7 +862,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			if err := b.Validate(); err != nil {
 				return err
 			}
-			r, err := st.Ingest(ctx, b, 0)
+			// The server's own scan: its not imported claims are trusted.
+			r, err := st.Ingest(store.AsServerCollection(ctx), b, 0)
 			if err != nil {
 				return err
 			}
@@ -1019,6 +1021,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		_, err = st.Enqueue(ctx, "second.check", map[string]any{}, "second-check", time.Time{})
 		return err
 	})
+	// Terminal sign-ins (docs/device-login.md): an approved request whose
+	// tool never collected its token has that token revoked within minutes
+	// of expiring, not only when the next request comes in.
+	w.Every("device-sign-in-sweep", 5*time.Minute, st.SweepDeviceAuthorizations)
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
 			return err

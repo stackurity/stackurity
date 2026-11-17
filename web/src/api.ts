@@ -763,7 +763,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "compliance_addon";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "reachability" | "compliance_addon";
 
 export interface LicenseInfo {
   status: {
@@ -1635,6 +1635,22 @@ export interface Finding {
   epss_cve?: string | null;
   /** The latest imported VEX statement about this component version and vulnerability. */
   vex?: FindingVEX | null;
+  /** Whether the package is imported or running on the asset; "unknown" means not assessed. */
+  reachability?: ReachabilityStatus;
+  reachability_evidence?: string[] | null;
+}
+
+export type ReachabilityStatus = "unknown" | "reachable" | "not_imported" | "not_running";
+
+/** The reachability part of "why this priority" (internal/why). */
+export interface ReachabilityDetail {
+  status: ReachabilityStatus;
+  evidence: string[];
+  /** The priority is one level lower because of it (paid plans). */
+  lowered: boolean;
+  /** Not lowered: known exploited on an asset that is or may be internet-facing. */
+  kept: boolean;
+  text: string;
 }
 
 export interface FindingSummary {
@@ -1863,6 +1879,8 @@ export interface FindingWhy {
   needs_review?: boolean;
   /** FIRST EPSS for the finding's CVE and what it does to the priority; absent without a CVE. */
   epss?: EpssDetail | null;
+  /** Whether the package is imported or running, with evidence, and what that does to the priority. */
+  reachability?: ReachabilityDetail | null;
 }
 
 /** The EPSS part of "why this priority" (internal/why). */

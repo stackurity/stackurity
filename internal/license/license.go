@@ -50,6 +50,10 @@ const (
 	// add-on evidence frameworks and files, and the evidence connectors
 	// that send the evidence pack to Vanta and Drata on a schedule.
 	ComplianceAddon Feature = "compliance_addon"
+	// Reachability: findings in packages no code imports or no process runs
+	// drop one priority level, and the reachability filters and views.
+	// Detection and the evidence are in every edition.
+	Reachability Feature = "reachability"
 )
 
 // Edition is a plan: the set of features it includes.
@@ -63,8 +67,8 @@ const (
 
 var editionFeatures = map[Edition][]Feature{
 	Community:  nil,
-	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop},
-	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop, ComplianceAddon},
+	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop, Reachability},
+	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop, Reachability, ComplianceAddon},
 }
 
 // Features lists what an edition includes.

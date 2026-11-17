@@ -1020,6 +1020,12 @@ type Finding struct {
 	// expected of (scanned once): the finding is true as of then. Null for
 	// assets that report regularly.
 	AsOf *time.Time `json:"as_of"`
+	// Reachability is whether the package is reached on the asset, from its
+	// inventory row (model.Reach*: unknown, reachable, not_imported,
+	// not_running), and ReachabilityEvidence the collector's evidence lines.
+	// Unknown means not assessed, never "safe".
+	Reachability         string   `json:"reachability"`
+	ReachabilityEvidence []string `json:"reachability_evidence"`
 
 	// VEX is the latest imported VEX statement about this component version
 	// and vulnerability (null when none): informational for affected, fixed
@@ -1099,7 +1105,7 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
 	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail,
 	ep.score, ep.percentile, ep.score_date, ep.model_version, ep.cve,
-	CASE WHEN ` + oneOffSQL + ` THEN a.last_seen END`
+	CASE WHEN ` + oneOffSQL + ` THEN a.last_seen END, i.reachability, i.reachability_evidence`
 
 var findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id

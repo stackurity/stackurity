@@ -169,6 +169,12 @@ func (s *Store) CreateDeviceAuthorization(ctx context.Context, clientID, host, i
 	return "", "", nil, fmt.Errorf("could not draw an unused user code")
 }
 
+// SweepDeviceAuthorizations is expireDeviceAuthorizations for the periodic
+// task (cmd/stackurity, every 5 minutes); creating a request runs it too.
+func (s *Store) SweepDeviceAuthorizations(ctx context.Context) error {
+	return s.expireDeviceAuthorizations(tenant.System(ctx))
+}
+
 // expireDeviceAuthorizations revokes the tokens of approved requests that
 // expired before their tool collected them (nobody ever knew their secret)
 // and deletes requests that ended more than a day ago.

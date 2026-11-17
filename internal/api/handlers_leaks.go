@@ -22,6 +22,12 @@ import (
 // batch's leaks. Collectors send them only to servers that say so.
 const FeatureLeaks = "leaks"
 
+// FeatureReachability, in GET /meta's features, says that POST /ingest
+// accepts and stores observations' reachability (model.Reachability).
+// Collectors send it only to servers that list it: older servers reject
+// unknown fields.
+const FeatureReachability = "reachability"
+
 func leakFilter(r *http.Request) (store.LeakFilter, error) {
 	q := r.URL.Query()
 	f := store.LeakFilter{Status: q.Get("status"), Severity: q.Get("severity"), State: q.Get("state"),

@@ -53,6 +53,8 @@ type Principal struct {
 	// none), and MFACredential the passkey it used (0: none).
 	MFAMethod     string
 	MFACredential int64
+	// AuthAt is when the session last proved who it is (store.Session).
+	AuthAt time.Time
 	// MFANeed is what the workspace's two-factor policy asks of the session
 	// (mfa_policy.go): nothing, setting up a factor, or confirming with one.
 	MFANeed mfaNeed
@@ -191,7 +193,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
-					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential, ViaAsk: askApplyWorkspace(r.Context()) > 0,
+					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential, AuthAt: sess.AuthAt, ViaAsk: askApplyWorkspace(r.Context()) > 0,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
@@ -443,7 +445,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			v := recover()
-			if v == http.ErrAbortHandler {
+			if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 				// A handler that has started a response and cannot finish
 				// it aborts: net/http then cuts the connection, so the
 				// client sees a failed download, not a complete one.

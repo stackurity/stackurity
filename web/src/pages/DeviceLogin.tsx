@@ -1,11 +1,12 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, ApiError, type Project, type UserRole } from "../api";
+import { api, ApiError, type MfaMethod, type Project, type UserRole } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
 import { ErrorBox, GoodToKnow, Loading, Notice } from "../components/ui";
 import { DEVICE_PATH, DEVICE_RESUME, deviceResumeValue, formatUserCode, normalizeUserCode, userCodeFromQuery } from "../deviceLogin";
 import { LoginPage } from "./Login";
+import { ConfirmFactor } from "./TwoFactor";
 
 /** POST /device/preview: what a code asks for. */
 interface DevicePreview {
@@ -25,6 +26,10 @@ interface DevicePreview {
   projects: Project[];
   token_name: string;
   token_days: number;
+  /** The organisation requires two-factor sign-in and this session last confirmed it more than confirm_minutes ago. */
+  confirm_first?: boolean;
+  confirm_methods?: MfaMethod[];
+  confirm_minutes?: number;
 }
 
 /**
@@ -68,6 +73,8 @@ export function DeviceLoginPage() {
   const [typed, setTyped] = useState(() => (code ? formatUserCode(code) : ""));
   const [typedErr, setTypedErr] = useState<string | null>(null);
   const [pv, setPv] = useState<DevicePreview | null>(null);
+  // Bumped after confirming a second factor, to read the request again.
+  const [confirmed, setConfirmed] = useState(0);
   const [error, setError] = useState<ApiError | null>(null);
   const [project, setProject] = useState(0);
   const [done, setDone] = useState<"approved" | "denied" | null>(null);
@@ -89,7 +96,7 @@ export function DeviceLoginPage() {
       .post<DevicePreview>("/device/preview", { user_code: code })
       .then(setPv)
       .catch((e) => setError(e instanceof ApiError ? e : new ApiError(0, "client", String(e))));
-  }, [code]);
+  }, [code, confirmed]);
 
   const enter = (e: FormEvent) => {
     e.preventDefault();
@@ -294,9 +301,21 @@ export function DeviceLoginPage() {
       </section>
 
       {!pv.can_approve && <Notice kind="warn">{pv.cannot_approve}</Notice>}
+      {pv.can_approve && pv.confirm_first && (
+        <section className="section" aria-labelledby="device-confirm">
+          <h2 className="section-title" id="device-confirm">
+            Confirm it is you first
+          </h2>
+          <p className="small">
+            {pv.workspace?.name ?? "Your organisation"} requires two-factor sign-in, and approving creates a credential, so confirm again before
+            you approve. A confirmation counts for {pv.confirm_minutes ?? 15} minutes.
+          </p>
+          <ConfirmFactor methods={pv.confirm_methods ?? []} recovery={false} onDone={() => setConfirmed((n) => n + 1)} />
+        </section>
+      )}
       <ErrorBox error={act.error} title="Could not record your answer" />
       <div className="slack-link-actions">
-        {pv.can_approve && (
+        {pv.can_approve && !pv.confirm_first && (
           <button type="button" className="btn btn-primary btn-block" onClick={() => void decide("approve")} disabled={act.pending}>
             {act.pending ? "Approving…" : "Approve"}
           </button>
