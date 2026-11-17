@@ -132,7 +132,8 @@ const unIgnore = `suppressed_until = NULL, until_fix = false, ignore_reason = ''
 
 // ExpireSuppressions returns findings to 'new' so they are reviewed again
 // when their snooze or acceptance lapses, or, when they wait for a fix,
-// when a free fixed version appears. Ignore rules past their expiry end.
+// when a free fixed version appears. Ignore rules and policy gate
+// exceptions past their expiry end.
 func (s *Store) ExpireSuppressions(ctx context.Context) (int64, error) {
 	var n int64
 	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
@@ -164,6 +165,10 @@ func (s *Store) ExpireSuppressions(ctx context.Context) (int64, error) {
 		}
 		if _, err := tx.Exec(ctx, `UPDATE finding_exceptions SET ended_at = now(), ended_by_name = 'expiry', ended_reason = 'expired'
 			WHERE ended_at IS NULL AND expires_at <= now()`); err != nil {
+			return err
+		}
+		// Policy gate exceptions past their expiry end the same way.
+		if _, err := endExpiredGateExceptions(ctx, tx); err != nil {
 			return err
 		}
 		n = lapsed.RowsAffected() + shipped.RowsAffected()
