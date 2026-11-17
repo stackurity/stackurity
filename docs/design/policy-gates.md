@@ -101,6 +101,14 @@ The brief proposed making the whole approval workflow paid; that would make
 policy exceptions stricter than finding exceptions, which are free today.
 Recommendation: keep a basic exception free and charge for the workflow extras.
 
+Built (delivery step 4): licence features `gate_enforce` and `gate_deploy`,
+both in Pro and Enterprise (Cloud: Team and Business, and trials). The
+licensed build sets the hooks in `internal/api/gate_check.go` from the
+licence and the workspace's plan. Without `gate_deploy` a deploy check is
+answered and recorded but never fails (`deploy_requires_plan: true`, and a
+one-line notice from the CLI) rather than refused with 402, so a pipeline
+set up on a trial does not break when the plan changes.
+
 ## 8. Evidence
 
 Policies (as at period end + change history), daily violation counts,
