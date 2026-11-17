@@ -94,6 +94,8 @@ export interface Meta {
   social?: SocialMeta;
   /** Present where people can get a free key for a self-hosted server (Stackurity Cloud). */
   community_keys?: CommunityKeyMeta;
+  /** What this server supports that an older one would ignore, such as "gate_policies" (policy gates). */
+  features?: string[];
 }
 
 export interface CommunityKeyMeta {
@@ -763,7 +765,12 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop";
+/**
+ * gate_enforce: policy gates in enforce mode fail builds and deploys. Paid
+ * (docs/design/policy-gates.md, section 7); a server without it reports
+ * enforce-mode violations as warnings.
+ */
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "gate_enforce";
 
 export interface LicenseInfo {
   status: {
@@ -4238,4 +4245,92 @@ export interface OwnerCoverage {
   by_rule: number;
   by_hand: number;
   unassigned: number;
+}
+
+// --- policy gates (docs/policy-gates.md)
+
+export type GateKind = "known_exploited" | "end_of_life" | "finding_age" | "leaked_key";
+export type GateMode = "off" | "warn" | "enforce";
+
+export interface GateFilters {
+  asset_kinds: string[];
+  /** "production" stands for the risk policy's production environments. */
+  environments: string[];
+  exposure: "any" | "exposed" | "";
+  tags: string[];
+}
+
+/** One policy gate. params depend on kind (docs/policy-gates.md, Rules). */
+export interface GatePolicy {
+  id: number;
+  name: string;
+  description: string;
+  kind: GateKind;
+  params: Record<string, unknown> | null;
+  filters: GateFilters;
+  mode: GateMode;
+  owner_project_id: number | null;
+  owner_asset_id: number | null;
+  /** Set on a project's or asset's edited copy of an inherited policy. */
+  inherits_policy_id: number | null;
+  rule_version: number;
+  created_by_name: string;
+  created_at: string;
+  updated_by_name: string;
+  updated_at: string;
+}
+
+/** GET /gate-policies: a policy with the projects and assets it is turned off for. */
+export interface GatePolicyItem extends GatePolicy {
+  off_projects: number[];
+  off_assets: number[];
+}
+
+export interface GatePolicyList extends List<GatePolicyItem> {
+  kinds?: GateKind[];
+  modes?: GateMode[];
+}
+
+/** What a person sets on a policy (POST and PUT). */
+export interface GatePolicyRequest {
+  name: string;
+  description: string;
+  kind: GateKind;
+  params: Record<string, unknown>;
+  filters: GateFilters;
+  mode: GateMode;
+}
+
+/** GET /gate-policies/violations: one violation, computed now. */
+export interface GateViolation {
+  policy_id: number;
+  policy_name: string;
+  mode: GateMode;
+  kind: GateKind;
+  asset_id: number;
+  asset_name: string;
+  reason: string;
+  finding_id?: number;
+  leak_id?: number;
+  /** Name and version; empty for a leaked key. */
+  component: string;
+  key: string;
+  /** A dashboard path: the finding, or the asset's leaked keys. */
+  link: string;
+  violation_key: string;
+}
+
+/** A policy a project or asset inherits, and what it did with it here. */
+export interface InheritedGatePolicy extends GatePolicy {
+  from: "organisation" | "project";
+  state: "on" | "off" | "edit";
+  copy_id?: number;
+}
+
+/** GET /projects/{id}/gate-policies and /assets/{id}/gate-policies. */
+export interface ScopeGatePolicies {
+  scope: { kind: "project" | "asset"; id: number; name: string; project_ids: number[] | null };
+  can_manage: boolean;
+  inherited: InheritedGatePolicy[];
+  policies: GatePolicy[];
 }

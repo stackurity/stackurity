@@ -27,6 +27,7 @@ const GROUPS: { title: string; entries: Entry[] }[] = [
       { to: "/settings/risk-policy", label: "Risk policy", icon: <IconShield /> },
       { to: "/settings/fix-grouping", label: "Fix grouping", icon: <IconLayers /> },
       { to: "/settings/vex", label: "VEX", icon: <IconDocument /> },
+      { to: "/settings/policy-gates", label: "Policy gates", icon: <IconShield />, min: "security" },
       { to: "/settings/automatic-fixes", label: "Automatic fixes", icon: <IconRemediation />, min: "security", feature: "remediation" },
     ],
   },

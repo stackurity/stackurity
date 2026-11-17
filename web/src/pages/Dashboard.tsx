@@ -11,6 +11,7 @@ import {
   type FindingSummary,
   type FixGroup,
   type FixGroupSummary,
+  type GateViolation,
   type IgnoreRequest,
   type Incident,
   type LeakList,
@@ -67,6 +68,7 @@ import {
 import { uncheckedBanner } from "../unchecked";
 import { OneOffLine } from "../components/Reporting";
 import { notReportingText } from "../reporting";
+import { violationTotals } from "../policyGates";
 import type { UpdatesSummary } from "../updates";
 import { Code, EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
@@ -238,6 +240,7 @@ const NEED_ICONS: Record<NeedKind, ReactNode> = {
   reporting: <IconSignalOff />,
   approval: <IconInbox />,
   incomplete: <IconSignalOff />,
+  policy: <IconShield />,
 };
 
 /** A block of the Dashboard: an icon, a title, an optional link, its body. */
@@ -675,7 +678,7 @@ export function TrendsBand({
  * actions) and whether we are getting better or worse (Security trends).
  */
 export function DashboardPage() {
-  const { me, can, canAct, projectOnly } = useAuth();
+  const { me, meta, can, canAct, projectOnly } = useAuth();
   const { project } = useProject();
   // Setting up (0.9): a new organisation's admins start in the first-run
   // flow; until every step is done the Dashboard shows a checklist.
@@ -708,6 +711,10 @@ export function DashboardPage() {
   const leaksKept = useLoad(() => api.get<LeakList>("/leaks", { status: "open", severity: "medium,low", limit: 1 }), []);
   // Deadlines met on fixes and the median time to fix, as the Outcomes report counts them.
   const outcomes = useLoad(() => api.get<{ report: OutcomesReport }>("/reports/outcomes", { days: 30 }), []);
+  // Policy gates: the violations of every policy that is on (security role
+  // organisation-wide; no row when no policy exists or the server has none).
+  const gates = Boolean(meta?.features?.includes("gate_policies")) && can("security") && !projectOnly;
+  const gateViolations = useLoad(() => (gates ? api.get<List<GateViolation>>("/gate-policies/violations") : Promise.resolve(null)), [gates]);
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   useEffect(() => {
     const was = document.title;
@@ -768,6 +775,7 @@ export function DashboardPage() {
     fixPlans: plans.data?.total,
     collectionIncidents: collection.data?.items,
     assets: assets.data?.items,
+    policyViolations: gateViolations.data ? violationTotals(gateViolations.data.items) : null,
   });
   const fresh = feeds.data ? feedFreshness(feeds.data.items) : null;
   const reporting = reportingCount(o.asset_status);

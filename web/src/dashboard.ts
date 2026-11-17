@@ -11,7 +11,7 @@ function plural(n: number, word: string, pluralWord = word + "s"): string {
 }
 
 /** What a "Needs you now" row is about; it picks the icon. */
-export type NeedKind = "sos" | "overdue" | "due" | "reporting" | "approval" | "incomplete";
+export type NeedKind = "sos" | "overdue" | "due" | "reporting" | "approval" | "incomplete" | "policy";
 
 export interface NeedRow {
   key: string;
@@ -55,6 +55,11 @@ export interface NeedsInput {
   collectionIncidents?: IncidentLike[] | null;
   /** Assets, for those that stopped reporting or reported incompletely. */
   assets?: AssetLike[] | null;
+  /**
+   * Current policy gate violations (security role, server with policy
+   * gates). Absent or null: no row, as when no policy exists.
+   */
+  policyViolations?: { violations: number; assets: number; enforced: number } | null;
 }
 
 /** How a kind of asset is named to people, as in reporting incidents (store.AssetNoun). */
@@ -224,6 +229,16 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       tone: "warn",
       title: `${plural(i.ignoreRequests!, "request")} to ignore issues ${i.ignoreRequests === 1 ? "is" : "are"} waiting for a decision`,
       action: { label: "Open approvals", to: "/approvals" },
+    });
+  const pv = i.policyViolations;
+  if (pv && pv.violations > 0)
+    rows.push({
+      key: "policy-violations",
+      kind: "policy",
+      tone: "warn",
+      title: `${plural(pv.violations, "policy violation")} on ${plural(pv.assets, "asset")}`,
+      detail: pv.enforced > 0 ? `${pv.enforced.toLocaleString()} from policies in enforce mode` : "All from policies in warn mode: checks report them and pass",
+      action: { label: "Open policy violations", to: "/fixes/policy-violations" },
     });
   if ((i.fixPlans ?? 0) > 0)
     rows.push({

@@ -24,6 +24,7 @@ import {
 } from "../api";
 import { OwnerRulesCard } from "../components/Owners";
 import { ScopeNotificationsCard } from "../components/ScopeNotifications";
+import { ScopeGatePoliciesCard } from "../components/PolicyGates";
 import { useAuth } from "../auth";
 import { useAction, useDebounced, useLoad } from "../hooks";
 import { absTime, componentName, humanize, plural } from "../format";
@@ -361,6 +362,7 @@ export function AssetDetailPage() {
         <OwnerRulesCard assetId={a.id} />
       </div>
       {canAct("security") && <ScopeNotificationsCard kind="asset" id={a.id} orgAdmin={can("admin")} />}
+      {canAct("security") && <ScopeGatePoliciesCard kind="asset" id={a.id} />}
 
       </details>
 
