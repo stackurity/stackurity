@@ -599,114 +599,151 @@ const (
 )
 
 func (c *Collector) readStartRefs() *startRefs {
-	r := &startRefs{units: map[string]string{}, words: map[string]string{}}
-	files := 0
-	read := func(rel string) ([]byte, bool) {
-		if files++; files > maxStartFiles {
-			r.err = "too many unit and cron files"
-			return nil, false
-		}
-		data, err := readSmall(c.path(rel), maxStartBytes)
-		if err != nil {
-			if !errors.Is(err, fs.ErrNotExist) {
-				r.err = "/" + rel + " could not be read"
-			}
-			return nil, false
-		}
-		return data, true
-	}
-	list := func(dir string) []os.DirEntry {
-		es, err := os.ReadDir(c.path(dir))
-		if err != nil && !errors.Is(err, fs.ErrNotExist) {
-			r.err = "/" + dir + " could not be read"
-		}
-		return es
-	}
-	unit := func(rel string) {
-		data, ok := read(rel)
-		if !ok {
-			return
-		}
-		name := path.Base(rel)
-		for _, m := range unitRef.FindAllSubmatch(data, -1) {
-			for _, u := range strings.Fields(string(m[1])) {
-				first(r.units, u, "/"+rel)
-			}
-		}
-		// A timer, socket or path unit starts the service of its name
-		// unless Unit= says otherwise (both are recorded).
-		if ext := path.Ext(name); ext == ".timer" || ext == ".socket" || ext == ".path" {
-			stem := strings.TrimSuffix(name, ext)
-			first(r.units, stem+".service", "/"+rel)
-			first(r.units, strings.TrimSuffix(stem, "@")+"@.service", "/"+rel)
-		}
-	}
+	sr := &startReader{c: c, r: &startRefs{units: map[string]string{}, words: map[string]string{}}}
 	for _, dir := range unitDirs {
-		for _, e := range list(dir) {
-			rel := dir + "/" + e.Name()
-			switch {
-			case e.Type()&fs.ModeSymlink != 0:
-				// An alias or a unit linked in (systemctl link): read what
-				// it points to, for reading only. Enablement links in
-				// .wants directories are checked by name in serviceEnabled.
-				if unitSuffix.MatchString(e.Name()) {
-					if t, err := os.Readlink(c.path(rel)); err == nil && t != "/dev/null" {
-						if !path.IsAbs(t) {
-							t = "/" + path.Join(dir, t)
-						}
-						unit(strings.TrimPrefix(path.Clean(t), "/"))
-					}
-				}
-			case e.IsDir() && strings.HasSuffix(e.Name(), ".d"):
-				for _, d := range list(rel) {
-					if strings.HasSuffix(d.Name(), ".conf") {
-						unit(rel + "/" + d.Name())
-					}
-				}
-			case !e.IsDir():
-				unit(rel)
-			}
-		}
+		sr.unitDir(dir)
 	}
-	for dirs, re := range map[*[]string]*regexp.Regexp{&udevDirs: udevWants, &dbusDirs: dbusUnit} {
-		for _, dir := range *dirs {
-			for _, e := range list(dir) {
-				if e.IsDir() {
-					continue
-				}
-				data, ok := read(dir + "/" + e.Name())
-				if !ok {
-					continue
-				}
-				for _, m := range re.FindAllSubmatch(data, -1) {
-					for _, u := range strings.Fields(string(m[1])) {
-						first(r.units, u, "/"+dir+"/"+e.Name())
-					}
-				}
-			}
-		}
+	for _, dir := range udevDirs {
+		sr.activators(dir, udevWants)
 	}
-	words := func(rel string) {
-		data, ok := read(rel)
-		if !ok {
-			return
-		}
-		for _, w := range cronWord.FindAll(data, -1) {
-			first(r.words, string(w), "/"+rel)
-			first(r.words, path.Base(string(w)), "/"+rel)
-		}
+	for _, dir := range dbusDirs {
+		sr.activators(dir, dbusUnit)
 	}
 	for _, f := range cronFiles {
-		words(f)
+		sr.words(f)
 	}
 	for _, dir := range cronDirs {
-		for _, e := range list(dir) {
+		for _, e := range sr.list(dir) {
 			if !e.IsDir() {
-				words(dir + "/" + e.Name())
+				sr.words(dir + "/" + e.Name())
 			}
 		}
 	}
-	return r
+	return sr.r
+}
+
+// startReader reads what can start services into r, counting files.
+type startReader struct {
+	c     *Collector
+	r     *startRefs
+	files int
+}
+
+// read returns a file's contents; a file that is there but cannot be read
+// sets r.err.
+func (sr *startReader) read(rel string) ([]byte, bool) {
+	if sr.files++; sr.files > maxStartFiles {
+		sr.r.err = "too many unit and cron files"
+		return nil, false
+	}
+	data, err := readSmall(sr.c.path(rel), maxStartBytes)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			sr.r.err = "/" + rel + " could not be read"
+		}
+		return nil, false
+	}
+	return data, true
+}
+
+func (sr *startReader) list(dir string) []os.DirEntry {
+	es, err := os.ReadDir(sr.c.path(dir))
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		sr.r.err = "/" + dir + " could not be read"
+	}
+	return es
+}
+
+// unitDir reads the units of one directory, their drop-ins, and units
+// linked in or aliased there (for reading only). Enablement links in
+// .wants directories are checked by name in serviceEnabled.
+func (sr *startReader) unitDir(dir string) {
+	for _, e := range sr.list(dir) {
+		rel := dir + "/" + e.Name()
+		switch {
+		case e.Type()&fs.ModeSymlink != 0:
+			if t := sr.linkTarget(dir, rel, e.Name()); t != "" {
+				sr.unit(t)
+			}
+		case e.IsDir() && strings.HasSuffix(e.Name(), ".d"):
+			for _, d := range sr.list(rel) {
+				if strings.HasSuffix(d.Name(), ".conf") {
+					sr.unit(rel + "/" + d.Name())
+				}
+			}
+		case !e.IsDir():
+			sr.unit(rel)
+		}
+	}
+}
+
+// linkTarget is where a linked or aliased unit file points (relative to
+// the root), or "" for anything else and for a masked unit (/dev/null).
+func (sr *startReader) linkTarget(dir, rel, name string) string {
+	if !unitSuffix.MatchString(name) {
+		return ""
+	}
+	t, err := os.Readlink(sr.c.path(rel))
+	if err != nil || t == "/dev/null" {
+		return ""
+	}
+	if !path.IsAbs(t) {
+		t = "/" + path.Join(dir, t)
+	}
+	return strings.TrimPrefix(path.Clean(t), "/")
+}
+
+// unit records the units one unit file names; a timer, socket or path
+// unit also starts the service of its name unless Unit= says otherwise
+// (both are recorded).
+func (sr *startReader) unit(rel string) {
+	data, ok := sr.read(rel)
+	if !ok {
+		return
+	}
+	for _, m := range unitRef.FindAllSubmatch(data, -1) {
+		for _, u := range strings.Fields(string(m[1])) {
+			first(sr.r.units, u, "/"+rel)
+		}
+	}
+	name := path.Base(rel)
+	if ext := path.Ext(name); ext == ".timer" || ext == ".socket" || ext == ".path" {
+		stem := strings.TrimSuffix(name, ext)
+		first(sr.r.units, stem+".service", "/"+rel)
+		first(sr.r.units, strings.TrimSuffix(stem, "@")+"@.service", "/"+rel)
+	}
+}
+
+// activators records the units other packages' udev rules or D-Bus
+// services in dir have systemd start.
+func (sr *startReader) activators(dir string, re *regexp.Regexp) {
+	for _, e := range sr.list(dir) {
+		if e.IsDir() {
+			continue
+		}
+		data, ok := sr.read(dir + "/" + e.Name())
+		if !ok {
+			continue
+		}
+		for _, m := range re.FindAllSubmatch(data, -1) {
+			for _, u := range strings.Fields(string(m[1])) {
+				first(sr.r.units, u, "/"+dir+"/"+e.Name())
+			}
+		}
+	}
+}
+
+// words records the words of a crontab, cron script or inetd file, and
+// the base names of paths among them.
+func (sr *startReader) words(rel string) {
+	data, ok := sr.read(rel)
+	if !ok {
+		return
+	}
+	for _, w := range cronWord.FindAll(data, -1) {
+		first(sr.r.words, string(w), "/"+rel)
+		first(sr.r.words, path.Base(string(w)), "/"+rel)
+	}
 }
 
 func first(m map[string]string, k, v string) {
