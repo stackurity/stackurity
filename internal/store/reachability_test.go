@@ -28,7 +28,7 @@ func TestIngestReachability(t *testing.T) {
 		return status, ev
 	}
 
-	b := batch(mid, true, "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
+	b := agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning,
 		Evidence: []string{"no running process has libssl.so.3 loaded"}}
 	r, err := s.Ingest(ctx, b, 0)
@@ -40,7 +40,7 @@ func TestIngestReachability(t *testing.T) {
 	}
 
 	// An agent that does not report reachability (older, or not opted in).
-	if _, err := s.Ingest(ctx, batch(mid, true, "pkg:deb/debian/openssl@3.0.1?distro=debian-12"), 0); err != nil {
+	if _, err := s.Ingest(ctx, agentBatch(mid, "", "pkg:deb/debian/openssl@3.0.1?distro=debian-12"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if st, ev := read(r.AssetID); st != model.ReachUnknown || len(ev) != 0 {
@@ -48,7 +48,7 @@ func TestIngestReachability(t *testing.T) {
 	}
 
 	// The same package twice in one batch: the safer claim wins.
-	b = batch(mid, true, "pkg:deb/debian/openssl@3.0.1?distro=debian-12", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
+	b = agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: []string{"not loaded"}}
 	b.Observations[1].Reachability = &model.Reachability{Status: model.ReachReachable, Evidence: []string{"loaded by nginx"}}
 	if _, err := s.Ingest(ctx, b, 0); err != nil {
@@ -59,12 +59,60 @@ func TestIngestReachability(t *testing.T) {
 	}
 }
 
+// agentBatch is a batch from the Linux agent; reason is its process
+// reading's coverage reason ("" for none).
+func agentBatch(ids []model.Identifier, reason string, purls ...string) *model.ObservationBatch {
+	b := batch(ids, true, purls...)
+	b.Collector.ID = model.ReachProcessCollector
+	if reason != "" {
+		b.Cover(model.ReachProcessScope, "checked", reason)
+	}
+	return b
+}
+
+// A claim that a package is not reached is stored only from the collector
+// that can make it, for a type it assesses, after a whole reading; any
+// other is stored as unknown, so a token cannot lower priorities by
+// claiming what nothing checked.
+func TestIngestUntrustedReachability(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	pool := testdb.New(t)
+	s := store.New(pool)
+	claim := func(b *model.ObservationBatch, status string) *model.ObservationBatch {
+		for i := range b.Observations {
+			b.Observations[i].Reachability = &model.Reachability{Status: status, Evidence: []string{"claimed"}}
+		}
+		return b
+	}
+	deb := "pkg:deb/debian/openssl@3.0.1?distro=debian-12"
+	other := batch(mid, true, deb) // collector "test"
+	cases := map[string]*model.ObservationBatch{
+		"another collector":       claim(other, model.ReachNotRunning),
+		"a partial reading":       claim(agentBatch(mid, "partial: read 3 processes, 9 could not be read", deb), model.ReachNotRunning),
+		"no process reading":      claim(agentBatch(mid, "", deb), model.ReachNotRunning),
+		"not_imported from agent": claim(agentBatch(mid, "read 40 processes", deb), model.ReachNotImported),
+	}
+	for name, b := range cases {
+		r, err := s.Ingest(ctx, b, 0)
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		var st string
+		if err := pool.QueryRow(ctx, `SELECT reachability FROM inventory WHERE asset_id = $1 AND removed_at IS NULL`, r.AssetID).Scan(&st); err != nil {
+			t.Fatal(name, err)
+		}
+		if st != model.ReachUnknown {
+			t.Errorf("%s: stored %q, want unknown", name, st)
+		}
+	}
+}
+
 // A finding shows its inventory row's reachability, and a plan step added
 // through PolicySteps sees it when priorities are written.
 func TestFindingReachabilityAndPolicySteps(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	s := store.New(testdb.New(t))
-	b := batch(mid, true, "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
+	b := agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: []string{"not loaded by any process"}}
 	r, err := s.Ingest(ctx, b, 0)
 	if err != nil {

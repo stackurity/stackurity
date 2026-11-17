@@ -650,8 +650,8 @@ type ReachabilityDetail struct {
 
 var reachLead = map[string]string{
 	model.ReachReachable:   "Reachable: first-party code imports this package, or a running process uses it.",
-	model.ReachNotImported: "Not imported: no first-party source file imports this package.",
-	model.ReachNotRunning:  "Not running: no running process executes this package or has it loaded.",
+	model.ReachNotImported: "Not imported: this is a direct dependency that no first-party source file imports, and no package that is imported depends on it. It may still run: code can load a package in ways a source scan does not see (by a name built at run time, from a template or a script).",
+	model.ReachNotRunning:  "Not running: this package's service is not enabled, and none of its programs was running in any reading over at least 7 days. It may still run: it can be started by hand or by another program.",
 }
 
 // reachabilityDetail says what is known about whether the finding's package

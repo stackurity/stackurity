@@ -228,11 +228,12 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 		}
 		evJSON, _ := json.Marshal(ev)
 		// Not assessed is unknown, never the status an earlier batch sent.
+		// A claim the batch's collector cannot make is unknown too.
 		reach, reachEv := model.ReachUnknown, []byte(nil)
-		if o.Reachability != nil {
-			reach = o.Reachability.Status
-			if len(o.Reachability.Evidence) > 0 {
-				reachEv, _ = json.Marshal(o.Reachability.Evidence)
+		if r := b.TrustedReach(&o); r != nil {
+			reach = r.Status
+			if len(r.Evidence) > 0 {
+				reachEv, _ = json.Marshal(r.Evidence)
 			}
 		}
 		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON,

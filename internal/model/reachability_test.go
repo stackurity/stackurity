@@ -39,3 +39,37 @@ func TestReachabilityValidation(t *testing.T) {
 		})
 	}
 }
+
+func TestTrustedReach(t *testing.T) {
+	mk := func(collector, purl, status, scope, reason string) (*ObservationBatch, *Observation) {
+		b := NewBatch(Collector{ID: collector}, AssetRef{Kind: AssetHost, Name: "h"})
+		b.Observations = []Observation{{Purl: purl, Reachability: &Reachability{Status: status, Evidence: []string{"x"}}}}
+		if scope != "" {
+			b.Cover(scope, "checked", reason)
+		}
+		return b, &b.Observations[0]
+	}
+	cases := []struct {
+		name                                   string
+		collector, purl, status, scope, reason string
+		kept                                   bool
+	}{
+		{"agent, whole reading", ReachProcessCollector, "pkg:deb/debian/htop@3", ReachNotRunning, ReachProcessScope, "read 40 processes", true},
+		{"apk", ReachProcessCollector, "pkg:apk/alpine/htop@3", ReachNotRunning, ReachProcessScope, "read 40 processes", true},
+		{"partial", ReachProcessCollector, "pkg:deb/debian/htop@3", ReachNotRunning, ReachProcessScope, "partial: read 4 processes", false},
+		{"access off", ReachProcessCollector, "pkg:deb/debian/htop@3", ReachNotRunning, ReachProcessScope, "process access is off: …", false},
+		{"no coverage", ReachProcessCollector, "pkg:deb/debian/htop@3", ReachNotRunning, "", "", false},
+		{"npm not running", ReachProcessCollector, "pkg:npm/lodash@4", ReachNotRunning, ReachProcessScope, "read 40 processes", false},
+		{"other collector", "linux-docker", "pkg:deb/debian/htop@3", ReachNotRunning, ReachProcessScope, "read 40 processes", false},
+		{"lockfile", ReachImportsCollector, "pkg:npm/lodash@4", ReachNotImported, ReachImportsScope, "read 3 JavaScript/TypeScript, 0 Go, 0 PHP and 0 Python source files", true},
+		{"lockfile deb", ReachImportsCollector, "pkg:deb/debian/htop@3", ReachNotImported, ReachImportsScope, "read 3 JavaScript/TypeScript, 0 Go, 0 PHP and 0 Python source files", false},
+		{"lockfile partial", ReachImportsCollector, "pkg:npm/lodash@4", ReachNotImported, ReachImportsScope, "partial: read 3 …", false},
+		{"reachable from anyone", "test", "pkg:npm/lodash@4", ReachReachable, "", "", true},
+	}
+	for _, c := range cases {
+		b, o := mk(c.collector, c.purl, c.status, c.scope, c.reason)
+		if got := b.TrustedReach(o) != nil; got != c.kept {
+			t.Errorf("%s: kept = %v, want %v", c.name, got, c.kept)
+		}
+	}
+}

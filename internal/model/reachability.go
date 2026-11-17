@@ -1,6 +1,9 @@
 package model
 
-import "fmt"
+import (
+	"fmt"
+	"strings"
+)
 
 // Reachability statuses of an inventory row: whether the package can be
 // reached by the code or processes that run on the asset.
@@ -65,4 +68,57 @@ func (r *Reachability) problem() string {
 		}
 	}
 	return ""
+}
+
+// The collectors whose claims that a package is not reached are accepted,
+// and the coverage entry each writes. A whole reading's reason starts
+// "read " ("read 412 processes", "read 214 JavaScript/TypeScript, …");
+// a partial one starts "partial:" and claims nothing.
+const (
+	ReachImportsCollector = "lockfile-scanner"
+	ReachImportsScope     = "reachability"
+	ReachProcessCollector = "linux-agent"
+	ReachProcessScope     = "reachability/processes"
+)
+
+// reachClaimTypes are the package types each claim can be made for: source
+// imports for lockfile ecosystems, running processes for dpkg and apk.
+var reachClaimTypes = map[string]map[string]bool{
+	ReachNotImported: {"npm": true, "golang": true, "composer": true, "pypi": true},
+	ReachNotRunning:  {"deb": true, "apk": true},
+}
+
+// TrustedReach returns o's reachability as the server stores it. Reachable
+// and unknown are kept. A claim that the package is not reached is kept
+// only from the collector that makes it, for a package type it can
+// assess, in a batch whose coverage entry says it read everything;
+// anything else is stored as unknown (nil), so a token cannot lower
+// priorities by claiming what no collector checked.
+func (b *ObservationBatch) TrustedReach(o *Observation) *Reachability {
+	r := o.Reachability
+	if r == nil || r.Status == ReachUnknown || r.Status == ReachReachable {
+		return r
+	}
+	collector, scope := ReachImportsCollector, ReachImportsScope
+	if r.Status == ReachNotRunning {
+		collector, scope = ReachProcessCollector, ReachProcessScope
+	}
+	if b.Collector.ID != collector || !reachClaimTypes[r.Status][purlType(o.Purl)] {
+		return nil
+	}
+	for _, c := range b.Coverage {
+		if c.Scope == scope && c.Status == "checked" && strings.HasPrefix(c.Reason, "read ") {
+			return r
+		}
+	}
+	return nil
+}
+
+// purlType is the type of a purl ("npm" for pkg:npm/lodash@4), or "".
+func purlType(p string) string {
+	t, _, ok := strings.Cut(strings.TrimPrefix(p, "pkg:"), "/")
+	if !ok || !strings.HasPrefix(p, "pkg:") {
+		return ""
+	}
+	return strings.ToLower(t)
 }
