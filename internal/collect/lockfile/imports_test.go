@@ -99,8 +99,8 @@ func TestReachPartialClaimsNothing(t *testing.T) {
 	defer func() { walkEntries = old }()
 	obs := []model.Observation{{Purl: "pkg:npm/left-pad@1.3.0", Scope: "runtime"}}
 	cov := annotateReach(context.Background(), os.DirFS(filepath.Join("testdata", "reach", "npm")), nil, obs)
-	if cov.Status != "partial" {
-		t.Errorf("coverage = %+v, want partial", cov)
+	if cov.Status != "checked" || !strings.HasPrefix(cov.Reason, "partial: ") {
+		t.Errorf("coverage = %+v, want checked with a partial reason (an inventory gap it is not)", cov)
 	}
 	if r := obs[0].Reachability; r == nil || r.Status == model.ReachNotImported {
 		t.Errorf("left-pad = %+v, want unknown or reachable", r)

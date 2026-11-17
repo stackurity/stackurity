@@ -71,10 +71,14 @@ type goImport struct{ file, testFile string }
 
 // annotateReach reads the first-party source under fsys and sets each
 // lockfile observation's reachability. It returns the coverage item that
-// says what was read.
+// says what was read. Its status is always "checked", with any limit in
+// the reason: reachability says nothing about whether the package list is
+// whole, and a "partial" or "skipped" here would count as an inventory
+// gap (asset health, gap alerts, the trust badge). A limit shows instead
+// as packages left unknown.
 func annotateReach(ctx context.Context, fsys fs.FS, ignored map[string]bool, obs []model.Observation) model.CoverageItem {
 	if len(obs) == 0 {
-		return model.CoverageItem{Scope: ReachScope, Status: "skipped", Reason: "no packages to assess"}
+		return model.CoverageItem{Scope: ReachScope, Status: "checked", Reason: "no packages to assess"}
 	}
 	ix := indexImports(ctx, fsys, ignored)
 	comp := composerAutoload(fsys, obs)
@@ -83,7 +87,7 @@ func annotateReach(ctx context.Context, fsys fs.FS, ignored map[string]bool, obs
 	}
 	reason := fmt.Sprintf("read %d JavaScript/TypeScript, %d Go, %d PHP and %d Python source files", ix.jsFiles, ix.goFiles, ix.phpFiles, ix.pyFiles)
 	if ix.partial != "" {
-		return model.CoverageItem{Scope: ReachScope, Status: "partial", Reason: clip(reason + "; " + ix.partial + ": no package is reported as not imported")}
+		return model.CoverageItem{Scope: ReachScope, Status: "checked", Reason: clip("partial: " + reason + "; " + ix.partial + ": no package is reported as not imported")}
 	}
 	return model.CoverageItem{Scope: ReachScope, Status: "checked", Reason: reason}
 }

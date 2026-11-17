@@ -15,7 +15,7 @@ Reachability is a statement about the asset as it was last collected: a package 
 
 ## Repositories and `stackurity scan`: not imported
 
-When the server scans a repository, or `stackurity scan` scans a directory, it reads the first-party source files after the lockfiles, as data (nothing is run or built), with the scan's limits: 50,000 source files, 1 MiB of each and 256 MiB in all, the walk's own limits, and the same skipped directories (`node_modules`, `vendor`, `.git`, ignored files, nested checkouts). The coverage entry `reachability` says how many files of each language were read, and is `partial` with the reason when a limit was reached; a partial scan reports nothing as not imported.
+When the server scans a repository, or `stackurity scan` scans a directory, it reads the first-party source files after the lockfiles, as data (nothing is run or built), with the scan's limits: 50,000 source files, 1 MiB of each and 256 MiB in all, the walk's own limits, and the same skipped directories (`node_modules`, `vendor`, `.git`, ignored files, nested checkouts). The coverage entry `reachability` says how many files of each language were read. When a limit was reached its reason starts with `partial:` and names the limit, and the scan reports nothing as not imported. Its status is always `checked`: what reachability could read says nothing about whether the package list is whole, so it never counts as a coverage gap, an alert or a reason to hide a trust badge.
 
 | Ecosystem | Reachable when | Not imported when | Otherwise not assessed |
 |---|---|---|---|
