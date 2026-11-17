@@ -6,6 +6,27 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.7
+
+### Security
+
+- **OpenTelemetry updated to 1.47.0.** The OpenTelemetry Go libraries that Stackurity pulls in indirectly move from 1.44.0 to 1.47.0, which fixes [GHSA-q7gw-24fr-5p69](https://osv.dev/GHSA-q7gw-24fr-5p69) (medium, CVSS 5.3) in `go.opentelemetry.io/otel/trace`.
+
+### Added
+
+- **Usage counts.** The server now keeps daily counts per organisation of the paid-plan notices people see and click, the things a plan refuses (by limit), and the SBOM, VEX and report exports made. Only the organisation, what happened, a fixed key and the day are kept: no person and no content. They stay on your server and are deleted after 400 days. See [Usage counts](docs/install.md#usage-counts).
+- **Verified closure: every closed finding says whether a check saw the fix.** Resolved findings show **Verified fixed**, **Verified removed**, **Disappeared (not verified)** or **Closed, not a fix**, in the findings list and on the finding. A fixed finding lists its proof: the version before and after, the check (agent report, repository or image scan…) that saw it and when, and the remediation plan if one fixed it. `GET /api/v1/findings/{id}/closure` returns the proof as one record. See [Why a finding closed](docs/api.md#verified-closure).
+
+### Changed
+
+- **Security fixes for Stackurity's own dependencies merge automatically.** When GitHub publishes an advisory for a library Stackurity uses, Dependabot opens a fix and it merges as soon as every required check passes, so the next release carries it without waiting for a review.
+- **Free trial is now 30 days.** A new Stackurity Cloud organisation gets 30 days with the Team plan's features, no card needed (was 14). Trials that were still running on 16 November 2026 were extended to 30 days from sign-up.
+- **Findings no longer count as fixed when Stackurity only lost sight of them.** When a repository is no longer granted to the GitHub App or leaves the connected GitLab group, or an image is deleted from its registry, its findings now close as `disappeared` instead of `removed`. They are not counted as remediation in the outcomes and evidence reports, so fixed totals and SLA rates can drop slightly where that happened.
+
+### Upgrading
+
+- Migration `0108_verified_closure` adds `collections.absence_unverified` and reclassifies past findings closed that way from `removed` to `disappeared` (their history events too).
+
 ## 0.20.6
 
 ### Added
