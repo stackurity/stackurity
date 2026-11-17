@@ -101,7 +101,7 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if err != nil {
 			return err
 		}
-		trust, err := reachTrust(ctx, tx, tokenID)
+		trust, err := reachTrust(ctx, tx, tokenID, assetID, b.Asset.Kind)
 		if err != nil {
 			return err
 		}
@@ -222,24 +222,32 @@ func AsServerCollection(ctx context.Context) context.Context {
 }
 
 // reachTrust says, from the server's records, which not-reached claims a
-// batch may make: an agent's token (issued at enrollment, or bound to a
-// host) may report processes, any other token or the server's own scan
-// may report imports. A batch with no token (a signed-in browser's
-// upload) may make neither.
-func reachTrust(ctx context.Context, tx pgx.Tx, tokenID int64) (model.ReachTrust, error) {
+// batch about assetID may make. An agent's token may report processes for
+// its own host only: a token bound to the host, or an enrollment token
+// pinned to the first host it reported (the agent reports its host first;
+// the pin is set here). Any other token, or the server's own scan, may
+// report imports. A batch with no token (a signed-in browser's upload)
+// may make neither.
+func reachTrust(ctx context.Context, tx pgx.Tx, tokenID, assetID int64, kind model.AssetKind) (model.ReachTrust, error) {
 	if ctx.Value(serverCollectionKey{}) != nil {
 		return model.ReachTrust{Imports: true}, nil
 	}
 	if tokenID <= 0 {
 		return model.ReachTrust{}, nil
 	}
-	var agent bool
-	err := tx.QueryRow(ctx, `SELECT t.asset_id IS NOT NULL OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id)
-		FROM api_tokens t WHERE t.id = $1`, tokenID).Scan(&agent)
+	if kind == model.AssetHost {
+		if _, err := tx.Exec(ctx, `UPDATE enrollment_uses SET asset_id = $2 WHERE token_id = $1 AND asset_id IS NULL`, tokenID, assetID); err != nil {
+			return model.ReachTrust{}, err
+		}
+	}
+	var agent, own bool
+	err := tx.QueryRow(ctx, `SELECT t.asset_id IS NOT NULL OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id),
+		COALESCE(t.asset_id = $2, false) OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id AND u.asset_id = $2)
+		FROM api_tokens t WHERE t.id = $1`, tokenID, assetID).Scan(&agent, &own)
 	if errors.Is(err, pgx.ErrNoRows) {
 		return model.ReachTrust{}, nil
 	}
-	return model.ReachTrust{Processes: agent, Imports: !agent}, err
+	return model.ReachTrust{Processes: agent && own, Imports: !agent}, err
 }
 
 func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch, trust model.ReachTrust) error {

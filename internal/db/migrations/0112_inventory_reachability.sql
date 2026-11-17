@@ -18,3 +18,11 @@ ALTER TABLE inventory
     ADD COLUMN reachability_evidence jsonb,
     ADD CONSTRAINT inventory_reachability_valid
         CHECK (reachability IN ('unknown', 'reachable', 'not_imported', 'not_running')) NOT VALID;
+
+-- The host an enrollment-issued agent token first reported: only that
+-- agent may report which of the host's packages are not running
+-- (store.reachTrust). Set by the ingest; NULL until the agent reports.
+ALTER TABLE enrollment_uses
+    ADD COLUMN asset_id bigint REFERENCES assets(id) ON DELETE SET NULL;
+CREATE TRIGGER enrollment_uses_asset_id_same_ws BEFORE INSERT OR UPDATE OF asset_id ON enrollment_uses
+    FOR EACH ROW EXECUTE FUNCTION stackurity_same_workspace('assets', 'asset_id');
