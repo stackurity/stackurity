@@ -1,0 +1,13 @@
+{
+  "name": "npm-more",
+  "version": "1.0.0",
+  "dependencies": {
+    "typescript": "^1.0.0",
+    "dotenv": "^1.0.0",
+    "bootstrap": "^1.0.0",
+    "left-pad": "^1.0.0"
+  },
+  "scripts": {
+    "build": "tsc -p ."
+  }
+}

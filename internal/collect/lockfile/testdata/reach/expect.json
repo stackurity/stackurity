@@ -122,5 +122,43 @@
       "status": "unknown",
       "evidence": "yarn.lock does not record"
     }
+  },
+  "npm-more": {
+    "typescript": {
+      "status": "unknown",
+      "evidence": "its program tsc is named in package.json"
+    },
+    "dotenv": {
+      "status": "unknown",
+      "evidence": "named in Procfile"
+    },
+    "bootstrap": {
+      "status": "unknown",
+      "evidence": "named in styles/app.scss"
+    },
+    "left-pad": {
+      "status": "not_imported"
+    }
+  },
+  "npm-vendor": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "vendor was not read"
+    }
+  },
+  "npm-outside": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "outside the scanned tree (../shared"
+    }
+  },
+  "composer-provide": {
+    "acme/sdk": {
+      "status": "reachable"
+    },
+    "guzzlehttp/guzzle": {
+      "status": "unknown",
+      "evidence": "psr/http-client-implementation"
+    }
   }
 }

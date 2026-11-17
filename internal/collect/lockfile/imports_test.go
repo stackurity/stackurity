@@ -106,3 +106,22 @@ func TestReachPartialClaimsNothing(t *testing.T) {
 		t.Errorf("left-pad = %+v, want unknown or reachable", r)
 	}
 }
+
+// Ignored first-party source (generated code is often gitignored) makes the
+// reading partial, so nothing is claimed not imported.
+func TestReachIgnoredSourceIsPartial(t *testing.T) {
+	for name, ignored := range map[string]map[string]bool{
+		"an ignored file":      {"src/db.js": true},
+		"an ignored directory": {"src": true},
+	} {
+		direct := true
+		obs := []model.Observation{{Purl: "pkg:npm/left-pad@1.3.0", Scope: "runtime", Direct: &direct, Location: "package-lock.json"}}
+		cov := annotateReach(context.Background(), os.DirFS(filepath.Join("testdata", "reach", "npm")), ignored, obs)
+		if !strings.HasPrefix(cov.Reason, "partial: ") || !strings.Contains(cov.Reason, "gitignored") {
+			t.Errorf("%s: coverage %q", name, cov.Reason)
+		}
+		if r := obs[0].Reachability; r == nil || r.Status == model.ReachNotImported {
+			t.Errorf("%s: left-pad %+v", name, r)
+		}
+	}
+}

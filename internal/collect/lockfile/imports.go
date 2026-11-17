@@ -37,7 +37,7 @@ const (
 const ReachScope = "reachability"
 
 var (
-	jsExts     = map[string]bool{".js": true, ".jsx": true, ".ts": true, ".tsx": true, ".mjs": true, ".cjs": true, ".mts": true, ".cts": true, ".vue": true, ".svelte": true, ".astro": true}
+	jsExts     = map[string]bool{".js": true, ".jsx": true, ".ts": true, ".tsx": true, ".mjs": true, ".cjs": true, ".mts": true, ".cts": true, ".vue": true, ".svelte": true, ".astro": true, ".mdx": true}
 	configExts = map[string]bool{".json": true, ".yml": true, ".yaml": true, ".toml": true, ".xml": true, ".neon": true}
 	// Lockfiles and manifests list every package: being named there says
 	// nothing about use. package.json is read separately (its scripts).
@@ -49,6 +49,10 @@ var (
 	// node_modules or run it with npx.
 	textExts       = map[string]bool{".html": true, ".htm": true, ".ejs": true, ".hbs": true, ".handlebars": true, ".pug": true, ".njk": true, ".twig": true, ".liquid": true, ".mustache": true, ".erb": true, ".sh": true, ".bash": true}
 	textNames      = map[string]bool{"Makefile": true, "makefile": true, "GNUmakefile": true, "Dockerfile": true, "Containerfile": true, "Procfile": true, "Justfile": true, "justfile": true}
+	styleExts      = map[string]bool{".css": true, ".scss": true, ".sass": true, ".less": true, ".styl": true}
+	nodeRequireRef = regexp.MustCompile(`(?:^|[\s"'=])(?:-r|--require|--import|--loader|--experimental-loader)[=\s]+['"]?((?:@[\w.-]+/)?[\w.-]+)`)
+	styleImportRef = regexp.MustCompile(`@(?:import|use|forward|plugin)\s+(?:url\()?['"]~?((?:@[\w.-]+/)?[\w.-]+)`)
+	wordRe         = regexp.MustCompile(`[\w@][\w.@/-]*`)
 	nodeModulesRef = regexp.MustCompile(`node_modules/((?:@[\w.-]+/)?[\w.-]+)`)
 	npxRef         = regexp.MustCompile(`\b(?:npx|bunx|pnpm\s+dlx|yarn\s+dlx|pnpx)\s+(?:--?[\w-]+(?:=\S+)?\s+)*((?:@[\w.-]+/)?[\w.-]+)`)
 	jsImport       = regexp.MustCompile(`(?:\bfrom\s*|\bimport\s*|\brequire\s*\(\s*|\bimport\s*\(\s*|\bexport\s*\*\s*from\s*)['"]([^'"\n]+)['"]`)
@@ -70,6 +74,7 @@ type importIndex struct {
 	npmNamed  map[string]string // package -> first file naming it as a string (loaded by name)
 	npmDyn    string            // first file with a computed require or import()
 	npmBundle string            // first minified bundle, which may hold packages inlined
+	words     map[string]string // word in scripts, Makefiles, Dockerfiles, .env -> first file (programs run by name)
 	goImports map[string]goImport
 	php       map[string]string // namespace-qualified name prefix -> first file
 	py        map[string]string // top-level module -> first file
@@ -129,13 +134,32 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 				ix.partial = "the tree is deeper than the walk goes"
 				return fs.SkipDir
 			}
-			if skipDirs[d.Name()] || ignored[p] || nestedCheckout(fsys, p) {
+			// Skipped directories that may hold first-party source make the
+			// reading partial: generated code (protobuf, GraphQL, Prisma) is
+			// often ignored, and a nested checkout is another tree.
+			switch {
+			case ignored[p]:
+				ix.skipped("gitignored files under " + p + " were not read")
+				return fs.SkipDir
+			case nestedCheckout(fsys, p):
+				ix.skipped("a nested checkout (" + p + ") was not read")
+				return fs.SkipDir
+			case d.Name() == "vendor" && !thirdPartyVendor(fsys, p), d.Name() == "bower_components":
+				ix.skipped(p + " was not read")
+				return fs.SkipDir
+			case skipDirs[d.Name()]:
+				// Third-party code the lockfile graph covers (node_modules,
+				// Go's and Composer's vendor), version control, Python
+				// environments and build output.
 				return fs.SkipDir
 			}
 			return nil
 		}
 		name, ext := d.Name(), strings.ToLower(path.Ext(d.Name()))
 		if ignored[p] {
+			if jsExts[ext] || ext == ".go" || ext == ".php" || ext == ".py" || textExts[ext] || textNames[name] || envFile(name) {
+				ix.skipped("gitignored source (" + p + ") was not read")
+			}
 			return nil
 		}
 		if d.Type()&fs.ModeSymlink != 0 {
@@ -161,7 +185,7 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			lang = "py"
 		case name == "package.json", configExts[ext] && !notConfig[name], strings.HasPrefix(name, ".") && strings.HasSuffix(name, "rc"):
 			lang = "config"
-		case textExts[ext], textNames[name], strings.HasSuffix(name, ".dockerfile"):
+		case textExts[ext], textNames[name], strings.HasSuffix(name, ".dockerfile"), envFile(name), styleExts[ext]:
 			lang = "text"
 		default:
 			return nil
@@ -192,6 +216,9 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			}
 		case "text":
 			ix.readRefs(p, data)
+			if !styleExts[ext] {
+				ix.readWords(p, data)
+			}
 		case "go":
 			ix.goFiles++
 			ix.readGo(p, data)
@@ -211,6 +238,7 @@ func indexImports(ctx context.Context, fsys fs.FS, ignored map[string]bool) *imp
 			}
 		case "config":
 			ix.readRefs(p, data)
+			ix.readWords(p, data)
 			if name == "package.json" {
 				ix.readPackageJSON(p, data)
 			} else {
@@ -258,12 +286,47 @@ func npmSpecPackage(spec string) string {
 // readRefs records packages named by path or run by a command in any
 // text: <script src="/node_modules/x/x.js">, npx x in a Makefile.
 func (ix *importIndex) readRefs(p string, data []byte) {
-	for _, re := range []*regexp.Regexp{nodeModulesRef, npxRef} {
+	for _, re := range []*regexp.Regexp{nodeModulesRef, npxRef, nodeRequireRef, styleImportRef} {
 		for _, m := range re.FindAllSubmatch(data, -1) {
 			first(ix.npmNamed, npmSpecPackage(string(m[1])), p)
 		}
 	}
 }
+
+// readWords records every word of a script or configuration file, so a
+// package's program run by its own name (tsc, from typescript) is found.
+func (ix *importIndex) readWords(p string, data []byte) {
+	if ix.words == nil {
+		ix.words = map[string]string{}
+	}
+	for _, w := range wordRe.FindAll(data, -1) {
+		if len(ix.words) >= maxWords {
+			ix.skipped("too many words in scripts and configuration")
+			return
+		}
+		first(ix.words, string(w), p)
+	}
+}
+
+// skipped notes the first reason the reading is not whole.
+func (ix *importIndex) skipped(why string) {
+	if ix.partial == "" {
+		ix.partial = why
+	}
+}
+
+// thirdPartyVendor: p is Go's vendor directory (modules.txt) or
+// Composer's (autoload.php), whose code the lockfile graph covers.
+func thirdPartyVendor(fsys fs.FS, p string) bool {
+	for _, f := range []string{"modules.txt", "autoload.php", "composer/installed.json"} {
+		if _, err := fs.Stat(fsys, path.Join(p, f)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
+func envFile(name string) bool { return name == ".env" || strings.HasPrefix(name, ".env.") }
 
 // minified: a bundler's output, which carries the packages it bundled
 // without a require or import of them.
@@ -470,8 +533,15 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 			return unknown(name + " is not a direct dependency: it runs whenever a package that depends on it does, so not imported cannot be shown")
 		case !g.graphed[o.Location]:
 			return unknown(o.Location + " does not record which packages depend on which, so a package that uses " + name + " cannot be ruled out")
+		case g.outside[o.Location] != "":
+			return unknown(fmt.Sprintf("first-party code outside the scanned tree (%s, in %s) was not read", g.outside[o.Location], o.Location))
 		case g.dependents[g.key(o.Location, name)] != "":
 			return unknown(fmt.Sprintf("%s depends on %s (%s), so it runs when that package does", g.dependents[g.key(o.Location, name)], name, o.Location))
+		}
+		for _, b := range g.bins[g.key(o.Location, name)] {
+			if f, ok := ix.words[b]; ok {
+				return unknown(fmt.Sprintf("its program %s is named in %s, so it may be run", b, f))
+			}
 		}
 		ev := []string{clip(line), clip("no other package in " + o.Location + " depends on it")}
 		if o.Scope == "dev" {
@@ -554,11 +624,16 @@ func (ix *importIndex) decide(o *model.Observation, comp map[string]composerInfo
 // minifiedLine: a line longer than this is a bundler's, not a person's.
 const minifiedLine = 5000
 
+// maxWords caps the words kept from scripts and configuration.
+const maxWords = 200000
+
 // depGraphs says, for lockfiles that record the dependency graph, which
 // packages another (third-party) package depends on.
 type depGraphs struct {
-	graphed    map[string]bool   // lockfile -> its graph was read
-	dependents map[string]string // key(lockfile, package) -> first package depending on it
+	graphed    map[string]bool     // lockfile -> its graph was read
+	dependents map[string]string   // key(lockfile, package) -> first package depending on it
+	outside    map[string]string   // lockfile -> first-party code outside the tree, which was not read
+	bins       map[string][]string // key(lockfile, package) -> its programs (npm "bin")
 }
 
 func (depGraphs) key(lockfile, pkg string) string { return lockfile + "\x00" + strings.ToLower(pkg) }
@@ -568,7 +643,7 @@ func (depGraphs) key(lockfile, pkg string) string { return lockfile + "\x00" + s
 // observations come from. Other lockfiles (yarn, pnpm, npm version 1)
 // are not read, so nothing from them is claimed not imported.
 func readDepGraphs(fsys fs.FS, obs []model.Observation) depGraphs {
-	g := depGraphs{graphed: map[string]bool{}, dependents: map[string]string{}}
+	g := depGraphs{graphed: map[string]bool{}, dependents: map[string]string{}, outside: map[string]string{}, bins: map[string][]string{}}
 	done := map[string]bool{}
 	for _, o := range obs {
 		loc := o.Location
@@ -603,6 +678,9 @@ func (g depGraphs) readNpm(fsys fs.FS, loc string) {
 			Dependencies         map[string]string `json:"dependencies"`
 			OptionalDependencies map[string]string `json:"optionalDependencies"`
 			PeerDependencies     map[string]string `json:"peerDependencies"`
+			Bin                  json.RawMessage   `json:"bin"`
+			Link                 bool              `json:"link"`
+			Resolved             string            `json:"resolved"`
 		} `json:"packages"`
 	}
 	if json.Unmarshal(data, &lock) != nil || lock.LockfileVersion < 2 || len(lock.Packages) == 0 {
@@ -613,9 +691,24 @@ func (g depGraphs) readNpm(fsys fs.FS, loc string) {
 		// workspaces: first-party code, whose dependencies are direct.
 		i := strings.LastIndex(key, "node_modules/")
 		if i < 0 {
+			// A workspace (or file: dependency) outside the scanned tree is
+			// first-party code that was not read.
+			if strings.HasPrefix(key, "../") || strings.HasPrefix(key, "/") {
+				g.outside[loc] = key
+			}
 			continue
 		}
 		name := key[i+len("node_modules/"):]
+		if p.Link && (strings.HasPrefix(p.Resolved, "../") || strings.HasPrefix(p.Resolved, "/")) {
+			g.outside[loc] = p.Resolved
+		}
+		var bins map[string]string
+		if json.Unmarshal(p.Bin, &bins) == nil {
+			for b := range bins {
+				k := g.key(loc, name)
+				g.bins[k] = append(g.bins[k], b)
+			}
+		}
 		for _, deps := range []map[string]string{p.Dependencies, p.OptionalDependencies, p.PeerDependencies} {
 			for d := range deps {
 				g.add(loc, name, d)
@@ -633,6 +726,12 @@ func (g depGraphs) readComposer(fsys fs.FS, loc string) {
 	type pkg struct {
 		Name    string            `json:"name"`
 		Require map[string]string `json:"require"`
+		Provide map[string]string `json:"provide"`
+		Replace map[string]string `json:"replace"`
+		Dist    struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		} `json:"dist"`
 	}
 	var lock struct {
 		Packages    []pkg `json:"packages"`
@@ -644,6 +743,18 @@ func (g depGraphs) readComposer(fsys fs.FS, loc string) {
 	for _, p := range append(lock.Packages, lock.PackagesDev...) {
 		for d := range p.Require {
 			g.add(loc, p.Name, d)
+		}
+		// A package that provides or replaces another (guzzle provides
+		// psr/http-client-implementation) is used by packages that require
+		// what it provides, without naming it.
+		for v := range p.Provide {
+			g.add(loc, "packages that require "+v+", which it provides", p.Name)
+		}
+		for v := range p.Replace {
+			g.add(loc, "packages that require "+v+", which it replaces", p.Name)
+		}
+		if p.Dist.Type == "path" && (strings.HasPrefix(p.Dist.URL, "../") || strings.HasPrefix(p.Dist.URL, "/")) {
+			g.outside[loc] = p.Dist.URL
 		}
 	}
 	g.graphed[loc] = true
