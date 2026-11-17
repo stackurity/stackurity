@@ -429,7 +429,14 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if v := recover(); v != nil && v != http.ErrAbortHandler {
+			v := recover()
+			if v == http.ErrAbortHandler {
+				// A handler that has started a response and cannot finish
+				// it aborts: net/http then cuts the connection, so the
+				// client sees a failed download, not a complete one.
+				panic(v)
+			}
+			if v != nil {
 				s.Log.Error("panic", "path", r.URL.Path, "panic", v, "request_id", middleware.GetReqID(r.Context()))
 				noteError(r, "panic", fmt.Sprint(v), clienterrors.ServerFrame(debug.Stack(), "github.com/stackurity/stackurity"))
 				writeError(w, 500, "internal", "internal error")
