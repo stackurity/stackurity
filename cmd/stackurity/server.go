@@ -862,7 +862,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			if err := b.Validate(); err != nil {
 				return err
 			}
-			r, err := st.Ingest(ctx, b, 0)
+			// The server's own scan: its not imported claims are trusted.
+			r, err := st.Ingest(store.AsServerCollection(ctx), b, 0)
 			if err != nil {
 				return err
 			}

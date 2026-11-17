@@ -22,16 +22,17 @@ func TestIngestReachability(t *testing.T) {
 	read := func(assetID int64) (status string, ev []string) {
 		t.Helper()
 		if err := pool.QueryRow(ctx, `SELECT reachability, COALESCE(reachability_evidence, '[]') FROM inventory
-			WHERE asset_id = $1 AND removed_at IS NULL`, assetID).Scan(&status, &ev); err != nil {
+			WHERE asset_id = $1 AND purl LIKE 'pkg:deb/debian/openssl@%' AND removed_at IS NULL`, assetID).Scan(&status, &ev); err != nil {
 			t.Fatal(err)
 		}
 		return status, ev
 	}
 
+	tok := agentToken(t, s, ctx)
 	b := agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning,
 		Evidence: []string{"no running process has libssl.so.3 loaded"}}
-	r, err := s.Ingest(ctx, b, 0)
+	r, err := s.Ingest(ctx, b, tok)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,7 +41,7 @@ func TestIngestReachability(t *testing.T) {
 	}
 
 	// An agent that does not report reachability (older, or not opted in).
-	if _, err := s.Ingest(ctx, agentBatch(mid, "", "pkg:deb/debian/openssl@3.0.1?distro=debian-12"), 0); err != nil {
+	if _, err := s.Ingest(ctx, agentBatch(mid, "", "pkg:deb/debian/openssl@3.0.1?distro=debian-12"), tok); err != nil {
 		t.Fatal(err)
 	}
 	if st, ev := read(r.AssetID); st != model.ReachUnknown || len(ev) != 0 {
@@ -51,12 +52,27 @@ func TestIngestReachability(t *testing.T) {
 	b = agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: []string{"not loaded"}}
 	b.Observations[1].Reachability = &model.Reachability{Status: model.ReachReachable, Evidence: []string{"loaded by nginx"}}
-	if _, err := s.Ingest(ctx, b, 0); err != nil {
+	if _, err := s.Ingest(ctx, b, tok); err != nil {
 		t.Fatal(err)
 	}
 	if st, _ := read(r.AssetID); st != model.ReachReachable {
 		t.Fatalf("duplicate rows kept %q, want reachable", st)
 	}
+}
+
+// agentToken is an agent's token: a collector token bound to the host
+// (mid), which a first plain report creates.
+func agentToken(t *testing.T, s *store.Store, ctx context.Context) int64 {
+	t.Helper()
+	r, err := s.Ingest(ctx, batch(mid, true, "pkg:deb/debian/zlib1g@1?distro=debian-12"), 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok, _, err := s.CreateAssetToken(ctx, r.AssetID, "agent", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tok.ID
 }
 
 // agentBatch is a batch from the Linux agent; reason is its process
@@ -85,20 +101,30 @@ func TestIngestUntrustedReachability(t *testing.T) {
 		return b
 	}
 	deb := "pkg:deb/debian/openssl@3.0.1?distro=debian-12"
-	other := batch(mid, true, deb) // collector "test"
-	cases := map[string]*model.ObservationBatch{
-		"another collector":       claim(other, model.ReachNotRunning),
-		"a partial reading":       claim(agentBatch(mid, "partial: read 3 processes, 9 could not be read", deb), model.ReachNotRunning),
-		"no process reading":      claim(agentBatch(mid, "", deb), model.ReachNotRunning),
-		"not_imported from agent": claim(agentBatch(mid, "read 40 processes", deb), model.ReachNotImported),
+	agent := agentToken(t, s, ctx)
+	plain, _, err := s.CreateToken(ctx, "ci", "collector", nil, 0, 0)
+	if err != nil {
+		t.Fatal(err)
 	}
-	for name, b := range cases {
-		r, err := s.Ingest(ctx, b, 0)
+	type tc struct {
+		b   *model.ObservationBatch
+		tok int64
+	}
+	cases := map[string]tc{
+		"another collector":       {claim(batch(mid, true, deb), model.ReachNotRunning), agent},
+		"a partial reading":       {claim(agentBatch(mid, "partial: read 3 processes, 9 could not be read", deb), model.ReachNotRunning), agent},
+		"no process reading":      {claim(agentBatch(mid, "", deb), model.ReachNotRunning), agent},
+		"not_imported from agent": {claim(agentBatch(mid, "read 40 processes", deb), model.ReachNotImported), agent},
+		"a token not an agent's":  {claim(agentBatch(mid, "read 40 processes", deb), model.ReachNotRunning), plain.ID},
+		"no token (a browser)":    {claim(agentBatch(mid, "read 40 processes", deb), model.ReachNotRunning), 0},
+	}
+	for name, c := range cases {
+		r, err := s.Ingest(ctx, c.b, c.tok)
 		if err != nil {
 			t.Fatal(name, err)
 		}
 		var st string
-		if err := pool.QueryRow(ctx, `SELECT reachability FROM inventory WHERE asset_id = $1 AND removed_at IS NULL`, r.AssetID).Scan(&st); err != nil {
+		if err := pool.QueryRow(ctx, `SELECT reachability FROM inventory WHERE asset_id = $1 AND purl LIKE 'pkg:deb/debian/openssl@%' AND removed_at IS NULL`, r.AssetID).Scan(&st); err != nil {
 			t.Fatal(name, err)
 		}
 		if st != model.ReachUnknown {
@@ -112,9 +138,10 @@ func TestIngestUntrustedReachability(t *testing.T) {
 func TestFindingReachabilityAndPolicySteps(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	s := store.New(testdb.New(t))
+	tok := agentToken(t, s, ctx)
 	b := agentBatch(mid, "read 40 processes", "pkg:deb/debian/openssl@3.0.1?distro=debian-12")
 	b.Observations[0].Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: []string{"not loaded by any process"}}
-	r, err := s.Ingest(ctx, b, 0)
+	r, err := s.Ingest(ctx, b, tok)
 	if err != nil {
 		t.Fatal(err)
 	}

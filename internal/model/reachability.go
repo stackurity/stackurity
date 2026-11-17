@@ -88,22 +88,34 @@ var reachClaimTypes = map[string]map[string]bool{
 	ReachNotRunning:  {"deb": true, "apk": true},
 }
 
+// ReachTrust is what the server knows, from its own records rather than
+// the batch, about where a batch came from: an agent's token (issued at
+// enrollment or bound to a host) may report processes; a source scan (the
+// server's own repository scan, a CI job's token, or another token that
+// is not an agent's) may report imports.
+type ReachTrust struct {
+	Processes bool
+	Imports   bool
+}
+
 // TrustedReach returns o's reachability as the server stores it. Reachable
 // and unknown are kept. A claim that the package is not reached is kept
-// only from the collector that makes it, for a package type it can
-// assess, in a batch whose coverage entry says it read everything;
-// anything else is stored as unknown (nil), so a token cannot lower
-// priorities by claiming what no collector checked.
-func (b *ObservationBatch) TrustedReach(o *Observation) *Reachability {
+// only when t says the source may make it, for the asset kind it is about
+// (not running: a host; not imported: a repository), from the collector
+// that makes it, for a package type it can assess, in a batch whose
+// coverage entry says it read everything; anything else is stored as
+// unknown (nil), so a token cannot lower priorities by claiming what no
+// collector checked.
+func (b *ObservationBatch) TrustedReach(o *Observation, t ReachTrust) *Reachability {
 	r := o.Reachability
 	if r == nil || r.Status == ReachUnknown || r.Status == ReachReachable {
 		return r
 	}
-	collector, scope := ReachImportsCollector, ReachImportsScope
+	collector, scope, kind, ok := ReachImportsCollector, ReachImportsScope, AssetRepository, t.Imports
 	if r.Status == ReachNotRunning {
-		collector, scope = ReachProcessCollector, ReachProcessScope
+		collector, scope, kind, ok = ReachProcessCollector, ReachProcessScope, AssetHost, t.Processes
 	}
-	if b.Collector.ID != collector || !reachClaimTypes[r.Status][purlType(o.Purl)] {
+	if !ok || b.Asset.Kind != kind || b.Collector.ID != collector || !reachClaimTypes[r.Status][purlType(o.Purl)] {
 		return nil
 	}
 	for _, c := range b.Coverage {

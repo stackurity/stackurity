@@ -101,7 +101,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if err != nil {
 			return err
 		}
-		if err := loadObservations(ctx, tx, b); err != nil {
+		trust, err := reachTrust(ctx, tx, tokenID)
+		if err != nil {
+			return err
+		}
+		if err := loadObservations(ctx, tx, b, trust); err != nil {
 			return fmt.Errorf("load observations: %w", err)
 		}
 		// The component catalogue is shared between workspaces, so it is written
@@ -209,7 +213,36 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 	return res, nil
 }
 
-func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) error {
+type serverCollectionKey struct{}
+
+// AsServerCollection marks ctx as the server's own collection (a
+// repository it cloned and scanned), whose not imported claims it trusts.
+func AsServerCollection(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serverCollectionKey{}, true)
+}
+
+// reachTrust says, from the server's records, which not-reached claims a
+// batch may make: an agent's token (issued at enrollment, or bound to a
+// host) may report processes, any other token or the server's own scan
+// may report imports. A batch with no token (a signed-in browser's
+// upload) may make neither.
+func reachTrust(ctx context.Context, tx pgx.Tx, tokenID int64) (model.ReachTrust, error) {
+	if ctx.Value(serverCollectionKey{}) != nil {
+		return model.ReachTrust{Imports: true}, nil
+	}
+	if tokenID <= 0 {
+		return model.ReachTrust{}, nil
+	}
+	var agent bool
+	err := tx.QueryRow(ctx, `SELECT t.asset_id IS NOT NULL OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id)
+		FROM api_tokens t WHERE t.id = $1`, tokenID).Scan(&agent)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.ReachTrust{}, nil
+	}
+	return model.ReachTrust{Processes: agent, Imports: !agent}, err
+}
+
+func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch, trust model.ReachTrust) error {
 	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE obs_in (
 		purl_key text, type text, namespace text, name text, purl text, version text,
 		location text, direct boolean, scope text, confidence text, evidence jsonb,
@@ -230,7 +263,7 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 		// Not assessed is unknown, never the status an earlier batch sent.
 		// A claim the batch's collector cannot make is unknown too.
 		reach, reachEv := model.ReachUnknown, []byte(nil)
-		if r := b.TrustedReach(&o); r != nil {
+		if r := b.TrustedReach(&o, trust); r != nil {
 			reach = r.Status
 			if len(r.Evidence) > 0 {
 				reachEv, _ = json.Marshal(r.Evidence)
