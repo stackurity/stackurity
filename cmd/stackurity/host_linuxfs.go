@@ -29,6 +29,8 @@ func linuxHostCollector(o *hostOptions) (func(context.Context) ([]*model.Observa
 		// A mounted image or container filesystem is not this host's code:
 		// report its runtimes from paths, never by running them.
 		col.RunVersion = nil
+		// Nor are this host's running processes.
+		col.ProcDir = ""
 	}
 	return func(parent context.Context) ([]*model.ObservationBatch, error) {
 		ctx, cancel := context.WithTimeout(parent, hostCollectTimeout)

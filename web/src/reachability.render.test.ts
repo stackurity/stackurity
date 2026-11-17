@@ -77,3 +77,15 @@ test("notice: only for a not-reached finding the plan does not lower", () => {
     assert.equal(show(d, licensed), false, JSON.stringify([d, licensed]));
   }
 });
+
+test("process access on a host page: the command only while it is off, and what it costs", () => {
+  const cmd = "curl -fsSL https://stk.example.com/install/agent.sh | sudo STACKURITY_PROCESSES=1 sh";
+  const off = render(R.ProcessAccessFact, { value: "off", command: cmd });
+  assert.match(off, /Off: the agent sees only programs started by their full path/);
+  assert.match(off, /equivalent to root on the server/);
+  assert.ok(off.includes("STACKURITY_PROCESSES=1"), off);
+  const on = render(R.ProcessAccessFact, { value: "on", command: cmd });
+  assert.match(on, /^<span>On:/);
+  assert.ok(!on.includes("STACKURITY_PROCESSES"), on);
+  assert.equal(render(R.ProcessAccessFact, { value: undefined, command: cmd }), "");
+});

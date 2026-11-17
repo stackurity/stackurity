@@ -9,7 +9,7 @@ Most findings are in packages that are installed but never used: a library a dep
 | Not running | A host package that no running process executes or has loaded | The agent reads the running processes; it needs read access to other users' processes, which is opt-in when the server is added |
 | Not assessed (`unknown`) | No evidence either way | The default for every package, and what any collector that did not check reports |
 
-**Not assessed counts as reachable.** Nothing is ever shown as unreachable without evidence a person can check: each status other than unknown carries the collector's evidence lines ("no import of `lodash` in 214 source files under `src/`", "no running process has `libssl.so.3` loaded"). A collection that does not assess a package sets it back to unknown, so an old claim never outlives the check that made it. The server stores a claim that a package is not reached only when its own records say the source can make it: not running only for a host, from that host's own agent (a token bound to the host, or the token the agent got when it enrolled, which is tied to the first host it reports), and not imported only for a repository, from the server's own repository scan or a token that is not an agent's. The batch must also come from the collector that makes the claim (`linux-agent` for dpkg and apk packages; `lockfile-scanner` for npm, Go, Composer and Python packages) with a coverage entry that says the reading was whole. Any other claim is stored as unknown.
+**Not assessed counts as reachable.** Nothing is ever shown as unreachable without evidence a person can check: each status other than unknown carries the collector's evidence lines ("no import of `lodash` in 214 source files under `src/`", "Its service (memcached.service) is not enabled, and none of its programs was running in any of the agent's readings of the last 7 days …"). A collection that does not assess a package sets it back to unknown, so an old claim never outlives the check that made it. The server stores a claim that a package is not reached only when its own records say the source can make it: not running only for a host, from that host's own agent (a token bound to the host, or the token the agent got when it enrolled, which is tied to the first host it reports), and not imported only for a repository, from the server's own repository scan or a token that is not an agent's. The batch must also come from the collector that makes the claim (`linux-agent` for dpkg and apk packages; `lockfile-scanner` for npm, Go, Composer and Python packages) with a coverage entry that says the reading was whole. Any other claim is stored as unknown.
 
 Reachability is a statement about the asset as it was last collected: a package that is not running now may be started later, and code that does not import a package today may import it after the next deploy. That is why it lowers a priority by at most one level and never hides a finding.
 
@@ -27,6 +27,26 @@ When the server scans a repository, or `stackurity scan` scans a directory, it r
 Each claim carries its evidence: the file that imports the package, or what was searched ("no import or require of left-pad in 214 JavaScript/TypeScript files, and not named in scripts or configuration"). Not imported is claimed only for a direct dependency that no other package in the lockfile depends on: a transitive dependency runs whenever the package that needs it does (`body-parser` under `express`), so it stays not assessed. A development dependency says so.
 
 Servers before reachability refuse the field, so `stackurity scan` sends it only to servers whose `GET /meta` lists `reachability`.
+
+## Hosts: running or not running
+
+On a Linux host the agent reads, on every report, which installed packages its running processes use. From `/proc` it reads each process's program (`/proc/<pid>/exe`), the names of the files in its memory map (`/proc/<pid>/maps`: its shared libraries) and its open sockets (`/proc/<pid>/fd` and the kernel's TCP tables), and matches the files against the dpkg or apk file lists. It never attaches to a process or reads its memory. rpm hosts, and filesystems read with `--root`, are not assessed yet.
+
+| Status | When |
+|---|---|
+| Reachable | A running process is the package's program or has one of its files mapped ("Running: nginx (pid 812) is /usr/sbin/nginx.", "Loaded by nginx (pid 812): /usr/lib/x86_64-linux-gnu/libssl.so.3."), with the addresses that program listens on. A long-running agent keeps a package reachable for 7 days after it last saw it running, so programs that run now and then are not called not running between runs. |
+| Not running | The agent could read every process, the package ships programs (under `bin` or `sbin`) and nothing else that runs code, and none of them was running. The evidence gives the time and the number of processes read, and says that programs started only now and then, by scripts or by hand, are not seen between readings. |
+| Not assessed | Everything else: libraries and helpers (under `/usr/lib`, `/usr/libexec`, `/opt`), which other programs can load or start on demand (a PAM module on each login); packages with scripts; anything started from cron, a systemd timer or socket, D-Bus or a hook; kernel packages, which have their own check (`not_running_kernel`); and every package when the agent could not read every process. |
+
+**Process access is opt-in.** The agent runs as an unprivileged user, and Linux lets it read other users' processes only with `CAP_SYS_PTRACE`. Without it the agent still sees programs started by their full path (`/proc/<pid>/cmdline` is readable by everyone), so it can mark a package reachable but never not running. To turn it on, tick **See which packages are running** under **Assets › Add server**, or run the installer again on a host that already reports (the host's page shows the command, under its attributes):
+
+```sh
+curl -fsSL https://<your server>/install/agent.sh | sudo STACKURITY_PROCESSES=1 sh
+```
+
+The service then gets `AmbientCapabilities=CAP_SYS_PTRACE`, with the `ptrace`, `process_vm_readv` and `process_vm_writev` system calls blocked. `CAP_SYS_PTRACE` still allows reading any process's memory through `/proc/<pid>/mem`, so like Docker access it is **equivalent to root on the host**; the agent only reads the paths above. `STACKURITY_PROCESSES=0` turns it off; an upgrade keeps the setting. The host attribute `process_access` (`on` or `off`) shows which applies.
+
+One reading is small whatever the host: at most 4,096 processes, 65,536 map lines per process and 50,000 distinct file names are kept, and the package file lists are streamed, not loaded. The coverage entry `reachability/processes` says how many processes were read; its reason starts with `partial:` when some could not be read or a limit was reached, and then no package is called not running. Like the repository entry, its status is always `checked`, so it never counts as a coverage gap.
 
 ## What it does to a priority
 

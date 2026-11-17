@@ -9,6 +9,11 @@
 # STACKURITY_DOCKER=0 turns it off again; without either, an upgrade keeps
 # the setting it had.
 #
+# Add STACKURITY_PROCESSES=1 to let the agent see which packages running
+# processes use (CAP_SYS_PTRACE, also equivalent to root; see
+# docs/reachability.md). STACKURITY_PROCESSES=0 turns it off; an upgrade
+# keeps the setting it had.
+#
 # It downloads the agent from your Stackurity server and checks its SHA-256,
 # creates an unprivileged "stackurity" user, exchanges the one-time
 # enrollment code for a collector token, and runs the agent as a hardened
@@ -140,6 +145,27 @@ case "$DOCKER" in
     ;;
 esac
 
+# Process access: opt-in, kept across upgrades. It lets the agent see which
+# programs and libraries running processes use, so packages nothing runs
+# can be told apart (docs/reachability.md).
+PROCS="${STACKURITY_PROCESSES:-}"
+if [ -z "$PROCS" ] && grep -q '^STACKURITY_PROCESSES=true$' "$CONF/agent.env"; then PROCS=1; fi
+CAPS="CapabilityBoundingSet="
+case "$PROCS" in
+  1 | true)
+    CAPS="CapabilityBoundingSet=CAP_SYS_PTRACE
+AmbientCapabilities=CAP_SYS_PTRACE
+SystemCallFilter=~ptrace process_vm_readv process_vm_writev"
+    sed -i '/^STACKURITY_PROCESSES=/d' "$CONF/agent.env"
+    echo "STACKURITY_PROCESSES=true" >>"$CONF/agent.env"
+    say "Process access: the agent reads each process's program, the file names in its memory map and its open sockets under /proc."
+    say "warning: CAP_SYS_PTRACE also allows reading other processes' memory, so it is equivalent to root on this host. The service blocks the ptrace and process_vm system calls, and the agent never reads process memory; run with STACKURITY_PROCESSES=0 to turn it off."
+    ;;
+  *)
+    sed -i '/^STACKURITY_PROCESSES=/d' "$CONF/agent.env"
+    ;;
+esac
+
 cat >"$UNIT" <<UNIT
 [Unit]
 Description=Stackurity inventory agent (read-only)
@@ -163,7 +189,7 @@ ProtectKernelModules=yes
 ProtectControlGroups=yes
 RestrictSUIDSGID=yes
 LockPersonality=yes
-CapabilityBoundingSet=
+$CAPS
 # A background job: the server's own work comes first.
 Nice=10
 IOSchedulingClass=best-effort

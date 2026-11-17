@@ -216,6 +216,39 @@ func remotePacks(cl *client.Client) func(ctx context.Context) ([]lockfile.Extens
 	}
 }
 
+// serverTakes is what GET /meta says the server accepts from the agent.
+type serverTakes struct{ appList, hostImages, leaks, configFindings, reachability bool }
+
+// forServer drops from the agent's batches what the server does not take:
+// older servers refuse unknown fields, and the whole batch would fail.
+func forServer(bs []*model.ObservationBatch, t serverTakes) []*model.ObservationBatch {
+	for _, b := range bs {
+		if !t.appList {
+			b.Apps = nil
+		}
+		if !t.leaks {
+			b.Leaks = nil
+		}
+		if !t.configFindings {
+			b.ConfigFindings = nil
+		}
+		if !t.reachability {
+			b.StripReachability()
+		}
+	}
+	if !t.hostImages {
+		// An older server would store image identities unscoped.
+		kept := bs[:0]
+		for _, b := range bs {
+			if b.Collector.ID != docker.CollectorID {
+				kept = append(kept, b)
+			}
+		}
+		bs = kept
+	}
+	return bs
+}
+
 func splitList(s string) []string {
 	var out []string
 	for _, p := range strings.Split(s, ",") {
@@ -377,14 +410,13 @@ host; see docs/install.md.`,
 			var assetIDs []int64
 			// Servers before 0.14 refuse a batch with an app list (unknown
 			// field); ask once what the server takes.
-			appList, hostImages, takesLeaks, takesConfig := false, false, false, false
+			var takes serverTakes
 			if m, err := cl.Meta(ctx); err == nil {
-				appList = m.Has(client.FeatureAppList)
-				hostImages = m.Has(client.FeatureHostImages)
-				takesLeaks = m.Has(client.FeatureLeaks)
-				takesConfig = m.Has(client.FeatureConfigFindings)
+				takes = serverTakes{appList: m.Has(client.FeatureAppList), hostImages: m.Has(client.FeatureHostImages),
+					leaks: m.Has(client.FeatureLeaks), configFindings: m.Has(client.FeatureConfigFindings),
+					reachability: m.Has(client.FeatureReachability)}
 			}
-			if opts.docker != nil && !hostImages {
+			if opts.docker != nil && !takes.hostImages {
 				fmt.Fprintln(os.Stderr, "warning: the server does not take container images from the agent (Stackurity 0.14 or later is needed); --docker is ignored")
 			}
 			report := func() (*model.ObservationBatch, error) {
@@ -392,32 +424,7 @@ host; see docs/install.md.`,
 				if err != nil {
 					return nil, err
 				}
-				if !appList {
-					for _, b := range bs {
-						b.Apps = nil
-					}
-				}
-				if !takesLeaks {
-					// Older servers refuse the field.
-					for _, b := range bs {
-						b.Leaks = nil
-					}
-				}
-				if !takesConfig {
-					for _, b := range bs {
-						b.ConfigFindings = nil
-					}
-				}
-				if !hostImages {
-					// An older server would store image identities unscoped.
-					kept := bs[:0]
-					for _, b := range bs {
-						if b.Collector.ID != docker.CollectorID {
-							kept = append(kept, b)
-						}
-					}
-					bs = kept
-				}
+				bs = forServer(bs, takes)
 				var ids []int64
 				for i, b := range bs {
 					r, err := cl.Ingest(ctx, b)

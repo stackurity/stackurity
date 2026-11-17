@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ReachabilityDetail, ReachabilityStatus } from "../api";
 import { useAuth } from "../auth";
 import { Badge, type Tone } from "./Badge";
+import { CodeBlock } from "./ui";
 import { ProNotice } from "./ProNotice";
 
 const LABELS: Record<ReachabilityStatus, string> = {
@@ -93,6 +94,28 @@ export function ReachabilityWhyView({
         </ul>
       )}
       {children}
+    </div>
+  );
+}
+
+/** What process access does and costs, said the same way wherever it is offered. */
+export const PROCESS_ACCESS_TEXT =
+  "It reads which programs and libraries running processes use, so packages nothing runs can be marked not running and paid plans can lower their priority. The agent gets CAP_SYS_PTRACE, which also allows reading other processes' memory and is equivalent to root on the server. It only reads program paths, memory-map file names and open sockets under /proc.";
+
+/**
+ * A Linux host's process access (its agent's process_access attribute):
+ * what it means, and while it is off the command that turns it on.
+ */
+export function ProcessAccessFact({ value, command }: { value?: string; command: string }) {
+  if (value === "on") return <span>On: the agent sees which packages running processes use.</span>;
+  if (value !== "off") return null;
+  return (
+    <div>
+      <p className="small">
+        Off: the agent sees only programs started by their full path, so no package is marked not running. {PROCESS_ACCESS_TEXT} To
+        turn it on, run this on the server (it keeps the agent's enrollment and other settings):
+      </p>
+      <CodeBlock text={command} label="Command that turns on process access" />
     </div>
   );
 }

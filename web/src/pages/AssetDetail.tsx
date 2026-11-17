@@ -73,6 +73,8 @@ import { coverageDimension, reportingDimension, securityDimension } from "../ass
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
 import { GroupCrumb } from "../components/nav";
+import { ProcessAccessFact } from "../components/Reachability";
+import { processAccessCommand } from "../installCommand";
 
 type Tab = "action-plan" | "stack" | "findings" | "leaks" | "config" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
 const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "config", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
@@ -81,7 +83,7 @@ const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "config", "inv
 const STACK_FIRST_KINDS = ["application", "host", "repository", "cluster", "workload"];
 
 /** Host attributes about pending reboots; shown in their own block, not as raw attributes. */
-const REBOOT_ATTRS = ["reboot_required", "reboot_reason", "kernel_running", "kernel_latest_installed"];
+const REBOOT_ATTRS = ["reboot_required", "reboot_reason", "kernel_running", "kernel_latest_installed", "process_access"];
 
 /** Attributes of an application found on a host by the agent; shown first, with readable labels. */
 const APP_ATTRS: [string, string][] = [
@@ -192,6 +194,9 @@ export function AssetDetailPage() {
         {at.kernel_running && at.kernel_running !== at.kernel_latest_installed && <span className="muted"> (not running)</span>}
       </span>,
     ]);
+
+  if (at.process_access === "on" || at.process_access === "off")
+    rebootEntries.push(["process access", <ProcessAccessFact value={at.process_access} command={processAccessCommand(window.location)} />]);
 
   return (
     <>
