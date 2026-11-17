@@ -836,6 +836,10 @@ type summaryData struct {
 	// oneOff: assets scanned once, for the weekly nudge (loaded on demand).
 	oneOff     []store.OneOffGroup
 	oneOffRead bool
+	// gate: open policy gate violations by policy and asset, for the
+	// weekly summary (loaded on demand, gate_summary.go).
+	gate     []store.GateAssetViolations
+	gateRead bool
 }
 
 func (s *summaryData) updates() ([]store.BehindInstall, error) {
@@ -1176,6 +1180,16 @@ func (d *Dispatcher) summaryMessage(r store.Route, weekly bool, data *summaryDat
 	if weekly && !r.Narrowed() && len(r.TeamIDs) == 0 {
 		if it, ok := d.oneOffItem(data); ok {
 			sections = append(sections, Section{Title: "Scanned once", Items: []Item{it}})
+		}
+	}
+
+	// Policy gates: open violations per policy on the route's assets,
+	// weekly only. A standing list, so it does not make the summary
+	// "changed" by itself.
+	if weekly && assetsWanted(r) {
+		if sec, n, ok := d.gateSection(r, d.gateViolations(data)); ok {
+			sections = append(sections, sec)
+			counts["policy_violations"] = n
 		}
 	}
 
