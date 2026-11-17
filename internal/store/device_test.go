@@ -147,3 +147,38 @@ func TestDeviceAuthorizationLifecycle(t *testing.T) {
 		t.Errorf("uncollected token after expiry: %+v %v", got, err)
 	}
 }
+
+// The periodic sweep revokes an approval nobody collected without waiting
+// for a new request.
+func TestSweepDeviceAuthorizations(t *testing.T) {
+	s := store.New(testdb.New(t))
+	bg := context.Background()
+	ws := tenant.WithWorkspace(bg, tenant.DefaultWorkspace)
+	u, err := s.CreateUser(ws, "sweep@x.io", "", auth.RoleEngineer, "Correct horse battery 1!")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, uc, _, err := s.CreateDeviceAuthorization(bg, "stackurity-scan", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, tok, err := s.ApproveDeviceAuthorization(bg, uc, store.DeviceApproval{UserID: u.ID, WorkspaceID: tenant.DefaultWorkspace, TokenName: "z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SweepDeviceAuthorizations(bg); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.GetToken(ws, tok.ID); got == nil || got.RevokedAt != nil {
+		t.Fatalf("a live approval was revoked: %+v", got)
+	}
+	if _, err := s.Pool.Exec(tenant.System(bg), `UPDATE device_authorizations SET expires_at = now() - interval '1 second' WHERE token_id = $1`, tok.ID); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SweepDeviceAuthorizations(bg); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := s.GetToken(ws, tok.ID); err != nil || got.RevokedAt == nil {
+		t.Errorf("uncollected token after the sweep: %+v %v", got, err)
+	}
+}

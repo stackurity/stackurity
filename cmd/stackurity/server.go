@@ -1019,6 +1019,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		_, err = st.Enqueue(ctx, "second.check", map[string]any{}, "second-check", time.Time{})
 		return err
 	})
+	// Terminal sign-ins (docs/device-login.md): an approved request whose
+	// tool never collected its token has that token revoked within minutes
+	// of expiring, not only when the next request comes in.
+	w.Every("device-sign-in-sweep", 5*time.Minute, st.SweepDeviceAuthorizations)
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
 			return err
