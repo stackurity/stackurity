@@ -2115,6 +2115,60 @@ The projects of one of the connection's sites (`?site=` the cloud id, optional `
 
 A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`, `category`: `new`, `indeterminate` or `done`) and the site's `priorities`, to pick a channel's issue type, `resolve_transition` and `priorities`. `?site=` as above.
 
+### `GET /integrations/evidence`
+
+**Who:** admin · licensed build (also without the Compliance add-on)
+
+The compliance evidence connectors ([evidence-connectors.md](evidence-connectors.md)): `{"compliance_addon", "vanta": {"available", "connection"}, "drata": {"available", "connection"}}`. `compliance_addon` is false when the organisation's plan does not include the Compliance add-on (for example after a downgrade): the connections are still listed so an admin can disconnect them, but nothing is sent until the add-on is back. `available` is false for Vanta when the operator has not set up the Vanta app (`STACKURITY_VANTA_CLIENT_ID`), and always true for Drata. `connection` is null until connected, otherwise `id`, `vendor`, `region` (`us`, `eu`, `aus` or `apac`), `status` (`active`, `paused`, or `reconnect_needed` after the vendor refused the token or key), `status_reason`, `interval_hours` (6, 12, 24 or 168), `next_sync_at`, `last_sync_at`, `last_sync_status` (`ok`, `partial`, `failed` or null), `last_sync_summary` (`assets`, `vulnerabilities`, `evidence_uploaded`, `message`), `config` (the vendor's ids only: Vanta `document_id` and `document_title`; Drata `workspace_id`), `connected_by` and `connected_at`. Tokens and API keys are never returned. Every other route here except `DELETE /integrations/evidence/{vendor}` answers `402 plan_required` without the Compliance add-on; the Community build does not serve them.
+
+### `POST /integrations/evidence/vanta/connect`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Starts Connect Vanta: `{"region"}` (`us`, `eu` or `aus`); answers `authorize_url`, Vanta's consent page in that region, with a single-use state bound to the caller and organisation (10 minutes; only its SHA-256 is stored). 404 `not_configured` without the Vanta app.
+
+### `POST /integrations/evidence/vanta/oauth`
+
+**Who:** admin, signed in to the dashboard · licensed build (Compliance add-on)
+
+Finishes Connect Vanta. Vanta sends the browser back to the dashboard page `/integrations/vanta/oauth/callback` (the redirect URI of the operator's Vanta app); the page posts what Vanta gave it, `{"code", "state"}`, or `{"state", "error"}` when the person cancelled on Vanta's page. The session cookie is `SameSite=Strict`, so the browser does not send it on the redirect from Vanta; this same-origin request carries it. The state must be the caller's, made in this organisation, unused and less than 10 minutes old; it is used up by the first attempt. The code is exchanged at once (Vanta's codes last 30 seconds) and the tokens are stored sealed. Answers `{"connection", "reconnected"}`: 201, or 200 for a reconnect. Errors: 400 `access_denied` (cancelled on Vanta's page), 400 `state` (unknown, used, expired or someone else's state; checked before Vanta is called), 400 or 502 `exchange_failed` (no code, or Vanta refused it), 404 `not_configured` (no Vanta app or no `STACKURITY_SECRET_KEY`), 402 `plan_required` and 403 `forbidden` (not an admin, an API token or assistant, or the organisation's two-factor policy not met). Audited as `evidence_connection.create` or `evidence_connection.reconnect`.
+
+### `POST /integrations/evidence/drata`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Connects Drata, or replaces the key of a connection that needs it: `{"api_key", "region", "drata_workspace_id"}` (`region` `us`, `eu` or `apac`). The key is checked with one read call to Drata before it is stored sealed; 400 `drata_key_rejected` when Drata answers 401, 400 `drata_key_forbidden` on 403 (the key lacks a permission, or Custom Connections and Tests is not enabled), 400 `invalid` for a missing field. Answers the connection (201, or 200 when replacing the key). Audited as `evidence_connection.create`.
+
+### `GET /integrations/evidence/vanta/documents`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+The connected Vanta account's documents, `items` each with `id` and `title`, to choose where the evidence file goes. 404 when Vanta is not connected; 409 `reconnect_needed`; 502 when Vanta refuses.
+
+### `PUT /integrations/evidence/{vendor}`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Changes a connection (`vendor` `vanta` or `drata`): any of `interval_hours` (6, 12, 24 or 168), `status` (`active` or `paused`) and, for Vanta, `vanta_document_id` (one from `GET /integrations/evidence/vanta/documents`; Stackurity looks it up in Vanta for its title, and an unknown id answers 400 `invalid`). Answers the connection. 404 when that vendor is not connected. Audited as `evidence_connection.update`.
+
+### `DELETE /integrations/evidence/{vendor}`
+
+**Who:** admin · licensed build (also without the Compliance add-on)
+
+Disconnects, also after the plan lost the Compliance add-on: for Vanta, first asks Vanta to suspend the grant (`POST /v1/oauth/token/suspend`, best effort, with the access token refreshed first when it has expired; a failure does not stop the disconnect, and `token_suspended` says whether it worked), then deletes the connection, its tokens or key, and its sync history. What was already sent stays in the vendor. Audited as `evidence_connection.delete`.
+
+### `POST /integrations/evidence/{vendor}/sync`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+Queues a sync now: 202 `{"queued": true}`. At most once every 5 minutes per connection (429 `rate_limited`); 409 when the connection is paused or needs reconnecting.
+
+### `GET /integrations/evidence/{vendor}/runs`
+
+**Who:** admin · licensed build (Compliance add-on)
+
+The connection's newest 50 syncs, `items` each with `id`, `started_at`, `finished_at`, `status` (`running`, `ok`, `partial` or `failed`), `counts` (`assets`, `vulnerabilities`, `evidence_uploaded`) and `error`.
+
 ### `POST /integrations/slack/events`
 
 **Who:** Slack (the app's signing secret)

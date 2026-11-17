@@ -13163,6 +13163,384 @@
     }
    }
   },
+  "/integrations/evidence": {
+   "get": {
+    "operationId": "get_integrations_evidence",
+    "summary": "Compliance evidence connections (Vanta, Drata) (licensed edition)",
+    "description": "Whether the organisation's plan includes the Compliance add-on (`compliance_addon`), whether each vendor is available on this server, and the organisation's connection to it, with its schedule and last sync; tokens and API keys are never returned. Also answers without the add-on (after a downgrade), so the connections can be disconnected\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/vanta/connect": {
+   "post": {
+    "operationId": "post_integrations_evidence_vanta_connect",
+    "summary": "Start Connect Vanta (licensed edition)",
+    "description": "`{\"region\"}` (`us`, `eu` or `aus`); answers `authorize_url`, Vanta's consent page, with a single-use state (10 minutes). 404 `not_configured` without the operator's Vanta app\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/vanta/oauth": {
+   "post": {
+    "operationId": "post_integrations_evidence_vanta_oauth",
+    "summary": "Finish Connect Vanta (licensed edition)",
+    "description": "`{\"code\", \"state\"}` (or `{\"state\", \"error\"}` after a cancel), posted by the dashboard page `/integrations/vanta/oauth/callback` Vanta sends the browser back to. The state must be the caller's, from this organisation, unused and fresh; it is used up by the first attempt. Answers `{\"connection\", \"reconnected\"}` (201, or 200 for a reconnect). Errors: 400 `access_denied`, 400 `state`, 400 or 502 `exchange_failed`, 404 `not_configured`, 402 `plan_required`, 403 `forbidden` (API tokens, assistants and sessions that have not met the two-factor policy too)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "code": {
+          "type": "string"
+         },
+         "state": {
+          "type": "string"
+         },
+         "error": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "state"
+        ]
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/drata": {
+   "post": {
+    "operationId": "post_integrations_evidence_drata",
+    "summary": "Connect Drata with an API key (licensed edition)",
+    "description": "`{\"api_key\", \"region\", \"drata_workspace_id\"}`: the key is checked with one read call, then stored sealed\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/vanta/documents": {
+   "get": {
+    "operationId": "get_integrations_evidence_vanta_documents",
+    "summary": "Vanta documents the evidence file can go to (licensed edition)",
+    "description": "Lists the connected Vanta account's documents (`id`, `title`)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/{vendor}": {
+   "put": {
+    "operationId": "put_integrations_evidence_vendor",
+    "summary": "Change a compliance evidence connection (licensed edition)",
+    "description": "`{\"interval_hours\"?, \"status\"?, \"vanta_document_id\"?}`\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "vendor",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "vanta",
+        "drata"
+       ]
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "delete": {
+    "operationId": "delete_integrations_evidence_vendor",
+    "summary": "Disconnect Vanta or Drata (licensed edition)",
+    "description": "Deletes the connection and its tokens or key, also without the Compliance add-on (for Vanta, after asking Vanta to suspend the grant with a refreshed token, best effort; `token_suspended` says whether it worked)\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "vendor",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "vanta",
+        "drata"
+       ]
+      }
+     }
+    ],
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/{vendor}/sync": {
+   "post": {
+    "operationId": "post_integrations_evidence_vendor_sync",
+    "summary": "Sync to Vanta or Drata now (licensed edition)",
+    "description": "Queues a sync (202); at most once every 5 minutes per connection\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "vendor",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "vanta",
+        "drata"
+       ]
+      }
+     }
+    ],
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/integrations/evidence/{vendor}/runs": {
+   "get": {
+    "operationId": "get_integrations_evidence_vendor_runs",
+    "summary": "Recent syncs of a compliance evidence connection (licensed edition)",
+    "description": "The newest 50 syncs: status, counts and error\n\nRole: admin",
+    "tags": [
+     "Integrations"
+    ],
+    "x-stackurity-role": "admin",
+    "parameters": [
+     {
+      "name": "vendor",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string",
+       "enum": [
+        "vanta",
+        "drata"
+       ]
+      }
+     }
+    ],
+    "x-stackurity-edition": "ee",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/integrations/teams/install": {
    "post": {
     "operationId": "post_integrations_teams_install",

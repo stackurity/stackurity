@@ -32,3 +32,11 @@ STACKURITY_SAML_ROLE_MAP  SAML single sign-on, licensed build
 STACKURITY_SAML_SP_CERT_FILE  SAML single sign-on, licensed build
 STACKURITY_SAML_SP_KEY_FILE  SAML single sign-on, licensed build
 STACKURITY_SAML_WORKSPACE  SAML single sign-on, licensed build
+STACKURITY_VANTA_CLIENT_ID  Vanta evidence connector, licensed build
+STACKURITY_VANTA_CLIENT_ID_FILE  Vanta evidence connector, licensed build
+STACKURITY_VANTA_CLIENT_SECRET  Vanta evidence connector, licensed build
+STACKURITY_VANTA_CLIENT_SECRET_FILE  Vanta evidence connector, licensed build
+STACKURITY_VANTA_COMPONENT_RESOURCE_ID  Vanta evidence connector, licensed build
+STACKURITY_VANTA_COMPONENT_RESOURCE_ID_FILE  Vanta evidence connector, licensed build
+STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID  Vanta evidence connector, licensed build
+STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID_FILE  Vanta evidence connector, licensed build

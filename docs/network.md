@@ -140,6 +140,16 @@ A PagerDuty channel posts events to `https://events.pagerduty.com/v2/enqueue`, o
 
 A ServiceNow channel calls the configured instance only: the Table API (`/api/now/table/<table>`, and `/api/now/table/sys_user_group` for Send test when an assignment group is set) and, with OAuth, `/oauth_token.do`. Records contain what a Jira issue does; with `sync_back`, only the state of the records Stackurity created is read. An instance on a private address is subject to the same `STACKURITY_PRIVATE_TARGETS` policy as webhooks.
 
+### Compliance evidence connectors
+
+Only in the licensed build, and only for an organisation that connected Vanta or Drata under **Integrations → Compliance evidence** ([evidence-connectors.md](evidence-connectors.md)). These are requests made for that organisation, not default egress: a server where nobody connected a vendor makes none. Each goes through the organisation's outbound guard on a new connection (no keep-alive), ignores proxy settings from the environment, and never follows redirects.
+
+| Destination | When | Data sent |
+|---|---|---|
+| `api.vanta.com` | Connect Vanta (`/oauth/token`, the code exchange with the app's client ID and secret), each sync (`/oauth/token` to refresh the hour-long token; `/v1/resources/vulnerable_component`, `/v1/resources/package_vulnerability_connectors`, `/v1/documents/...`), choosing a document (`/v1/documents`) and Disconnect (`/v1/oauth/token/suspend`) | The organisation's monitored assets (names, kinds, links to the dashboard), its open vulnerabilities (package, version, severity, CVE, fix) and the evidence pack file. Requests are spaced at least 6 seconds apart |
+| `app.vanta.com`, `app.eu.vanta.com`, `app.aus.vanta.com` | Not contacted by the server: the administrator's browser opens Vanta's consent page there | — |
+| `public-api.drata.com`, `public-api.eu.drata.com`, `public-api.apac.drata.com` (by the region chosen), path `/public/v2` | Connect Drata (one `GET /workspaces` to check the key) and each sync (the custom connection, its upload sessions, the evidence file and evidence item) | The same assets and open vulnerabilities, with priority, fix-by date and SLA status, and the evidence pack file, with the organisation's Drata API key |
+
 ### Container image integrations
 
 Syft fetches image manifests and layers from the registry in the image reference. With a secret reference configured, the credential is sent to that registry only. For a workspace that may not reach private networks, Syft connects through a proxy inside the server that checks every connection (including redirects to blob storage) against the same policy.
