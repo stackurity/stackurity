@@ -2,7 +2,9 @@ package linux
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -39,6 +41,11 @@ func procHost(t *testing.T) (root string, c *Collector) {
 		}
 	}
 	write("etc/os-release", "ID=debian\nVERSION_ID=\"12\"\n")
+	for _, d := range []string{"etc/cron.d", "usr/lib/systemd/system"} {
+		if err := os.MkdirAll(filepath.Join(root, d), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
 	if err := os.MkdirAll(filepath.Join(root, "usr/lib"), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -46,7 +53,8 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	var status strings.Builder
 	pkg := func(name string, files ...string) {
 		status.WriteString("Package: " + name + "\nStatus: install ok installed\nArchitecture: amd64\nVersion: 1.0-1\n\n")
-		write("var/lib/dpkg/info/"+name+":amd64.list", "/.\n/usr\n"+strings.Join(files, "\n")+"\n")
+		// Like dpkg's, the list names directories too.
+		write("var/lib/dpkg/info/"+name+":amd64.list", "/.\n/usr\n/usr/lib\n/lib\n/lib/systemd\n/lib/systemd/system\n/etc\n/etc/cron.d\n"+strings.Join(files, "\n")+"\n")
 	}
 	pkg("nginx", "/usr/sbin/nginx", "/usr/share/doc/nginx/copyright", "/lib/systemd/system/nginx.service")
 	pkg("libssl3", "/lib/x86_64-linux-gnu/libssl.so.3")
@@ -62,6 +70,36 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	write("usr/sbin/service", "#!/bin/sh\nexec systemctl \"$@\"\n")
 	write("usr/bin/deb-systemd-helper", "#!/usr/bin/perl\n")
 	write("usr/bin/htop", "\x7fELF")
+	// Services. memcached: a service, not enabled, not running.
+	unit := "[Unit]\nDescription=x\n\n[Service]\nExecStart=/usr/bin/x\n\n[Install]\nWantedBy=multi-user.target\n"
+	pkg("memcached", "/usr/bin/memcached", "/lib/systemd/system/memcached.service")
+	write("usr/bin/memcached", "\x7fELF")
+	write("usr/lib/systemd/system/memcached.service", unit)
+	// redis-server: the same, but enabled.
+	pkg("redis-server", "/usr/bin/redis-server", "/lib/systemd/system/redis-server.service")
+	write("usr/bin/redis-server", "\x7fELF")
+	write("usr/lib/systemd/system/redis-server.service", unit)
+	link("etc/systemd/system/multi-user.target.wants/redis-server.service", "/usr/lib/systemd/system/redis-server.service")
+	// staticd: no [Install], so other units start it.
+	pkg("staticd", "/usr/sbin/staticd", "/lib/systemd/system/staticd.service")
+	write("usr/sbin/staticd", "\x7fELF")
+	write("usr/lib/systemd/system/staticd.service", "[Service]\nExecStart=/usr/sbin/staticd\n")
+	// polkitd: a service whose package also has a setuid program (pkexec).
+	pkg("polkitd", "/usr/bin/pkexec", "/lib/systemd/system/polkit.service")
+	write("usr/bin/pkexec", "\x7fELF")
+	write("usr/lib/systemd/system/polkit.service", unit)
+	if err := os.Chmod(filepath.Join(root, "usr/bin/pkexec"), 0o755|fs.ModeSetuid); err != nil {
+		t.Fatal(err)
+	}
+	// capd: a service whose program has file capabilities.
+	pkg("capd", "/usr/sbin/capd", "/lib/systemd/system/capd.service")
+	write("usr/sbin/capd", "\x7fELF")
+	write("usr/lib/systemd/system/capd.service", unit)
+	// sysvd: an init script started in runlevel 2.
+	pkg("sysvd", "/usr/sbin/sysvd", "/etc/init.d/sysvd")
+	write("usr/sbin/sysvd", "\x7fELF")
+	write("etc/init.d/sysvd", "#!/bin/sh\n")
+	link("etc/rc2.d/S01sysvd", "../init.d/sysvd")
 	// A program that is a link: running, it shows as the program it
 	// points to (busybox for Alpine's /bin/sh).
 	pkg("busybox-binsh", "/usr/bin/ash")
@@ -98,8 +136,23 @@ func procHost(t *testing.T) (root string, c *Collector) {
 
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
 	c = &Collector{Root: root, Version: "test", LookPath: func(string) (string, error) { return "", errors.New("none") },
-		ProcDir: filepath.Join(root, "proc"), Now: func() time.Time { return now }, ProcessAccess: func() bool { return true }}
+		ProcDir: filepath.Join(root, "proc"), Now: func() time.Time { return now }, ProcessAccess: func() bool { return true },
+		StateFile: filepath.Join(t.TempDir(), "processes.json"),
+		FileCaps:  func(p string) bool { return strings.HasSuffix(p, "/usr/sbin/capd") }}
+	// Eight days of whole readings, the last six hours ago.
+	writeHistory(t, c.StateFile, now.Add(-8*24*time.Hour), now.Add(-6*time.Hour))
 	return root, c
+}
+
+func writeHistory(t *testing.T, file string, since, last time.Time) {
+	t.Helper()
+	data, err := json.Marshal(procHistory{Since: since, Last: last})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(file, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
 }
 
 func reachOf(t *testing.T, b *model.ObservationBatch) map[string]*model.Reachability {
@@ -154,12 +207,18 @@ func TestProcessReachability(t *testing.T) {
 		"nginx":                      model.ReachReachable,
 		"libssl3":                    model.ReachReachable, // /lib/... in the list, /usr/lib/... in maps
 		"dash":                       model.ReachReachable,
-		"htop":                       model.ReachNotRunning,
+		"htop":                       model.ReachUnknown, // a command-line tool, started on demand
 		"libunused1":                 model.ReachUnknown, // libraries load on demand
 		"logrotate":                  model.ReachUnknown, // runs from cron
 		"python3-yaml":               model.ReachUnknown, // scripts
 		"init-system-helpers":        model.ReachUnknown, // scripts, found by their "#!"
 		"busybox-binsh":              model.ReachUnknown, // a link to another program
+		"memcached":                  model.ReachNotRunning,
+		"redis-server":               model.ReachUnknown, // its service is enabled
+		"staticd":                    model.ReachUnknown, // started by other units
+		"polkitd":                    model.ReachUnknown, // setuid pkexec
+		"capd":                       model.ReachUnknown, // file capabilities
+		"sysvd":                      model.ReachUnknown, // its init script is enabled
 		"linux-image-6.1.0-13-amd64": model.ReachUnknown, // the kernel has its own check
 	}
 	for name, st := range want {
@@ -174,8 +233,9 @@ func TestProcessReachability(t *testing.T) {
 	if ev := strings.Join(got["libssl3"].Evidence, " | "); !strings.Contains(ev, "Loaded by nginx (pid 100): /usr/lib/x86_64-linux-gnu/libssl.so.3") {
 		t.Errorf("libssl3 evidence: %s", ev)
 	}
-	if ev := strings.Join(got["htop"].Evidence, " | "); !strings.Contains(ev, "2026-11-17 12:00 UTC (2 processes read)") || !strings.Contains(ev, "now and then") {
-		t.Errorf("htop evidence: %s", ev)
+	if ev := strings.Join(got["memcached"].Evidence, " | "); !strings.Contains(ev, "Its service (memcached.service) is not enabled") ||
+		!strings.Contains(ev, "since 2026-11-09 12:00 UTC; 2 processes at 2026-11-17 12:00 UTC") || !strings.Contains(ev, "It may still run") {
+		t.Errorf("memcached evidence: %s", ev)
 	}
 }
 
@@ -256,32 +316,105 @@ func TestProcessReachabilityPartial(t *testing.T) {
 	}
 }
 
-// A long-running agent remembers what it saw running for SeenFor.
-func TestProcessReachabilityRemembers(t *testing.T) {
+// The agent remembers across restarts, in its state file, what it saw
+// running for SeenFor; and calls nothing not running until it has read
+// every process, readings at most MaxReadingGap apart, for SeenFor.
+func TestProcessReachabilityHistory(t *testing.T) {
 	root, c := procHost(t)
 	now := time.Date(2026, 11, 17, 12, 0, 0, 0, time.UTC)
-	c.Now = func() time.Time { return now }
-	if _, err := c.Collect(context.Background(), "web1", ""); err != nil {
+	writeHistory(t, c.StateFile, time.Time{}, time.Time{}) // a new agent
+	// memcached is running at the first reading.
+	dir := filepath.Join(root, "proc", "400")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.RemoveAll(filepath.Join(root, "proc", "200")); err != nil {
+	if err := os.Symlink("/usr/bin/memcached", filepath.Join(dir, "exe")); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "maps"), []byte("55d0-55e0 r-xp 00000000 08:01 14 /usr/bin/memcached\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	read := func() (map[string]*model.Reachability, model.CoverageItem) {
+		t.Helper()
+		// A new Collector each time: the agent restarted.
+		c2 := *c
+		c2.hist = nil
+		c2.Now = func() time.Time { return now }
+		b, err := c2.Collect(context.Background(), "web1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		return reachOf(t, b), coverage(b)
+	}
+	got, cov := read()
+	if status(got["memcached"]) != model.ReachReachable || !strings.Contains(cov.Reason, "until that is 7 days") {
+		t.Fatalf("first reading: memcached %+v, coverage %q", got["memcached"], cov.Reason)
+	}
+	if err := os.RemoveAll(dir); err != nil {
+		t.Fatal(err)
+	}
+	// Readings every 6 hours: memcached stays reachable for SeenFor after
+	// it was last seen, then is not running.
+	var last string
+	for i := 1; i <= 30; i++ {
+		now = now.Add(6 * time.Hour)
+		got, cov = read()
+		st := status(got["memcached"])
+		if want := model.ReachReachable; i*6 < 7*24 && st != want {
+			t.Fatalf("after %d h: %s, want %s (%+v)", i*6, st, want, got["memcached"])
+		}
+		last = st
+	}
+	if last != model.ReachNotRunning || cov.Reason != "read 2 processes" {
+		t.Fatalf("after 180 h: memcached %s, coverage %q", last, cov.Reason)
+	}
+
+	// A gap longer than MaxReadingGap starts the run again.
+	now = now.Add(MaxReadingGap + time.Hour)
+	got, cov = read()
+	if status(got["memcached"]) != model.ReachUnknown || !strings.Contains(cov.Reason, "since "+now.Format("2006-01-02 15:04 UTC")) {
+		t.Errorf("after a gap: memcached %s, coverage %q", status(got["memcached"]), cov.Reason)
+	}
+
+	// So does a partial reading.
+	writeHistory(t, c.StateFile, now.Add(-8*24*time.Hour), now)
+	if err := os.RemoveAll(filepath.Join(root, "proc", "2")); err != nil {
 		t.Fatal(err)
 	}
 	now = now.Add(6 * time.Hour)
+	if got, _ = read(); status(got["memcached"]) != model.ReachUnknown {
+		t.Errorf("partial reading: %s", status(got["memcached"]))
+	}
+	var h procHistory
+	data, _ := os.ReadFile(c.StateFile)
+	if err := json.Unmarshal(data, &h); err != nil || !h.Since.IsZero() {
+		t.Errorf("after a partial reading the run must end: %+v %v", h, err)
+	}
+}
+
+// Without a state file, or with a damaged one, nothing is called not
+// running: the agent cannot show it read every process for long enough.
+func TestProcessReachabilityNoState(t *testing.T) {
+	_, c := procHost(t)
+	c.StateFile = ""
 	b, err := c.Collect(context.Background(), "web1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r := reachOf(t, b)["dash"]; status(r) != model.ReachReachable || !strings.Contains(strings.Join(r.Evidence, " "), "not running at 2026-11-17 18:00 UTC") {
-		t.Errorf("dash 6 h later: %+v", r)
+	if s := status(reachOf(t, b)["memcached"]); s != model.ReachUnknown || !strings.Contains(coverage(b).Reason, "no state directory") {
+		t.Errorf("no state file: memcached %s, coverage %q", s, coverage(b).Reason)
 	}
-	now = now.Add(SeenFor)
+
+	_, c = procHost(t)
+	if err := os.WriteFile(c.StateFile, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
 	b, err = c.Collect(context.Background(), "web1", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if s := status(reachOf(t, b)["dash"]); s != model.ReachNotRunning {
-		t.Errorf("dash after %v: %s", SeenFor, s)
+	if s := status(reachOf(t, b)["memcached"]); s != model.ReachUnknown {
+		t.Errorf("damaged state file: memcached %s", s)
 	}
 }
 

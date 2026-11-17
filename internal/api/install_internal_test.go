@@ -298,8 +298,9 @@ func TestInstallScriptProcessAccess(t *testing.T) {
 		if on != c.want {
 			t.Errorf("%+v: %q", c, caps)
 		}
-		if on && !strings.Contains(caps, "SystemCallFilter=~ptrace process_vm_readv process_vm_writev") {
-			t.Errorf("%+v: no system call filter: %q", c, caps)
+		if on && (!strings.Contains(caps, "SystemCallFilter=~ptrace process_vm_readv process_vm_writev pidfd_getfd kcmp") ||
+			!strings.Contains(caps, "StateDirectory=stackurity-agent")) {
+			t.Errorf("%+v: no system call filter or state directory: %q", c, caps)
 		}
 		if !on && caps != "CapabilityBoundingSet=" {
 			t.Errorf("%+v: %q", c, caps)

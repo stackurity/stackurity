@@ -14,12 +14,15 @@ package linux
 
 import (
 	"bufio"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
 	"net/netip"
 	"os"
+	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -47,10 +50,16 @@ const (
 	MaxMapLines    = 1 << 16 // per process
 	MaxMappedFiles = 50000
 	MaxFDs         = 4096 // per process
-	// SeenFor is how long a package seen running stays reachable in a
-	// long-running agent, so programs that run now and then are not
-	// called not running between their runs.
+	// SeenFor is how long a package seen running stays reachable, so
+	// programs that run now and then are not called not running between
+	// their runs; and how long the agent must have read every process,
+	// without a gap, before it calls any package not running.
 	SeenFor = 7 * 24 * time.Hour
+	// MaxReadingGap: readings further apart than this (the agent reads
+	// every 6 hours by default) break the run, since a program could have
+	// run unseen in between.
+	MaxReadingGap = 13 * time.Hour
+	maxStateBytes = 4 << 20
 )
 
 // capSysPtrace is CAP_SYS_PTRACE's bit in /proc/self/status CapEff.
@@ -151,9 +160,7 @@ func readProcesses(procDir string, norm func(string) string) *procSnapshot {
 		}
 		mapsOK := exeErr == nil && readMaps(filepath.Join(dir, "maps"), pid, comm, s, norm)
 		if !mapsOK {
-			if exeErr != nil && !errors.Is(exeErr, fs.ErrPermission) {
-				continue
-			}
+			// Refused, or any other error reading it: unread either way.
 			s.denied++
 			// cmdline is readable by everyone: a program started by its
 			// full path is running, whatever else cannot be read.
@@ -327,6 +334,7 @@ func hasProcessAccess(procDir string, uid uint32) bool {
 // pkgFacts is what one package's file list says about it.
 type pkgFacts struct {
 	programs bool     // ships a program under a bin directory
+	services []string // its systemd services ("nginx.service") and init scripts ("init.d/nginx")
 	other    string   // why it cannot be called not running, if it cannot
 	hit      *procRef // a running process uses one of its files
 	hitPath  string
@@ -334,12 +342,19 @@ type pkgFacts struct {
 }
 
 // classify notes what path tells about its package; program says why a
-// program can never be seen running itself ("" when it can).
-func (f *pkgFacts) classify(p string, program func(string) string) {
+// program can never be seen running itself ("" when it can). dpkg lists
+// name directories too ("/usr/lib"); isDir keeps them from counting as
+// the files a rule is about.
+func (f *pkgFacts) classify(p string, program func(string) string, isDir func(string) bool) {
 	if f.other != "" {
 		return
 	}
 	base := filepath.Base(p)
+	other := func(why string) {
+		if !isDir(p) {
+			f.other = why
+		}
+	}
 	switch {
 	case strings.HasPrefix(p, "/usr/bin/"), strings.HasPrefix(p, "/usr/sbin/"), strings.HasPrefix(p, "/usr/games/"),
 		strings.HasPrefix(p, "/bin/"), strings.HasPrefix(p, "/sbin/"):
@@ -358,16 +373,29 @@ func (f *pkgFacts) classify(p string, program func(string) string) {
 		strings.HasSuffix(p, ".timer"), strings.HasSuffix(p, ".socket"), strings.HasSuffix(p, ".path"),
 		strings.HasPrefix(p, "/usr/share/dbus-1/"), strings.HasPrefix(p, "/etc/xinetd.d/"),
 		strings.Contains(p, "/hooks/"), strings.Contains(p, ".d/") && strings.HasPrefix(p, "/etc/network/"):
-		f.other = "it is started on a schedule or on demand"
+		other("it is started on a schedule or on demand")
+	case strings.HasSuffix(p, ".service") && (path.Dir(p) == "/usr/lib/systemd/system" || path.Dir(p) == "/lib/systemd/system"):
+		f.services = append(f.services, base)
+	case strings.HasPrefix(p, "/usr/lib/systemd/user/"), strings.HasPrefix(p, "/lib/systemd/user/"):
+		other("its user services start when someone logs in")
+	case strings.HasPrefix(p, "/etc/init.d/") && path.Dir(p) == "/etc/init.d":
+		f.services = append(f.services, "init.d/"+base)
 	case strings.HasPrefix(p, "/usr/lib/systemd/"), strings.HasPrefix(p, "/lib/systemd/system/"),
 		strings.HasPrefix(p, "/usr/lib/tmpfiles.d/"), strings.HasPrefix(p, "/usr/lib/sysusers.d/"):
-		// Service definitions: a service that is not running is stopped.
+		// Other service definitions and settings.
 	case strings.HasPrefix(p, "/usr/lib"), strings.HasPrefix(p, "/lib"), strings.HasPrefix(p, "/usr/libexec/"),
 		strings.HasPrefix(p, "/usr/local/"), strings.HasPrefix(p, "/opt/"):
-		f.other = "libraries and helpers can be loaded or started on demand"
+		other("libraries and helpers can be loaded or started on demand")
 	case interpreted(base):
-		f.other = "it holds scripts"
+		other("it holds scripts")
 	}
+}
+
+// isDir: p is a directory on the host (a dpkg list's directory entry; a
+// link to one, such as a merged /usr's /lib, counts).
+func (c *Collector) isDir(p string) bool {
+	fi, err := os.Stat(c.path(strings.TrimPrefix(p, "/")))
+	return err == nil && fi.IsDir()
 }
 
 // unseenProgram says why the program at p (on the host) would not be seen
@@ -386,6 +414,17 @@ func (c *Collector) unseenProgram(p string) string {
 		return "its programs are links to other programs"
 	case !fi.Mode().IsRegular():
 		return ""
+	case fi.Mode()&(fs.ModeSetuid|fs.ModeSetgid) != 0:
+		// pkexec, sudo, mount: anyone can start them, and they are attacked
+		// by being started, so not running now says nothing.
+		return "its programs run with raised privileges (setuid or setgid) when anyone starts them"
+	}
+	caps := c.FileCaps
+	if caps == nil {
+		caps = fileCaps
+	}
+	if caps(full) {
+		return "its programs get capabilities (setcap) when anyone starts them"
 	}
 	b, err := readSmall(full, 2)
 	if err != nil {
@@ -446,13 +485,117 @@ func (c *Collector) pkgFiles(each func(typ, pkg, path string)) bool {
 	return ok
 }
 
-type seenRec struct {
-	at   time.Time
-	line string
+// procHistory is what the agent remembers between readings, in its state
+// file: which packages it saw running and when, and since when every
+// reading has been whole.
+type procHistory struct {
+	// Since is the first of an unbroken run of whole readings (each within
+	// MaxReadingGap of the last); zero when the last reading was partial.
+	Since time.Time `json:"since"`
+	Last  time.Time `json:"last"`
+	// Seen: package ("deb/nginx") -> when it was last seen running and the
+	// evidence line then.
+	Seen map[string]seenRec `json:"seen"`
 }
 
+type seenRec struct {
+	At   time.Time `json:"at"`
+	Line string    `json:"line"`
+}
+
+// loadHistory reads the state file once; a missing or damaged one starts
+// afresh, which only delays any not running claim by SeenFor.
+func (c *Collector) loadHistory() *procHistory {
+	if c.hist != nil {
+		return c.hist
+	}
+	h := &procHistory{}
+	if c.StateFile != "" {
+		if data, err := readSmall(c.StateFile, maxStateBytes); err == nil && json.Unmarshal(data, h) != nil {
+			h = &procHistory{}
+		}
+	}
+	if h.Seen == nil {
+		h.Seen = map[string]seenRec{}
+	}
+	c.hist = h
+	return h
+}
+
+// saveHistory writes the state file whole (a new file renamed over the
+// old); false when it could not, so no claim rests on history that may be
+// lost.
+func (c *Collector) saveHistory() bool {
+	if c.StateFile == "" {
+		return false
+	}
+	data, err := json.Marshal(c.hist)
+	if err != nil || len(data) > maxStateBytes {
+		return false
+	}
+	tmp := c.StateFile + ".new"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return false
+	}
+	return os.Rename(tmp, c.StateFile) == nil
+}
+
+// serviceEnabled names the first of services that starts at boot or with
+// another unit, or "" when none does. A systemd unit is enabled by a link
+// in a .wants or .requires directory or under /etc/systemd/system (masked,
+// a link to /dev/null, is not); one without an [Install] section is
+// static, started by other units, so it counts as enabled. An init script
+// is enabled by a runlevel link (OpenRC /etc/runlevels, SysV /etc/rc?.d).
+func (c *Collector) serviceEnabled(services []string) string {
+	exists := func(pattern string) bool {
+		m, _ := filepath.Glob(c.path(pattern))
+		return len(m) > 0
+	}
+	for _, svc := range services {
+		if name, ok := strings.CutPrefix(svc, "init.d/"); ok {
+			if exists("etc/runlevels/*/"+name) || exists("etc/rc[2345S].d/S*"+name) {
+				return svc
+			}
+			continue
+		}
+		unit := svc
+		if b, ok := strings.CutSuffix(svc, "@.service"); ok {
+			unit = b + "@*.service" // a template: any enabled instance
+		}
+		if t, err := os.Readlink(c.path("etc/systemd/system/" + svc)); err == nil && t == "/dev/null" {
+			continue // masked
+		}
+		for _, dir := range []string{"etc/systemd/system", "usr/lib/systemd/system", "lib/systemd/system", "run/systemd/system"} {
+			if exists(dir+"/*.wants/"+unit) || exists(dir+"/*.requires/"+unit) {
+				return svc
+			}
+		}
+		if exists("etc/systemd/system/" + unit) {
+			return svc // enabled under an alias, or overridden here
+		}
+		data, err := readSmall(c.path("usr/lib/systemd/system/"+svc), 64<<10)
+		if err != nil {
+			data, err = readSmall(c.path("lib/systemd/system/"+svc), 64<<10)
+		}
+		if err != nil || !installable.Match(data) {
+			return svc // static, or unreadable
+		}
+	}
+	return ""
+}
+
+var installable = regexp.MustCompile(`(?m)^\s*\[Install\]\s*$(?:\n[^\[]*)*?^\s*(?:WantedBy|RequiredBy|UpheldBy)\s*=\s*\S`)
+
 // annotateProcesses sets reachability on the batch's OS packages from one
-// snapshot of the running processes and returns its coverage record.
+// snapshot of the running processes and the agent's history of earlier
+// ones, and returns its coverage record.
+//
+// Not running is claimed only for a service package (a systemd service or
+// init script) whose service is not enabled, whose programs all run as
+// themselves without raised privileges, and none of whose programs was
+// seen in SeenFor of unbroken whole readings, remembered in StateFile.
+// Command-line tools are never called not running: they are started on
+// demand, and some (pkexec) are attacked by being started.
 func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.CoverageItem, bool) {
 	if c.ProcDir == "" {
 		return model.CoverageItem{}, false
@@ -481,7 +624,7 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 			facts[key] = f
 		}
 		p = norm(p)
-		f.classify(p, c.unseenProgram)
+		f.classify(p, c.unseenProgram, c.isDir)
 		if r, ok := snap.files[p]; ok {
 			if f.hit == nil || (r.how == "runs" && f.hitExe == "") {
 				r := r
@@ -495,11 +638,31 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 	if !have {
 		return model.CoverageItem{Scope: ProcessScope, Status: "checked", Reason: "unsupported: no dpkg or apk file lists to match processes against"}, true
 	}
-	if c.seen == nil {
-		c.seen = map[string]seenRec{}
+
+	h := c.loadHistory()
+	complete := access && snap.complete()
+	switch {
+	case !complete:
+		h.Since, h.Last = time.Time{}, time.Time{}
+	case h.Since.IsZero() || h.Last.IsZero() || now.Sub(h.Last) > MaxReadingGap || now.Before(h.Last):
+		h.Since, h.Last = now, now
+	default:
+		h.Last = now
 	}
 	when := now.Format("2006-01-02 15:04 UTC")
-	complete := access && snap.complete()
+	for k, f := range facts {
+		if f.hit != nil {
+			h.Seen[k] = seenRec{At: now, Line: hitLine(f.hit, f.hitPath)}
+		}
+	}
+	for k, s := range h.Seen {
+		if !s.At.After(now.Add(-SeenFor)) {
+			delete(h.Seen, k)
+		}
+	}
+	saved := c.saveHistory()
+	settled := complete && saved && !h.Since.After(now.Add(-SeenFor))
+
 	for i := range b.Observations {
 		o := &b.Observations[i]
 		pu, err := packageurl.FromString(o.Purl)
@@ -521,22 +684,20 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 			}
 			ev = append(ev, "Seen "+when+".")
 			o.Reachability = &model.Reachability{Status: model.ReachReachable, Evidence: capLines(ev)}
-			c.seen[key] = seenRec{at: now, line: ev[0]}
-		case c.seen[key].at.After(now.Add(-SeenFor)):
-			s := c.seen[key]
+		case h.Seen[key].At.After(now.Add(-SeenFor)):
+			s := h.Seen[key]
 			o.Reachability = &model.Reachability{Status: model.ReachReachable, Evidence: capLines([]string{
-				s.line, "Seen " + s.at.Format("2006-01-02 15:04 UTC") + "; not running at " + when + ".",
+				s.Line, "Seen " + s.At.Format("2006-01-02 15:04 UTC") + "; not running at " + when + ".",
 			})}
-		case complete && f.programs && f.other == "":
-			o.Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: []string{
-				fmt.Sprintf("None of its programs was running at %s (%d processes read).", when, snap.read),
-				"Programs started only now and then, by scripts or by hand, are not seen between the agent's readings.",
-			}}
-		}
-	}
-	for k, s := range c.seen {
-		if !s.at.After(now.Add(-SeenFor)) {
-			delete(c.seen, k)
+		case settled && f.programs && f.other == "" && len(f.services) > 0:
+			if c.serviceEnabled(f.services) != "" {
+				continue
+			}
+			o.Reachability = &model.Reachability{Status: model.ReachNotRunning, Evidence: capLines([]string{
+				fmt.Sprintf("Its service (%s) is not enabled, and none of its programs was running in any of the agent's readings of the last 7 days (it has read every process, at most %d hours apart, since %s; %d processes at %s).",
+					strings.Join(f.services, ", "), int(MaxReadingGap.Hours()), h.Since.Format("2006-01-02 15:04 UTC"), snap.read, when),
+				"It may still run: it can be started by hand or by another program, and a program that runs only between the agent's readings is not seen.",
+			})}
 		}
 	}
 	switch {
@@ -549,6 +710,12 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 	case !complete:
 		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
 			Reason: fmt.Sprintf("partial: read %d processes, %d could not be read or a limit was reached; no package is called not running", snap.read, snap.denied)}, true
+	case !saved:
+		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
+			Reason: fmt.Sprintf("read %d processes; no state directory to remember readings in, so no package is called not running", snap.read)}, true
+	case !settled:
+		return model.CoverageItem{Scope: ProcessScope, Status: "checked",
+			Reason: fmt.Sprintf("read %d processes; every process has been read since %s, and no package is called not running until that is 7 days", snap.read, h.Since.Format("2006-01-02 15:04 UTC"))}, true
 	}
 	return model.CoverageItem{Scope: ProcessScope, Status: "checked", Reason: fmt.Sprintf("read %d processes", snap.read)}, true
 }

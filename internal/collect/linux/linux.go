@@ -52,7 +52,13 @@ type Collector struct {
 	ProcDir       string
 	Now           func() time.Time
 	ProcessAccess func() bool
-	seen          map[string]seenRec // packages seen running, kept SeenFor
+	// StateFile keeps the process readings' history across restarts (the
+	// agent's state directory); without it no package is called not
+	// running. FileCaps says whether a program has file capabilities; nil
+	// reads them (security.capability).
+	StateFile string
+	FileCaps  func(path string) bool
+	hist      *procHistory
 }
 
 func New(version string) *Collector {

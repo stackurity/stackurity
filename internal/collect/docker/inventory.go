@@ -23,6 +23,7 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 	col := linux.New(version)
 	col.Root = root
 	col.RunVersion = nil // the image's binaries are never run
+	col.ProcDir = ""     // nor are this host's running processes the image's
 	col.ImageEnv = im.Env()
 	osBatch, err := col.Collect(ctx, "image", "")
 	if err != nil {

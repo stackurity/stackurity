@@ -100,7 +100,7 @@ export function ReachabilityWhyView({
 
 /** What process access does and costs, said the same way wherever it is offered. */
 export const PROCESS_ACCESS_TEXT =
-  "It reads which programs and libraries running processes use, so packages nothing runs can be marked not running and paid plans can lower their priority. The agent gets CAP_SYS_PTRACE, which also allows reading other processes' memory and is equivalent to root on the server. It only reads program paths, memory-map file names and open sockets under /proc.";
+  "It reads which programs and libraries running processes use, so a service that is off and has not run for 7 days can be marked not running and paid plans can lower its priority. The agent gets CAP_SYS_PTRACE, which also allows reading other processes' memory and is equivalent to root on the server. It only reads program paths, memory-map file names and open sockets under /proc.";
 
 /**
  * A Linux host's process access (its agent's process_access attribute):

@@ -5,6 +5,8 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
@@ -31,6 +33,11 @@ func linuxHostCollector(o *hostOptions) (func(context.Context) ([]*model.Observa
 		col.RunVersion = nil
 		// Nor are this host's running processes.
 		col.ProcDir = ""
+	} else if dir, _, _ := strings.Cut(os.Getenv("STATE_DIRECTORY"), ":"); dir != "" {
+		// systemd's StateDirectory= (agent.sh, with process access):
+		// process readings are remembered across restarts, which calling a
+		// package not running needs.
+		col.StateFile = filepath.Join(dir, "processes.json")
 	}
 	return func(parent context.Context) ([]*model.ObservationBatch, error) {
 		ctx, cancel := context.WithTimeout(parent, hostCollectTimeout)
