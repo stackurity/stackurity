@@ -1,3 +1,0 @@
-### Fixed
-
-- **Saving repository access on GitHub no longer shows an error.** After an administrator changed which repositories the Stackurity app can read and clicked **Save** on GitHub's settings page, GitHub sent them back to Stackurity, which said the app "was installed from GitHub's side" and had "connected nothing" (or that GitHub did not send the authorisation code back), although the change had already been picked up. When the organisation already has that installation, the page now says the repositories were saved and that new ones are scanned in the next few minutes, and makes no further request.
