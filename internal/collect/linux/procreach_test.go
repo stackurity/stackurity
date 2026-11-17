@@ -77,6 +77,10 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	pkg("memcached", "/usr/bin/memcached", "/lib/systemd/system/memcached.service")
 	write("usr/bin/memcached", "\x7fELF")
 	write("usr/lib/systemd/system/memcached.service", unit)
+	// worker: a template service (worker@.service), not enabled.
+	pkg("worker", "/usr/sbin/worker", "/lib/systemd/system/worker@.service")
+	write("usr/sbin/worker", "\x7fELF")
+	write("usr/lib/systemd/system/worker@.service", unit)
 	// redis-server: the same, but enabled.
 	pkg("redis-server", "/usr/bin/redis-server", "/lib/systemd/system/redis-server.service")
 	write("usr/bin/redis-server", "\x7fELF")
@@ -226,6 +230,7 @@ func TestProcessReachability(t *testing.T) {
 		"init-system-helpers":        model.ReachUnknown, // scripts, found by their "#!"
 		"busybox-binsh":              model.ReachUnknown, // a link to another program
 		"memcached":                  model.ReachNotRunning,
+		"worker":                     model.ReachNotRunning,
 		"redis-server":               model.ReachUnknown, // its service is enabled
 		"staticd":                    model.ReachUnknown, // started by other units
 		"polkitd":                    model.ReachUnknown, // setuid pkexec
@@ -611,6 +616,27 @@ func TestProcessReachabilityStartedOtherwise(t *testing.T) {
 		"inetd": func(t *testing.T, root string) {
 			writeFile(t, root, "etc/inetd.conf", "cache stream tcp nowait root /usr/bin/memcached memcached\n")
 		},
+		"a socket's Service=": func(t *testing.T, root string) {
+			writeFile(t, root, "usr/lib/systemd/system/cache.socket", "[Socket]\nListenStream=11211\nService=memcached.service\n")
+		},
+		"a unit linked in (systemctl link)": func(t *testing.T, root string) {
+			writeFile(t, root, "opt/app/app.service", "[Unit]\nWants=memcached.service\n")
+			if err := os.Symlink("../../../opt/app/app.service", filepath.Join(root, "etc/systemd/system/app.service")); err != nil {
+				t.Fatal(err)
+			}
+		},
+		"a unit in /usr/local": func(t *testing.T, root string) {
+			writeFile(t, root, "usr/local/lib/systemd/system/app.service", "[Unit]\nRequires=memcached.service\n")
+		},
+		"a transient unit": func(t *testing.T, root string) {
+			writeFile(t, root, "run/systemd/transient/run-r1.service", "[Unit]\nBindsTo=memcached.service\n")
+		},
+		"a udev rule": func(t *testing.T, root string) {
+			writeFile(t, root, "usr/lib/udev/rules.d/90-cache.rules", `SUBSYSTEM=="net", ENV{SYSTEMD_WANTS}+="memcached.service"`+"\n")
+		},
+		"D-Bus activation": func(t *testing.T, root string) {
+			writeFile(t, root, "usr/share/dbus-1/system-services/org.example.Cache.service", "[D-BUS Service]\nName=org.example.Cache\nSystemdService=memcached.service\n")
+		},
 		"an unreadable crontab directory": func(t *testing.T, root string) {
 			if os.Geteuid() == 0 {
 				t.Skip("root reads every directory")
@@ -665,5 +691,20 @@ func writeFile(t *testing.T, root, rel, data string) {
 	}
 	if err := os.WriteFile(full, []byte(data), 0o644); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// A reference to any instance of a template service starts it.
+func TestProcessReachabilityTemplateInstance(t *testing.T) {
+	for name, ref := range map[string]string{"an instance": "Wants=worker@eu.service", "a specifier": "OnFailure=worker@%n.service"} {
+		root, c := procHost(t)
+		writeFile(t, root, "etc/systemd/system/app.service", "[Unit]\n"+ref+"\n")
+		b, err := c.Collect(context.Background(), "web1", "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := status(reachOf(t, b)["worker"]); s != model.ReachUnknown {
+			t.Errorf("%s: worker %s", name, s)
+		}
 	}
 }

@@ -568,8 +568,19 @@ type startRefs struct {
 
 // unitDirs are where systemd reads units: the administrator's, generated
 // ones, runtime ones and packages'.
-var unitDirs = []string{"etc/systemd/system", "run/systemd/system", "run/systemd/generator",
-	"run/systemd/generator.early", "run/systemd/generator.late", "usr/lib/systemd/system", "lib/systemd/system"}
+var unitDirs = []string{"etc/systemd/system", "etc/systemd/system.control", "run/systemd/system", "run/systemd/system.control",
+	"run/systemd/transient", "run/systemd/generator", "run/systemd/generator.early", "run/systemd/generator.late",
+	"usr/local/lib/systemd/system", "usr/lib/systemd/system", "lib/systemd/system"}
+
+// Other packages can have systemd start a service: udev rules
+// (SYSTEMD_WANTS) and D-Bus activation (SystemdService=).
+var (
+	udevDirs   = []string{"etc/udev/rules.d", "run/udev/rules.d", "usr/lib/udev/rules.d", "lib/udev/rules.d"}
+	dbusDirs   = []string{"usr/share/dbus-1/system-services", "usr/share/dbus-1/services", "etc/dbus-1/system-services", "usr/local/share/dbus-1/system-services"}
+	udevWants  = regexp.MustCompile(`SYSTEMD_WANTS\}?\s*\+?=\s*"([^"]*)"`)
+	dbusUnit   = regexp.MustCompile(`(?m)^\s*SystemdService\s*=\s*(\S+)`)
+	unitSuffix = regexp.MustCompile(`\.(service|socket|timer|path|target|mount|automount|swap|slice|scope|device)$`)
+)
 
 // cronFiles and cronDirs hold crontabs and what they run; inetd's
 // configuration starts programs on connections.
@@ -578,7 +589,7 @@ var (
 	cronDirs  = []string{"etc/cron.d", "etc/cron.hourly", "etc/cron.daily", "etc/cron.weekly", "etc/cron.monthly",
 		"etc/periodic/15min", "etc/periodic/hourly", "etc/periodic/daily", "etc/periodic/weekly", "etc/periodic/monthly",
 		"etc/crontabs", "var/spool/cron", "var/spool/cron/crontabs", "etc/xinetd.d"}
-	unitRef  = regexp.MustCompile(`(?m)^\s*(?:Wants|Requires|Requisite|BindsTo|Upholds|OnSuccess|OnFailure|Unit|Also|PropagatesReloadTo|ReloadPropagatedFrom)\s*=\s*(.+)$`)
+	unitRef  = regexp.MustCompile(`(?m)^\s*(?:Wants|Requires|Requisite|BindsTo|Upholds|OnSuccess|OnFailure|Unit|Service|Also|PropagatesReloadTo|ReloadPropagatedFrom)\s*=\s*(.+)$`)
 	cronWord = regexp.MustCompile(`[\w@][\w.@/:-]*`)
 )
 
@@ -635,7 +646,17 @@ func (c *Collector) readStartRefs() *startRefs {
 			rel := dir + "/" + e.Name()
 			switch {
 			case e.Type()&fs.ModeSymlink != 0:
-				// enablement links: checked by name in serviceEnabled
+				// An alias or a unit linked in (systemctl link): read what
+				// it points to, for reading only. Enablement links in
+				// .wants directories are checked by name in serviceEnabled.
+				if unitSuffix.MatchString(e.Name()) {
+					if t, err := os.Readlink(c.path(rel)); err == nil && t != "/dev/null" {
+						if !path.IsAbs(t) {
+							t = "/" + path.Join(dir, t)
+						}
+						unit(strings.TrimPrefix(path.Clean(t), "/"))
+					}
+				}
 			case e.IsDir() && strings.HasSuffix(e.Name(), ".d"):
 				for _, d := range list(rel) {
 					if strings.HasSuffix(d.Name(), ".conf") {
@@ -644,6 +665,24 @@ func (c *Collector) readStartRefs() *startRefs {
 				}
 			case !e.IsDir():
 				unit(rel)
+			}
+		}
+	}
+	for dirs, re := range map[*[]string]*regexp.Regexp{&udevDirs: udevWants, &dbusDirs: dbusUnit} {
+		for _, dir := range *dirs {
+			for _, e := range list(dir) {
+				if e.IsDir() {
+					continue
+				}
+				data, ok := read(dir + "/" + e.Name())
+				if !ok {
+					continue
+				}
+				for _, m := range re.FindAllSubmatch(data, -1) {
+					for _, u := range strings.Fields(string(m[1])) {
+						first(r.units, u, "/"+dir+"/"+e.Name())
+					}
+				}
 			}
 		}
 	}
@@ -709,6 +748,14 @@ func (c *Collector) serviceEnabled(services, progs []string, refs *startRefs) st
 		}
 		if f, ok := refs.units[svc]; ok {
 			return f
+		}
+		if tmpl, ok := strings.CutSuffix(svc, "@.service"); ok {
+			// Any instance (OnFailure=notify@%n.service, Wants=foo@bar.service).
+			for u, f := range refs.units {
+				if strings.HasPrefix(u, tmpl+"@") && strings.HasSuffix(u, ".service") {
+					return f
+				}
+			}
 		}
 		unit := svc
 		if b, ok := strings.CutSuffix(svc, "@.service"); ok {
