@@ -137,14 +137,17 @@ func readProcesses(procDir string, norm func(string) string) *procSnapshot {
 		dir := filepath.Join(procDir, e.Name())
 		commB, _ := readSmall(filepath.Join(dir, "comm"), 64)
 		comm := strings.TrimSpace(string(commB))
-		exe, exeErr := os.Readlink(filepath.Join(dir, "exe"))
-		if errors.Is(exeErr, fs.ErrNotExist) {
-			// A kernel thread (it has a name but no program), or the
-			// process has exited.
+		if kernelThread(dir) {
+			// Kernel threads run no package's code. kthreadd, their parent,
+			// is pid 2 only in the host's PID namespace.
 			if pid == 2 && comm == "kthreadd" {
 				s.hostNS = true
 			}
 			continue
+		}
+		exe, exeErr := os.Readlink(filepath.Join(dir, "exe"))
+		if errors.Is(exeErr, fs.ErrNotExist) {
+			continue // the process has exited
 		}
 		mapsOK := exeErr == nil && readMaps(filepath.Join(dir, "maps"), pid, comm, s, norm)
 		if !mapsOK {
@@ -176,6 +179,32 @@ func readProcesses(procDir string, norm func(string) string) *procSnapshot {
 		}
 	}
 	return s
+}
+
+// pfKthread is PF_KTHREAD, the kernel's flag for its own threads.
+const pfKthread = 0x00200000
+
+// kernelThread: the process is one of the kernel's threads, by the flags in
+// /proc/<pid>/stat, which everyone may read and no process can set. (Their
+// exe link is no evidence: without CAP_SYS_PTRACE reading it is refused
+// before the kernel finds there is no program.)
+func kernelThread(dir string) bool {
+	b, err := readSmall(filepath.Join(dir, "stat"), 1024)
+	if err != nil {
+		return false
+	}
+	// pid (comm) state ppid pgrp session tty_nr tpgid flags ...; comm may
+	// hold spaces and parentheses, so fields start after the last ')'.
+	i := strings.LastIndexByte(string(b), ')')
+	if i < 0 {
+		return false
+	}
+	f := strings.Fields(string(b[i+1:]))
+	if len(f) < 7 {
+		return false
+	}
+	flags, err := strconv.ParseUint(f[6], 10, 64)
+	return err == nil && flags&pfKthread != 0
 }
 
 // readMaps adds the files a process has mapped; false when it may not be
@@ -304,8 +333,9 @@ type pkgFacts struct {
 	hitExe   string // its file that is a running executable
 }
 
-// classify notes what path tells about its package.
-func (f *pkgFacts) classify(p string) {
+// classify notes what path tells about its package; program says why a
+// program can never be seen running itself ("" when it can).
+func (f *pkgFacts) classify(p string, program func(string) string) {
 	if f.other != "" {
 		return
 	}
@@ -313,8 +343,14 @@ func (f *pkgFacts) classify(p string) {
 	switch {
 	case strings.HasPrefix(p, "/usr/bin/"), strings.HasPrefix(p, "/usr/sbin/"), strings.HasPrefix(p, "/usr/games/"),
 		strings.HasPrefix(p, "/bin/"), strings.HasPrefix(p, "/sbin/"):
+		// A running script's program is its interpreter: the script itself
+		// is never seen running.
 		if interpreted(base) {
 			f.other = "it holds scripts"
+			return
+		}
+		if why := program(p); why != "" {
+			f.other = why
 			return
 		}
 		f.programs = true
@@ -332,6 +368,33 @@ func (f *pkgFacts) classify(p string) {
 	case interpreted(base):
 		f.other = "it holds scripts"
 	}
+}
+
+// unseenProgram says why the program at p (on the host) would not be seen
+// as itself while it runs: a script ("#!") runs as its interpreter, and a
+// link (busybox's /bin/sh) as the program it points to. "" when it would
+// be; a program that is not there cannot be running.
+func (c *Collector) unseenProgram(p string) string {
+	full := c.path(strings.TrimPrefix(p, "/"))
+	fi, err := os.Lstat(full)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return ""
+	case err != nil:
+		return "its programs could not be read"
+	case fi.Mode()&fs.ModeSymlink != 0:
+		return "its programs are links to other programs"
+	case !fi.Mode().IsRegular():
+		return ""
+	}
+	b, err := readSmall(full, 2)
+	if err != nil {
+		return "its programs could not be read"
+	}
+	if string(b) == "#!" {
+		return "it holds scripts"
+	}
+	return ""
 }
 
 func interpreted(base string) bool {
@@ -418,7 +481,7 @@ func (c *Collector) annotateProcesses(b *model.ObservationBatch) (model.Coverage
 			facts[key] = f
 		}
 		p = norm(p)
-		f.classify(p)
+		f.classify(p, c.unseenProgram)
 		if r, ok := snap.files[p]; ok {
 			if f.hit == nil || (r.how == "runs" && f.hitExe == "") {
 				r := r

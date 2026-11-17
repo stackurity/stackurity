@@ -56,6 +56,16 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	pkg("logrotate", "/usr/sbin/logrotate", "/etc/cron.daily/logrotate")
 	pkg("python3-yaml", "/usr/bin/yamlcheck.py", "/usr/lib/python3/dist-packages/yaml/__init__.py")
 	pkg("linux-image-6.1.0-13-amd64", "/boot/vmlinuz-6.1.0-13-amd64")
+	// Scripts without an extension: a running one shows only its
+	// interpreter (/bin/sh, perl) as its program.
+	pkg("init-system-helpers", "/usr/sbin/service", "/usr/bin/deb-systemd-helper")
+	write("usr/sbin/service", "#!/bin/sh\nexec systemctl \"$@\"\n")
+	write("usr/bin/deb-systemd-helper", "#!/usr/bin/perl\n")
+	write("usr/bin/htop", "\x7fELF")
+	// A program that is a link: running, it shows as the program it
+	// points to (busybox for Alpine's /bin/sh).
+	pkg("busybox-binsh", "/usr/bin/ash")
+	link("usr/bin/ash", "dash")
 	write("var/lib/dpkg/status", status.String())
 
 	// pid 100: nginx, readable.
@@ -66,6 +76,7 @@ func procHost(t *testing.T) (root string, c *Collector) {
 		"7f20-7f30 rw-p 00000000 00:00 0 [heap]\n"+
 		"7f40-7f50 r--p 00000000 00:00 0 \n")
 	write("proc/100/cmdline", "nginx: master process /usr/sbin/nginx\x00")
+	write("proc/100/stat", "100 (nginx) S 1 100 100 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 50 0 0\n")
 	link("proc/100/fd/6", "socket:[999]")
 	link("proc/100/fd/1", "/dev/null")
 	// pid 200: a shell started by path, readable.
@@ -73,8 +84,14 @@ func procHost(t *testing.T) (root string, c *Collector) {
 	write("proc/200/comm", "sh\n")
 	write("proc/200/maps", "55d0-55e0 r-xp 00000000 08:01 13 /usr/bin/dash\n")
 	write("proc/200/cmdline", "/bin/sh\x00-c\x00true\x00")
-	// pid 2: a kernel thread (no exe).
+	// pid 2: kthreadd, a kernel thread (PF_KTHREAD in its flags, no exe).
 	write("proc/2/comm", "kthreadd\n")
+	write("proc/2/stat", "2 (kthreadd) S 0 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 5 0 0\n")
+	// pid 3: another kernel thread whose exe the agent may not read; it is
+	// skipped, not counted as unreadable.
+	write("proc/3/comm", "pool_workqueue_release\n")
+	write("proc/3/stat", "3 (pool_workqueue_release) S 2 0 0 0 -1 2129984 0 0 0 0 0 0 0 0 20 0 1 0 5 0 0\n")
+	link("proc/3/exe", "/nonexistent-denied")
 	write("proc/net/tcp", "  sl  local_address rem_address   st tx_queue rx_queue tr tm->when retrnsmt   uid  timeout inode\n"+
 		"   0: 00000000:01BB 00000000:0000 0A 00000000:00000000 00:00000000 00000000     0        0 999 1 0 100 0 0 10 0\n"+
 		"   1: 0100007F:1F90 0100007F:D431 01 00000000:00000000 00:00000000 00000000     0        0 998 1 0 100 0 0 10 0\n")
@@ -141,6 +158,8 @@ func TestProcessReachability(t *testing.T) {
 		"libunused1":                 model.ReachUnknown, // libraries load on demand
 		"logrotate":                  model.ReachUnknown, // runs from cron
 		"python3-yaml":               model.ReachUnknown, // scripts
+		"init-system-helpers":        model.ReachUnknown, // scripts, found by their "#!"
+		"busybox-binsh":              model.ReachUnknown, // a link to another program
 		"linux-image-6.1.0-13-amd64": model.ReachUnknown, // the kernel has its own check
 	}
 	for name, st := range want {
@@ -324,6 +343,27 @@ func TestProcessReachabilityContainerNamespace(t *testing.T) {
 	}
 	if s := status(got["nginx"]); s != model.ReachReachable {
 		t.Errorf("nginx: %s (what was seen running still counts)", s)
+	}
+}
+
+// A process in a container's own PID namespace can be pid 2 and call
+// itself kthreadd; without the kernel's flag it is not taken for one.
+func TestProcessReachabilityFakeKthreadd(t *testing.T) {
+	root, c := procHost(t)
+	write := func(rel, s string) {
+		if err := os.WriteFile(filepath.Join(root, rel), []byte(s), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("proc/2/stat", "2 (kthreadd) S 1 2 2 0 -1 4194560 0 0 0 0 0 0 0 0 20 0 1 0 5 0 0\n")
+	b, err := c.Collect(context.Background(), "web1", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, r := range reachOf(t, b) {
+		if status(r) == model.ReachNotRunning {
+			t.Errorf("%s: not running without the host's kernel threads", name)
+		}
 	}
 }
 
