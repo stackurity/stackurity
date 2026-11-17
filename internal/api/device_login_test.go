@@ -620,28 +620,24 @@ func TestDeviceLoginNeedsARecentFactorUnderPolicy(t *testing.T) {
 	}
 }
 
-// Wrong codes are capped on the whole server, not only per person and
-// address: past the cap every code is refused until the window ends.
+// Many wrong codes on the whole server slow every lookup down, and refuse
+// none: a lockout would let a few accounts block every organisation.
 func TestDeviceLoginServerWideWrongCodes(t *testing.T) {
 	e := newDeviceEnv(t)
 	e.user("eng@x.io", auth.RoleEngineer)
 	eng := e.login("eng@x.io")
 	d := startDevice(t, e, "laptop-1")
 	ctx := context.Background()
-	for i := 0; i < 999; i++ {
+	for i := 0; i < 1000; i++ {
 		if _, err := e.st.RateLimitHit(ctx, "device-entry-miss", "server", 15*time.Minute); err != nil {
 			t.Fatal(err)
 		}
 	}
-	// One more wrong code reaches the cap ...
-	if code := eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": "BCDF-BCDF"}, nil); code != 404 {
-		t.Fatalf("wrong code: %d", code)
+	start := time.Now()
+	if code := eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d.UserCode}, nil); code != 200 {
+		t.Fatalf("the right code past the threshold: %d", code)
 	}
-	// ... and now even the right one waits.
-	b, _ := json.Marshal(map[string]string{"user_code": d.UserCode})
-	resp := eng.req("POST", "/api/v1/device/preview", strings.NewReader(string(b)), map[string]string{"X-Stackurity-CSRF": "1", "Content-Type": "application/json"})
-	resp.Body.Close()
-	if resp.StatusCode != 429 || resp.Header.Get("Retry-After") == "" {
-		t.Errorf("right code past the server-wide cap: %d", resp.StatusCode)
+	if took := time.Since(start); took < 900*time.Millisecond {
+		t.Errorf("lookup past the threshold took %v, want about a second", took)
 	}
 }

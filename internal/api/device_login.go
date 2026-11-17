@@ -77,11 +77,11 @@ var (
 	// someone else's is hopeless at this rate; it also stops a script.
 	limitDeviceEntry     = rateLimit{20, 15 * time.Minute}
 	limitDeviceEntryAddr = rateLimit{40, 15 * time.Minute}
-	// limitDeviceMisses caps wrong codes on the whole server, whoever and
-	// wherever they come from: the per-person and per-address limits do not
-	// stop guessing spread over many accounts and addresses. Past it the
-	// page refuses every code until the window ends (a lockout an attacker
-	// can cause, but not get a token from); it is logged.
+	// limitDeviceMisses is how many wrong codes the whole server sees in a
+	// window, whoever and wherever they come from, before every code
+	// lookup is slowed (deviceMissDelay). Nothing is refused: refusing
+	// would let a few accounts and addresses lock every organisation out
+	// of terminal sign-in (security review of #433). It is logged.
 	limitDeviceMisses = rateLimit{1000, 15 * time.Minute}
 )
 
@@ -386,15 +386,19 @@ func (s *Server) deviceLookup(w http.ResponseWriter, r *http.Request, p *Princip
 		s.fail(w, r, err)
 		return nil, nil, "", false
 	}
-	if misses >= limitDeviceMisses.n {
-		setRetryAfter(w, limitDeviceMisses)
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many wrong codes have been tried on this server; codes are not checked for a few minutes. Try again later")
-		return nil, nil, "", false
+	if d := deviceMissDelay(misses); d > 0 {
+		t := time.NewTimer(d)
+		select {
+		case <-r.Context().Done():
+			t.Stop()
+			return nil, nil, "", false
+		case <-t.C:
+		}
 	}
 	d, err := s.Store.DeviceAuthorizationByUserCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
 		if n, err := s.Store.RateLimitHit(r.Context(), deviceMissBucket, deviceMissSubject, limitDeviceMisses.window); err == nil && n == limitDeviceMisses.n {
-			s.Log.Warn("device sign-in: the server-wide limit on wrong codes was reached; codes are refused until the window ends",
+			s.Log.Warn("device sign-in: many wrong codes on this server; code lookups are slowed until the window ends",
 				"limit", limitDeviceMisses.n, "window", limitDeviceMisses.window)
 		}
 		writeError(w, 404, "not_found", "no sign-in request has this code: check it against your terminal, or start signing in again there")
@@ -651,4 +655,15 @@ func (s *Server) deviceConfirmFirst(r *http.Request, p *Principal) (bool, []stri
 		}
 	}
 	return true, usable, nil
+}
+
+// deviceMissDelay is how long a code lookup waits once the server has seen
+// limitDeviceMisses wrong codes in the window: a second, plus a second for
+// every further 200, at most 5. Guessing then costs seconds a try while
+// people who type their own code wait a moment and are never refused.
+func deviceMissDelay(misses int) time.Duration {
+	if misses < limitDeviceMisses.n {
+		return 0
+	}
+	return min(time.Duration(1+(misses-limitDeviceMisses.n)/200)*time.Second, 5*time.Second)
 }
