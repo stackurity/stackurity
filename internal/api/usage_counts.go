@@ -15,8 +15,12 @@ import (
 // Answers 204, also for keys it does not know, so a newer dashboard never
 // shows an error against an older server.
 func (s *Server) postUsage(w http.ResponseWriter, r *http.Request) {
-	if p := principal(r); p != nil && (p.Token != nil || p.Assistant != nil || p.FeedbackAgent != nil || p.FeedbackReviewer != nil) {
+	p := principal(r)
+	if p == nil || p.User == nil || p.Token != nil || p.Assistant != nil || p.FeedbackAgent != nil || p.FeedbackReviewer != nil {
 		writeError(w, 403, "forbidden", "usage counts come from the dashboard only")
+		return
+	}
+	if s.limited(w, r, "too many usage counts; wait a minute", limitHit{"usage-counts", itoa(p.User.ID), limitUsageCounts}) {
 		return
 	}
 	var req struct {

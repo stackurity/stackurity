@@ -665,7 +665,7 @@ The server checks every field and scrubs again: identifiers in paths become `:id
 
 **Who:** browser sessions (API tokens get 403)
 
-How the dashboard reports what only the browser sees, for the server's [usage counts](install.md#usage-counts): `{"event": "teaser_view" | "teaser_click", "key": "<feature>"}` when a notice that a feature needs a paid plan is shown or a link in it is followed, and `{"event": "export", "key": "evidence_json" | "evidence_print" | "outcomes_print"}` for exports made in the browser. Adds one to the organisation's count for the day; nothing about the person or the page is kept. Answers 204, also for a key the server does not know (nothing is counted); 400 for another event. It is not counted against a plan's API requests an hour.
+How the dashboard reports what only the browser sees, for the server's [usage counts](install.md#usage-counts): `{"event": "teaser_view" | "teaser_click", "key": "<feature>"}` when a notice that a feature needs a paid plan is shown or a link in it is followed, and `{"event": "export", "key": "evidence_json" | "evidence_print" | "outcomes_print"}` for exports made in the browser. Adds one to the organisation's count for the day; nothing about the person or the page is kept. Answers 204, also for a key the server does not know (nothing is counted); 400 for another event. It is not counted against a plan's API requests an hour. Only a signed-in dashboard session may send it (403 for API tokens and assistants), at most 120 a minute per user (429 after that).
 
 ### `POST /setup`
 

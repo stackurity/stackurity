@@ -111,3 +111,25 @@ func TestTeaserFeaturesCoverEveryFeature(t *testing.T) {
 		}
 	}
 }
+
+// TestUsageCountsRateLimited: one user cannot send counts without limit.
+func TestUsageCountsRateLimited(t *testing.T) {
+	e := newEnv(t)
+	e.user("usage-busy@x.io", auth.RoleViewer)
+	s := e.login("usage-busy@x.io")
+	body := map[string]string{"event": "teaser_view", "key": "teams"}
+	// Two windows' worth, in case a minute boundary passes mid-loop.
+	for i := 0; i < 2*120+1; i++ {
+		switch code := s.do("POST", "/api/v1/usage-counts", body, nil); code {
+		case 204:
+		case 429:
+			if n := usageCounts(t, e)["teaser_view/teams"]; n < 120 || n > 240 {
+				t.Errorf("counted %d before the limit", n)
+			}
+			return
+		default:
+			t.Fatalf("post %d: %d", i, code)
+		}
+	}
+	t.Error("no 429 after 241 counts")
+}
