@@ -31,7 +31,7 @@ An approved request whose tool never collects the token within the 10 minutes ha
 
 ## Security
 
-- Only hashes of the device code and the user code are stored (migration `0108_device_authorizations`). Tokens, codes and request bodies are never logged.
+- Only hashes of the device code and the user code are stored (migration `0113_device_authorizations`). Tokens, codes and request bodies are never logged.
 - Approve and Deny need a signed-in browser session (never an API token), the dashboard's `X-Stackurity-CSRF` header and the `SameSite=Strict` session cookie; a browser that says the request came from another site (`Sec-Fetch-Site`) is refused.
 - The page names the tool from the server's own list (`stackurity-scan`, `stackurity`), not from the request, and warns to approve only a sign-in you started yourself just now: anyone can start a request and send you its code.
 - Rate limits: 10 new requests a minute and 60 an hour per address; 120 polls a minute per address (answered `slow_down`); polling faster than the interval answers `slow_down` and lengthens it by 5 seconds; 20 codes per person and 40 per address in 15 minutes on the page.

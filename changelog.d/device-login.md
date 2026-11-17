@@ -8,4 +8,4 @@
 
 ### Upgrading
 
-- Migration `0108_device_authorizations` adds the table of terminal sign-in requests.
+- Migration `0113_device_authorizations` adds the table of terminal sign-in requests.

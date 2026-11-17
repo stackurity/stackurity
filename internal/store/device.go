@@ -16,7 +16,7 @@ import (
 )
 
 // Signing in a command-line tool from the browser: the OAuth 2.0 Device
-// Authorization Grant (RFC 8628; migration 0108, docs/device-login.md).
+// Authorization Grant (RFC 8628; migration 0113, docs/device-login.md).
 //
 // The tool asks for a code (CreateDeviceAuthorization) and shows the person
 // its user code; the person approves it in a signed-in browser
