@@ -10,10 +10,11 @@ import { CardSkeleton } from "../components/Skeleton";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useProject } from "../project";
 import { ignoreRulesEmpty, requestsEmpty } from "../emptyCopy";
+import { PolicyExceptionsTab } from "../components/PolicyExceptions";
 
 const LIMIT = 50;
 
-type Tab = "pending" | "all" | "rules";
+type Tab = "pending" | "all" | "rules" | "policy";
 
 const STATUS_TONE: Record<string, Tone> = { pending: "warn", approved: "good", declined: "muted" };
 
@@ -280,7 +281,7 @@ function Rules() {
   );
 }
 
-/** The approval inbox: requests to ignore issues, and the ignore rules in force. */
+/** The approval inbox: requests to ignore issues, the ignore rules in force, and exceptions to policy gates. */
 export function ApprovalsPage() {
   const { projects } = useProject();
   const [params, setParams] = useSearchParams();
@@ -289,13 +290,14 @@ export function ApprovalsPage() {
     { id: "pending", label: "Pending" },
     { id: "all", label: "All requests" },
     { id: "rules", label: "Ignore rules" },
+    { id: "policy", label: "Policy exceptions" },
   ];
   return (
     <>
       <PageHeader
         help="approvals"
         title="Approvals"
-        sub="Requests to ignore issues, from people whose role cannot ignore them, and the ignore rules in force."
+        sub="Requests to ignore issues, from people whose role cannot ignore them, the ignore rules in force, and requests for exceptions to policy gates."
       />
       {projects.length > 0 && (
         <div className="filters">
@@ -318,7 +320,7 @@ export function ApprovalsPage() {
           ))}
         </ul>
       </nav>
-      {tab === "rules" ? <Rules /> : <Requests key={tab} status={tab === "all" ? "all" : "pending"} />}
+      {tab === "rules" ? <Rules /> : tab === "policy" ? <PolicyExceptionsTab /> : <Requests key={tab} status={tab === "all" ? "all" : "pending"} />}
     </>
   );
 }

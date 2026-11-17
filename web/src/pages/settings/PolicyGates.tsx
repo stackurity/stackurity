@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "react-router";
-import { api, type GatePolicyItem, type GatePolicyList, type GatePolicyRequest, type GateViolation, type List } from "../../api";
+import { api, type GateExceptionList, type GatePolicyItem, type GatePolicyList, type GatePolicyRequest, type GateViolation, type List } from "../../api";
 import { useAuth } from "../../auth";
 import { gatePoliciesEmpty } from "../../emptyCopy";
 import { useAction, useLoad } from "../../hooks";
@@ -20,6 +20,7 @@ export function PolicyGatesPage() {
   const enforceAvailable = has("gate_enforce");
   const res = useLoad(() => api.getAll<GatePolicyList>("/gate-policies"), []);
   const vs = useLoad(() => api.getAll<List<GateViolation>>("/gate-policies/violations"), []);
+  const inForce = useLoad(() => api.get<GateExceptionList>("/gate-policies/exceptions", { status: "approved", limit: 500 }), []);
   const act = useAction();
   const [note, setNote] = useState("");
   const [adding, setAdding] = useState(false);
@@ -99,7 +100,7 @@ export function PolicyGatesPage() {
           />
         </Card>
       ) : (
-        <OrgPoliciesBody items={items} violations={vs.data?.items} canManage={canManage} enforceAvailable={enforceAvailable} pending={act.pending} actions={actions} />
+        <OrgPoliciesBody items={items} violations={vs.data?.items} exceptions={inForce.data?.items} canManage={canManage} enforceAvailable={enforceAvailable} pending={act.pending} actions={actions} />
       )}
       <GoodToKnow>
         <ul>
@@ -112,6 +113,11 @@ export function PolicyGatesPage() {
             policy.
           </li>
           <li>Snoozed issues, accepted risks and false positives never count against a policy.</li>
+          <li>
+            When a violation cannot be fixed yet, anyone who sees the asset can ask for an exception from its row; a security or admin user of the
+            asset decides on <Link to="/approvals?tab=policy">Approvals → Policy exceptions</Link>. It ends on its date, at most the risk policy&apos;s
+            limit, and the violation counts again.
+          </li>
           <li>Every change, including turning a policy off for a project or asset, is recorded in the audit log.</li>
         </ul>
       </GoodToKnow>

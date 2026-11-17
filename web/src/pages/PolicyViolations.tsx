@@ -1,10 +1,12 @@
+import { useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { api, type GatePolicyList, type GateViolation, type List } from "../api";
+import { api, type GateException, type GateExceptionList, type GatePolicyList, type GateViolation, type List } from "../api";
 import { useAuth } from "../auth";
 import { gateViolationsEmpty } from "../emptyCopy";
 import { activeFilters, withoutFilter, withoutFilters, type FilterDef } from "../filterChips";
 import { useLoad } from "../hooks";
-import { filterViolations, GATE_KINDS, kindLabel, MODE_LABELS, violationTotals } from "../policyGates";
+import { activeExceptions, filterViolations, GATE_KINDS, kindLabel, MODE_LABELS, pendingExceptionFor, violationTotals } from "../policyGates";
+import { ExceptionAskButton, ExceptionAskedNotice, ExceptionAskPanel, ExceptionsInForce, violationAsk } from "../components/PolicyExceptions";
 import { FilterChips, TableToolbar } from "../components/FilterChips";
 import { ModeBadge } from "../components/PolicyGates";
 import { TableSkeleton } from "../components/Skeleton";
@@ -24,8 +26,25 @@ export function violationFilterDefs(names: { policy: (id: string) => string; ass
 
 const plural = (n: number, w: string, many = w + "s") => `${n.toLocaleString()} ${n === 1 ? w : many}`;
 
-/** What the table and the phone list show: rendered by tests as is. */
-export function ViolationsTable({ rows }: { rows: GateViolation[] }) {
+/**
+ * What the table and the phone list show: rendered by tests as is.
+ * exceptions: the requests waiting, when loaded; onAsk shows Ask for an
+ * exception on each row (the form opens above the table).
+ */
+export function ViolationsTable({
+  rows,
+  exceptions,
+  onAsk,
+  asking,
+}: {
+  rows: GateViolation[];
+  exceptions?: GateException[];
+  onAsk?: (v: GateViolation) => void;
+  /** An ask is open: the row buttons wait. */
+  asking?: boolean;
+}) {
+  const ask = (v: GateViolation) =>
+    onAsk ? <ExceptionAskButton waiting={pendingExceptionFor(v, exceptions)} disabled={asking} onAsk={() => onAsk(v)} /> : null;
   const columns: Column<GateViolation>[] = [
     {
       key: "policy",
@@ -43,13 +62,17 @@ export function ViolationsTable({ rows }: { rows: GateViolation[] }) {
     { key: "reason", header: "Why it fails", cell: (v) => <span className="small">{v.reason}</span> },
     {
       key: "actions",
-      header: <span className="sr-only">Open</span>,
-      cell: (v) =>
-        v.link ? (
-          <Link className="btn btn-sm" to={v.link}>
-            {v.leak_id ? "Open the key" : "Open the issue"}
-          </Link>
-        ) : null,
+      header: <span className="sr-only">Actions</span>,
+      cell: (v) => (
+        <div className="row-actions">
+          {v.link && (
+            <Link className="btn btn-sm" to={v.link}>
+              {v.leak_id ? "Open the key" : "Open the issue"}
+            </Link>
+          )}
+          {ask(v)}
+        </div>
+      ),
     },
   ];
   return (
@@ -77,6 +100,7 @@ export function ViolationsTable({ rows }: { rows: GateViolation[] }) {
                 </>
               )}
             </p>
+            {ask(v)}
           </li>
         ))}
       </ul>
@@ -86,8 +110,9 @@ export function ViolationsTable({ rows }: { rows: GateViolation[] }) {
 
 /**
  * Fixes → Policy violations: every current violation of a policy gate that
- * is not off, worked out now from the findings and leaked keys. Requests
- * for an exception will start from a row here (a later release).
+ * is not off, worked out now from the findings and leaked keys. Each row
+ * can ask for an exception (components/PolicyExceptions.tsx); exceptions
+ * in force are listed below the table, since what they cover is left out.
  */
 export function PolicyViolationsPage() {
   const { can, me } = useAuth();
@@ -96,6 +121,11 @@ export function PolicyViolationsPage() {
   const server = { policy_id: get("policy_id"), asset_id: get("asset_id"), project_id: get("project_id") };
   const res = useLoad(() => api.get<List<GateViolation>>("/gate-policies/violations", server), [server.policy_id, server.asset_id, server.project_id]);
   const policies = useLoad(() => api.getAll<GatePolicyList>("/gate-policies"), []);
+  const exq = { policy_id: server.policy_id, asset_id: server.asset_id, limit: 500 };
+  const waiting = useLoad(() => api.get<GateExceptionList>("/gate-policies/exceptions", { ...exq, status: "pending" }), [server.policy_id, server.asset_id]);
+  const [asking, setAsking] = useState<GateViolation | null>(null);
+  const [asked, setAsked] = useState<GateException | null>(null);
+  const inForce = useLoad(() => api.get<GateExceptionList>("/gate-policies/exceptions", { ...exq, status: "approved" }), [server.policy_id, server.asset_id]);
   const policyName = (id: string) => policies.data?.items.find((p) => String(p.id) === id)?.name ?? `#${id}`;
   const assetName = (id: string) => res.data?.items.find((v) => String(v.asset_id) === id)?.asset_name ?? `#${id}`;
   const projectName = (id: string) => me?.projects?.find((p) => String(p.id) === id)?.name ?? `#${id}`;
@@ -179,9 +209,30 @@ export function PolicyViolationsPage() {
             {plural(t.violations, "violation")} on {plural(t.assets, "asset")}, from {plural(t.policies, "policy", "policies")}
             {t.enforced > 0 && <>; {plural(t.enforced, "violation")} of policies in enforce mode</>}.
           </p>
-          <ViolationsTable rows={rows} />
+          {asked && <ExceptionAskedNotice x={asked} />}
+          {asking && (
+            <ExceptionAskPanel
+              ask={violationAsk(asking)}
+              onCancel={() => setAsking(null)}
+              onAsked={(x) => {
+                setAsking(null);
+                setAsked(x);
+                waiting.reload();
+              }}
+            />
+          )}
+          <ViolationsTable
+            rows={rows}
+            exceptions={waiting.data?.items}
+            asking={asking !== null}
+            onAsk={(v) => {
+              setAsked(null);
+              setAsking(v);
+            }}
+          />
         </>
       )}
+      <ExceptionsInForce items={activeExceptions(inForce.data?.items)} />
     </>
   );
 }

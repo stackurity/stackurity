@@ -5,7 +5,18 @@
  * and of imports other than types so node --test can load it
  * (policyGates.test.ts).
  */
-import type { GateFilters, GateKind, GateMode, GatePolicy, GatePolicyItem, GatePolicyRequest, GateViolation } from "./api";
+import type {
+  GateException,
+  GateExceptionRequest,
+  GateFilters,
+  GateKind,
+  GateMode,
+  GatePolicy,
+  GatePolicyItem,
+  GatePolicyRequest,
+  GateViolation,
+  IgnoreReason,
+} from "./api";
 
 // format.ts's, repeated: node --test loads this file without a bundler.
 function plural(n: number, word: string, many = word + "s"): string {
@@ -365,4 +376,159 @@ export function modeStatus(mode: GateMode, enforceAvailable: boolean, isNew: boo
         ? "Enforce: a violation fails the CI job or the deploy check."
         : "Enforce on this plan: checks report violations as warnings and pass. A paid plan makes them fail.";
   }
+}
+
+// --- exceptions (docs/policy-gates.md, Exceptions)
+
+export interface ReasonOption {
+  value: IgnoreReason;
+  label: string;
+  description: string;
+}
+
+/** Why an exception is asked for: the reasons of ignore requests, said for a policy. */
+export const EXCEPTION_REASONS: ReasonOption[] = [
+  { value: "accepted_risk", label: "Accepted risk", description: "You know the risk and accept it until the end date, for example while a fix is planned." },
+  { value: "mitigated", label: "Mitigated", description: "Something else stops it being used, such as a firewall rule or a setting that turns the feature off." },
+  { value: "no_fix", label: "No fix yet", description: "Nobody can fix it yet: there is no fixed version or replacement." },
+  { value: "false_positive", label: "False positive", description: "The violation does not apply to this asset." },
+];
+
+export function exceptionReasonLabel(r: string): string {
+  return EXCEPTION_REASONS.find((o) => o.value === r)?.label ?? r.replace(/_/g, " ");
+}
+
+/** What an exception covers: "Every violation on web-1", "CVE-2026-1 in openssl 3.0.2 on web-1". */
+export function exceptionTargetText(x: Pick<GateException, "target_kind" | "target_label" | "asset_name">): string {
+  const on = x.asset_name || "this asset";
+  switch (x.target_kind) {
+    case "asset":
+      return `Every violation on ${on}`;
+    case "component":
+      return `${x.target_label || "One component"} on ${on}`;
+    default:
+      return `${x.target_label || "One issue"} on ${on}`;
+  }
+}
+
+/** In force now: approved and not past its expiry. */
+export function isActiveException(x: Pick<GateException, "status" | "expires_at">, now = Date.now()): boolean {
+  return x.status === "approved" && x.expires_at != null && Date.parse(x.expires_at) > now;
+}
+
+export type ExceptionTone = "warn" | "good" | "muted";
+
+/** The status badge: pending is amber (needs a look), in force green, the rest muted. */
+export function exceptionStatus(x: Pick<GateException, "status" | "expires_at" | "end_reason">, now = Date.now()): { label: string; tone: ExceptionTone } {
+  switch (x.status) {
+    case "pending":
+      return { label: "Waiting for a decision", tone: "warn" };
+    case "approved":
+      return isActiveException(x, now) ? { label: "In force", tone: "good" } : { label: "Expired", tone: "muted" };
+    case "declined":
+      return { label: "Declined", tone: "muted" };
+  }
+  switch (x.end_reason) {
+    case "expired":
+      return { label: "Expired", tone: "muted" };
+    case "revoked":
+      return { label: "Ended early", tone: "muted" };
+    case "fixed":
+      return { label: "Ended: fixed", tone: "muted" };
+  }
+  return { label: "Ended", tone: "muted" };
+}
+
+/** Whether an exception covers a violation: same policy and asset, and the whole asset or the same finding or leaked key. */
+export function exceptionCovers(x: Pick<GateException, "policy_id" | "asset_id" | "target_kind" | "finding_id" | "leak_id">, v: GateViolation): boolean {
+  if (x.policy_id !== v.policy_id || x.asset_id !== v.asset_id) return false;
+  if (x.target_kind === "asset") return true;
+  if (x.target_kind !== "finding") return false;
+  return (v.finding_id != null && x.finding_id === v.finding_id) || (v.leak_id != null && x.leak_id === v.leak_id);
+}
+
+/** The request waiting for a decision about a violation, if any. */
+export function pendingExceptionFor(v: GateViolation, xs: GateException[] | null | undefined): GateException | undefined {
+  return (xs ?? []).find((x) => x.status === "pending" && exceptionCovers(x, v));
+}
+
+/** Exceptions in force, narrowed to a policy and an asset when given, soonest to end first. */
+export function activeExceptions(xs: GateException[] | null | undefined, f: { policy_id?: number; asset_id?: number } = {}, now = Date.now()): GateException[] {
+  return (xs ?? [])
+    .filter((x) => isActiveException(x, now) && (!f.policy_id || x.policy_id === f.policy_id) && (!f.asset_id || x.asset_id === f.asset_id))
+    .sort((a, b) => Date.parse(a.expires_at ?? "") - Date.parse(b.expires_at ?? ""));
+}
+
+/** "1 exception in force", or "" for none. */
+export function exceptionsInForceText(n: number): string {
+  return n > 0 ? `${plural(n, "exception")} in force` : "";
+}
+
+/** The form for asking: what it covers, why, and until when (a YYYY-MM-DD day). */
+export interface ExceptionDraft {
+  /** finding: this issue or leaked key only; asset: every violation of the policy on the asset. */
+  target: "finding" | "asset";
+  reason: IgnoreReason;
+  note: string;
+  day: string;
+}
+
+/** What a request is about: a violation's policy, asset and finding or leaked key, or a policy and an asset. */
+export interface ExceptionSubject {
+  policy_id: number;
+  asset_id: number;
+  finding_id?: number;
+  leak_id?: number;
+}
+
+function isoDay(d: Date): string {
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
+}
+
+/** today plus n days, as YYYY-MM-DD in local time. */
+export function dayFromNow(n: number, now = new Date()): string {
+  const d = new Date(now);
+  d.setDate(d.getDate() + n);
+  return isoDay(d);
+}
+
+/** A new request: this issue when there is one, accepted risk, ending in 30 days (or the limit, if sooner). */
+export function newExceptionDraft(subject: ExceptionSubject, maxDays: number, now = new Date()): ExceptionDraft {
+  return {
+    target: subject.finding_id != null || subject.leak_id != null ? "finding" : "asset",
+    reason: "accepted_risk",
+    note: "",
+    day: dayFromNow(Math.min(30, Math.max(1, maxDays)), now),
+  };
+}
+
+/**
+ * The request the form sends, or what to fix first. The end is the end of
+ * the chosen local day, kept a few minutes inside the risk policy's limit
+ * (maxDays from now) so the server never refuses it for being late.
+ */
+export function exceptionDraftToRequest(d: ExceptionDraft, subject: ExceptionSubject, maxDays: number, now = new Date()): { request?: GateExceptionRequest; error?: string } {
+  const note = d.note.trim();
+  if (!note) return { error: "Say why the exception is needed." };
+  if (note.length > 4000) return { error: "Keep the reason to 4000 characters." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(d.day)) return { error: "Choose the day the exception ends." };
+  const end = new Date(`${d.day}T23:59:59`);
+  if (Number.isNaN(end.getTime()) || d.day <= isoDay(now)) return { error: "The end must be after today." };
+  const limit = new Date(now);
+  limit.setDate(limit.getDate() + maxDays);
+  if (d.day > isoDay(limit)) return { error: `The end can be at most ${plural(maxDays, "day")} from today, the limit set in the risk policy.` };
+  limit.setMinutes(limit.getMinutes() - 5);
+  const until = end.getTime() > limit.getTime() ? limit : end;
+  const request: GateExceptionRequest = {
+    policy_id: subject.policy_id,
+    asset_id: subject.asset_id,
+    target_kind: "asset",
+    reason: d.reason,
+    note,
+    expires_at: until.toISOString(),
+  };
+  if (d.target === "finding" && subject.finding_id != null) Object.assign(request, { target_kind: "finding", finding_id: subject.finding_id });
+  else if (d.target === "finding" && subject.leak_id != null) Object.assign(request, { target_kind: "finding", leak_id: subject.leak_id });
+  return { request };
 }

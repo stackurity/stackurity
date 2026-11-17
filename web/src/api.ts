@@ -4320,6 +4320,62 @@ export interface GateViolation {
   violation_key: string;
 }
 
+export type GateExceptionTarget = "asset" | "component" | "finding";
+/** An approved exception past its expiry is reported as ended (end_reason expired). */
+export type GateExceptionStatus = "pending" | "approved" | "declined" | "ended";
+
+/** GET /gate-policies/exceptions: one exception to a policy gate (docs/policy-gates.md, Exceptions). */
+export interface GateException {
+  id: number;
+  policy_id: number;
+  policy_name: string;
+  rule_version: number;
+  target_kind: GateExceptionTarget;
+  asset_id: number;
+  asset_name: string;
+  finding_id?: number | null;
+  leak_id?: number | null;
+  component_key?: string;
+  /** What it covers, in words: an advisory and component, a leaked key, or a component. Empty for the whole asset. */
+  target_label: string;
+  reason: IgnoreReason;
+  note: string;
+  status: GateExceptionStatus;
+  requested_by_id: number | null;
+  requested_by: string;
+  requested_at: string;
+  requested_expires_at: string | null;
+  decided_by_id: number | null;
+  decided_by: string;
+  decided_at: string | null;
+  decision_note: string;
+  expires_at: string | null;
+  ended_at: string | null;
+  ended_by: string;
+  end_reason: "" | "expired" | "revoked" | "fixed";
+  end_note: string;
+}
+
+export interface GateExceptionList extends List<GateException> {
+  /** Security or admin, on the organisation or through a grant: may decide (on assets where they hold it). */
+  can_decide: boolean;
+  /** The licensed workflow: the person who asked may not decide their own request. */
+  second_approver?: boolean;
+}
+
+/** POST /gate-policies/exceptions. */
+export interface GateExceptionRequest {
+  policy_id: number;
+  asset_id: number;
+  target_kind: GateExceptionTarget;
+  finding_id?: number;
+  leak_id?: number;
+  component_key?: string;
+  reason: IgnoreReason;
+  note: string;
+  expires_at?: string;
+}
+
 /** A policy a project or asset inherits, and what it did with it here. */
 export interface InheritedGatePolicy extends GatePolicy {
   from: "organisation" | "project";

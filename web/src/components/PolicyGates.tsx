@@ -1,10 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Link } from "react-router";
-import { api, ASSET_KINDS, type GateMode, type GatePolicy, type GatePolicyItem, type GatePolicyRequest, type GateViolation, type InheritedGatePolicy, type ScopeGatePolicies } from "../api";
+import { api, ASSET_KINDS, type GateException, type GateExceptionList, type GateMode, type GatePolicy, type GatePolicyItem, type GatePolicyRequest, type GateViolation, type InheritedGatePolicy, type ScopeGatePolicies } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
+import { absTime } from "../format";
 import {
+  activeExceptions,
   draftFrom,
+  exceptionsInForceText,
   draftToRequest,
   filterSummary,
   GATE_KINDS,
@@ -23,6 +26,7 @@ import {
   type Severity,
 } from "../policyGates";
 import { Badge } from "./Badge";
+import { ExceptionAskButton, ExceptionAskedNotice, ExceptionAskPanel } from "./PolicyExceptions";
 import { confirmAction } from "./ConfirmDialog";
 import { ProBadge, ProNotice } from "./ProNotice";
 import { Card, CardFooter, ChoiceCards, CheckCard, ErrorBox, FieldGroup, Loading, Notice, SettingRow } from "./ui";
@@ -32,8 +36,9 @@ import { Card, CardFooter, ChoiceCards, CheckCard, ErrorBox, FieldGroup, Loading
  * Settings → Policy gates, and a project's or asset's on its page, scoped
  * like notifications (ScopeNotifications.tsx): inherited policies can be
  * turned off here or edited for here only, and a project or asset can add
- * its own. Exceptions to a policy come with a later release; they will
- * hang off the violation rows (pages/PolicyViolations.tsx).
+ * its own. Exceptions are asked for from a violation row
+ * (pages/PolicyViolations.tsx) or, for a whole asset, from a policy on the
+ * asset's card here; the cards say how many are in force.
  */
 
 export function ModeBadge({ mode }: { mode: GateMode }) {
@@ -219,7 +224,7 @@ export function PolicyForm({
 }
 
 /** One policy's line: name, mode, what it fails on, where it applies, and its violations. */
-function PolicyLine({ p, extra, violations }: { p: GatePolicy; extra?: string; violations?: string }) {
+function PolicyLine({ p, extra, violations, exceptions }: { p: GatePolicy; extra?: string; violations?: string; exceptions?: string }) {
   return (
     <span className="grow">
       <strong>{p.name}</strong> <ModeBadge mode={p.mode} />
@@ -232,6 +237,12 @@ function PolicyLine({ p, extra, violations }: { p: GatePolicy; extra?: string; v
         <>
           <br />
           <span className="small">{violations}</span>
+        </>
+      )}
+      {exceptions && (
+        <>
+          <br />
+          <span className="small">{exceptions}</span>
         </>
       )}
     </span>
@@ -249,6 +260,7 @@ export interface OrgPolicyActions {
 export function OrgPoliciesBody({
   items,
   violations,
+  exceptions,
   canManage,
   enforceAvailable,
   pending = false,
@@ -258,6 +270,8 @@ export function OrgPoliciesBody({
   items: GatePolicyItem[];
   /** Current violations; undefined while they load or when they failed. */
   violations?: GateViolation[];
+  /** Exceptions in force; undefined while they load or when they failed. */
+  exceptions?: GateException[];
   canManage: boolean;
   enforceAvailable: boolean;
   pending?: boolean;
@@ -308,6 +322,7 @@ export function OrgPoliciesBody({
                   p={p}
                   extra={scopeSummary(p)}
                   violations={p.mode === "off" ? undefined : counts ? violationText(counts.get(p.id)) : undefined}
+                  exceptions={exceptionsInForceText(activeExceptions(exceptions, { policy_id: p.id }).length)}
                 />
                 {p.mode !== "off" && counts && (counts.get(p.id)?.violations ?? 0) > 0 && (
                   <Link className="btn btn-sm" to={violationsLink({ policy_id: p.id })}>
@@ -361,6 +376,10 @@ export function ScopeGatePoliciesCard({ kind, id }: { kind: GateScopeKind; id: n
   const base = `/${kind}s/${id}/gate-policies`;
   const on = Boolean(meta?.features?.includes("gate_policies"));
   const res = useLoad(() => (on ? api.get<ScopeGatePolicies>(base) : Promise.resolve(null)), [base, on]);
+  // An asset's exceptions waiting and in force, for its policies' lines.
+  const exq = (status: string) => (on && kind === "asset" ? api.get<GateExceptionList>("/gate-policies/exceptions", { asset_id: id, status, limit: 500 }) : Promise.resolve(null));
+  const waiting = useLoad(() => exq("pending"), [kind, id, on]);
+  const inForce = useLoad(() => exq("approved"), [kind, id, on]);
   const act = useAction();
   const [note, setNote] = useState("");
   if (!on || res.data === null) return null;
@@ -412,6 +431,8 @@ export function ScopeGatePoliciesCard({ kind, id }: { kind: GateScopeKind; id: n
         pending={act.pending}
         actions={actions}
         violationsLinkShown={can("security")}
+        exceptions={waiting.data && inForce.data ? [...waiting.data.items, ...inForce.data.items] : undefined}
+        onExceptionAsked={waiting.reload}
       />
     </>
   );
@@ -426,6 +447,8 @@ export function ScopeGatePoliciesBody({
   actions,
   editing: startEditing = null,
   violationsLinkShown = true,
+  exceptions,
+  onExceptionAsked,
 }: {
   kind: GateScopeKind;
   view: ScopeGatePolicies;
@@ -434,11 +457,34 @@ export function ScopeGatePoliciesBody({
   actions: ScopeGateActions;
   editing?: "new" | number | null;
   violationsLinkShown?: boolean;
+  /** An asset's exceptions waiting and in force: each policy line then offers Ask for an exception. */
+  exceptions?: GateException[];
+  onExceptionAsked?: () => void;
 }) {
   const [editing, setEditing] = useState<"new" | number | null>(startEditing);
   const w = kind;
   const manage = view.can_manage;
   const copyOf = (p: InheritedGatePolicy) => view.policies.find((x) => x.id === p.copy_id);
+  // Exceptions for the whole asset, from a policy's line (asset cards only).
+  const asks = kind === "asset" && exceptions !== undefined;
+  const inForce = (p: GatePolicy) => {
+    if (!asks) return undefined;
+    const xs = activeExceptions(exceptions, { policy_id: p.id, asset_id: view.scope.id });
+    return xs.length ? `${exceptionsInForceText(xs.length)}; the first ends ${absTime(xs[0].expires_at)}` : undefined;
+  };
+  const [asking, setAsking] = useState<GatePolicy | null>(null);
+  const [asked, setAsked] = useState<GateException | null>(null);
+  const askFor = (p: GatePolicy) =>
+    asks && p.mode !== "off" ? (
+      <ExceptionAskButton
+        waiting={exceptions.find((x) => x.status === "pending" && x.policy_id === p.id && x.asset_id === view.scope.id && x.target_kind === "asset")}
+        disabled={asking !== null}
+        onAsk={() => {
+          setAsked(null);
+          setAsking(p);
+        }}
+      />
+    ) : null;
   const form = (p: GatePolicy | null) => (
     <PolicyForm
       key={p ? p.id : "new"}
@@ -471,6 +517,18 @@ export function ScopeGatePoliciesBody({
         ) : undefined
       }
     >
+      {asked && <ExceptionAskedNotice x={asked} />}
+      {asking && (
+        <ExceptionAskPanel
+          ask={{ key: `scope-${asking.id}`, subject: { policy_id: asking.id, asset_id: view.scope.id }, policyName: asking.name, assetName: view.scope.name }}
+          onCancel={() => setAsking(null)}
+          onAsked={(x) => {
+            setAsking(null);
+            setAsked(x);
+            onExceptionAsked?.();
+          }}
+        />
+      )}
       <SettingRow
         title={kind === "project" ? "From the organisation" : "Inherited"}
         description={
@@ -485,7 +543,7 @@ export function ScopeGatePoliciesBody({
           <ul className="project-list" aria-label="Inherited policies">
             {view.inherited.map((p) => (
               <li key={p.id}>
-                <PolicyLine p={p} extra={p.from === "organisation" ? "Organisation" : "Project"} />
+                <PolicyLine p={p} extra={p.from === "organisation" ? "Organisation" : "Project"} exceptions={p.state === "on" ? inForce(p) : undefined} />
                 <Badge status={p.state} tone={p.state === "on" ? "good" : "muted"} label={STATE_LABEL[p.state](w)} />
                 {manage && p.state === "on" && (
                   <>
@@ -497,6 +555,7 @@ export function ScopeGatePoliciesBody({
                     </button>
                   </>
                 )}
+                {p.state === "on" && askFor(p)}
                 {manage && p.state === "off" && (
                   <button type="button" className="btn btn-sm" disabled={pending} onClick={() => actions.inherited(p, "on")}>
                     Turn on again
@@ -532,7 +591,8 @@ export function ScopeGatePoliciesBody({
                 </li>
               ) : (
                 <li key={p.id}>
-                  <PolicyLine p={p} extra={p.inherits_policy_id != null ? "Edited copy" : undefined} />
+                  <PolicyLine p={p} extra={p.inherits_policy_id != null ? "Edited copy" : undefined} exceptions={inForce(p)} />
+                  {askFor(p)}
                   {manage && (
                     <>
                       <button type="button" className="btn btn-sm" disabled={pending || editing !== null} onClick={() => setEditing(p.id)}>
