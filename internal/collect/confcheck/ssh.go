@@ -27,12 +27,12 @@ import (
 
 // SSH rules.
 const (
-	RuleSSHRootCIKey        = "ssh-root-key-ci-unrestricted"
-	RuleSSHRootKey          = "ssh-root-key-unrestricted"
-	RuleSSHKeySingleSource  = "ssh-root-key-no-from"
-	RuleSSHUserCIKey        = "ssh-user-key-ci-unrestricted"
-	RuleSSHPermitRootLogin  = "ssh-permit-root-login"
-	RuleSSHRootPWLogin = "ssh-root-password-login"
+	RuleSSHRootCIKey       = "ssh-root-key-ci-unrestricted"
+	RuleSSHRootKey         = "ssh-root-key-unrestricted"
+	RuleSSHKeySingleSource = "ssh-root-key-no-from"
+	RuleSSHUserCIKey       = "ssh-user-key-ci-unrestricted"
+	RuleSSHPermitRootLogin = "ssh-permit-root-login"
+	RuleSSHRootPWLogin     = "ssh-root-password-login"
 )
 
 // authKey is one line of an authorized_keys file, without the key.
