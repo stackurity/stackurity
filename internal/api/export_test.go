@@ -86,3 +86,6 @@ var TrustBadgeImage = trustBadgeImage
 
 // TrustBadgePlanOf is the trust badge plan of the workspace in ctx.
 func TrustBadgePlanOf(s *Server, ctx context.Context) TrustBadgePlan { return s.trustPlan(ctx) }
+
+// TeaserFeature reports whether a locked-notice feature key is counted.
+func TeaserFeature(k string) bool { return teaserFeatures[k] }

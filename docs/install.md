@@ -1493,3 +1493,16 @@ Never names or email addresses of people, organisation names, request or respons
 
 **Alerts.** An error that is new (never seen, or not seen for 7 days) opens a `platform` incident in the operators' workspace (see [Health](#health)), titled like `New error people hit: 404 not_found ApiError on /settings/billing (GET /api/v1/billing)`. It reaches the notification routes that have the **Collection, feed or platform problems** trigger once, like other platform problems, and is listed in daily and weekly summaries while it is open. It resolves by itself after 24 hours, without a message, and the same error is not announced again until it has been absent for 7 days.
 
+
+## Usage counts
+
+So that the people who run Stackurity can see which features are used and which paid ones people look for, the server keeps **counts** per organisation and day of four things. They stay in this installation's database, like [error reports](#error-reports): nothing is sent to Stackurity or anyone else.
+
+| Event | Counted when | Key |
+|---|---|---|
+| `teaser_view` | the dashboard shows a notice that a feature needs a paid plan (once per page and feature per page load) | the feature: `remediation`, `teams`, `evidence_report`, `sso`, `enterprise_packs`, `phishing_resistant_mfa` |
+| `teaser_click` | someone follows a link in such a notice | the feature |
+| `limit_refused` | the plan refuses something (a `402` answer, or Ask's `429 quota_reached`) | the limit: `assets`, `projects`, `read_only`, a [plan limit](asset-limits.md#plan-limits) kind such as `alert_rules` or `members`, `channel_kind_<kind>`, `trust_badges`, `trust_badge_logo`, `ask_questions` (Ask's question allowance is used up, a `429`), or `feature_<feature>` for a paid feature |
+| `export` | an SBOM or VEX document is downloaded, or the evidence report is downloaded or printed, or the outcomes report printed | `sbom_cyclonedx`, `vex_openvex`, `vex_cyclonedx`, `evidence_json`, `evidence_print`, `outcomes_print` |
+
+Each row is only the organisation, the event, the key, the day and a count: no user account, no names, no page address, no content of what was refused or exported. In an organisation with one member the counts still relate to that person, so treat them as minimal, pseudonymous data rather than anonymous. The dashboard reports teaser views and clicks and its own exports with [`POST /usage-counts`](api.md#post-usage-counts); the server counts the rest itself. Rows are under row-level security like the rest of an organisation's data and are deleted after 400 days.

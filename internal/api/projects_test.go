@@ -164,6 +164,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/slack/links":                      "account",
 	"GET /api/v1/ask/status":                       "account",
 	"POST /api/v1/ask/notice":                      "account",
+	"POST /api/v1/usage-counts":                    "account",
 	"GET /api/v1/ask/conversations":                "account",
 	"POST /api/v1/ask/conversations":               "account",
 	"DELETE /api/v1/ask/conversations":             "account",

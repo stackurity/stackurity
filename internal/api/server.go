@@ -298,6 +298,9 @@ func (s *Server) Handler() http.Handler {
 		r.Post("/setup", s.setup)
 		r.Post("/auth/login", s.login)
 		r.Post("/auth/logout", s.logout)
+		// Usage counts from the dashboard (usage_counts.go): signed in, but
+		// not counted against a plan's API requests an hour.
+		r.With(requireAuth, s.projectGate).Post("/usage-counts", s.postUsage)
 		s.mfaPublicRoutes(r)
 		// The trust page's data, public (trust_badge.go; Stackurity Cloud only).
 		s.trustBadgeAPIPublicRoutes(r)
@@ -734,12 +737,16 @@ func (s *Server) fail(w http.ResponseWriter, r *http.Request, err error) {
 	case errors.Is(err, store.ErrInvalid):
 		writeError(w, 400, "bad_request", err.Error())
 	case errors.Is(err, store.ErrAssetLimit):
+		s.countUsage(r, store.UsageLimitRefused, "assets")
 		writeError(w, 402, "asset_limit", err.Error())
 	case errors.Is(err, store.ErrProjectLimit):
+		s.countUsage(r, store.UsageLimitRefused, "projects")
 		writeError(w, 402, "project_limit", err.Error())
 	case errors.Is(err, store.ErrReadOnly):
+		s.countUsage(r, store.UsageLimitRefused, "read_only")
 		writeError(w, 402, "read_only", err.Error())
 	case planLimit(err) != nil:
+		s.countUsage(r, store.UsageLimitRefused, limitUsageKey(planLimit(err)))
 		writeError(w, 402, "plan_limit", planLimit(err).Error())
 	case errors.As(err, &cooldown):
 		secs := int(time.Until(cooldown.At).Seconds()) + 1
@@ -879,6 +886,15 @@ func (s *Server) openAIAppsChallenge(w http.ResponseWriter, r *http.Request) {
 }
 
 // planLimit is the plan limit err ran into (store.AsPlanLimit), or nil.
+// limitUsageKey is the usage-count key of a plan limit refusal: the limit
+// kind, and for a channel kind the plan leaves out, which one.
+func limitUsageKey(pl *store.PlanLimitError) string {
+	if pl.Kind == store.LimitChannelKind && pl.ChannelKind != "" {
+		return "channel_kind_" + pl.ChannelKind
+	}
+	return pl.Kind
+}
+
 func planLimit(err error) *store.PlanLimitError {
 	if pl, ok := store.AsPlanLimit(err); ok {
 		return pl

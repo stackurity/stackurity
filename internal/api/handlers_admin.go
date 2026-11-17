@@ -172,7 +172,7 @@ func (s *Server) createTeam(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if len(ts) >= 1 {
-			planRequired(w, license.Teams)
+			s.planRequired(w, r, license.Teams)
 			return
 		}
 	}

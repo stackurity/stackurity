@@ -38,7 +38,11 @@ var (
 	// limitSupportMinute and limitSupportDay cap the Coverage page's
 	// "Request support" per signed-in user.
 	limitSupportMinute = rateLimit{10, time.Minute}
-	limitSupportDay    = rateLimit{50, 24 * time.Hour}
+	// limitUsageCounts caps usage counts (POST /usage-counts) per signed-in
+	// user: far above what a person browsing sends, low enough that one
+	// session cannot inflate the counts or keep a daily row locked.
+	limitUsageCounts = rateLimit{120, time.Minute}
+	limitSupportDay  = rateLimit{50, 24 * time.Hour}
 	// limitAccountFailures caps failed sign-ins on one account from all
 	// addresses together. It is looser than the per-address backoff below,
 	// which is what stops a single guesser; this one stops guessing spread

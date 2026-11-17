@@ -13593,6 +13593,55 @@
     }
    }
   },
+  "/usage-counts": {
+   "post": {
+    "operationId": "post_usage_counts",
+    "summary": "Report a paid-feature notice or a browser export (usage counts)",
+    "description": "The dashboard's usage counts (install.md#usage-counts): `{\"event\": \"teaser_view\" | \"teaser_click\", \"key\": \"<feature>\"}` when a notice that a feature needs a paid plan is shown or a link in it followed, and `{\"event\": \"export\", \"key\": \"evidence_json\" | \"evidence_print\" | \"outcomes_print\"}` for exports made in the browser. Adds one to the organisation's count for the day; nothing about the person or page is kept. 204 also for a key the server does not know (nothing counted); 400 for another event. Browser sessions only (403 for API tokens); not counted against a plan's API requests an hour\n\nRole: a browser session",
+    "tags": [
+     "Setup"
+    ],
+    "x-stackurity-role": "a browser session",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "event": {
+          "type": "string",
+          "enum": [
+           "teaser_view",
+           "teaser_click",
+           "export"
+          ]
+         },
+         "key": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "event",
+         "key"
+        ]
+       }
+      }
+     }
+    },
+    "responses": {
+     "204": {
+      "description": "Counted, or the key is not one the server counts"
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/ci-trusts": {
    "get": {
     "operationId": "get_ci_trusts",
