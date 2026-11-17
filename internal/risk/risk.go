@@ -77,6 +77,20 @@ type Policy struct {
 	// stored as 0 and left out of the JSON, like DueDates, so policies (and
 	// their versions) saved before the field existed do not change.
 	UnmaintainedMonths int `json:"unmaintained_months,omitempty"`
+
+	// Steps run after the score is mapped to a priority and before SOS.
+	// They are not part of the stored policy: the caller adds them for the
+	// workspace's plan after reading it (the licensed edition's reachability
+	// step), and Version names them, so a stored priority still says what
+	// produced it. Community never adds any.
+	Steps []Step `json:"-"`
+}
+
+// Step adjusts a result after the thresholds, recording what it changed as
+// a factor. Name is part of the policy version.
+type Step struct {
+	Name  string
+	Apply func(in Input, r *Result)
 }
 
 type SLA struct {
@@ -244,6 +258,11 @@ type Input struct {
 	// KernelNotRunning: the package belongs to an installed kernel that is
 	// not the running one, so nothing is exposed until it is booted.
 	KernelNotRunning bool
+	// Reachability is the inventory row's reachability (model.Reach*:
+	// unknown, reachable, not_imported, not_running), with its evidence
+	// lines. The base model does not score it; an edition step may.
+	Reachability         string
+	ReachabilityEvidence []string
 }
 
 // Where an asset's exposure came from.
@@ -275,6 +294,20 @@ func exposureDetail(exposed *bool, source string) string {
 // back to know whether a finding had already crossed the threshold, so it
 // must not change.
 const FactorEPSS = "Exploit prediction (EPSS)"
+
+// Reachability factors, recorded by the licensed edition's reachability
+// step: FactorNotReached when it lowered the priority one level,
+// FactorNotReachedKept when it left it because the finding is known
+// exploited on an asset that is or may be internet-facing. Points are 0:
+// the step moves the level, not the score. The explanation reads them back,
+// so the names must not change.
+const (
+	FactorNotReached     = "Not reached"
+	FactorNotReachedKept = "Not reached, priority kept"
+)
+
+// StepReachability names the reachability step in Policy.Steps.
+const StepReachability = "reachability"
 
 // EPSSRelease is the share of the EPSS threshold below which a finding that
 // had crossed it loses the factor again (hysteresis): with the default
@@ -431,6 +464,9 @@ func (p Policy) Evaluate(in Input) Result {
 	default:
 		r.Priority = "P4"
 	}
+	for _, s := range p.Steps {
+		s.Apply(in, &r)
+	}
 	// SOS requires confirmed evidence about something actually exposed.
 	if in.Verification == "confirmed" && !in.KernelNotRunning {
 		for _, rule := range p.SOS {
@@ -566,6 +602,9 @@ func (p Policy) Normalize() Policy {
 // be traced to the policy that produced it.
 func (p Policy) Version() string {
 	b, _ := json.Marshal(p) // map keys are sorted, so the encoding is stable
+	for _, s := range p.Steps {
+		b = append(b, "\x00step:"+s.Name...)
+	}
 	sum := sha256.Sum256(b)
 	return "sha256:" + hex.EncodeToString(sum[:])[:16]
 }

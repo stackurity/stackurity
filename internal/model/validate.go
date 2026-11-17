@@ -110,6 +110,9 @@ func (b *ObservationBatch) Validate() error {
 				add("observations[%d].evidence[%q] too long", i, truncate(k))
 			}
 		}
+		if why := o.Reachability.problem(); why != "" {
+			add("observations[%d].%s", i, why)
+		}
 	}
 	if len(b.Relations) > MaxRelations {
 		add("too many relations")
@@ -207,6 +210,9 @@ func Usable(o Observation) bool {
 		return false
 	}
 	if o.Confidence != "" && !o.Confidence.Valid() {
+		return false
+	}
+	if o.Reachability.problem() != "" {
 		return false
 	}
 	for k, v := range o.Evidence {
