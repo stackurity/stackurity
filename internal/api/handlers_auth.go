@@ -264,9 +264,16 @@ func (s *Server) logout(w http.ResponseWriter, r *http.Request) {
 func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	ed := s.Gate.Edition(r.Context())
-	features := ed.Features()
-	if features == nil {
-		features = []license.Feature{}
+	features := append([]license.Feature{}, ed.Features()...)
+	if p.Workspace > 0 && ed != license.Community {
+		for _, a := range license.Addons() {
+			if ed.Includes(a) {
+				continue
+			}
+			if on, err := s.hasFeatureIn(r, p.Workspace, a); err == nil && on {
+				features = append(features, a)
+			}
+		}
 	}
 	out := map[string]any{"user": p.User, "role": p.Role, "token": p.Token, "workspace": nil, "workspaces": []store.Membership{},
 		"edition": ed, "features": features, "feedback_enabled": s.FeedbackURL != "" && p.User != nil,

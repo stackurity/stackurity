@@ -12,6 +12,7 @@ import { PriorityBadge, SeverityBadge, StateBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, ErrorBox, GoodToKnow, KeyValues, Loading, PageHeader } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
+import { EvidencePackPanel } from "../components/EvidencePack";
 import { countExport } from "../usage";
 
 function isoDate(d: Date): string {
@@ -62,7 +63,8 @@ export function ReportsPage() {
       <>
         <PageHeader title="Reports" />
         <ProNotice feature="evidence_report">
-          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires.{" "}
+          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires, and an audit
+          evidence pack (PDF and ZIP) mapped to SOC 2 and ISO 27001 controls.{" "}
         </ProNotice>
       </>
     );
@@ -134,6 +136,7 @@ function EvidenceReportPage() {
           {utcDay(from)} to {utcDay(to)}. The period can be one day to one year. Dates are UTC days.
         </p>
       </form>
+      <EvidencePackPanel projectID={project?.id ?? 0} from={from} to={to} />
       <GoodToKnow title="How this report is counted">
         <ul>
           <li>Current state (assets, coverage, open findings, exceptions, drift) is as of the time the report was generated.</li>
