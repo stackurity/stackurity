@@ -17,8 +17,8 @@ docker compose up -d                   # pulls ghcr.io/stackurity/stackurity:lat
 docker compose logs stackurity | grep -A2 "one-time token"
 ```
 
-To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.20.6` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.20.6` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
-`cosign verify ghcr.io/stackurity/stackurity:0.20.6 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
+To pin a release, set `STACKURITY_IMAGE=ghcr.io/stackurity/stackurity:0.20.7` in `deploy/.env`. The same signed image is on Docker Hub as `stackurity/stackurity:0.20.7` (`docker pull stackurity/stackurity`); GHCR is the default because Docker Hub limits anonymous pulls. Images are signed; check one with
+`cosign verify ghcr.io/stackurity/stackurity:0.20.7 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com` (see [security-audit.md](security-audit.md)).
 
 Open the dashboard through your HTTPS proxy (see [TLS](#tls)), or at http://localhost:8080 in a browser on the server itself, enter the one-time setup token from the log, and create the first administrator. The token only works while no users exist. The dashboard then asks for the server's [free key](#the-free-key): click **Get a free key** (with `STACKURITY_BASE_URL` set), or get one at https://app.stackurity.dev/self-hosted-key from any computer and paste it in. Agents and scans can send data before the key is entered.
 
@@ -1390,7 +1390,7 @@ If a replica of the old version was missed, it refuses to start, or, if it was s
 
 The chart's `updateStrategy` is `Recreate`: Kubernetes deletes every pod of the old version before it creates the new ones, so two versions never share the database. CI checks that the chart renders `Recreate` by default. Do not override it with `RollingUpdate` for a version upgrade: during a rolling update, pods of both versions run together against a schema only the new one understands. (Old pods then fail `/readyz` and stop their background work, so the damage is limited, but it is not a supported way to upgrade.) A rolling restart of the *same* version (`kubectl rollout restart`) is safe with either strategy.
 
-Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.20.6 stackurity:mybuild`.
+Before a release is published, CI installs each earlier release listed under `from:` in [`.github/workflows/release-checks.yml`](../.github/workflows/release-checks.yml) (the supported upgrade sources), loads data, starts the new version on the same database, checks that the previous version then refuses that database (for releases that have the check), restores a backup of the result into a new PostgreSQL server, and runs the rollback below, checking readiness and counts at each step. The script is `tools/release-checks/upgrade.sh`; you can run it against your own build: `tools/release-checks/upgrade.sh ghcr.io/stackurity/stackurity:0.20.7 stackurity:mybuild`.
 
 ### Rolling back
 
@@ -1411,7 +1411,7 @@ Upgrading again later works as before; the migrations run again. With Helm, rest
 
 ```sh
 kubectl create secret generic stackurity-db --from-literal=url='postgres://stackurity:...@db:5432/stackurity?sslmode=require'
-helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.20.6 \
+helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.20.7 \
   --set database.existingSecret=stackurity-db \
   --set ingress.enabled=true --set ingress.host=stackurity.example.com \
   --set config.baseURL=https://stackurity.example.com
@@ -1419,7 +1419,7 @@ helm install stackurity oci://ghcr.io/stackurity/charts/stackurity --version 0.2
 
 To give the server its [free key](#the-free-key) from a Secret rather than in the dashboard, `kubectl create secret generic stackurity-license --from-literal=key=<the key>` and add `--set license.existingSecret=stackurity-license`.
 
-The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.20.6 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
+The chart is published with each release from 0.4.0 and signed with Sigstore (`cosign verify ghcr.io/stackurity/charts/stackurity:0.20.7 --certificate-identity-regexp '^https://github.com/stackurity/stackurity/.github/workflows/release.yml@refs/tags/' --certificate-oidc-issuer https://token.actions.githubusercontent.com`). You can also install from a checkout: `helm install stackurity deploy/helm/stackurity ...`.
 
 Behind an ingress controller the chart reads the client address from `X-Forwarded-For` (`config.trustedProxyHeader`; use `CF-Connecting-IP` when Cloudflare is in front), trusting the private ranges where pods and nodes live; list your controller's addresses in `config.trustedProxies` to narrow that ([Client addresses behind a proxy](#client-addresses-behind-a-proxy)). The chart runs the same hardened container: non-root, read-only root filesystem, all capabilities dropped, `RuntimeDefault` seccomp, and no service-account token. PostgreSQL isn't bundled; use a managed database or an operator. Set `replicaCount` above 1 for availability (see [Running several replicas](#running-several-replicas)); the chart keeps the `Recreate` update strategy so an upgrade never runs two versions at once; do not switch it to `RollingUpdate` for upgrades ([Upgrading](#helm-and-the-update-strategy)). `metrics.enabled=true` serves Prometheus metrics on port 9100 through a separate `<release>-metrics` Service, never through the ingress. With the Prometheus Operator, add `metrics.serviceMonitor.enabled=true` (and `metrics.serviceMonitor.labels` matching your Prometheus's `serviceMonitorSelector`, for example `release: kube-prometheus-stack`) for a ServiceMonitor that scrapes it every `metrics.serviceMonitor.interval` (30s). It is created only when the cluster serves `monitoring.coreos.com/v1`; with `helm template`, pass `--api-versions monitoring.coreos.com/v1/ServiceMonitor`. `metrics.prometheusRule.enabled=true` adds the [recommended alerts](operations.md#recommended-alerts) as a PrometheusRule (with `metrics.prometheusRule.labels` for your Prometheus's `ruleSelector`), under the same condition.
 
@@ -1494,3 +1494,16 @@ Never names or email addresses of people, organisation names, request or respons
 
 **Alerts.** An error that is new (never seen, or not seen for 7 days) opens a `platform` incident in the operators' workspace (see [Health](#health)), titled like `New error people hit: 404 not_found ApiError on /settings/billing (GET /api/v1/billing)`. It reaches the notification routes that have the **Collection, feed or platform problems** trigger once, like other platform problems, and is listed in daily and weekly summaries while it is open. It resolves by itself after 24 hours, without a message, and the same error is not announced again until it has been absent for 7 days.
 
+
+## Usage counts
+
+So that the people who run Stackurity can see which features are used and which paid ones people look for, the server keeps **counts** per organisation and day of four things. They stay in this installation's database, like [error reports](#error-reports): nothing is sent to Stackurity or anyone else.
+
+| Event | Counted when | Key |
+|---|---|---|
+| `teaser_view` | the dashboard shows a notice that a feature needs a paid plan (once per page and feature per page load) | the feature: `remediation`, `teams`, `evidence_report`, `sso`, `enterprise_packs`, `phishing_resistant_mfa` |
+| `teaser_click` | someone follows a link in such a notice | the feature |
+| `limit_refused` | the plan refuses something (a `402` answer, or Ask's `429 quota_reached`) | the limit: `assets`, `projects`, `read_only`, a [plan limit](asset-limits.md#plan-limits) kind such as `alert_rules` or `members`, `channel_kind_<kind>`, `trust_badges`, `trust_badge_logo`, `ask_questions` (Ask's question allowance is used up, a `429`), or `feature_<feature>` for a paid feature |
+| `export` | an SBOM or VEX document is downloaded, or the evidence report is downloaded or printed, or the outcomes report printed | `sbom_cyclonedx`, `vex_openvex`, `vex_cyclonedx`, `evidence_json`, `evidence_print`, `outcomes_print` |
+
+Each row is only the organisation, the event, the key, the day and a count: no user account, no names, no page address, no content of what was refused or exported. In an organisation with one member the counts still relate to that person, so treat them as minimal, pseudonymous data rather than anonymous. The dashboard reports teaser views and clicks and its own exports with [`POST /usage-counts`](api.md#post-usage-counts); the server counts the rest itself. Rows are under row-level security like the rest of an organisation's data and are deleted after 400 days.

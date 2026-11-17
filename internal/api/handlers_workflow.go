@@ -747,7 +747,7 @@ func (s *Server) saveRouteAs(w http.ResponseWriter, r *http.Request, id int64, s
 		return
 	}
 	if (len(rt.TeamIDs) > 0 || rt.Escalation) && !s.has(r, license.Teams) {
-		planRequired(w, license.Teams)
+		s.planRequired(w, r, license.Teams)
 		return
 	}
 	if _, err := time.LoadLocation(rt.Timezone); err != nil {

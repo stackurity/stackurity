@@ -2,10 +2,12 @@ package api_test
 
 import (
 	"context"
+	"strconv"
 	"testing"
 	"time"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -123,5 +125,64 @@ func TestOutcomesLeaveOutWithdrawnAdvisories(t *testing.T) {
 	if code := view.do("GET", "/api/v1/findings/"+itoa(fid), nil, &one); code != 200 || one.Finding.ResolutionKind != "advisory_withdrawn" ||
 		len(one.Finding.ResolutionDetail) == 0 {
 		t.Errorf("finding: %d %+v", code, one.Finding)
+	}
+}
+
+// GET /findings/{id}/closure returns the proof behind a closed finding, and
+// 404 while it is open.
+func TestFindingClosure(t *testing.T) {
+	e := newEnv(t)
+	e.user("view@x.io", auth.RoleViewer)
+	view := e.login("view@x.io")
+	fid, _ := upgradeFixture(t, e)
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	path := "/api/v1/findings/" + strconv.FormatInt(fid, 10) + "/closure"
+	if code := view.do("GET", path, nil, nil); code != 404 {
+		t.Fatalf("open finding: %d", code)
+	}
+	rows, _, err := e.st.ListInventory(ctx, store.InventoryFilter{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []int64
+	for _, r := range rows {
+		ids = append(ids, r.ID)
+	}
+	// No evaluation produces it any more: it closes with nothing changed on the host.
+	if _, _, err := e.st.SyncFindings(ctx, []string{"vulnerability"}, ids, nil); err != nil {
+		t.Fatal(err)
+	}
+	var c store.Closure
+	if code := view.do("GET", path, nil, &c); code != 200 {
+		t.Fatalf("closed finding: %d", code)
+	}
+	if c.FindingID != fid || c.SchemaVersion != 1 || c.Verification != store.ClosedNotRemediation || c.Before.Version == "" ||
+		c.After != nil || c.ClosedAt.Before(c.OpenedAt) {
+		t.Errorf("closure = %+v", c)
+	}
+	// With the fix loop (tests run licensed): who fixed it, time to fix, SLA.
+	var raw map[string]any
+	view.do("GET", path, nil, &raw)
+	for _, k := range []string{"fixed_by", "time_to_fix_seconds", "sla"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("%s missing with the fix loop: %v", k, raw)
+		}
+	}
+	// Without it (a Community key), they are left out of the response, not
+	// just hidden in the UI.
+	e.api.Licence.Set(&license.License{Version: 1, Customer: "Acme", Edition: license.Community, ExpiresAt: time.Now().AddDate(1, 0, 0)})
+	raw = nil
+	if code := view.do("GET", path, nil, &raw); code != 200 {
+		t.Fatalf("closed finding with a Community key: %d", code)
+	}
+	for _, k := range []string{"fixed_by", "time_to_fix_seconds", "sla"} {
+		if _, ok := raw[k]; ok {
+			t.Errorf("%s returned without the fix loop: %v", k, raw[k])
+		}
+	}
+	for _, k := range []string{"verification", "before", "after", "check", "opened_at", "closed_at"} {
+		if _, ok := raw[k]; !ok {
+			t.Errorf("%s missing: %v", k, raw)
+		}
 	}
 }

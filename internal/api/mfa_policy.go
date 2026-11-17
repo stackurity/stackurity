@@ -535,7 +535,7 @@ func (s *Server) putSecuritySettings(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if !ok {
-			planRequired(w, license.PhishingResistantMFA)
+			s.planRequired(w, r, license.PhishingResistantMFA)
 			return
 		}
 		if wa, why := s.relyingPartyFor(); wa == nil {

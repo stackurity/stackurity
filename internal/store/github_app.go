@@ -519,8 +519,8 @@ func resolveRepoRemoved(ctx context.Context, tx pgx.Tx, assetID, integrationID i
 	const collector = "lockfile-scanner" // lockfile.CollectorID, the scan that reported it
 	var coll int64
 	if err := tx.QueryRow(ctx, `INSERT INTO collections
-		(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, proves_absence)
-		VALUES ($1, $2, '', 'repository', now(), true, 0, true) RETURNING id`, assetID, collector).Scan(&coll); err != nil {
+		(asset_id, collector_id, collector_version, method, observed_at, complete, observation_count, proves_absence, absence_unverified)
+		VALUES ($1, $2, '', 'repository', now(), true, 0, true, true) RETURNING id`, assetID, collector).Scan(&coll); err != nil {
 		return err
 	}
 	if _, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = now() WHERE asset_id = $1 AND removed_at IS NULL`, assetID); err != nil {

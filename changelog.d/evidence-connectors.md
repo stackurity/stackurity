@@ -4,4 +4,4 @@
 
 ### Upgrading
 
-- Migration `0109_evidence_connections` adds the tables `evidence_connections`, `evidence_oauth_states` and `evidence_sync_runs`. Additive; nothing is rewritten.
+- Migration `0111_evidence_connections` adds the tables `evidence_connections`, `evidence_oauth_states` and `evidence_sync_runs`. Additive; nothing is rewritten.
