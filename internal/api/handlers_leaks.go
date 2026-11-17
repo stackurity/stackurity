@@ -22,6 +22,10 @@ import (
 // batch's leaks. Collectors send them only to servers that say so.
 const FeatureLeaks = "leaks"
 
+// FeatureConfigFindings, in GET /meta's features, says that POST /ingest
+// stores a batch's config_findings (store/config_findings.go).
+const FeatureConfigFindings = "config_findings"
+
 // FeatureReachability, in GET /meta's features, says that POST /ingest
 // accepts and stores observations' reachability (model.Reachability).
 // Collectors send it only to servers that list it: older servers reject

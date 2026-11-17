@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -20,6 +21,26 @@ func scanLeaks(ctx context.Context, dir string) *model.LeakScan {
 		out.Found = append(out.Found, l)
 	}
 	return out
+}
+
+// printConfigFindings lists the risky settings found, most severe first,
+// with what to change.
+func printConfigFindings(w io.Writer, s *model.ConfigScan) {
+	if s == nil {
+		return
+	}
+	for _, f := range s.Found {
+		if f.Severity == "info" {
+			continue
+		}
+		// Findings are masked where they are made; mask again in case a
+		// scan from another build did not.
+		fmt.Fprintf(w, "config: %s %s at %s:%d (%s)\n  why: %s\n  fix: %s\n", f.Severity, f.Title, f.Path, f.Line,
+			confcheck.Redact(f.Subject), confcheck.Redact(f.Why), f.Fix)
+	}
+	if !s.Complete {
+		fmt.Fprintf(w, "partial: config checks %s\n", s.Reason)
+	}
 }
 
 // printLeaks lists the leaks found, never their values, and returns the

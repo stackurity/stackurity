@@ -2517,8 +2517,65 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["leak", "feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "feed", "collection", "coverage", "platform"];
+
+/** Which part of a server or repository a risky setting is in. */
+export type ConfigCategory = "agent_hook" | "ssh" | "ci";
+
+/**
+ * A risky setting found in a file (GET /config-findings): an AI coding-agent
+ * hook that downloads and runs code, an SSH key with an unrestricted root
+ * shell, a GitHub Action that is not pinned. No secret is stored.
+ */
+export interface ConfigFinding {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  collector_id: string;
+  fingerprint: string;
+  rule: string;
+  category: ConfigCategory;
+  title: string;
+  severity: "high" | "medium" | "low" | "info";
+  path: string;
+  line: number;
+  /** What in the file: a hook event and command, a key's fingerprint and comment, an action. */
+  subject: string;
+  /** One line: why it is a risk. */
+  why: string;
+  /** One line: what to change. */
+  fix: string;
+  doc_url: string;
+  status: "open" | "resolved";
+  resolution: "" | "gone" | "dismissed";
+  resolution_note: string;
+  resolved_by: number | null;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+}
+
+/** The last config check of an asset by one collector. */
+export interface ConfigScan {
+  collector_id: string;
+  complete: boolean;
+  reason: string;
+  found: number;
+  scanned_at: string;
+}
+
+export interface ConfigFindingList extends List<ConfigFinding> {
+  scans?: ConfigScan[];
+}
+
+/** GET /config-findings/summary: open findings by severity and category. */
+export interface ConfigSummary {
+  by_severity: Record<string, number>;
+  by_category: Record<string, number>;
+  scanned_assets: number;
+}
 
 /** A key, token or password found written in a file. The value is never stored. */
 export interface Leak {

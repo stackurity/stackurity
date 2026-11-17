@@ -25,7 +25,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// honour project_id (the CLI's --project); "app_list" means a host
 	// batch may list its application directories (apps.dirs);
 	// "kubernetes_report" means POST /kubernetes/report exists.
-	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks, FeatureReachability}
+	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks, FeatureReachability, FeatureConfigFindings}
 	// "device_login": a command-line tool can sign in from the browser
 	// (POST /device/code and /device/token, device_login.go).
 	if s.BaseURL != "" {

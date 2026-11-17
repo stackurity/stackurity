@@ -69,6 +69,7 @@ import { NotFound } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
 import { IssuesPage } from "./pages/Findings";
 import { LeaksPage } from "./pages/Leaks";
+import { ConfigFindingsPage } from "./pages/ConfigFindings";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
 import { IncidentsPage } from "./pages/Incidents";
@@ -281,6 +282,7 @@ export function App() {
         <Route path="fixes/mine" element={<MyWorkPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
         <Route path="fixes/leaks" element={<LeaksPage />} />
+        <Route path="fixes/config" element={<ConfigFindingsPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
         <Route path="fixes/:id" element={<FixGroupDetailPage />} />
         <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />

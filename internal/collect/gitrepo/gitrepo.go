@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/limits"
@@ -83,6 +84,9 @@ type Scanner struct {
 	CAFile string
 	// NoLeaks turns off the scan for keys and passwords in the clone.
 	NoLeaks bool
+	// NoConfigChecks turns off the checks of the clone's GitHub Actions
+	// workflows and AI agent hooks (internal/collect/confcheck).
+	NoConfigChecks bool
 }
 
 // Scan clones the repository at depth 1, scans lockfiles and keys written
@@ -159,6 +163,10 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 			leaks.Grade(&l, "", false)
 			b.Leaks.Found = append(b.Leaks.Found, l)
 		}
+	}
+	if !s.NoConfigChecks {
+		// The default branch's workflows and checked-in agent hooks.
+		b.ConfigFindings = confcheck.Repo(ctx, src)
 	}
 	return b, nil
 }

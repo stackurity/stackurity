@@ -41,6 +41,40 @@ export type LeakViewName = "action" | "kept" | "resolved";
  * scannedAssets: assets whose files were scanned for keys (GET /leaks), or
  * undefined on one asset's tab, which warns of no scan itself.
  */
+export type ConfigViewName = "attention" | "listed" | "resolved";
+
+/** Risky settings (config findings): nothing checked yet, or nothing in this view. */
+export function configEmpty(view: ConfigViewName, scannedAssets: number | undefined, canAddServer: boolean): EmptyCopy {
+  if (scannedAssets === 0) {
+    return {
+      title: "No settings checked yet",
+      why: "No agent, repository integration or scan has checked settings yet, so an empty list does not mean there are none.",
+      after: "Agents and stackurity scan from this version on check AI agent hooks, SSH access and GitHub Actions workflows when they report.",
+      action: { label: "Add a server", to: "/assets/add", permitted: canAddServer, otherwise: "An administrator can add servers." },
+    };
+  }
+  switch (view) {
+    case "attention":
+      return {
+        title: "No risky settings need a look",
+        why: "No high or medium risky setting was found in the files checked.",
+        after: "If a later check finds one, it appears here; a high one opens an incident.",
+      };
+    case "listed":
+      return {
+        title: "Nothing listed",
+        why: "No low or information-only settings were found.",
+        after: "Unpinned actions and root keys with no restriction are listed here. They never alert.",
+      };
+    case "resolved":
+      return {
+        title: "No resolved risky settings",
+        why: "No risky setting has gone from a check or been dismissed yet.",
+        after: "A setting appears here once a complete check no longer sees it, or someone dismisses it.",
+      };
+  }
+}
+
 export function leaksEmpty(view: LeakViewName, scannedAssets: number | undefined, canAddServer: boolean): EmptyCopy {
   if (scannedAssets === 0) {
     return {
