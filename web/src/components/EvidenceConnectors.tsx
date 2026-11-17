@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { useSearchParams } from "react-router";
 import {
   evidenceApi,
+  type ApiError,
   type DrataConnect,
   type EvidenceChange,
   type EvidenceConnection,
@@ -36,8 +37,11 @@ import {
  * Settings → Integrations, "Compliance evidence": sends the asset inventory,
  * open vulnerabilities (with their SLA status) and the evidence pack to Vanta
  * and Drata on a schedule. Part of the Compliance add-on: without it the card
- * shows the locked paid-plans notice and calls nothing. The routes exist only
- * in the licensed build (docs/evidence-connectors.md).
+ * shows the locked paid-plans notice. An organisation whose plan dropped the
+ * add-on still sees its existing connections with Disconnect (the list and
+ * the delete work without the add-on), so the stored tokens and key can be
+ * removed. The routes exist only in the licensed build
+ * (docs/evidence-connectors.md).
  */
 
 const TITLE = "Compliance evidence";
@@ -48,8 +52,97 @@ const DESCRIPTION =
 export function ComplianceEvidenceCard() {
   const { has, can } = useAuth();
   if (!can("admin")) return null;
-  if (!has("compliance_addon")) return <EvidenceLockedCard />;
+  if (!has("compliance_addon")) return <EvidenceWithoutAddon />;
   return <EvidenceConnectorsLoaded />;
+}
+
+/**
+ * Without the add-on: the locked card, unless connections are left from
+ * when the plan had it (a downgrade). Those stay listed with Disconnect.
+ */
+function EvidenceWithoutAddon() {
+  const res = useLoad(() => evidenceApi.status(), []);
+  const act = useAction();
+  const [done, setDone] = useState<string | null>(null);
+  const data = res.data;
+  if (!data || connectedVendors(data).length === 0) {
+    // Nothing connected (or nothing to load, as in the Community build).
+    return done ? (
+      <Card id="compliance-evidence" title={TITLE} description={DESCRIPTION}>
+        <Notice kind="success">{done}</Notice>
+      </Card>
+    ) : (
+      <EvidenceLockedCard />
+    );
+  }
+  const disconnect = async (vendor: EvidenceVendor) => {
+    if (!(await confirmDisconnect(vendor))) return;
+    const ok = await act.run(() => evidenceApi.disconnect(vendor).then(() => true));
+    if (ok) {
+      setDone(`${VENDOR_NAME[vendor]} disconnected.`);
+      res.reload();
+    }
+  };
+  return <EvidenceDowngradedCard status={data} busy={act.pending} error={act.error} done={done} onDisconnect={disconnect} />;
+}
+
+function connectedVendors(status: EvidenceStatus): EvidenceVendor[] {
+  return (["vanta", "drata"] as const).filter((v) => status[v].connection);
+}
+
+/**
+ * The plan lost the Compliance add-on while Vanta or Drata was connected:
+ * syncing is off, and each connection can still be disconnected.
+ */
+export function EvidenceDowngradedCard({
+  status,
+  busy,
+  error,
+  done,
+  onDisconnect,
+}: {
+  status: EvidenceStatus;
+  busy: boolean;
+  error?: ApiError | null;
+  done?: string | null;
+  onDisconnect: (vendor: EvidenceVendor) => void | Promise<void>;
+}) {
+  return (
+    <Card id="compliance-evidence" title={TITLE} description={DESCRIPTION}>
+      <Notice kind="warn">
+        Syncing is off: this workspace&apos;s plan no longer includes the Compliance add-on, so Stackurity sends nothing to Vanta or Drata. The connections
+        below are kept and start syncing again when the add-on is back. You can disconnect them now, which deletes the stored access.
+      </Notice>
+      {done && <Notice kind="success">{done}</Notice>}
+      <ErrorBox error={error} title="Could not disconnect" />
+      {connectedVendors(status).map((v) => (
+        <SettingRow key={v} title={VENDOR_NAME[v]} badge={<span className="pro-badge">Compliance add-on</span>} description={rowPurpose(v, status[v].connection)}>
+          <p className="small">
+            <strong>Syncing off.</strong> Last sync: <RelativeTime iso={status[v].connection?.last_sync_at} />.
+          </p>
+          <div className="row-actions">
+            <button type="button" className="btn btn-sm btn-link-danger" disabled={busy} onClick={() => void onDisconnect(v)}>
+              Disconnect
+            </button>
+          </div>
+        </SettingRow>
+      ))}
+      <SettingRow title="Included in this workspace" description="Syncing needs the Compliance add-on.">
+        <ProNotice feature="compliance_addon">Add it back to keep the vulnerability-management evidence in Vanta or Drata current. </ProNotice>
+      </SettingRow>
+    </Card>
+  );
+}
+
+function confirmDisconnect(vendor: EvidenceVendor): Promise<boolean> {
+  return confirmAction({
+    title: `Disconnect ${VENDOR_NAME[vendor]}?`,
+    consequence:
+      vendor === "vanta"
+        ? "Stackurity stops sending to Vanta and deletes its access. What was already sent stays in Vanta until you remove it there."
+        : "Stackurity stops sending to Drata and deletes the stored API key. What was already sent stays in Drata until you remove it there; revoke the key in Drata too.",
+    action: `Disconnect ${VENDOR_NAME[vendor]}`,
+  });
 }
 
 /** Without the Compliance add-on: what it would do, and how to get it. Nothing is loaded. */
@@ -109,15 +202,7 @@ function EvidenceConnectorsLoaded() {
       if (ok) setDone(`${VENDOR_NAME[vendor]} sync queued. It usually finishes within a few minutes.`);
     },
     disconnect: async (vendor) => {
-      const yes = await confirmAction({
-        title: `Disconnect ${VENDOR_NAME[vendor]}?`,
-        consequence:
-          vendor === "vanta"
-            ? "Stackurity stops sending to Vanta and deletes its access. What was already sent stays in Vanta until you remove it there."
-            : "Stackurity stops sending to Drata and deletes the stored API key. What was already sent stays in Drata until you remove it there; revoke the key in Drata too.",
-        action: `Disconnect ${VENDOR_NAME[vendor]}`,
-      });
-      if (!yes) return;
+      if (!(await confirmDisconnect(vendor))) return;
       const ok = await act.run(() => evidenceApi.disconnect(vendor).then(() => true));
       if (ok) {
         setDone(`${VENDOR_NAME[vendor]} disconnected.`);

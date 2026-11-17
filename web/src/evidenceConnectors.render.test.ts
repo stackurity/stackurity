@@ -11,11 +11,15 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { MemoryRouter } from "react-router";
 import { createServer, type ViteDevServer } from "vite";
 import type { EvidenceConnection, EvidenceStatus } from "./api.ts";
-import { evidenceReturnNotice, lastSyncText, rowPurpose, withoutEvidenceReturn } from "./evidenceConnectors.ts";
+import { evidenceReturnNotice, lastSyncText, rowPurpose, vantaErrorText, withoutEvidenceReturn } from "./evidenceConnectors.ts";
 
 let vite: ViteDevServer;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let C: Record<string, ComponentType<any>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let Page: Record<string, ComponentType<any>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let ApiErr: new (status: number, code: string, message: string) => any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let Auth: { AuthProvider: ComponentType<any> };
 
@@ -29,14 +33,17 @@ before(async () => {
   });
   C = (await vite.ssrLoadModule("/src/components/EvidenceConnectors.tsx")) as typeof C;
   Auth = (await vite.ssrLoadModule("/src/auth.tsx")) as typeof Auth;
+  Page = (await vite.ssrLoadModule("/src/pages/VantaOAuthCallback.tsx")) as typeof Page;
+  ApiErr = ((await vite.ssrLoadModule("/src/api.ts")) as { ApiError: typeof ApiErr }).ApiError;
 });
 after(async () => {
   await vite?.close();
 });
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-const render = (name: string, props: any = {}) => renderToStaticMarkup(h(Auth.AuthProvider, null, h(MemoryRouter, null, h(C[name], props))));
-const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/\s+/g, " ");
+const render = (name: string, props: any = {}) =>
+  renderToStaticMarkup(h(Auth.AuthProvider, null, h(MemoryRouter, null, h(C[name] ?? Page[name], props))));
+const text = (html: string) => html.replace(/<[^>]+>/g, " ").replace(/&#x27;/g, "'").replace(/\s+/g, " ");
 
 const calls: string[] = [];
 const actions = {
@@ -202,4 +209,78 @@ test("an odd reason is escaped, never markup, in the rendered notice", () => {
   const html = renderToStaticMarkup(h("p", null, n.text));
   assert.doesNotMatch(html, /<img/);
   assert.match(html, /&lt;img/);
+});
+
+test("after a downgrade: existing connections stay listed with Disconnect, and the card says syncing is off", () => {
+  const status: EvidenceStatus = {
+    compliance_addon: false,
+    vanta: { available: true, connection: conn({ vendor: "vanta", id: 4 }) },
+    drata: { available: true, connection: null },
+  };
+  const disconnected: string[] = [];
+  const html = render("EvidenceDowngradedCard", { status, busy: false, onDisconnect: (v: string) => void disconnected.push(v) });
+  const t = text(html);
+  assert.match(t, /Syncing is off: this workspace's plan no longer includes the Compliance add-on, so Stackurity sends nothing to Vanta or Drata\./);
+  assert.match(t, /start syncing again when the add-on is back/);
+  assert.match(t, /You can disconnect them now, which deletes the stored access\./);
+  assert.match(t, /Vanta Compliance add-on/);
+  assert.match(t, /Syncing off\. Last sync: 2 hours ago/);
+  assert.match(html, /<button[^>]*btn-link-danger[^>]*>Disconnect<\/button>/);
+  // Only the connected vendor has a row; nothing that would send or change it.
+  assert.doesNotMatch(t, /Drata Compliance add-on/);
+  assert.doesNotMatch(html, /<select|<input|Sync now|Pause|Resume|Connect Vanta|Connect Drata|Choose a Vanta document/);
+  assert.match(html, /class="alert alert-info pro-notice"/);
+  assert.deepEqual(disconnected, []);
+});
+
+const renderAt = (url: string) =>
+  renderToStaticMarkup(h(Auth.AuthProvider, null, h(MemoryRouter, { initialEntries: [url] }, h(Page.VantaOAuthCallbackPage))));
+
+test("Vanta callback page: cancelled on Vanta's page", () => {
+  const t = text(renderAt("/integrations/vanta/oauth/callback?error=access_denied&state=s1"));
+  assert.match(t, /Connect Vanta/);
+  assert.match(t, /You cancelled on Vanta's page, so Vanta was not connected\. Nothing was stored\./);
+  assert.match(t, /Back to Compliance evidence/);
+  assert.doesNotMatch(t, /Connecting Vanta/);
+});
+
+test("Vanta callback page: another error from Vanta is shown as text, never markup", () => {
+  const html = renderAt(`/integrations/vanta/oauth/callback?error=${encodeURIComponent("<b>server_error</b>")}&state=s1`);
+  assert.match(text(html), /Vanta did not connect \(.*server_error.*\)\. Nothing was stored\./);
+  assert.doesNotMatch(html, /<b>server_error/);
+});
+
+test("Vanta callback page: without the code or state it asks to start again", () => {
+  for (const q of ["", "?code=c1", "?state=s1"]) {
+    const t = text(renderAt(`/integrations/vanta/oauth/callback${q}`));
+    assert.match(t, /This page needs the whole address Vanta sent you back to\. Vanta was not connected; start again with Connect Vanta\./, q);
+  }
+});
+
+test("Vanta callback page: someone who is not an admin is told to ask one, and nothing is posted", () => {
+  // AuthProvider before /auth/me has answered: no admin role.
+  const t = text(renderAt("/integrations/vanta/oauth/callback?code=c1&state=s1"));
+  assert.match(t, /Only administrators of this organisation can connect Vanta\. Ask one to do it\./);
+  assert.doesNotMatch(t, /Connecting Vanta/);
+});
+
+test("Vanta callback page: an admin sees progress, then the reason when the server refuses", () => {
+  const view = (error: unknown) => text(render("VantaCallbackView", { denied: null, hasCode: true, admin: true, error }));
+  assert.match(view(null), /Connecting Vanta…/);
+  assert.match(view(new ApiErr(400, "state", "x")), /Vanta was not connected: the connect link expired or was already used\. Start again with Connect Vanta\./);
+  assert.match(view(new ApiErr(502, "exchange_failed", "x")), /Vanta did not accept the approval code/);
+  assert.match(view(new ApiErr(402, "plan_required", "x")), /does not include the Compliance add-on/);
+  assert.match(view(new ApiErr(403, "forbidden", "x")), /only an administrator of this organisation, signed in to the dashboard, can connect Vanta/);
+  assert.match(view(new ApiErr(404, "not_configured", "x")), /Vanta is not set up on this server/);
+  assert.match(view(new ApiErr(400, "access_denied", "x")), /cancelled on Vanta's page/);
+  // A code the page does not know: the server's message, in the error box.
+  assert.match(view(new ApiErr(403, "mfa_enrolment_required", "your organisation requires two-factor sign-in")), /Could not connect Vanta/);
+});
+
+test("every error code of POST /integrations/evidence/vanta/oauth has a sentence", () => {
+  for (const code of ["access_denied", "state", "exchange_failed", "not_configured", "plan_required", "forbidden"]) {
+    assert.match(vantaErrorText(code) ?? "", /^Vanta was not connected: /, code);
+  }
+  assert.equal(vantaErrorText("constructor"), null);
+  assert.equal(vantaErrorText(undefined), null);
 });

@@ -2117,9 +2117,9 @@ A project's `issue_types` (`name`, `subtask`), `statuses` by issue type (`name`,
 
 ### `GET /integrations/evidence`
 
-**Who:** admin · licensed build (Compliance add-on)
+**Who:** admin · licensed build (also without the Compliance add-on)
 
-The compliance evidence connectors ([evidence-connectors.md](evidence-connectors.md)): `{"vanta": {"available", "connection"}, "drata": {"available", "connection"}}`. `available` is false for Vanta when the operator has not set up the Vanta app (`STACKURITY_VANTA_CLIENT_ID`), and always true for Drata. `connection` is null until connected, otherwise `id`, `vendor`, `region` (`us`, `eu`, `aus` or `apac`), `status` (`active`, `paused`, or `reconnect_needed` after the vendor refused the token or key), `status_reason`, `interval_hours` (6, 12, 24 or 168), `next_sync_at`, `last_sync_at`, `last_sync_status` (`ok`, `partial`, `failed` or null), `last_sync_summary` (`assets`, `vulnerabilities`, `evidence_uploaded`, `message`), `config` (the vendor's ids only: Vanta `document_id` and `document_title`; Drata `workspace_id`), `connected_by` and `connected_at`. Tokens and API keys are never returned. Every route here answers `402 plan_required` without the Compliance add-on; the Community build does not serve them.
+The compliance evidence connectors ([evidence-connectors.md](evidence-connectors.md)): `{"compliance_addon", "vanta": {"available", "connection"}, "drata": {"available", "connection"}}`. `compliance_addon` is false when the organisation's plan does not include the Compliance add-on (for example after a downgrade): the connections are still listed so an admin can disconnect them, but nothing is sent until the add-on is back. `available` is false for Vanta when the operator has not set up the Vanta app (`STACKURITY_VANTA_CLIENT_ID`), and always true for Drata. `connection` is null until connected, otherwise `id`, `vendor`, `region` (`us`, `eu`, `aus` or `apac`), `status` (`active`, `paused`, or `reconnect_needed` after the vendor refused the token or key), `status_reason`, `interval_hours` (6, 12, 24 or 168), `next_sync_at`, `last_sync_at`, `last_sync_status` (`ok`, `partial`, `failed` or null), `last_sync_summary` (`assets`, `vulnerabilities`, `evidence_uploaded`, `message`), `config` (the vendor's ids only: Vanta `document_id` and `document_title`; Drata `workspace_id`), `connected_by` and `connected_at`. Tokens and API keys are never returned. Every other route here except `DELETE /integrations/evidence/{vendor}` answers `402 plan_required` without the Compliance add-on; the Community build does not serve them.
 
 ### `POST /integrations/evidence/vanta/connect`
 
@@ -2127,11 +2127,11 @@ The compliance evidence connectors ([evidence-connectors.md](evidence-connectors
 
 Starts Connect Vanta: `{"region"}` (`us`, `eu` or `aus`); answers `authorize_url`, Vanta's consent page in that region, with a single-use state bound to the caller and organisation (10 minutes; only its SHA-256 is stored). 404 `not_configured` without the Vanta app.
 
-### `GET /auth/vanta/callback`
+### `POST /integrations/evidence/vanta/oauth`
 
-**Who:** anyone (the browser, with the single-use state) · licensed build
+**Who:** admin, signed in to the dashboard · licensed build (Compliance add-on)
 
-Where Vanta sends the browser back (`code`, `state`, or `error`). The code is exchanged at once (Vanta's codes last 30 seconds) and the tokens are stored sealed. Redirects to `/settings/integrations?evidence=vanta-connected`, or `/settings/integrations?evidence=vanta-error&reason=<reason>` with `reason` one of `access_denied` (cancelled on Vanta's page), `state` (unknown, used, expired or someone else's state; checked before Vanta is called), `exchange_failed` (Vanta refused the code), `not_configured`, `plan_required` or `forbidden`. Audited as `evidence_connection.create` or `evidence_connection.reconnect`.
+Finishes Connect Vanta. Vanta sends the browser back to the dashboard page `/integrations/vanta/oauth/callback` (the redirect URI of the operator's Vanta app); the page posts what Vanta gave it, `{"code", "state"}`, or `{"state", "error"}` when the person cancelled on Vanta's page. The session cookie is `SameSite=Strict`, so the browser does not send it on the redirect from Vanta; this same-origin request carries it. The state must be the caller's, made in this organisation, unused and less than 10 minutes old; it is used up by the first attempt. The code is exchanged at once (Vanta's codes last 30 seconds) and the tokens are stored sealed. Answers `{"connection", "reconnected"}`: 201, or 200 for a reconnect. Errors: 400 `access_denied` (cancelled on Vanta's page), 400 `state` (unknown, used, expired or someone else's state; checked before Vanta is called), 400 or 502 `exchange_failed` (no code, or Vanta refused it), 404 `not_configured` (no Vanta app or no `STACKURITY_SECRET_KEY`), 402 `plan_required` and 403 `forbidden` (not an admin, an API token or assistant, or the organisation's two-factor policy not met). Audited as `evidence_connection.create` or `evidence_connection.reconnect`.
 
 ### `POST /integrations/evidence/drata`
 
@@ -2153,9 +2153,9 @@ Changes a connection (`vendor` `vanta` or `drata`): any of `interval_hours` (6, 
 
 ### `DELETE /integrations/evidence/{vendor}`
 
-**Who:** admin · licensed build (Compliance add-on)
+**Who:** admin · licensed build (also without the Compliance add-on)
 
-Disconnects: for Vanta, first asks Vanta to suspend the token (`POST /v1/oauth/token/suspend`, best effort), then deletes the connection, its tokens or key, and its sync history. What was already sent stays in the vendor. Audited as `evidence_connection.delete`.
+Disconnects, also after the plan lost the Compliance add-on: for Vanta, first asks Vanta to suspend the grant (`POST /v1/oauth/token/suspend`, best effort, with the access token refreshed first when it has expired; a failure does not stop the disconnect, and `token_suspended` says whether it worked), then deletes the connection, its tokens or key, and its sync history. What was already sent stays in the vendor. Audited as `evidence_connection.delete`.
 
 ### `POST /integrations/evidence/{vendor}/sync`
 

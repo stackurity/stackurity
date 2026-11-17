@@ -3023,6 +3023,8 @@ export interface EvidenceConnection {
 
 /** GET /integrations/evidence */
 export interface EvidenceStatus {
+  /** false when the plan lacks the Compliance add-on (after a downgrade): listed to disconnect, nothing is sent. Missing from older servers. */
+  compliance_addon?: boolean;
   /** available: the operator registered the Vanta app on this server (STACKURITY_VANTA_CLIENT_ID). */
   vanta: { available: boolean; connection: EvidenceConnection | null };
   drata: { available: boolean; connection: EvidenceConnection | null };
@@ -3044,6 +3046,12 @@ export interface VantaDocument {
   title: string;
 }
 
+/** POST /integrations/evidence/vanta/oauth: 201 connected, 200 reconnected. */
+export interface VantaOAuthResult {
+  connection: EvidenceConnection;
+  reconnected: boolean;
+}
+
 /** PUT /integrations/evidence/{vendor} */
 export interface EvidenceChange {
   interval_hours?: EvidenceInterval;
@@ -3060,8 +3068,10 @@ export interface DrataConnect {
 
 export const evidenceApi = {
   status: () => api.get<EvidenceStatus>("/integrations/evidence"),
-  /** Starts Connect Vanta: open authorize_url (Vanta's consent page); Vanta returns to /api/v1/auth/vanta/callback. */
+  /** Starts Connect Vanta: open authorize_url (Vanta's consent page); Vanta returns to the page /integrations/vanta/oauth/callback. */
   connectVanta: (region: EvidenceRegion) => api.post<{ authorize_url: string }>("/integrations/evidence/vanta/connect", { region }),
+  /** Finishes Connect Vanta from that page, same-origin with the session: the state works once. */
+  finishVanta: (b: { code: string; state: string }) => api.post<VantaOAuthResult>("/integrations/evidence/vanta/oauth", b),
   connectDrata: (b: DrataConnect) => api.post<EvidenceConnection>("/integrations/evidence/drata", b),
   update: (vendor: EvidenceVendor, b: EvidenceChange) => api.put<EvidenceConnection>(`/integrations/evidence/${vendor}`, b),
   vantaDocuments: () => api.get<{ items: VantaDocument[] }>("/integrations/evidence/vanta/documents"),

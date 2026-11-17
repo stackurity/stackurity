@@ -74,15 +74,27 @@ function joinWords(xs: string[]): string {
   return xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} and ${xs[xs.length - 1]}`;
 }
 
-/** Reasons the Vanta callback gives in ?reason=, in plain words. */
+/**
+ * Why Connect Vanta did not finish, in plain words: the error codes of
+ * POST /integrations/evidence/vanta/oauth (and the older ?reason= values).
+ */
 const VANTA_REASONS: Record<string, string> = {
   access_denied: "the approval was cancelled on Vanta's page.",
   state: "the connect link expired or was already used. Start again with Connect Vanta.",
   exchange_failed: "Vanta did not accept the approval code. Start again with Connect Vanta; codes expire after 30 seconds.",
   not_configured: "Vanta is not set up on this server.",
   plan_required: "this workspace's plan does not include the Compliance add-on.",
-  forbidden: "only an administrator of this organisation can connect Vanta.",
+  forbidden: "only an administrator of this organisation, signed in to the dashboard, can connect Vanta.",
 };
+
+/** The sentence for an error code of POST /integrations/evidence/vanta/oauth; null for a code it does not know. */
+export function vantaErrorText(code: string | undefined): string | null {
+  const known = code && Object.hasOwn(VANTA_REASONS, code) ? VANTA_REASONS[code] : undefined;
+  return known ? `Vanta was not connected: ${known}` : null;
+}
+
+/** Where the callback page sends the browser after a connect: the Integrations card shows the notice. */
+export const VANTA_CONNECTED_PATH = "/integrations?evidence=vanta-connected";
 
 /**
  * The notice after Vanta's consent page sends the browser back
@@ -97,9 +109,8 @@ export function evidenceReturnNotice(params: URLSearchParams): { kind: "success"
   }
   if (v === "vanta-error") {
     const reason = (params.get("reason") ?? "").trim();
-    const known = VANTA_REASONS[reason];
     const said = reason ? `Vanta said: ${reason.replace(/[\r\n\t]+/g, " ").slice(0, 200)}.` : "No reason was given.";
-    return { kind: "warn", text: `Vanta was not connected: ${known ?? said}` };
+    return { kind: "warn", text: vantaErrorText(reason) ?? `Vanta was not connected: ${said}` };
   }
   return null;
 }

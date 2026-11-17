@@ -13167,7 +13167,7 @@
    "get": {
     "operationId": "get_integrations_evidence",
     "summary": "Compliance evidence connections (Vanta, Drata) (licensed edition)",
-    "description": "Whether each vendor is available on this server and the organisation's connection to it, with its schedule and last sync; tokens and API keys are never returned. Needs the Compliance add-on\n\nRole: admin",
+    "description": "Whether the organisation's plan includes the Compliance add-on (`compliance_addon`), whether each vendor is available on this server, and the organisation's connection to it, with its schedule and last sync; tokens and API keys are never returned. Also answers without the add-on (after a downgrade), so the connections can be disconnected\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
@@ -13233,42 +13233,39 @@
     }
    }
   },
-  "/auth/vanta/callback": {
-   "get": {
-    "operationId": "get_auth_vanta_callback",
-    "summary": "Where Vanta sends the browser back after Connect Vanta (licensed edition)",
-    "description": "Exchanges the code and stores the tokens sealed, then redirects to `/settings/integrations?evidence=vanta-connected` or `?evidence=vanta-error&reason=...`\n\nRole: none (a single-use state)",
+  "/integrations/evidence/vanta/oauth": {
+   "post": {
+    "operationId": "post_integrations_evidence_vanta_oauth",
+    "summary": "Finish Connect Vanta (licensed edition)",
+    "description": "`{\"code\", \"state\"}` (or `{\"state\", \"error\"}` after a cancel), posted by the dashboard page `/integrations/vanta/oauth/callback` Vanta sends the browser back to. The state must be the caller's, from this organisation, unused and fresh; it is used up by the first attempt. Answers `{\"connection\", \"reconnected\"}` (201, or 200 for a reconnect). Errors: 400 `access_denied`, 400 `state`, 400 or 502 `exchange_failed`, 404 `not_configured`, 402 `plan_required`, 403 `forbidden` (API tokens, assistants and sessions that have not met the two-factor policy too)\n\nRole: admin",
     "tags": [
      "Integrations"
     ],
-    "x-stackurity-role": "none (a single-use state)",
-    "security": [],
-    "parameters": [
-     {
-      "name": "code",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "state",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
-      }
-     },
-     {
-      "name": "error",
-      "in": "query",
-      "required": false,
-      "schema": {
-       "type": "string"
+    "x-stackurity-role": "admin",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "properties": {
+         "code": {
+          "type": "string"
+         },
+         "state": {
+          "type": "string"
+         },
+         "error": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "state"
+        ]
+       }
       }
      }
-    ],
+    },
     "x-stackurity-edition": "ee",
     "responses": {
      "2XX": {
@@ -13416,7 +13413,7 @@
    "delete": {
     "operationId": "delete_integrations_evidence_vendor",
     "summary": "Disconnect Vanta or Drata (licensed edition)",
-    "description": "Deletes the connection and its tokens or key (for Vanta, after asking Vanta to suspend the token)\n\nRole: admin",
+    "description": "Deletes the connection and its tokens or key, also without the Compliance add-on (for Vanta, after asking Vanta to suspend the grant with a refreshed token, best effort; `token_suspended` says whether it worked)\n\nRole: admin",
     "tags": [
      "Integrations"
     ],

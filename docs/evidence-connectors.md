@@ -19,7 +19,8 @@ Everything comes from one place: the evidence pack for the last 30 days, the sam
 - **SLA status.** Vanta has no field for a deadline or SLA status. For Vanta, fix-by dates, whether each vulnerability is within its deadline, and the share fixed within the deadline travel in the evidence file only. Drata's custom resource carries them on each vulnerability as well.
 - **What is never sent.** No credentials, tokens or secret values, no source code, and nothing from another organisation.
 - **History.** Each sync is recorded with its counts and any error (the newest 50 per connection, under **Recent syncs**).
-- **Pause and Disconnect.** Pausing stops the schedule and keeps the connection. Disconnecting deletes the stored tokens or key; for Vanta the server first asks Vanta to suspend the token. What was already sent stays in the vendor until you remove it there.
+- **Pause and Disconnect.** Pausing stops the schedule and keeps the connection. Disconnecting deletes the stored tokens or key; for Vanta the server first asks Vanta to suspend the grant, refreshing the access token first if it has expired (best effort: if Vanta cannot be reached, the connection is deleted anyway). What was already sent stays in the vendor until you remove it there.
+- **Without the Compliance add-on.** If the plan no longer includes the add-on, nothing is sent and the connections cannot be changed or synced, but the card still lists them with **Disconnect**, so the stored tokens and key can be deleted.
 
 ## Vanta
 
@@ -35,7 +36,7 @@ An administrator picks the Vanta region (United States, Europe or Australia), ch
 
 Stackurity Cloud has the app. On your own server:
 
-1. Register an application in Vanta's developer portal as a partner integration, with the redirect URI `https://<your server>/api/v1/auth/vanta/callback` (the server's `STACKURITY_BASE_URL` with that path) and the scopes above.
+1. Register an application in Vanta's developer portal as a partner integration, with the redirect URI `https://<your server>/integrations/vanta/oauth/callback` (the server's `STACKURITY_BASE_URL` with that path, a dashboard page) and the scopes above. The server logs the exact address at start-up ("Vanta app enabled"). The page finishes the connection by calling the API from the dashboard, where the person's session is sent; the session cookie is `SameSite=Strict`, so it is not sent on the redirect from Vanta itself.
 2. Set `STACKURITY_VANTA_CLIENT_ID` / `_FILE` and `STACKURITY_VANTA_CLIENT_SECRET` / `_FILE` (the `_FILE` form names a file holding the value), with `STACKURITY_BASE_URL` and `STACKURITY_SECRET_KEY`, and restart.
 3. Set the resource ids Vanta assigns to the app's resource types: `STACKURITY_VANTA_COMPONENT_RESOURCE_ID` / `_FILE` (vulnerable components) and `STACKURITY_VANTA_VULNERABILITY_RESOURCE_ID` / `_FILE` (package vulnerabilities). A connection's own settings can override them.
 
