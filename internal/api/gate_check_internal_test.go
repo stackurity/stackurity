@@ -37,9 +37,32 @@ func TestGateCheckOutcome(t *testing.T) {
 	if res != "warn" || !vs[0].EnforceRequiresPlan || vs[0].Mode != "enforce" || vs[0].Link != "https://s.example/assets/4?tab=leaks&leak=8" {
 		t.Errorf("enforce without the plan: %s %+v", res, vs)
 	}
-	// The Community build's default.
-	if gateEnforceAllowed(t.Context()) {
-		t.Error("enforce allowed by default")
+}
+
+// What a check may do on the plan: CI and API checks enforce with
+// gate_enforce; a deploy check needs gate_deploy too, and without it never
+// fails (deployLocked).
+func TestGateCheckPlan(t *testing.T) {
+	for _, tc := range []struct {
+		source                string
+		enforceOK, deployOK   bool
+		wantEnforce, wantLock bool
+	}{
+		{"ci", false, false, false, false},
+		{"ci", true, false, true, false},
+		{"api", true, true, true, false},
+		{"deploy", true, true, true, false},
+		{"deploy", true, false, false, true},
+		{"deploy", false, false, false, true},
+		{"deploy", false, true, false, false},
+	} {
+		enforce, locked := gateCheckPlan(tc.source, tc.enforceOK, tc.deployOK)
+		if enforce != tc.wantEnforce || locked != tc.wantLock {
+			t.Errorf("%s enforce=%v deploy=%v: got %v %v", tc.source, tc.enforceOK, tc.deployOK, enforce, locked)
+		}
+	}
+	if gateEnforceDowngraded([]gateCheckViolation{{Mode: "enforce"}}) || !gateEnforceDowngraded([]gateCheckViolation{{}, {EnforceRequiresPlan: true}}) {
+		t.Error("gateEnforceDowngraded")
 	}
 }
 

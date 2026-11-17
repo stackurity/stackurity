@@ -91,10 +91,19 @@ func TrustBadgePlanOf(s *Server, ctx context.Context) TrustBadgePlan { return s.
 func TeaserFeature(k string) bool { return teaserFeatures[k] }
 
 // SetGateEnforce makes enforce-mode policy gates fail checks (as the
-// licensed build will, delivery step 4) or not, and returns a function
-// that restores the default.
+// licensed build does with the gate_enforce feature) or not, and returns a
+// function that restores the default.
 func SetGateEnforce(on bool) (restore func()) {
 	old := gateEnforceAllowed
-	gateEnforceAllowed = func(context.Context) bool { return on }
+	gateEnforceAllowed = func(*Server, *http.Request, int64) bool { return on }
 	return func() { gateEnforceAllowed = old }
+}
+
+// SetGateDeploy makes deploy checks able to fail (as the licensed build
+// does with the gate_deploy feature) or not, and returns a function that
+// restores the default.
+func SetGateDeploy(on bool) (restore func()) {
+	old := gateDeployAllowed
+	gateDeployAllowed = func(*Server, *http.Request, int64) bool { return on }
+	return func() { gateDeployAllowed = old }
 }
