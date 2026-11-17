@@ -161,7 +161,7 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 const readOnlyNote = " This connection is read-only: no tool changes anything."
 
 const writeNote = " Tools that change something (create_project, rename_project, add_assets_to_project, remove_assets_from_project, " +
-	"create_enrollment, assign, snooze, ignore, check_again, invite_to_project) first answer with a preview of what they " +
+	"create_enrollment, assign, snooze, ignore, check_again, invite_to_project, set_notification_enabled) first answer with a preview of what they " +
 	"would do and change nothing. Show the preview to the user and call the tool again with the same arguments and the " +
 	"preview's confirm code only when they ask for the change. Every change is limited by the user's role and recorded in " +
 	"the activity log under their name."

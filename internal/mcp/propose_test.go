@@ -25,7 +25,7 @@ func TestProposeToolsAreTheApprovedSix(t *testing.T) {
 	if got := strings.Join(names, ","); got != want {
 		t.Errorf("propose tools = %s", got)
 	}
-	for _, n := range []string{"create_project", "remove_assets_from_project", "create_enrollment", "invite_to_project", "search", "nope"} {
+	for _, n := range []string{"create_project", "remove_assets_from_project", "create_enrollment", "invite_to_project", "set_notification_enabled", "search", "nope"} {
 		if IsProposable(n) {
 			t.Errorf("%s is proposable", n)
 		}
