@@ -587,6 +587,7 @@ func jitter(d time.Duration) time.Duration {
 func scanCmd() *cobra.Command {
 	c := conn{ci: true}
 	var g gate
+	var pol policyGate
 	var name, envName, output, gitURL, failOnLeak string
 	var noPacks, noLeaks bool
 	cmd := &cobra.Command{
@@ -605,6 +606,12 @@ server to evaluate the scan and exits with status 3 when an open finding meets
 the threshold, so it can gate a CI pipeline. Findings that are suppressed or
 risk-accepted on the server do not count.
 
+With --policy=auto (the default) the command also checks the organisation's
+policy gates once the server has evaluated the scan, when the server has
+them and one applies to the repository: violations are printed under
+"Policy gates"; those of policies in warn mode pass, and a violation of an
+enforced policy exits with status 3. --policy=off skips the check.
+
 With --project (an id or name; or STACKURITY_PROJECT) a new asset is added
 to that project, and an admin's token also adds an existing one. A collector
 token must have been made for that project (Integrations > API tokens, or the
@@ -620,6 +627,9 @@ containing "stackurity:allow" is not reported.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := g.validate(); err != nil {
+				return err
+			}
+			if err := pol.validate(); err != nil {
 				return err
 			}
 			if failOnLeak != "" && (noLeaks || !leaks.ValidSeverity(failOnLeak)) {
@@ -720,13 +730,37 @@ containing "stackurity:allow" is not reported.`,
 				return err
 			}
 			printResult(r)
-			if g.enabled() {
+			// Policy gates: asked first which apply, so the command
+			// waits for the evaluation only when one does.
+			sp := &scanPolicy{cl: cl, warn: os.Stderr, req: client.PolicyCheckRequest{CollectionID: r.CollectionID,
+				Source: "ci", Commit: co.Commit, Ref: ciRef(os.Getenv)}}
+			if pol.enabled() {
+				sp.prepare(cmd.Context())
+			}
+			if g.enabled() || sp.active {
 				res, err := g.await(cmd.Context(), cl, r.CollectionID)
 				if err != nil {
-					return err
+					var ee *exitError
+					if g.enabled() || !errors.As(err, &ee) || ee.code != notReadyExitCode {
+						return err
+					}
+					if err := sp.notReady(err); err != nil {
+						return err
+					}
+					return leakErr
 				}
-				if err := g.report(os.Stdout, res); err != nil {
-					return err
+				var gateErr, policyErr error
+				if g.enabled() {
+					gateErr = g.report(os.Stdout, res)
+				}
+				if sp.active {
+					policyErr = sp.check(cmd.Context(), os.Stdout)
+				}
+				if gateErr != nil {
+					return gateErr
+				}
+				if policyErr != nil {
+					return policyErr
 				}
 			}
 			return leakErr
@@ -734,6 +768,7 @@ containing "stackurity:allow" is not reported.`,
 	}
 	c.flags(cmd)
 	g.flags(cmd)
+	pol.flags(cmd)
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not download and run the stack packs installed on the server")
 	cmd.Flags().BoolVar(&noLeaks, "no-leaks", false, "do not look for keys and passwords written in the project's files")
 	cmd.Flags().StringVar(&failOnLeak, "fail-on-leak", "", "exit 3 when a leaked key or password has this severity or higher (low, medium, high, critical)")

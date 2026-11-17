@@ -24,8 +24,9 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// ignore: "upload_project" means POST /ingest and POST /sbom/import
 	// honour project_id (the CLI's --project); "app_list" means a host
 	// batch may list its application directories (apps.dirs);
-	// "kubernetes_report" means POST /kubernetes/report exists.
-	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks}
+	// "kubernetes_report" means POST /kubernetes/report exists;
+	// "gate_policies" means POST /gate-policies/check exists.
+	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks, FeatureGatePolicies}
 	// "device_login": a command-line tool can sign in from the browser
 	// (POST /device/code and /device/token, device_login.go).
 	if s.BaseURL != "" {

@@ -938,6 +938,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s route: %d", tag, code)
 	}
 	set("route", rt.ID)
+	var gp struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/gate-policies", map[string]any{"name": "gate-" + tag, "kind": "known_exploited"}, &gp); code != 201 {
+		t.Fatalf("%s gate policy: %d", tag, code)
+	}
+	set("gatepolicy", gp.ID)
 	route, incident := rt.ID, f.int("incident")
 	if _, err := e.st.EnqueueDelivery(ctx, ch.ID, &route, &incident, "opened", "sweep-"+tag, map[string]string{"title": "delivery-" + tag}); err != nil {
 		t.Fatal(err)
