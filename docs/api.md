@@ -645,7 +645,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -689,6 +689,18 @@ Each use is recorded (hostname, client address, the token issued) in the code's 
 **Who:** anyone (rate limited: 30 a minute per address)
 
 Exchanges a CI job's OpenID Connect ID token (`{"token", "trust_id"}`; `trust_id` optional) for a collector token that expires after 15 minutes, belongs to the matching CI trust's organisation and project, and may report only the job's repository (`repository_url`, its `git-url` identity). Send it with `X-Stackurity-CSRF: 1`, as every POST without `Authorization`. Answers `{"token", "expires_at", "repository_url", "project_id", "trust_id"}`. The token must be signed with an asymmetric key the issuer publishes (discovery and JWKS of an issuer a trust names exactly), carry `aud` equal to the server's CI audience (`ci_audience` in `GET /meta`), and be within `exp`, `nbf` and `iat` (one minute's allowance). 401 `invalid_token` when it does not verify, 403 when no trust accepts the job (the message names the ref, environment or workflow that differed), 400 `trust_required` without `trust_id` on a server with several organisations, 409 when trusts of different organisations or projects accept it (send `trust_id`), 503 `not_configured` without `STACKURITY_BASE_URL` or `STACKURITY_CI_AUDIENCE`. Audited as `ci.token` or `ci.token_refused`. See [install.md](install.md#scans-in-ci-without-a-stored-secret).
+
+### `POST /device/code`
+
+**Who:** anyone (rate limited: 10 a minute and 60 an hour per address)
+
+Starts signing in a command-line tool from the browser, the OAuth 2.0 Device Authorization Grant (RFC 8628; see [device-login.md](device-login.md)). Form-encoded or JSON, with no credentials and no `X-Stackurity-CSRF` header: `client_id` (`stackurity-scan` or `stackurity`), optional `host` (a host name, at most 63 letters, digits, dots, hyphens or underscores, shown on the approval page and in the token's name) and optional `scope` (`upload`, the only one). Answers `{"device_code", "user_code", "verification_uri", "verification_uri_complete", "expires_in", "interval"}`: the user code is eight letters shown as `XXXX-XXXX`, the verification URI is the dashboard's `/device` under `STACKURITY_BASE_URL`, the codes last 600 seconds and the tool polls every 5. Only hashes of the two codes are stored. Errors are OAuth errors (`{"error", "error_description"}`): 401 `invalid_client`, 400 `invalid_request` or `invalid_scope`; 404 `not_configured` without `STACKURITY_BASE_URL` (then `GET /meta` does not list `device_login`).
+
+### `POST /device/token`
+
+**Who:** anyone (rate limited: 120 a minute per address, answered `slow_down`)
+
+The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts 90 days: it may `POST /ingest` and `POST /sbom/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
 
 ### `GET /ci-trusts`
 
@@ -1082,7 +1094,7 @@ Resolves a conflict by merging assets. The answer lists `projects_joined` and `g
 
 **Who:** viewer
 
-Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVEs: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date`, `epss_model_version` and `epss_cve`, the CVE they are for: the highest-scored among the finding's `key` and the CVEs its advisories list as aliases or upstream ids. All null when none of them has a score. `vex` is the latest imported [VEX](#vex) statement about the finding's component version and vulnerability (null when none): `statement_id`, `document_id`, `source`, `vulnerability`, `status`, `justification`, `impact_statement`, `action_statement`, `status_notes`, `effective_at`, and for `not_affected` the approval request (`request_id`, `request_status`) and whether it ignores the finding now (`applied`). Declined statements are not shown. `as_of` is the date of the only scan of an asset scanned once (null for assets that report regularly): the finding is true as of then, and is not scored as stale.
+Vulnerability and end-of-life findings, paged; SOS, priority, known-exploited and most severe first (`sort=asset` orders by asset name first). Resolved findings carry `resolution_kind` and `resolution_detail` ([Why a finding closed](#why-a-finding-closed)). Each finding carries FIRST's EPSS for its CVEs: `epss` (the probability, 0 to 1, of exploitation in the next 30 days), `epss_percentile`, `epss_date`, `epss_model_version` and `epss_cve`, the CVE they are for: the highest-scored among the finding's `key` and the CVEs its advisories list as aliases or upstream ids. All null when none of them has a score. `vex` is the latest imported [VEX](#vex) statement about the finding's component version and vulnerability (null when none): `statement_id`, `document_id`, `source`, `vulnerability`, `status`, `justification`, `impact_statement`, `action_statement`, `status_notes`, `effective_at`, and for `not_affected` the approval request (`request_id`, `request_status`) and whether it ignores the finding now (`applied`). Declined statements are not shown. `as_of` is the date of the only scan of an asset scanned once (null for assets that report regularly): the finding is true as of then, and is not scored as stale. `reachability` (`reachable`, `not_imported`, `not_running` or `unknown`, meaning not assessed) and `reachability_evidence` (the collector's evidence lines, null when none) say whether the package is reached on the asset ([reachability.md](reachability.md)).
 
 Query:
 
@@ -1130,6 +1142,8 @@ One finding with every source advisory in its group, its `why` ([Findings](#find
 **Who:** viewer
 
 Why the finding matched (`why`) and why it has its priority: `risk` (score, each factor with its points, the policy version that produced it, the SLA and deadlines, and `epss`), the stored `evidence`, the matched `advisories`, the freshness of their `feeds`, and the asset's last complete `collection`. Includes `resolution_kind`, `resolution_detail` and `counts_as_remediation`. See [risk.md](risk.md).
+
+`why.reachability` is whether the package is reached: `status`, `evidence`, `lowered` (the stored priority is one level lower because of it), `kept` (not lowered: known exploited on an asset that is or may be internet-facing) and `text`, one sentence for people ([reachability.md](reachability.md)).
 
 `risk.epss` (also `why.epss`; absent for a finding without a CVE) is FIRST's EPSS for the CVE and what it does to the priority: `score` and `percentile` (null when FIRST has not scored the CVE), `date`, `model_version`, the policy's `threshold`, `release_below` (80% of it), `points`, `counted` (the stored priority includes the EPSS factor) and `text`, one sentence that says why it counts or not ([risk.md, "Predicted exploitation (EPSS)"](risk.md#predicted-exploitation-epss)).
 
@@ -2537,6 +2551,11 @@ Downloads an enabled pack, for clients that run it themselves (`stackurity scan`
 
 Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; default the last 30 days, at most a year). See [Evidence report](#evidence-report).
 
+### `GET /reports/evidence-pack`
+
+**Who:** viewer · licensed build (402 in Community)
+
+The audit evidence pack for a period (`from`, `to`: dates, `to` inclusive; default the last 90 days, at most a year), mapped to framework controls. `frameworks`: comma-separated `soc2`, `iso27001_2022`, `pci_dss_4_0`, `eu_cra` (default: every one the plan includes; PCI DSS and the CRA need the Compliance add-on, else 402). `format`: `json` (default), `pdf` or `zip`. `label`: the period's name, such as `2026-Q3`. See [Audit evidence pack](#audit-evidence-pack).
 
 ### `GET /reports/outcomes`
 
@@ -3071,6 +3090,18 @@ The consent page's view of an authorization request (`response_type`, `client_id
 
 The same parameters with `decision` (`allow` or `deny`), `workspace_id` (409 if the session switched organisation), `project_id` (0: the whole organisation), `role` and `allow_changes` (default false). Answers `redirect`: the client's redirect URI with a single-use `code` (2 minutes) or `error=access_denied`, plus `state` and `iss`. A role above the caller's is 403. Audited as `assistant.authorize`.
 
+### `POST /api/v1/device/preview`
+
+**Who:** a browser session
+
+The approval page's view of a device sign-in code (`{"user_code"}`, any case, with or without the hyphen): `client` (`id`, `name`), `host` (as the tool reported it), `request_ip`, `requested_at`, `expires_at`, `signed_in_as`, the session's `workspace`, `your_role`, `can_approve` (with `cannot_approve`, why not: approving needs the engineer role or above organisation-wide), `projects` (for admins: where the token's new assets may go), `token_name` and `token_days`. 404 for an unknown code; 410 `code_used` or `code_expired`. 20 codes per person and 40 per address in 15 minutes (429).
+
+### `POST /api/v1/device/decision`
+
+**Who:** a browser session
+
+`user_code`, `decision` (`approve` or `deny`), `workspace_id` (the organisation the page showed; 409 if the session switched since) and `project_id` (0: none; admins only, 403 otherwise). Approving makes an API token of the caller named `<client> on <host>` with the collector role, a 90-day expiry and the chosen project, listed under `GET /tokens` and revoked with `DELETE /tokens/{id}`; the tool collects its secret with its next poll of `POST /device/token`. Answers `{"status"}` and, when approved, `token` (`id`, `name`, `expires_at`, `project_id`). Only a browser session of the person's own (403 for API tokens); besides `X-Stackurity-CSRF`, a request whose `Sec-Fetch-Site` is not `same-origin` is refused. Audited as `device.approve` (and `token.create`, `via` `device_login`) or `device.deny`. Approving emails the caller where to revoke the token. Where the organisation's two-factor policy requires a second factor of the caller and the session last confirmed one (or signed in) more than 15 minutes ago, approving answers 403 `mfa_step_up_required` until the caller confirms with `POST /auth/mfa/step-up` (or the passkey step-up); `POST /device/preview` says so in advance with `confirm_first`, `confirm_methods` (the caller's factors that count) and `confirm_minutes`. After 1,000 wrong codes on the server in 15 minutes, preview and decision wait 1 to 5 seconds before answering until the window ends; nothing is refused. `POST /device/preview` answers `same_network` false when the request came from another network (IPv4 /24, IPv6 /48) than the caller. A plan's limit on API tokens applies (402 `plan_limit`).
+
 ### `GET /api/v1/assistants`
 
 **Who:** a browser session
@@ -3147,6 +3178,23 @@ Only coverage `unsupported`, or a not-evaluated reason known to be Stackurity's 
 - drift for each `replica_of` pair.
 
 In trial report mode every report and export carries a watermark ([asset-limits.md](asset-limits.md#trial-reports)).
+
+## Audit evidence pack
+
+`GET /reports/evidence-pack` (licensed build) answers an auditor's "how do you manage vulnerabilities?" for one period. It is evidence for the controls it lists, never a statement that the organisation is compliant or certified.
+
+- **Controls:** SOC 2 CC7.1 and CC8.1, ISO 27001:2022 A.8.8 and A.8.9 (Team and up); PCI DSS 4.0 6.3.1, 6.3.3 and 11.3, and the EU Cyber Resilience Act Annex I part II (1) to (4) (Compliance add-on). Each control says what in the pack is evidence for it and what Stackurity does not show (for example, it is not an Approved Scanning Vendor for PCI DSS 11.3.2).
+- **Monitoring:** every asset with the reports received in the period, the hours with at least one report out of the hours monitored, and the longest gap between reports.
+- **Findings:** open at the start and the end, opened and fixed in the period, and every finding open at the end with its CVSS score and deadline status (`within`, `overdue`, `no_deadline`, `excepted`).
+- **Time to fix:** the risk policy's deadline for each priority, and fixes by their deadline, median and 90th-percentile days per priority. As in the evidence report, only upgrades and removals count as fixes.
+- **Exceptions:** every exception active in the period, with reason, requester, approver, expiry and how it ended.
+- **Closures** (verified closure) and **policies** (policy gates), when those features are on.
+
+`format=zip` holds the PDF, a CSV of each table, `pack.json` and `manifest.json` with each file's SHA-256; with the Compliance add-on also a CycloneDX SBOM of each asset (up to 500) and an OpenVEX document. SBOM and VEX files show the inventory as it is now. The ZIP is streamed and stops adding SBOM and VEX files at 200 MB, saying so in the pack. The open-findings list stops at 20,000 rows (`open_omitted` counts the rest; the totals stay complete). The JSON schema is `schema_version` 1. Every delivered pack is in the audit log (`evidence_pack.export`). In trial report mode lists keep their first rows and the pack says so.
+
+What the pack contains: the organisation's and projects' names, asset names, component names and versions, findings, and every exception with its reason, note and mitigation as people wrote them, and the display names of who asked for and approved it (where a person has no display name, a masked address such as a***@example.com). Share it as you would the dashboard's Reports page.
+
+Limits: one pack is built at a time per organisation (`429 busy` while one is in progress), ten an hour per organisation (`429 rate_limited`), and each must finish within 3 minutes. A member who sees only some projects must choose one (`400`); the pack then covers that project.
 
 ## Uploads into a project
 
@@ -3239,6 +3287,7 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters) and `exposure` (`served`, `world_readable` or empty). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
+- `observations[].reachability` (optional, servers listing the `reachability` feature): `{"status": "not_imported", "evidence": ["no import of lodash in 214 source files under src/"]}`. `status` is `reachable`, `not_imported`, `not_running` or `unknown`; every status but `unknown` needs 1 to 8 evidence lines of at most 512 bytes. An observation without it is stored as `unknown`, replacing what an earlier batch said ([reachability.md](reachability.md)).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 

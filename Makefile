@@ -9,7 +9,7 @@ EE_FLAGS = -tags $(EE_TAGS) -overlay ee-overlay.json
 # First-party plugins, built next to the server and shipped in the image.
 PLUGINS = aws-managed gcp-managed azure-managed kubernetes
 
-.PHONY: build plugins web test lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image teams-app-package email-preview
+.PHONY: build plugins web test test-times lint image clean ee-overlay build-ee test-ee image-ee vulncheck scan-image teams-app-package email-preview
 
 build: web plugins
 	CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=$(VERSION)" -o bin/stackurity ./cmd/stackurity
@@ -22,6 +22,14 @@ web:
 
 test:
 	go test ./...
+
+# Records how long each internal/api test takes (as on CI: -race, community
+# build) into tools/ci/test-times.json, which tools/ci/go-test-shard.sh uses
+# to split that package into shards that finish together. Needs
+# STACKURITY_TEST_DATABASE_URL. Refresh when a shard runs much longer than
+# the others; new tests are fine without it.
+test-times:
+	go test -json -race -count=1 -timeout $(TEST_TIMEOUT) ./internal/api | go run ./tools/testshard -record -times tools/ci/test-times.json
 
 # Every kind of email the server sends, rendered from its sample and
 # checked (internal/notify/email_check.go), as .html files to look at:

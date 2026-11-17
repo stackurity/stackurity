@@ -1,0 +1,5 @@
+### Changed
+
+- The API reference (`/api/v1/openapi.json`) describes the request and response bodies of signing in (`POST /auth/login`, including the second-factor answer), `POST /auth/mfa/verify`, `POST /auth/password` and `GET /auth/me`, with examples, instead of a bare object; `POST /auth/logout` no longer asks for a body. A test keeps the user and sign-in schemas in step with the code.
+- The API reference also describes what `GET /assets`, `GET /assets/{id}` and `GET /findings` return (`Asset`, `Identifier`, `Reporting`, `Finding`, `FindingVEX` and the paged list), and the same test keeps those schemas in step with the store types.
+- The API reference describes one finding (`GET /findings/{id}`: the finding, why it matched, its advisories and the upgrade recommendation) and every fix (action plan) operation: the fix list and one fix with its findings and owners, `/fix-groups/summary`, `/fix-groups/work`, `POST /fix-groups/{id}/applied` and `/settings/fix-grouping`. `POST /fix-groups/{id}/applied` and `POST /fix-groups/{id}/check` no longer ask for a body, which they never read.

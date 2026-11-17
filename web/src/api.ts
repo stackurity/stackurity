@@ -763,7 +763,7 @@ export interface OrgSSOChange {
 }
 
 export type Edition = "community" | "pro" | "enterprise";
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "compliance_addon";
+export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "reachability" | "compliance_addon";
 
 export interface LicenseInfo {
   status: {
@@ -1635,6 +1635,22 @@ export interface Finding {
   epss_cve?: string | null;
   /** The latest imported VEX statement about this component version and vulnerability. */
   vex?: FindingVEX | null;
+  /** Whether the package is imported or running on the asset; "unknown" means not assessed. */
+  reachability?: ReachabilityStatus;
+  reachability_evidence?: string[] | null;
+}
+
+export type ReachabilityStatus = "unknown" | "reachable" | "not_imported" | "not_running";
+
+/** The reachability part of "why this priority" (internal/why). */
+export interface ReachabilityDetail {
+  status: ReachabilityStatus;
+  evidence: string[];
+  /** The priority is one level lower because of it (paid plans). */
+  lowered: boolean;
+  /** Not lowered: known exploited on an asset that is or may be internet-facing. */
+  kept: boolean;
+  text: string;
 }
 
 export interface FindingSummary {
@@ -1863,6 +1879,8 @@ export interface FindingWhy {
   needs_review?: boolean;
   /** FIRST EPSS for the finding's CVE and what it does to the priority; absent without a CVE. */
   epss?: EpssDetail | null;
+  /** Whether the package is imported or running, with evidence, and what that does to the priority. */
+  reachability?: ReachabilityDetail | null;
 }
 
 /** The EPSS part of "why this priority" (internal/why). */
@@ -2913,88 +2931,6 @@ export interface GitLabStatus {
 }
 
 export const NO_GITLAB: GitLabStatus = { configured: false, connections: [] };
-
-/*
- * Compliance evidence connectors (Compliance add-on, licensed build only):
- * Stackurity sends its asset inventory, open vulnerabilities with their SLA
- * status, and the evidence pack to Vanta and Drata on a schedule
- * (docs/evidence-connectors.md). The routes are not served by the
- * Community build. Tokens and API keys are never returned.
- */
-
-export type EvidenceVendor = "vanta" | "drata";
-export type EvidenceRegion = "us" | "eu" | "aus" | "apac";
-export type EvidenceInterval = 6 | 12 | 24 | 168;
-
-/** One organisation's connection to Vanta or Drata, as GET /integrations/evidence returns it. */
-export interface EvidenceConnection {
-  id: number;
-  vendor: EvidenceVendor;
-  region: EvidenceRegion;
-  /** reconnect_needed: the vendor refused the token or key; syncs stop until someone reconnects. */
-  status: "active" | "reconnect_needed" | "paused";
-  status_reason: string;
-  interval_hours: EvidenceInterval;
-  next_sync_at: string | null;
-  last_sync_at: string | null;
-  last_sync_status: "ok" | "failed" | "partial" | null;
-  /** assets, vulnerabilities and evidence_uploaded of the last sync, and message: what went wrong or was skipped. */
-  last_sync_summary: { assets?: number; vulnerabilities?: number; evidence_uploaded?: boolean; message?: string };
-  /** The vendor's ids only: Vanta document_id (and document_title); Drata workspace_id. Never a token or key. */
-  config: { document_id?: string; document_title?: string; workspace_id?: string | number };
-  connected_by: number | null;
-  connected_at: string;
-}
-
-/** GET /integrations/evidence */
-export interface EvidenceStatus {
-  /** available: the operator registered the Vanta app on this server (STACKURITY_VANTA_CLIENT_ID). */
-  vanta: { available: boolean; connection: EvidenceConnection | null };
-  drata: { available: boolean; connection: EvidenceConnection | null };
-}
-
-/** One sync of a connection (GET /integrations/evidence/{vendor}/runs). */
-export interface EvidenceSyncRun {
-  id: number;
-  started_at: string;
-  finished_at: string | null;
-  status: "running" | "ok" | "failed" | "partial";
-  counts: { assets?: number; vulnerabilities?: number; evidence_uploaded?: boolean };
-  error: string;
-}
-
-/** A Vanta document the evidence file can be uploaded to. */
-export interface VantaDocument {
-  id: string;
-  title: string;
-}
-
-/** PUT /integrations/evidence/{vendor} */
-export interface EvidenceChange {
-  interval_hours?: EvidenceInterval;
-  status?: "active" | "paused";
-  vanta_document_id?: string;
-}
-
-/** POST /integrations/evidence/drata. The key is validated with one read call, then stored sealed. */
-export interface DrataConnect {
-  api_key: string;
-  region: EvidenceRegion;
-  drata_workspace_id: string;
-}
-
-export const evidenceApi = {
-  status: () => api.get<EvidenceStatus>("/integrations/evidence"),
-  /** Starts Connect Vanta: open authorize_url (Vanta's consent page); Vanta returns to /api/v1/auth/vanta/callback. */
-  connectVanta: (region: EvidenceRegion) => api.post<{ authorize_url: string }>("/integrations/evidence/vanta/connect", { region }),
-  connectDrata: (b: DrataConnect) => api.post<EvidenceConnection>("/integrations/evidence/drata", b),
-  update: (vendor: EvidenceVendor, b: EvidenceChange) => api.put<EvidenceConnection>(`/integrations/evidence/${vendor}`, b),
-  vantaDocuments: () => api.get<{ items: VantaDocument[] }>("/integrations/evidence/vanta/documents"),
-  /** Queues a sync now (202). At most once every 5 minutes per connection. */
-  sync: (vendor: EvidenceVendor) => api.post<{ queued: boolean }>(`/integrations/evidence/${vendor}/sync`),
-  runs: (vendor: EvidenceVendor) => api.get<{ items: EvidenceSyncRun[] }>(`/integrations/evidence/${vendor}/runs`),
-  disconnect: (vendor: EvidenceVendor) => api.del(`/integrations/evidence/${vendor}`),
-};
 
 /** POST /integrations/gitlab/oauth: what an authorisation at GitLab came back with. */
 export interface GitLabOAuthResult {

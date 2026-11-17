@@ -1599,6 +1599,39 @@ jobs:
     ],
   },
   {
+    id: "evidence-pack",
+    title: "Audit evidence pack",
+    section: "Daily work",
+    summary: "One download for your auditor, mapped to SOC 2, ISO 27001 and, with the Compliance add-on, PCI DSS and the EU Cyber Resilience Act.",
+    where: ["Governance", "Reports and audit", "Evidence report", "Audit evidence pack"],
+    keywords: "audit evidence pack soc 2 soc2 iso 27001 pci dss cra cyber resilience act auditor controls cc7.1 cc8.1 a.8.8 a.8.9 6.3.3 sbom vex zip pdf compliance add-on",
+    body: [
+      {
+        steps: [
+          "Open **Reports** and find **Audit evidence pack**.",
+          "Choose the period: **Last quarter**, **This quarter to date**, or the report's own dates.",
+          "Tick the frameworks your auditor asked about.",
+          "Click **Download PDF** for the auditor, **Download ZIP** for the PDF with a CSV of every table and a SHA-256 manifest, or **Download JSON** for other tools.",
+        ],
+      },
+      {
+        p: "For each control the pack says what in it is evidence for that control, and what Stackurity does not show (for example, Stackurity is not an Approved Scanning Vendor for PCI DSS 11.3.2). It is evidence for the controls; it never says you are compliant or certified. Your auditor decides that.",
+      },
+      {
+        table: [
+          ["In the pack", "What it shows"],
+          ["**Monitoring**", "Every asset, the hours with at least one report out of the hours monitored, and the longest gap between reports."],
+          ["**Findings**", "Open at the start and end of the period, new and fixed in it, and every open finding with its CVSS score and whether it is past its deadline."],
+          ["**Time to fix**", "Your deadline for each priority and how many fixes met it, with median and 90th-percentile days. Only upgrades and removals count as fixes."],
+          ["**Exceptions**", "Every exception active in the period: reason, who asked, who approved, expiry and how it ended."],
+        ],
+      },
+      {
+        p: "Team and up get SOC 2 and ISO 27001:2022. The **Compliance add-on** (on any paid plan; Enterprise includes it) adds PCI DSS 4.0, the EU Cyber Resilience Act, an SBOM of each asset and the VEX statements in the ZIP. Every download is recorded in the audit log.",
+      },
+    ],
+  },
+  {
     id: "remediation-outcomes",
     title: "Remediation outcomes and why an issue closed",
     section: "Daily work",

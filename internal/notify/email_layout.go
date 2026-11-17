@@ -98,7 +98,7 @@ func emailWhy(m Message, host string) string {
 		return "You received this email because someone invited this address to an organisation" + on + "."
 	case "confirm_email":
 		return "You received this email because an organisation" + on + " asked to send its alerts to this address."
-	case "password_reset", "mfa_email_code", "mfa_email_sign_in", "mfa_changed":
+	case "password_reset", "mfa_email_code", "mfa_email_sign_in", "mfa_changed", "device_token_created":
 		return "You received this email because it is the address of a Stackurity account" + on + "."
 	case "signup":
 		return "You received this email because this address was used to sign up or sign in" + on + "."

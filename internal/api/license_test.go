@@ -39,6 +39,7 @@ func TestCommunityAndPlans(t *testing.T) {
 		body         any
 	}{
 		{"GET", "/api/v1/reports/evidence", nil},
+		{"GET", "/api/v1/reports/evidence-pack", nil},
 		{"POST", "/api/v1/remediation/policies", map[string]any{"name": "p", "target": "host_package"}},
 		{"POST", "/api/v1/routes", map[string]any{"name": "esc", "channel_id": 1, "escalation": true}},
 	}

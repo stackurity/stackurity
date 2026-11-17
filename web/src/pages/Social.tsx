@@ -6,6 +6,7 @@ import { useAction, useLoad } from "../hooks";
 import { confirmAction } from "../components/ConfirmDialog";
 import { Card, ErrorBox, GoodToKnow, Loading, Notice, RelativeTime } from "../components/ui";
 import { MfaLoginStep } from "./TwoFactor";
+import { DEVICE_RESUME, deviceResumePath } from "../deviceLogin";
 
 // Signing up and signing in with Google, Microsoft or GitHub (Stackurity
 // Cloud). The server offers only the providers it has configured
@@ -65,8 +66,15 @@ export function SocialSignupPage({ signup }: { signup: SignupMeta }) {
     );
     if (r) {
       // Drop the token from the address and history, then open the new
-      // organisation (a GitHub sign-up goes on to choose repositories).
-      navigate(r.next || "/", { replace: true });
+      // organisation (a GitHub sign-up goes on to choose repositories), or
+      // go back to a terminal's sign-in (/device) that sent the person here.
+      let device: string | null = null;
+      try {
+        device = deviceResumePath(localStorage.getItem(DEVICE_RESUME), Date.now());
+      } catch {
+        // none kept
+      }
+      navigate(device ?? (r.next || "/"), { replace: true });
       await refresh();
     }
   };

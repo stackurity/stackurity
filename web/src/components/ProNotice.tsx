@@ -12,29 +12,19 @@ const NAMES: Record<Feature, string> = {
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Requiring passkeys for admins",
   fix_loop: "The fix loop (an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix, time to fix against your SLA, and the proof export)",
-  compliance_addon: "Sending evidence to Vanta and Drata",
+  compliance_addon: "PCI DSS and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending it to Vanta or Drata",
+  reachability: "Lowering the priority of packages nothing imports or runs",
 };
-
-/**
- * The plan that includes a feature. The Compliance add-on is bought on top
- * of any paid plan (Enterprise includes it).
- */
-const PLAN: Partial<Record<Feature, string>> = {
-  enterprise_packs: "Enterprise",
-  phishing_resistant_mfa: "Enterprise",
-  compliance_addon: "Compliance add-on",
-};
-
-/** The plan name ProNotice shows for a feature ("Pro" unless listed above). */
-export function planFor(feature: Feature): string {
-  return PLAN[feature] ?? "Pro";
-}
 
 /** Explains that a feature is part of a paid plan, and how to get it. */
 export function ProNotice({ feature, children }: { feature: Feature; children?: React.ReactNode }) {
   const { me } = useAuth();
-  const plan = planFor(feature);
-  const addon = feature === "compliance_addon";
+  const plan =
+    feature === "compliance_addon"
+      ? "Compliance add-on"
+      : feature === "enterprise_packs" || feature === "phishing_resistant_mfa"
+        ? "Enterprise"
+        : "Pro";
   // Counted for the operator: which locked features people see and follow
   // up (usage.ts; the organisation and feature only).
   useEffect(() => countTeaserView(feature), [feature]);
@@ -44,11 +34,11 @@ export function ProNotice({ feature, children }: { feature: Feature; children?: 
   return (
     <div className="alert alert-info pro-notice" role="note" onClick={clicked}>
       <span className="pro-badge">{plan}</span>{" "}
-      {addon ? (
-        <>{NAMES[feature]} is part of the Stackurity {plan}, available on any paid plan and included in Enterprise. </>
+      {feature === "compliance_addon" ? (
+        <>{NAMES[feature]} need the Compliance add-on, on any paid plan (Enterprise includes it).</>
       ) : (
-        <>{NAMES[feature]} is part of Stackurity {plan}. </>
-      )}
+        <>{NAMES[feature]} is part of Stackurity {plan}.</>
+      )}{" "}
       {children}
       {me?.user?.instance_admin ? (
         <>

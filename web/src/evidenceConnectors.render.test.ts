@@ -78,7 +78,7 @@ test("without the Compliance add-on: the locked paid-plans notice, what it would
   const t = text(html);
   assert.match(t, /Compliance evidence/);
   assert.match(html, /class="alert alert-info pro-notice"/);
-  assert.match(t, /Compliance add-on Sending evidence to Vanta and Drata is part of the Stackurity Compliance add-on, available on any paid plan and included in Enterprise/);
+  assert.match(t, /Compliance add-on PCI DSS and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending it to Vanta or Drata need the Compliance add-on, on any paid plan \(Enterprise includes it\)/);
   assert.match(t, /Sends your asset inventory, open vulnerabilities and an evidence pack with SLA status to Vanta every day/);
   assert.match(t, /to Drata every day/);
   assert.doesNotMatch(html, /<input|<select|Connect Vanta|Connect Drata|Sync now/);

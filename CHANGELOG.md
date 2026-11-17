@@ -6,6 +6,37 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.8
+
+### Security
+
+- **Terminal sign-in approvals are harder to abuse.** Where an organisation requires two-factor sign-in, approving a sign-in on `/device` now needs a second factor confirmed in the last 15 minutes; the page asks for it first. Once the whole server has seen 1,000 wrong codes in 15 minutes, every code lookup is slowed (1 to 5 seconds) until the window ends, so guessing spread over many accounts and addresses is slowed too; nobody is refused. An approved token that its tool never collected is revoked within 5 minutes of the code expiring, by a periodic task, rather than when the next sign-in starts. See [Signing in a terminal from the browser](docs/device-login.md).
+
+### Added
+
+- Licensing: a `compliance_addon` feature for the Compliance add-on, included in Enterprise. It gates the evidence connectors and the add-on evidence frameworks; add-on licensing for other plans follows separately.
+- **Sign in a terminal from the browser.** A command-line tool such as `stackurity-scan --upload` can now sign a person in without an API token to copy: it shows a code, the person approves it on `/device` (signing in or signing up first), and the tool receives an upload-only API token of theirs, listed and revocable under API tokens. This is the OAuth 2.0 Device Authorization Grant (RFC 8628): `POST /api/v1/device/code` and `POST /api/v1/device/token` for the tool, and `GET /api/v1/meta` lists `device_login` when `STACKURITY_BASE_URL` is set. Approving needs the Engineer role or above; the token may only upload scans and read their results, works only while its person may upload, and expires after 90 days. Every approval emails the approver where to revoke the token, and the page warns when the request came from a different network. Codes are single-use, last 10 minutes, are stored only as hashes and are rate limited; approvals and denials are audited. See [Signing in a terminal from the browser](docs/device-login.md).
+- Reports: the **audit evidence pack** (licensed build). Choose a quarter or your own dates and download a PDF for the auditor, a ZIP (PDF, CSV tables, SHA-256 manifest) or JSON, mapped to SOC 2 CC7.1 and CC8.1 and ISO 27001:2022 A.8.8 and A.8.9: what is monitored and how often it was checked, what was found, time to fix against your deadlines, and every exception with its approver. The Compliance add-on adds PCI DSS 4.0, the EU Cyber Resilience Act, an SBOM of each asset and the VEX statements. It is evidence for these controls, never a claim of compliance. `GET /reports/evidence-pack`.
+- Licensing: licences can carry add-ons on a paid edition (`"addons": ["compliance_addon"]`; `tools/license --addons compliance_addon`). An add-on on the licence is on for every workspace on a paid plan, and is off when the licence expires. On Stackurity Cloud, the organisation's plan decides instead.
+- **Leaked-key detection knows more AI providers' keys.** OpenRouter (`sk-or-v1-`), Groq (`gsk_`) and xAI (`xai-`) API keys, and the OAuth tokens Claude Code signs in with (`sk-ant-oat01-`, `sk-ant-ort01-`), are now reported by their format; OpenAI project, service account and admin keys, Anthropic Admin API keys, Gemini keys and Hugging Face tokens were already found and are now tested. A master or salt key assigned in a configuration file (`LITELLM_MASTER_KEY`, `LITELLM_SALT_KEY`, `master_key:` in a LiteLLM proxy's `config.yaml`, `RAILS_MASTER_KEY`) is reported like a password. Severity on servers is unchanged: a key in a `.env` or other configuration file stays low (medium when every account can read it) and does not alert. See [Leaked keys](docs/leaked-keys.md#what-is-found).
+- **AI assistants can turn a notification channel or rule on or off.** The new MCP tool `set_notification_enabled` (offered with **Allow changes**, organisation-wide admin role) switches one channel or one rule and changes nothing else about it; like the other tools that change something it previews first (where it belongs, the rules that send to a channel and their events) and applies only with the preview's confirm code. The preview and `notification_settings` also list **possible duplicates**: enabled Slack or Teams channels in the same place that enabled rules send the same events to, such as an old incoming webhook and the Stackurity Slack app posting each alert twice. Configuration, addresses and credentials are never returned. See [AI assistants](docs/ai-assistants.md).
+- **Reachability on every finding:** whether its package is imported by first-party code or used by a running process (`reachable`, `not_imported`, `not_running`, or `unknown` for not assessed), with the collector's evidence lines. It is shown on the finding page (the **Affected** and **Why this priority** cards), in `GET /api/v1/findings` and in `explain_finding` (`why.reachability`). Collectors send it only to servers whose `GET /meta` lists the `reachability` feature; until they do, everything stays not assessed. Not assessed counts as reachable. A claim that a package is not reached is stored only from a source the server knows can make it (a host's own agent for that host, a repository scan for a repository), from the collector that makes it, after a whole reading; any other is stored as unknown. See [docs/reachability.md](docs/reachability.md).
+- Paid plans lower a finding that is not imported or not running by one priority level, never for a known-exploited finding on an asset that is or may be internet-facing; Community shows the status and evidence without changing priorities ([docs/editions.md](docs/editions.md)).
+
+### Changed
+
+- Requiring single sign-on and revoking people's API tokens now also revokes the upload-only tokens they got by signing in a terminal (agents' and CI jobs' tokens still stay).
+- `integrations_status` says for each Slack and Teams channel whether it was added with the Stackurity app (`app`) or is an incoming webhook.
+
+### Fixed
+
+- **Saving repository access on GitHub no longer shows an error.** After an administrator changed which repositories the Stackurity app can read and clicked **Save** on GitHub's settings page, GitHub sent them back to Stackurity, which said the app "was installed from GitHub's side" and had "connected nothing" (or that GitHub did not send the authorisation code back), although the change had already been picked up. When the organisation already has that installation, the page now says the repositories were saved and that new ones are scanned in the next few minutes, and makes no further request.
+
+### Upgrading
+
+- Migration `0113_device_authorizations` adds the table of terminal sign-in requests.
+- Migration `0112_inventory_reachability` adds `reachability` (default `unknown`) and `reachability_evidence` to inventory rows. It also adds `enrollment_uses.asset_id`, the host an enrolled agent's token first reported. Adding the columns does not rewrite the table, and the new `CHECK` on `reachability` is added `NOT VALID`, so it does not scan it.
+
 ## 0.20.7
 
 ### Security

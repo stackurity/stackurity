@@ -101,7 +101,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if err != nil {
 			return err
 		}
-		if err := loadObservations(ctx, tx, b); err != nil {
+		trust, err := reachTrust(ctx, tx, tokenID, assetID, b.Asset.Kind)
+		if err != nil {
+			return err
+		}
+		if err := loadObservations(ctx, tx, b, trust); err != nil {
 			return fmt.Errorf("load observations: %w", err)
 		}
 		// The component catalogue is shared between workspaces, so it is written
@@ -114,18 +118,21 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 			}
 			// Duplicate rows within one batch (e.g. the same npm package nested
 			// twice in one lockfile) collapse to one inventory row; any direct
-			// occurrence wins.
+			// occurrence wins, then the safer reachability (reachable, then
+			// unknown, before a claim that it is not reached).
 			if _, err := tx.Exec(ctx, `INSERT INTO inventory AS i
 				(asset_id, component_id, purl, version, location, collector_id, direct, scope, confidence, evidence,
-				 first_seen, last_seen, last_collection_id)
+				 reachability, reachability_evidence, first_seen, last_seen, last_collection_id)
 				SELECT DISTINCT ON (c.id, o.version, o.location)
 				       $1, c.id, o.purl, o.version, o.location, $2, o.direct, o.scope, o.confidence, o.evidence,
-				       $3, $3, $4
+				       o.reachability, o.reachability_evidence, $3, $3, $4
 				FROM obs_in o JOIN components c USING (purl_key)
-				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST
+				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST,
+				  CASE o.reachability WHEN 'reachable' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END
 				ON CONFLICT (asset_id, component_id, version, location, collector_id) DO UPDATE SET
 				  purl = EXCLUDED.purl, direct = EXCLUDED.direct, scope = EXCLUDED.scope,
 				  confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence,
+				  reachability = EXCLUDED.reachability, reachability_evidence = EXCLUDED.reachability_evidence,
 				  last_seen = GREATEST(i.last_seen, EXCLUDED.last_seen),
 				  last_collection_id = EXCLUDED.last_collection_id, removed_at = NULL`,
 				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID); err != nil {
@@ -206,10 +213,48 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 	return res, nil
 }
 
-func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) error {
+type serverCollectionKey struct{}
+
+// AsServerCollection marks ctx as the server's own collection (a
+// repository it cloned and scanned), whose not imported claims it trusts.
+func AsServerCollection(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serverCollectionKey{}, true)
+}
+
+// reachTrust says, from the server's records, which not-reached claims a
+// batch about assetID may make. An agent's token may report processes for
+// its own host only: a token bound to the host, or an enrollment token
+// pinned to the first host it reported (the agent reports its host first;
+// the pin is set here). Any other token, or the server's own scan, may
+// report imports. A batch with no token (a signed-in browser's upload)
+// may make neither.
+func reachTrust(ctx context.Context, tx pgx.Tx, tokenID, assetID int64, kind model.AssetKind) (model.ReachTrust, error) {
+	if ctx.Value(serverCollectionKey{}) != nil {
+		return model.ReachTrust{Imports: true}, nil
+	}
+	if tokenID <= 0 {
+		return model.ReachTrust{}, nil
+	}
+	if kind == model.AssetHost {
+		if _, err := tx.Exec(ctx, `UPDATE enrollment_uses SET asset_id = $2 WHERE token_id = $1 AND asset_id IS NULL`, tokenID, assetID); err != nil {
+			return model.ReachTrust{}, err
+		}
+	}
+	var agent, own bool
+	err := tx.QueryRow(ctx, `SELECT t.asset_id IS NOT NULL OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id),
+		COALESCE(t.asset_id = $2, false) OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id AND u.asset_id = $2)
+		FROM api_tokens t WHERE t.id = $1`, tokenID, assetID).Scan(&agent, &own)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.ReachTrust{}, nil
+	}
+	return model.ReachTrust{Processes: agent && own, Imports: !agent}, err
+}
+
+func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch, trust model.ReachTrust) error {
 	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE obs_in (
 		purl_key text, type text, namespace text, name text, purl text, version text,
-		location text, direct boolean, scope text, confidence text, evidence jsonb) ON COMMIT DROP`); err != nil {
+		location text, direct boolean, scope text, confidence text, evidence jsonb,
+		reachability text, reachability_evidence jsonb) ON COMMIT DROP`); err != nil {
 		return err
 	}
 	rows := make([][]any, 0, len(b.Observations))
@@ -223,10 +268,21 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 			ev = map[string]string{}
 		}
 		evJSON, _ := json.Marshal(ev)
-		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON})
+		// Not assessed is unknown, never the status an earlier batch sent.
+		// A claim the batch's collector cannot make is unknown too.
+		reach, reachEv := model.ReachUnknown, []byte(nil)
+		if r := b.TrustedReach(&o, trust); r != nil {
+			reach = r.Status
+			if len(r.Evidence) > 0 {
+				reachEv, _ = json.Marshal(r.Evidence)
+			}
+		}
+		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON,
+			reach, reachEv})
 	}
 	_, err := tx.CopyFrom(ctx, pgx.Identifier{"obs_in"},
-		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence"},
+		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence",
+			"reachability", "reachability_evidence"},
 		pgx.CopyFromRows(rows))
 	return err
 }

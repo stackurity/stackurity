@@ -53,6 +53,8 @@ type Principal struct {
 	// none), and MFACredential the passkey it used (0: none).
 	MFAMethod     string
 	MFACredential int64
+	// AuthAt is when the session last proved who it is (store.Session).
+	AuthAt time.Time
 	// MFANeed is what the workspace's two-factor policy asks of the session
 	// (mfa_policy.go): nothing, setting up a factor, or confirming with one.
 	MFANeed mfaNeed
@@ -182,12 +184,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				s.credentialsUnavailable(w, r, err)
 				return
 			}
+			if p.uploadToken() && !uploadTokenRequest(r) {
+				writeError(w, 403, "forbidden", "this token was made by signing in from a terminal and can only upload scans (POST /ingest and /sbom/import) and read their results")
+				return
+			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
 			case err == nil:
 				p = &Principal{User: sess.User, Role: sess.User.Role, Session: true, Workspace: sess.Workspace, Ask: viaAsk(r.Context()),
-					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential, ViaAsk: askApplyWorkspace(r.Context()) > 0,
+					Login: sess.Login, MFAMethod: sess.MFA, MFACredential: sess.MFACredential, AuthAt: sess.AuthAt, ViaAsk: askApplyWorkspace(r.Context()) > 0,
 					PasswordChangeRequired: sess.PasswordChangeRequired, SSOWorkspace: sess.SSOWorkspace, SessionExpires: sess.ExpiresAt}
 				if p.Workspace > 0 && editionSessionAccess != nil {
 					if req := editionSessionAccess(s, r, sess.User, p.Workspace, sess.SSOWorkspace); req != nil {
@@ -226,7 +232,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 						s.credentialsUnavailable(w, r, err)
 						return
 					}
-					if p.Token != nil {
+					if p.Token != nil && p.Token.Role == auth.RoleCollector {
+						// A person's upload token (device sign-in,
+						// device_login.go): it uploads while they may
+						// upload themselves (an organisation-wide engineer
+						// or above), and does nothing else.
+						p.Role, p.ProjectRole = "", ""
+						if access.OrgRole.CanIngest() && !access.Restricted() {
+							p.Role = auth.RoleCollector
+						}
+					} else if p.Token != nil {
 						// TokenPrincipal capped the token at the user's
 						// highest role; it never acts above either.
 						p.Role = auth.Lower(p.Token.Role, access.OrgRole)
@@ -429,7 +444,14 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
-			if v := recover(); v != nil && v != http.ErrAbortHandler {
+			v := recover()
+			if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
+				// A handler that has started a response and cannot finish
+				// it aborts: net/http then cuts the connection, so the
+				// client sees a failed download, not a complete one.
+				panic(v)
+			}
+			if v != nil {
 				s.Log.Error("panic", "path", r.URL.Path, "panic", v, "request_id", middleware.GetReqID(r.Context()))
 				noteError(r, "panic", fmt.Sprint(v), clienterrors.ServerFrame(debug.Stack(), "github.com/stackurity/stackurity"))
 				writeError(w, 500, "internal", "internal error")

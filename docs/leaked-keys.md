@@ -19,13 +19,18 @@ The fix for a leaked key is always the same: **rotate it** (revoke it and issue 
 | `slack-webhook` | Slack incoming webhook addresses | medium |
 | `stripe-live-key` | Stripe live secret and restricted keys | critical |
 | `razorpay-secret` | Razorpay key secrets | critical |
-| `openai-key` | OpenAI API keys | critical |
-| `anthropic-key` | Anthropic API keys | critical |
+| `openai-key` | OpenAI API keys, including project (`sk-proj-`), service account (`sk-svcacct-`) and admin (`sk-admin-`) keys | critical |
+| `anthropic-key` | Anthropic API and Admin API keys (`sk-ant-api03-`, `sk-ant-admin01-`) | critical |
+| `anthropic-oauth-token` | Anthropic OAuth tokens, as Claude Code uses (`sk-ant-oat01-`, `sk-ant-ort01-`) | critical |
+| `openrouter-key` | OpenRouter API keys (`sk-or-v1-`) | critical |
+| `groq-key` | Groq API keys (`gsk_`) | critical |
+| `xai-key` | xAI (Grok) API keys (`xai-`) | critical |
+| `huggingface-token` | Hugging Face access tokens (`hf_`) | critical |
 | `sendgrid-key` | SendGrid API keys | critical |
 | `npm-token` | npm access tokens | critical |
-| `google-api-key` | Google API keys (often meant to be public, restricted by referrer) | medium |
+| `google-api-key` | Google API keys, Gemini's included (often meant to be public, restricted by referrer) | medium |
 | `database-url` | `postgres://`, `mysql://`, `mongodb://`, `redis://` and `amqp://` addresses with a password | high |
-| `password-assignment` | A password, secret, token or API key assigned in a configuration file: `.env`, YAML, TOML, INI, `.properties`, `wp-config.php`, `config/*.php` and copies such as `wp-config.php.bak` | high |
+| `password-assignment` | A password, secret, token, API key or master key assigned in a configuration file (keys with no format of their own, such as Mistral's, DeepSeek's and a LiteLLM proxy's `LITELLM_MASTER_KEY` and `LITELLM_SALT_KEY`, are found this way): `.env`, YAML, TOML, INI, `.properties`, `wp-config.php`, `config/*.php` and copies such as `wp-config.php.bak` | high |
 
 Not reported, because their keys are made up far more often than real: example values and placeholders (`your_password_here`, `changeme`, `${DB_PASSWORD}`, `AKIAIOSFODNN7EXAMPLE`), values read from the environment (`getenv(...)`, `required('DB_PASSWORD')`), templates (`.env.example`, `wp-config-sample.php`; a key with its own format is still reported in one), tests (`*_test.go`, `*.spec.ts`, `test_*.py`), and other people's code (`node_modules`, `vendor`, `third_party`, `testdata`, `fixtures`). WordPress's authentication keys and salts are not reported: every site has them, and `DB_PASSWORD` already reports the file. Assignments in ordinary source code are not reported either: `password = '…'` in a `.js` file is far more often a form field than a credential.
 
