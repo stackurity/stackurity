@@ -13,6 +13,7 @@ import { Table, type Column } from "../components/Table";
 import { Card, ErrorBox, GoodToKnow, KeyValues, Loading, PageHeader } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
 import { EvidencePackPanel } from "../components/EvidencePack";
+import { countExport } from "../usage";
 
 function isoDate(d: Date): string {
   const p = (n: number) => String(n).padStart(2, "0");
@@ -87,6 +88,7 @@ function EvidenceReportPage() {
 
   const download = () => {
     if (!r) return;
+    countExport("evidence_json");
     const blob = new Blob([JSON.stringify(r, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -114,7 +116,7 @@ function EvidenceReportPage() {
             <button type="button" className="btn" onClick={download} disabled={!r || res.loading}>
               Download JSON
             </button>
-            <button type="button" className="btn" onClick={() => window.print()} disabled={!r}>
+            <button type="button" className="btn" onClick={() => (countExport("evidence_print"), window.print())} disabled={!r}>
               Print
             </button>
           </>

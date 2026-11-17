@@ -138,7 +138,7 @@ func (s *Server) packArchive(w http.ResponseWriter, r *http.Request) {
 	var m packs.Manifest
 	_ = json.Unmarshal(p.Manifest, &m)
 	if m.Edition == "enterprise" && !s.has(r, license.EnterprisePacks) {
-		planRequired(w, license.EnterprisePacks)
+		s.planRequired(w, r, license.EnterprisePacks)
 		return
 	}
 	data, _, err := s.Store.PackArchive(r.Context(), p.ID)

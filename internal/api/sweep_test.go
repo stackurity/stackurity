@@ -290,6 +290,11 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/feedback": {class: "skip"},
 	// The caller's own sent items (filtered by user); feedback_queue_test.go.
 	"GET /api/v1/feedback/mine": {class: "account"},
+	// Usage counts: added to the caller's own workspace only, nothing
+	// comes back (usage_counts_test.go).
+	"POST /api/v1/usage-counts": {class: "account", body: func(*tenantFx) any {
+		return map[string]string{"event": "teaser_view", "key": "remediation"}
+	}},
 	// The Stackurity team's feedback queue: the relay's key or a signed
 	// link, and instance administrators or the triage token only
 	// (feedback_queue_test.go).
@@ -444,6 +449,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/leaks/{id}/check-again":                       {class: "object", obj: id("leak")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":                         {class: "object", obj: id("finding")},
+	"GET /api/v1/findings/{id}/closure":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/explain":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/incidents/{id}":                                {class: "object", obj: id("incident")},
 	"GET /api/v1/jobs/{id}":                                     {class: "object", obj: id("job")},

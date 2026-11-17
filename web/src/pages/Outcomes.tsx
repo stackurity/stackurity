@@ -38,6 +38,7 @@ import { Badge, PriorityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, GoodToKnow, Loading, PageHeader, StatTile, Tabs } from "../components/ui";
 import { TrialBanner, TrialMore } from "../components/Trial";
+import { countExport } from "../usage";
 
 const WINDOWS = [30, 90, 180, 365] as const;
 
@@ -122,7 +123,7 @@ export function OutcomesPage() {
           ) : undefined
         }
         actions={
-          <button type="button" className="btn" onClick={() => window.print()} disabled={!r}>
+          <button type="button" className="btn" onClick={() => (countExport("outcomes_print"), window.print())} disabled={!r}>
             Print
           </button>
         }

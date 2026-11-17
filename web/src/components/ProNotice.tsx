@@ -1,6 +1,8 @@
+import { useEffect } from "react";
 import { Link } from "react-router";
 import type { Feature } from "../api";
 import { useAuth } from "../auth";
+import { countTeaserView, countUsage } from "../usage";
 
 const NAMES: Record<Feature, string> = {
   remediation: "Automatic fixing",
@@ -9,6 +11,7 @@ const NAMES: Record<Feature, string> = {
   sso: "Single sign-on",
   enterprise_packs: "Enterprise stack packs",
   phishing_resistant_mfa: "Requiring passkeys for admins",
+  fix_loop: "The fix loop (an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix, time to fix against your SLA, and the proof export)",
   compliance_addon: "PCI DSS and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending it to Vanta or Drata",
 };
 
@@ -21,15 +24,19 @@ export function ProNotice({ feature, children }: { feature: Feature; children?: 
       : feature === "enterprise_packs" || feature === "phishing_resistant_mfa"
         ? "Enterprise"
         : "Pro";
+  // Counted for the operator: which locked features people see and follow
+  // up (usage.ts; the organisation and feature only).
+  useEffect(() => countTeaserView(feature), [feature]);
+  const clicked = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest("a")) countUsage("teaser_click", feature);
+  };
   return (
-    <div className="alert alert-info pro-notice" role="note">
+    <div className="alert alert-info pro-notice" role="note" onClick={clicked}>
       <span className="pro-badge">{plan}</span>{" "}
       {feature === "compliance_addon" ? (
         <>{NAMES[feature]} need the Compliance add-on, on any paid plan (Enterprise includes it).</>
       ) : (
-        <>
-          {NAMES[feature]} is part of Stackurity {plan}.
-        </>
+        <>{NAMES[feature]} is part of Stackurity {plan}.</>
       )}{" "}
       {children}
       {me?.user?.instance_admin ? (

@@ -600,6 +600,7 @@ func (s *Server) createTrustBadge(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n >= plan.MaxBadges {
+		s.countUsage(r, store.UsageLimitRefused, "trust_badges")
 		writeError(w, 402, "plan_limit", fmt.Sprintf("your plan allows %d trust badge(s); remove one or upgrade for more", plan.MaxBadges))
 		return
 	}
@@ -820,6 +821,7 @@ func (s *Server) putTrustBadgeLogo(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx := trustCtx(r)
 	if !s.trustPlan(ctx).Logo {
+		s.countUsage(r, store.UsageLimitRefused, "trust_badge_logo")
 		writeError(w, 402, "plan_limit", "a logo on the trust page needs a paid plan")
 		return
 	}

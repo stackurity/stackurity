@@ -327,6 +327,7 @@ func (s *Server) exportSBOM(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/vnd.cyclonedx+json")
 	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="asset-%d.cdx.json"`, id))
+	s.countUsage(r, store.UsageExport, store.ExportSBOM)
 	if err := sbom.ExportCycloneDX(w, a.Name, a.Kind, s.Version, comps, props...); err != nil {
 		s.Log.Error("export sbom", "err", err)
 	}

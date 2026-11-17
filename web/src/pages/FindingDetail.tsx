@@ -3,7 +3,7 @@ import { Link, useLocation, useParams } from "react-router";
 import { api, safeHttpUrl, type Advisory, type Finding, type FindingDetail, type FindingEvidence } from "../api";
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
-import { Badge, Chip, KevBadge, PriorityBadge, SeverityBadge, VERIFICATION_EXPLAINED } from "../components/Badge";
+import { Badge, Chip, ClosureBadge, KevBadge, PriorityBadge, SeverityBadge, VERIFICATION_EXPLAINED } from "../components/Badge";
 import { EvidencePills, kindLabel, VexBadge, vexSummary } from "../components/Findings";
 import { FindingSummary } from "../components/FindingSummary";
 import { FindingHistory, PriorityWhy, WorkflowAlerts, WorkflowBadges, WorkflowDetails } from "../components/FindingWorkflow";
@@ -12,7 +12,9 @@ import { isBehind } from "../behind";
 import { RecommendedVersion, UpgradeDetails } from "../components/Upgrade";
 import { WhyMatched } from "../components/Why";
 import { DisclosureCard, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
-import { closedReason, countsAsRemediation } from "../resolution";
+import { closedReason, countsAsRemediation, proofRows, VERIFICATION, verificationOf } from "../resolution";
+import { useAuth } from "../auth";
+import { ProBadge } from "../components/ProNotice";
 import { AskAI } from "../components/AskAI";
 import { askFromFinding } from "../askAI";
 import { sectionForHash, type SectionId } from "../findingLayers";
@@ -32,15 +34,59 @@ function ExtLink({ href, children }: { href: string | null; children: ReactNode 
   );
 }
 
-/** Why the finding closed: remediation, or a closure with nothing fixed on the asset, which reports do not count. */
+/** Time to fix against the fix-by date, for a remediated finding: "9 days, within the fix-by date". */
+export function timeToFix(f: { first_seen: string; resolved_at?: string | null; fix_due?: string | null }): string {
+  if (!f.resolved_at) return "";
+  const ms = new Date(f.resolved_at).getTime() - new Date(f.first_seen).getTime();
+  if (!(ms >= 0)) return "";
+  const days = Math.round(ms / 86_400_000);
+  const took = days < 1 ? "less than a day" : days === 1 ? "1 day" : `${days} days`;
+  if (!f.fix_due) return `${took} (no fix-by date)`;
+  return new Date(f.resolved_at) <= new Date(f.fix_due) ? `${took}, within the fix-by date` : `${took}, after the fix-by date`;
+}
+
+/**
+ * Why the finding closed, and whether a check saw the fix (verified
+ * closure): verified fixed or removed, disappeared (Stackurity lost sight
+ * of the asset), or closed with nothing fixed. Remediated findings show the
+ * proof: versions before and after and the check that saw it.
+ */
 function ClosedNotice({ f }: { f: Finding }) {
+  const { has } = useAuth();
   const kind = f.resolution_kind ?? "";
   const reason = closedReason(kind, f.resolution, f.resolution_detail);
   const successor = f.resolution_detail?.successor;
+  const v = VERIFICATION[verificationOf(kind)];
+  const proof: [string, ReactNode][] = proofRows(kind, f.resolution_detail);
+  if (countsAsRemediation(kind) && proof.length > 0) {
+    proof.push([
+      "Time to fix",
+      has("fix_loop") ? (
+        timeToFix(f)
+      ) : (
+        <span className="muted">
+          <ProBadge /> Time to fix against your SLA, per finding, is part of the fix loop on paid plans.
+        </span>
+      ),
+    ]);
+  }
+  const proofList = proof.length > 0 ? <KeyValues entries={proof} /> : null;
   if (countsAsRemediation(kind) || kind === "") {
     return (
       <Notice kind="success">
-        Resolved <RelativeTime iso={f.resolved_at} />: {reason}.
+        <strong>{kind ? v.label : "Resolved"}</strong> <RelativeTime iso={f.resolved_at} />: {reason}.
+        {kind && proof.length === 0 ? <> Closed before Stackurity recorded proof, so only the reason is shown.</> : null}
+        {proofList}
+      </Notice>
+    );
+  }
+  if (kind === "disappeared") {
+    return (
+      <Notice kind="warn">
+        <strong>{v.label}.</strong> Closed <RelativeTime iso={f.resolved_at} />: {reason}. The repository or image is no longer granted,
+        connected or in its registry, so this is not counted as remediation in the outcomes or evidence reports. Reconnect it to
+        check it again.
+        {proofList}
       </Notice>
     );
   }
@@ -260,6 +306,7 @@ export function FindingDetailPage() {
             <EvidencePills f={f} />
             <VexBadge f={f} />
             <Badge status={f.status} />
+            <ClosureBadge f={f} />
           </span>
         }
       />

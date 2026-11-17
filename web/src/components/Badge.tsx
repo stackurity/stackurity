@@ -1,3 +1,4 @@
+import { VERIFICATION, verificationOf } from "../resolution";
 import type { ReactNode } from "react";
 import { humanize } from "../format";
 import { assetPlatform } from "../assetPlatform.ts";
@@ -399,4 +400,11 @@ const DRIFT_TONES: Record<string, Tone> = { behind: "warn", only_there: "warn", 
 
 export function DriftBadge({ status, label, title }: { status: string; label: string; title?: string }) {
   return <Badge status={status} tone={DRIFT_TONES[status] ?? "info"} label={label} title={title} />;
+}
+
+/** Verified closure: "Verified fixed", "Verified removed", "Disappeared (not verified)" or "Closed, not a fix", for a resolved finding. */
+export function ClosureBadge({ f }: { f: { status?: string; resolution_kind?: string } }) {
+  if (f.status !== "resolved") return null;
+  const v = VERIFICATION[verificationOf(f.resolution_kind)];
+  return <Badge status={`closure-${verificationOf(f.resolution_kind)}`} tone={v.tone} label={v.label} title={v.title} />;
 }
