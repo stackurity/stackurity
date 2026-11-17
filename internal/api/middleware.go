@@ -430,7 +430,7 @@ func (s *Server) recoverer(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer func() {
 			v := recover()
-			if v == http.ErrAbortHandler {
+			if err, ok := v.(error); ok && errors.Is(err, http.ErrAbortHandler) {
 				// A handler that has started a response and cannot finish
 				// it aborts: net/http then cuts the connection, so the
 				// client sees a failed download, not a complete one.
