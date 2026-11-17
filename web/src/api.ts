@@ -769,8 +769,19 @@ export type Edition = "community" | "pro" | "enterprise";
  * gate_enforce: policy gates in enforce mode fail builds and deploys. Paid
  * (docs/design/policy-gates.md, section 7); a server without it reports
  * enforce-mode violations as warnings.
+ * gate_deploy: deploy checks (stackurity policy check) can fail a deploy.
+ * Without it they report violations and pass (deploy_requires_plan).
  */
-export type Feature = "remediation" | "teams" | "evidence_report" | "sso" | "enterprise_packs" | "phishing_resistant_mfa" | "fix_loop" | "gate_enforce";
+export type Feature =
+  | "remediation"
+  | "teams"
+  | "evidence_report"
+  | "sso"
+  | "enterprise_packs"
+  | "phishing_resistant_mfa"
+  | "fix_loop"
+  | "gate_enforce"
+  | "gate_deploy";
 
 export interface LicenseInfo {
   status: {

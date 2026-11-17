@@ -13,6 +13,7 @@ const NAMES: Record<Feature, string> = {
   phishing_resistant_mfa: "Requiring passkeys for admins",
   fix_loop: "The fix loop (an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix, time to fix against your SLA, and the proof export)",
   gate_enforce: "Enforcing policy gates (a violation fails the build or the deploy)",
+  gate_deploy: "The deploy gate (a policy check in your deploy pipeline that can stop the deploy)",
 };
 
 /** Explains that a feature is part of a paid plan, and how to get it. */

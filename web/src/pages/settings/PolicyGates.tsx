@@ -6,7 +6,8 @@ import { gatePoliciesEmpty } from "../../emptyCopy";
 import { useAction, useLoad } from "../../hooks";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { OrgPoliciesBody, PolicyForm, type OrgPolicyActions } from "../../components/PolicyGates";
-import { Card, Code, EmptyState, ErrorBox, GoodToKnow, Loading, Notice, PageHeader } from "../../components/ui";
+import { ProBadge, ProNotice } from "../../components/ProNotice";
+import { Card, Code, CodeBlock, EmptyState, ErrorBox, GoodToKnow, Loading, Notice, PageHeader, SettingRow } from "../../components/ui";
 import { VIOLATIONS_PATH } from "../../policyGates";
 
 /**
@@ -18,6 +19,7 @@ export function PolicyGatesPage() {
   const { can, has } = useAuth();
   const canManage = can("admin");
   const enforceAvailable = has("gate_enforce");
+  const deployAvailable = has("gate_deploy");
   const res = useLoad(() => api.getAll<GatePolicyList>("/gate-policies"), []);
   const vs = useLoad(() => api.getAll<List<GateViolation>>("/gate-policies/violations"), []);
   const inForce = useLoad(() => api.get<GateExceptionList>("/gate-policies/exceptions", { status: "approved", limit: 500 }), []);
@@ -102,6 +104,20 @@ export function PolicyGatesPage() {
       ) : (
         <OrgPoliciesBody items={items} violations={vs.data?.items} exceptions={inForce.data?.items} canManage={canManage} enforceAvailable={enforceAvailable} pending={act.pending} actions={actions} />
       )}
+      <Card title="Deploy checks" description="Ask for the same answer from a deploy pipeline or an admission hook, before an image or release goes out.">
+        <SettingRow
+          title="Deploy gate"
+          description={
+            deployAvailable
+              ? "An enforced policy's violation stops the deploy: the command exits with status 3. Warn-mode violations are printed and the deploy goes ahead."
+              : "Deploy checks report every violation and always let the deploy go ahead, with a notice that the deploy gate needs a paid plan."
+          }
+          badge={deployAvailable ? undefined : <ProBadge />}
+        >
+          <CodeBlock label="Deploy check" text={'stackurity policy check --image "ghcr.io/acme/shop@$DIGEST" --commit "$GIT_SHA" --ref "$RELEASE"'} />
+          {!deployAvailable && <ProNotice feature="gate_deploy">Checks keep answering without it, so a pipeline you set up now never breaks when the plan changes.</ProNotice>}
+        </SettingRow>
+      </Card>
       <GoodToKnow>
         <ul>
           <li>
