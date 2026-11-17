@@ -146,6 +146,9 @@ CREATE TABLE gate_policy_checks (
     repository   text NOT NULL DEFAULT '' CHECK (length(repository) <= 2048),
     result       text NOT NULL CHECK (result IN ('pass', 'warn', 'fail')),
     violations   jsonb NOT NULL DEFAULT '[]' CHECK (jsonb_typeof(violations) = 'array'),
+    -- The policies the check evaluated (not off), so the evidence pack can
+    -- count, per policy, the checks it passed as well as those it failed.
+    policy_ids   bigint[] NOT NULL DEFAULT '{}',
     created_at   timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX gate_policy_checks_workspace ON gate_policy_checks (workspace_id, created_at DESC);

@@ -237,10 +237,12 @@ func (s *Server) checkGatePolicies(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	res := gateCheckResponse{AssetID: a.ID, AssetName: a.Name, Violations: []gateCheckViolation{}, DryRun: req.DryRun}
+	evaluated := []int64{}
 	for _, gp := range policies {
 		if gp.Mode == store.GateModeOff {
 			continue
 		}
+		evaluated = append(evaluated, gp.ID)
 		res.PoliciesEvaluated++
 		if gp.Mode == store.GateModeEnforce && enforce {
 			res.PoliciesEnforced++
@@ -276,7 +278,7 @@ func (s *Server) checkGatePolicies(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := s.Store.RecordGatePolicyCheck(wctx, store.GatePolicyCheck{AssetID: &a.ID, AssetName: a.Name, Source: req.Source,
 		ActorType: actor.Type, ActorID: actorID, ActorName: actor.Name, Commit: commit, Ref: req.Ref, ImageDigest: req.ImageDigest,
-		Repository: repo, Result: res.Result, Violations: recorded})
+		Repository: repo, Result: res.Result, Violations: recorded, PolicyIDs: evaluated})
 	if err != nil {
 		s.fail(w, r, err)
 		return

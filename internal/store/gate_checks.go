@@ -44,7 +44,9 @@ type GatePolicyCheck struct {
 	Repository  string          `json:"repository"`
 	Result      string          `json:"result"`
 	Violations  json.RawMessage `json:"violations"`
-	CreatedAt   time.Time       `json:"created_at"`
+	// PolicyIDs are the policies the check evaluated (those not off).
+	PolicyIDs []int64   `json:"policy_ids"`
+	CreatedAt time.Time `json:"created_at"`
 }
 
 // RecordGatePolicyCheck stores a check in the workspace in ctx. Text
@@ -54,16 +56,19 @@ func (s *Store) RecordGatePolicyCheck(ctx context.Context, c GatePolicyCheck) (*
 	if len(c.Violations) == 0 || string(c.Violations) == "null" {
 		c.Violations = json.RawMessage("[]")
 	}
+	if c.PolicyIDs == nil {
+		c.PolicyIDs = []int64{}
+	}
 	var actorID *int64
 	if c.ActorID != nil && *c.ActorID > 0 {
 		actorID = c.ActorID
 	}
 	row := s.Pool.QueryRow(ctx, `INSERT INTO gate_policy_checks (asset_id, asset_name, source, actor_type, actor_id, actor_name,
-			commit_sha, ref, image_digest, repository, result, violations)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+			commit_sha, ref, image_digest, repository, result, violations, policy_ids)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
 		RETURNING `+gateCheckCols,
 		c.AssetID, clip(c.AssetName, 500), c.Source, clip(c.ActorType, 50), actorID, clip(c.ActorName, 500),
-		clip(c.Commit, 100), clip(c.Ref, 500), clip(c.ImageDigest, 200), clip(c.Repository, 2048), c.Result, c.Violations)
+		clip(c.Commit, 100), clip(c.Ref, 500), clip(c.ImageDigest, 200), clip(c.Repository, 2048), c.Result, c.Violations, c.PolicyIDs)
 	out, err := scanGateCheck(row)
 	if err != nil {
 		return nil, err
@@ -72,12 +77,12 @@ func (s *Store) RecordGatePolicyCheck(ctx context.Context, c GatePolicyCheck) (*
 }
 
 const gateCheckCols = `id, asset_id, asset_name, source, actor_type, actor_id, actor_name, commit_sha, ref, image_digest, repository,
-	result, violations, created_at`
+	result, violations, policy_ids, created_at`
 
 func scanGateCheck(row pgx.Row) (*GatePolicyCheck, error) {
 	var c GatePolicyCheck
 	err := row.Scan(&c.ID, &c.AssetID, &c.AssetName, &c.Source, &c.ActorType, &c.ActorID, &c.ActorName, &c.Commit, &c.Ref,
-		&c.ImageDigest, &c.Repository, &c.Result, &c.Violations, &c.CreatedAt)
+		&c.ImageDigest, &c.Repository, &c.Result, &c.Violations, &c.PolicyIDs, &c.CreatedAt)
 	return &c, err
 }
 

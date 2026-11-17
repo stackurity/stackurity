@@ -108,7 +108,7 @@ func TestGatePolicyCheckAPI(t *testing.T) {
 	}
 	c := checks[0]
 	if c.Result != "warn" || c.Source != "deploy" || c.Commit != "abc123" || c.Ref != "v1.0.0" || c.AssetName != "host-alpha" ||
-		c.ActorType != "user" || c.ActorName != "admin-org@x.io" || !strings.Contains(string(c.Violations), "No KEV") {
+		c.ActorType != "user" || c.ActorName != "admin-org@x.io" || !strings.Contains(string(c.Violations), "No KEV") || !slices.Contains(c.PolicyIDs, kev.ID) {
 		t.Errorf("recorded check: %+v", c)
 	}
 

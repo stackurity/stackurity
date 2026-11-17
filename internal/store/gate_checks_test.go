@@ -43,11 +43,11 @@ func TestGatePolicyChecksStore(t *testing.T) {
 	uid := int64(0)
 	c, err := s.RecordGatePolicyCheck(ctx, store.GatePolicyCheck{AssetID: &web, AssetName: "web", Source: store.GateSourceCI,
 		ActorType: "token", ActorID: &uid, ActorName: "job", Commit: strings.Repeat("a", 150), Ref: "refs/heads/main",
-		Result: store.GateResultWarn, Violations: json.RawMessage(`[{"policy_id":1}]`)})
+		Result: store.GateResultWarn, Violations: json.RawMessage(`[{"policy_id":1}]`), PolicyIDs: []int64{1, 2}})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.ID == 0 || len(c.Commit) != 100 || c.ActorID != nil || c.Result != "warn" || c.CreatedAt.IsZero() {
+	if c.ID == 0 || len(c.Commit) != 100 || c.ActorID != nil || c.Result != "warn" || c.CreatedAt.IsZero() || len(c.PolicyIDs) != 2 || c.PolicyIDs[1] != 2 {
 		t.Errorf("recorded %+v", c)
 	}
 	if _, err := s.RecordGatePolicyCheck(ctx, store.GatePolicyCheck{AssetID: &web, AssetName: "web", Source: store.GateSourceDeploy,
@@ -58,7 +58,7 @@ func TestGatePolicyChecksStore(t *testing.T) {
 		t.Error("an unknown source was stored")
 	}
 	list, err := s.GatePolicyChecks(ctx, web, 0)
-	if err != nil || len(list) != 2 || list[0].Source != "deploy" || string(list[0].Violations) != "[]" || list[1].Source != "ci" {
+	if err != nil || len(list) != 2 || list[0].Source != "deploy" || string(list[0].Violations) != "[]" || list[0].PolicyIDs == nil || len(list[0].PolicyIDs) != 0 || list[1].Source != "ci" {
 		t.Fatalf("list %v %+v", err, list)
 	}
 	if all, err := s.GatePolicyChecks(ctx, 0, 1); err != nil || len(all) != 1 {
