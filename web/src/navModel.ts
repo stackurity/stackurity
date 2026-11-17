@@ -95,9 +95,10 @@ export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
   fixes: {
     label: "Fixes",
     tabs: [
-      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks")) || under(p, "/action-plan") },
+      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/config")) || under(p, "/action-plan") },
       { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
       { to: "/fixes/leaks", label: "Leaked keys" },
+      { to: "/fixes/config", label: "Risky settings" },
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
     ],
   },
@@ -188,6 +189,7 @@ export type ItemId =
   | "fixes"
   | "issues"
   | "leaks"
+  | "config"
   | "automatic"
   | "incidents"
   | "checks"
@@ -276,6 +278,7 @@ export const NAV_GROUPS: GroupDef[] = [
       page("fixes", "Fixes", tab("fixes", "/fixes"), { phone: true }),
       page("issues", "All issues", tab("fixes", "/fixes/issues")),
       page("leaks", "Leaked keys", tab("fixes", "/fixes/leaks")),
+      page("config", "Risky settings", tab("fixes", "/fixes/config")),
       page("automatic", "Automatic fixes", tab("fixes", "/fixes/automatic"), { badge: "pending" }),
       page("incidents", "Incidents", tab("activity", "/incidents"), { badge: "sos", match: (p) => under(p, "/incidents", "/activity") }),
       page("checks", "Checks", tab("activity", "/checks")),

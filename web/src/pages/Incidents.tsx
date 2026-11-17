@@ -22,6 +22,7 @@ export const INCIDENT_KIND_LABEL: Record<string, string> = {
   vulnerability: "Vulnerability",
   end_of_life: "End of life",
   leak: "Leaked key",
+  config: "Risky setting",
   feed: "Feed problem",
   collection: "Collection problem",
   coverage: "Coverage drop",

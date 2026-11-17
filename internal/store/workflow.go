@@ -798,7 +798,7 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak', 'config') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }
@@ -904,7 +904,12 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 	if err != nil {
 		return nil, err
 	}
-	return append(out, leaks...), nil
+	// Risky settings: one incident per asset with high ones open.
+	config, err := s.configProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(out, leaks...), config...), nil
 }
 
 type IncidentFilter struct {

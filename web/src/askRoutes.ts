@@ -11,6 +11,7 @@ export const NAV_PATHS: readonly string[] = [
   "/fixes/issues",
   "/fixes/mine",
   "/fixes/leaks",
+  "/fixes/config",
   "/fixes/automatic",
   // Assets
   "/coverage",

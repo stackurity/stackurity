@@ -645,7 +645,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `config_findings` means `POST /ingest` stores a batch's `config_findings` ([risky settings](config-checks.md)); collectors send them only to servers that list it. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -974,6 +974,12 @@ Records that the application is not built from the repository, so the pair is no
 
 The asset's [leaked keys](leaked-keys.md), paged, with the filters of [`GET /leaks`](#get-leaks), and `scans`: the last key scan by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`). No scan means the asset's files were never checked for keys, which is not the same as none found.
 
+### `GET /assets/{id}/config-findings`
+
+**Who:** viewer
+
+The asset's [risky settings](config-checks.md), paged, with the filters of [`GET /config-findings`](#get-config-findings), and `scans`: the last config check by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`). No check means the asset's settings were never checked, which is not the same as none found.
+
 ### `GET /assets/{id}/drift`
 
 **Who:** viewer
@@ -1220,6 +1226,30 @@ Record that the key was rotated (revoked at its provider and replaced), with an 
 **Who:** engineer (on the leak's asset, with a project grant)
 
 Ask for the leak's asset to be scanned again, as [`POST /assets/{id}/check`](#post-assetsidcheck) does: its agent reports within a minute, an integration scans the repository again, otherwise the next upload. Returns the check (`201` for a new one, `200` when one is already waiting). Recorded in the activity log.
+
+### `GET /config-findings`
+
+**Who:** viewer
+
+[Risky settings](config-checks.md): config findings collectors found in assets' files, most severe first, paged. They cover AI coding-agent hooks and MCP start commands that download and run code, SSH keys and `sshd_config` settings that give root an unrestricted shell, and GitHub Actions workflows that run third-party actions by a tag or branch. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `category` (`agent_hook`, `ssh` or `ci`), `title`, `severity` (`high`, `medium`, `low` or `info`), `path`, `line`, `subject` (what in the file: a hook event and its command with credentials masked, a key's fingerprint and comment, an action reference), `why` (one line), `fix` (one line: the change to make), `doc_url` (a how-to, or empty), `status`, `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. No key material is stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` and `category` (one or several, comma-separated), `asset_id`.
+
+### `GET /config-findings/summary`
+
+**Who:** viewer
+
+Open config findings you can see, with the `asset_id` filter of [`GET /config-findings`](#get-config-findings): `by_severity`, `by_category`, and `scanned_assets` (how many assets were checked at all).
+
+### `POST /config-findings/{id}/dismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Dismiss a config finding, with an optional `note` (up to 1,000 characters): a key or a hook that is meant to be there. It stays dismissed whatever later checks see. Recorded in the activity log.
+
+### `POST /config-findings/{id}/undismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Open a dismissed config finding again. `409` for one that is not dismissed.
 
 ### `GET /fix-groups`
 
@@ -3233,6 +3263,7 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters) and `exposure` (`served`, `world_readable` or empty). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
+- `config_findings` (optional, servers listing the `config_findings` feature): `{"found": [...], "complete": true, "reason": ""}`, the [risky settings](config-checks.md) the collector found, at most 1,000. Each has `rule`, `category` (`agent_hook`, `ssh`, `ci`), `title`, `severity` (`high`, `medium`, `low`, `info`), `path`, `line`, `subject`, `why`, `fix` and `fingerprint` (32 lower-case hex characters, from the rule, file and subject). A finding seen again stays one finding (by asset, collector and fingerprint); when `complete`, the collector's open findings on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed finding stays dismissed. The result counts `config_found` and `config_gone`. Without `config_findings`, findings reported before are kept.
 - `observations[].reachability` (optional, servers listing the `reachability` feature): `{"status": "not_imported", "evidence": ["no import of lodash in 214 source files under src/"]}`. `status` is `reachable`, `not_imported`, `not_running` or `unknown`; every status but `unknown` needs 1 to 8 evidence lines of at most 512 bytes. An observation without it is stored as `unknown`, replacing what an earlier batch said ([reachability.md](reachability.md)).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.

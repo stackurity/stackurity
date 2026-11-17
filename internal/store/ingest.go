@@ -37,6 +37,11 @@ type IngestResult struct {
 	// saw, now resolved.
 	LeaksFound int   `json:"leaks_found,omitempty"`
 	LeaksGone  int64 `json:"leaks_gone,omitempty"`
+	// ConfigFound is the number of config findings the batch reported, and
+	// ConfigGone the open ones on the asset its complete checks no longer
+	// saw, now resolved.
+	ConfigFound int   `json:"config_found,omitempty"`
+	ConfigGone  int64 `json:"config_gone,omitempty"`
 	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
 	// did (POST /sbom/import), and VEXNote why it was not imported.
 	VEX     *VEXImportResult `json:"vex,omitempty"`
@@ -182,6 +187,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if b.Leaks != nil {
 			if res.LeaksFound, res.LeaksGone, err = writeLeaks(ctx, tx, assetID, res.CollectionID, b); err != nil {
 				return fmt.Errorf("leaks: %w", err)
+			}
+		}
+		if b.ConfigFindings != nil {
+			if res.ConfigFound, res.ConfigGone, err = writeConfigFindings(ctx, tx, assetID, res.CollectionID, b); err != nil {
+				return fmt.Errorf("config findings: %w", err)
 			}
 		}
 		status := "ok"

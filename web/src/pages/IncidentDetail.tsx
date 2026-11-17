@@ -124,7 +124,14 @@ function SystemDetail({ inc }: { inc: Incident }) {
             This incident resolves itself once a complete scan no longer finds critical or high leaks on the asset, or they are dismissed.
           </>
         )}
-        {inc.kind !== "feed" && inc.kind !== "leak" && assetId && (
+        {inc.kind === "config" && assetId && (
+          <>
+            {typeof d.why === "string" && <>{d.why} </>}
+            See the asset's <Link to={`/assets/${assetId}?tab=config`}>risky settings</Link> for what to change in each file. This incident
+            resolves itself once a complete check no longer finds high-severity settings on the asset, or they are dismissed.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "leak" && inc.kind !== "config" && assetId && (
           <>
             See the <Link to={`/assets/${assetId}?tab=${inc.kind === "coverage" ? "coverage" : "collections"}`}>asset</Link>. This
             incident resolves itself once collection is healthy again.

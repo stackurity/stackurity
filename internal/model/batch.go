@@ -147,6 +147,11 @@ type ObservationBatch struct {
 	// in the asset's files. Sent only to servers that list the "leaks"
 	// feature in GET /meta.
 	Leaks *LeakScan `json:"leaks,omitempty"`
+	// ConfigFindings are the risky settings the collector found in the
+	// asset's files: AI coding-agent hooks, SSH access for root, GitHub
+	// Actions workflows (ConfigScan). Sent only to servers that list the
+	// "config_findings" feature in GET /meta.
+	ConfigFindings *ConfigScan `json:"config_findings,omitempty"`
 }
 
 // ImageList is the set of container images a host's agent reports.
