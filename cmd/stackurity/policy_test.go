@@ -436,6 +436,18 @@ func TestPolicyCheckCommand(t *testing.T) {
 		t.Errorf("leak violation: %v", vs[1])
 	}
 
+	// Without the deploy gate (a paid feature) the server never fails a
+	// deploy check: the command passes, with a notice on stderr only.
+	locked := *planCheck
+	locked.DeployRequiresPlan = true
+	ps = &policyServer{feature: true, check: answer(&locked)}
+	var stdout, notice bytes.Buffer
+	o := policyCheckOptions{asset: 4, json: true, stdout: &stdout, warn: &notice}
+	if err := o.run(ctx, ps.client(t)); err != nil || notice.String() != deployPlanNotice+"\n" ||
+		!strings.Contains(stdout.String(), `"deploy_requires_plan": true`) {
+		t.Errorf("deploy without the plan: %v %q\n%s", err, notice.String(), stdout.String())
+	}
+
 	// A server without policy gates is an error here: the deploy asked
 	// for a check.
 	ps = &policyServer{}

@@ -221,6 +221,11 @@ func (o *policyCheckOptions) request() (client.PolicyCheckRequest, error) {
 		Source: "deploy", Commit: strings.TrimSpace(o.commit), Ref: strings.TrimSpace(o.ref)}, nil
 }
 
+// deployPlanNotice is printed when the server answers a deploy check
+// without the deploy gate (a paid feature): the deploy goes ahead whatever
+// the violations, rather than breaking a pipeline when a plan changes.
+const deployPlanNotice = "notice: the deploy gate needs a paid plan; this check reports violations but never fails a deploy"
+
 // run asks the server and reports, as text or JSON.
 func (o *policyCheckOptions) run(ctx context.Context, cl *client.Client) error {
 	req, err := o.request()
@@ -230,6 +235,10 @@ func (o *policyCheckOptions) run(ctx context.Context, cl *client.Client) error {
 	pc, err := cl.CheckPolicies(ctx, req)
 	if err != nil {
 		return err
+	}
+	if pc.DeployRequiresPlan {
+		// On stderr, so --json output stays JSON.
+		fmt.Fprintln(o.warn, deployPlanNotice)
 	}
 	if o.json {
 		enc := json.NewEncoder(o.stdout)
@@ -258,7 +267,8 @@ sha256:…, or name@sha256:…) or --repo (a repository URL).
 
 Violations of policies in warn mode are printed and the command exits 0; a
 violation of an enforced policy exits with status 3, as stackurity scan
---fail-on does. --json prints the server's answer as JSON instead. The
+--fail-on does. Failing a deploy needs a paid plan (the deploy gate):
+without it the check reports violations, prints a notice and exits 0. --json prints the server's answer as JSON instead. The
 check is recorded on the server as a deploy check.
 
 The token needs the viewer role (an API token), or is a collector token

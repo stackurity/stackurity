@@ -589,6 +589,9 @@ type PolicyCheck struct {
 	PoliciesEnforced  int               `json:"policies_enforced"`
 	Violations        []PolicyViolation `json:"violations"`
 	DryRun            bool              `json:"dry_run,omitempty"`
+	// DeployRequiresPlan: a deploy check on a server or plan without the
+	// deploy gate; violations are reported but the result is never fail.
+	DeployRequiresPlan bool `json:"deploy_requires_plan,omitempty"`
 }
 
 // ErrPolicyCheckUnsupported: the server has no policy gate check (older
