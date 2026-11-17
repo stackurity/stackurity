@@ -1,10 +1,12 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
 	"mime"
+	"net"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -14,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -419,6 +422,7 @@ func (s *Server) devicePreview(w http.ResponseWriter, r *http.Request) {
 		"client":       map[string]any{"id": d.ClientID, "name": deviceClients[d.ClientID]},
 		"host":         d.HostLabel,
 		"request_ip":   d.RequestIP,
+		"same_network": d.RequestIP == "" || sameNetwork(d.RequestIP, clientIP(r)),
 		"requested_at": d.CreatedAt,
 		"expires_at":   d.ExpiresAt,
 		"signed_in_as": p.User.Email,
@@ -527,8 +531,45 @@ func (s *Server) deviceDecision(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "device.approve", "device_authorization", itoa(d.ID), detail)
 	_ = s.Store.Audit(r.Context(), p.Actor(r), "token.create", "token", itoa(tok.ID), map[string]any{"name": tok.Name, "role": tok.Role,
 		"project_id": tok.ProjectID, "via": "device_login"})
+	s.notifyDeviceToken(r, p, tok.Name, d.RequestIP)
 	writeJSON(w, 200, map[string]any{"status": store.DeviceApproved,
 		"token": map[string]any{"id": tok.ID, "name": tok.Name, "expires_at": tok.ExpiresAt, "project_id": tok.ProjectID}})
+}
+
+// notifyDeviceToken emails the approver, after the response, that a token
+// was made in their name and where to revoke it.
+func (s *Server) notifyDeviceToken(r *http.Request, p *Principal, tokenName, requestIP string) {
+	if s.AccountMail == nil || p.User == nil || p.User.Email == "" {
+		return
+	}
+	workspace := "your organisation"
+	if ws, err := s.Store.GetWorkspace(tenant.WithoutProject(r.Context()), p.Workspace); err == nil && ws.Name != "" {
+		workspace = ws.Name
+	}
+	m := notify.DeviceTokenEmail(s.BaseURL, p.User.Email, tokenName, workspace, requestIP, clientIP(r), deviceTokenTTLDays, time.Now().UTC())
+	to := p.User.Email
+	ctx := context.WithoutCancel(r.Context())
+	go func() {
+		ctx, cancel := context.WithTimeout(ctx, time.Minute)
+		defer cancel()
+		if err := s.AccountMail.SendMail(ctx, []string{to}, m); err != nil {
+			s.Log.Error("device sign-in token notice not sent", "err", err)
+		}
+	}()
+}
+
+// sameNetwork reports whether two addresses look like one network: the
+// same IPv4 /24 or IPv6 /48. A sign-in started elsewhere than the browser
+// that approves it is the shape of a phished code, so the page says so.
+func sameNetwork(a, b string) bool {
+	x, y := net.ParseIP(a), net.ParseIP(b)
+	if x == nil || y == nil {
+		return a == b
+	}
+	if x4, y4 := x.To4(), y.To4(); x4 != nil || y4 != nil {
+		return x4 != nil && y4 != nil && x4.Mask(net.CIDRMask(24, 32)).Equal(y4.Mask(net.CIDRMask(24, 32)))
+	}
+	return x.Mask(net.CIDRMask(48, 128)).Equal(y.Mask(net.CIDRMask(48, 128)))
 }
 
 func (s *Server) deviceFail(w http.ResponseWriter, r *http.Request, err error) {

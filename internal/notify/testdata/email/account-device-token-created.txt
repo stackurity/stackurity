@@ -1,0 +1,19 @@
+Subject: A command-line tool can now upload scans as you
+
+You approved a sign-in at Stackurity (app.stackurity.dev) on 4 Nov 2026 09:30 UTC, from 203.0.113.42. It made an upload-only API token, “stackurity-scan on dana-laptop”, in your name for Northwind Traders.
+
+The tool that asked was at 203.0.113.24. The token can upload scans to Northwind Traders and read their results, nothing else, and stops working after 90 days.
+
+If you did not start this sign-in yourself, revoke the token now under Integrations → API tokens, and tell your administrator: someone may have sent you their code.
+
+You get this email whenever a sign-in you approve makes a token; it cannot be turned off.
+
+Review API tokens:
+https://app.stackurity.dev/settings/integrations/tokens
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because it is the address of a Stackurity account on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

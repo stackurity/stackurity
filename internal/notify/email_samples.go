@@ -122,6 +122,7 @@ func EmailSamples(base string) []EmailSample {
 		{Name: "account-email-code", Message: EmailCodeEmail(base, "dana@northwind-traders.com", "signing in", code, ip, at),
 			Secrets: []string{code, ip}},
 		{Name: "account-email-code-signed-in", Message: EmailCodeSignInEmail(base, "dana@northwind-traders.com", ip, at), Secrets: []string{ip}},
+		{Name: "account-device-token-created", Message: DeviceTokenEmail(base, "dana@northwind-traders.com", "stackurity-scan on dana-laptop", "Northwind Traders", "203.0.113.24", ip, 90, at), Secrets: []string{ip, "203.0.113.24"}},
 		{Name: "account-two-factor-added", Message: FactorChangeEmail(base, "dana@northwind-traders.com", "A passkey, “MacBook Touch ID”, was added", "",
 			ip, "Chrome on macOS", at), Secrets: []string{ip}},
 		{Name: "account-two-factor-reset-by-admin", Message: FactorChangeEmail(base, "dana@northwind-traders.com", "Your two-factor methods were reset",

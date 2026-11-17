@@ -13,6 +13,8 @@ interface DevicePreview {
   client: { id: string; name: string };
   host: string;
   request_ip: string;
+  /** False when the request came from another network than this browser. */
+  same_network?: boolean;
   requested_at: string;
   expires_at: string;
   signed_in_as: string;
@@ -221,6 +223,12 @@ export function DeviceLoginPage() {
         Check that your terminal shows <strong>{pv.user_code}</strong>. Approve only if you started this sign-in yourself, just now. Never
         approve a code someone sent you.
       </Notice>
+      {pv.same_network === false && (
+        <Notice kind="warn">
+          <strong>This request came from a different network than you</strong> ({pv.request_ip}). That is expected only if you started it
+          on another computer, such as a server over SSH. If you didn't, deny it.
+        </Notice>
+      )}
       <dl className="kv" aria-label="The sign-in request">
         <div className="kv-row">
           <dt>Code</dt>

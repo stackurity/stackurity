@@ -34,7 +34,9 @@ const (
 	DeviceInterval = 5 * time.Second
 	DeviceSlowDown = 5 * time.Second
 	// DeviceTokenTTL is how long a token made by device sign-in works.
-	DeviceTokenTTL = 365 * 24 * time.Hour
+	// 90 days: an approval obtained by phishing must not give a long-lived
+	// write credential (security review of #427).
+	DeviceTokenTTL = 90 * 24 * time.Hour
 )
 
 // UserCodeAlphabet is what user codes are made of: twenty consonants, so no

@@ -9,7 +9,8 @@ It is for people at a terminal. CI jobs keep using [keyless CI tokens](install.m
 1. The tool prints a code such as `BCDF-GHJK` and the address `https://<your server>/device` (and may open it).
 2. In the browser they sign in, or sign up on Stackurity Cloud. After signing in, or after confirming a new account by email, the browser comes back to `/device` with the code.
 3. The page shows which tool is asking, the computer name it reported, the address the request came from, the organisation, and exactly what approving allows. People in several organisations choose one; administrators may choose a project for the assets the tool creates.
-4. **Approve** or **Deny**. The tool finishes by itself within a few seconds.
+4. When the request came from a different network than the browser (another IPv4 /24 or IPv6 /48), the page says so and to deny it unless the person started it on another computer, such as a server over SSH.
+5. **Approve** or **Deny**. The tool finishes by itself within a few seconds.
 
 Approving needs the **Engineer** role or above for the whole organisation, the same as uploading with an API token of your own. Someone with access to some projects only, or a viewer, sees why they cannot approve; they can still deny.
 
@@ -24,10 +25,12 @@ The token:
 - has the collector role and may only `POST /api/v1/ingest`, `POST /api/v1/sbom/import`, read `GET /api/v1/collections/{id}/result` of its own uploads and `GET /api/v1/meta`; every other request answers `403`;
 - adds the assets it creates to the chosen project, if an administrator chose one (`project_id` on an upload may name that project, never another);
 - works only while its person is a member of the organisation with the Engineer role or above, organisation-wide;
-- expires after a year, and is revoked like the person's other tokens: in Settings, by a password change or reset that revokes API tokens, or when the organisation starts requiring single sign-on and its administrator revokes people's tokens;
+- expires after 90 days, and is revoked like the person's other tokens: in Settings, by a password change or reset that revokes API tokens, or when the organisation starts requiring single sign-on and its administrator revokes people's tokens;
 - counts towards a plan's limit on API tokens (Approve answers `402 plan_limit` past it).
 
 An approved request whose tool never collects the token within the 10 minutes has its token revoked.
+
+Every approval emails the person who approved it (in the usual account email layout, which cannot be turned off): which token was made, for which organisation, the address the request came from and the approver's own, and a link to **Integrations → API tokens** to revoke it. A code someone was tricked into approving is then noticed by the person it affects.
 
 ## Security
 
@@ -69,7 +72,7 @@ grant_type=urn:ietf:params:oauth:grant-type:device_code&device_code=stkd_…&cli
 Until the person decides the answer is `400 {"error": "authorization_pending"}`. Other errors: `slow_down` (wait the new `interval`), `access_denied`, `expired_token` (start again), `invalid_grant` (unknown, another client's, or already collected). Once approved:
 
 ```json
-{"access_token": "stk_…", "token_type": "Bearer", "scope": "upload", "expires_in": 31535990,
+{"access_token": "stk_…", "token_type": "Bearer", "scope": "upload", "expires_in": 7775990,
  "token": {"id": 12, "name": "stackurity-scan on laptop-1", "prefix": "stk_abcdefgh", "expires_at": "…"},
  "workspace": {"id": 3, "name": "Acme", "slug": "acme"}, "project": null,
  "user": {"email": "asha@acme.example"}, "server_url": "https://app.stackurity.dev"}

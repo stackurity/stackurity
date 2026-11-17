@@ -8,6 +8,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
@@ -495,5 +496,65 @@ func TestDeviceLoginRateLimits(t *testing.T) {
 	}
 	if code, _ := devicePost(t, e, "/api/v1/device/code", url.Values{"client_id": {"stackurity-scan"}}, nil); code != 429 {
 		t.Errorf("11th request in a minute: %d", code)
+	}
+}
+
+// Security review of #427: the token lasts 90 days, the approver is emailed
+// with where to revoke it, and the page says when the request came from
+// another network.
+func TestDeviceLoginNoticeAndLifetime(t *testing.T) {
+	mail := &fakeMailer{}
+	e := newEnvWith(t, func(s *api.Server) { s.BaseURL = deviceBase; s.AccountMail = mail })
+	e.user("eng@x.io", auth.RoleEngineer)
+	eng := e.login("eng@x.io")
+	d := startDevice(t, e, "laptop-1")
+
+	var pv struct {
+		SameNetwork *bool `json:"same_network"`
+		TokenDays   int   `json:"token_days"`
+		Workspace   struct{ ID int64 }
+	}
+	if code := eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d.UserCode}, &pv); code != 200 {
+		t.Fatalf("preview: %d", code)
+	}
+	if pv.SameNetwork == nil || !*pv.SameNetwork || pv.TokenDays != 90 {
+		t.Errorf("preview from this network: same_network %v, token_days %d", pv.SameNetwork, pv.TokenDays)
+	}
+	if _, err := e.st.Pool.Exec(tenant.System(context.Background()), `UPDATE device_authorizations SET request_ip = '203.0.113.9'`); err != nil {
+		t.Fatal(err)
+	}
+	pv.SameNetwork = nil
+	eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d.UserCode}, &pv)
+	if pv.SameNetwork == nil || *pv.SameNetwork {
+		t.Errorf("preview from another network: same_network %v", pv.SameNetwork)
+	}
+
+	var dec struct {
+		Token struct {
+			ID        int64
+			ExpiresAt time.Time `json:"expires_at"`
+		}
+	}
+	if code := eng.do("POST", "/api/v1/device/decision", map[string]any{"user_code": d.UserCode, "decision": "approve", "workspace_id": pv.Workspace.ID}, &dec); code != 200 {
+		t.Fatalf("approve: %d", code)
+	}
+	if days := time.Until(dec.Token.ExpiresAt).Hours() / 24; days < 89.9 || days > 90.1 {
+		t.Errorf("token lasts %.1f days, want 90", days)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for mail.count() == 0 && time.Now().Before(deadline) {
+		time.Sleep(20 * time.Millisecond)
+	}
+	mail.mu.Lock()
+	defer mail.mu.Unlock()
+	if len(mail.sent) != 1 || len(mail.to) != 1 || mail.to[0] != "eng@x.io" {
+		t.Fatalf("notice: %d emails to %v", len(mail.sent), mail.to)
+	}
+	m := mail.sent[0]
+	body := strings.Join(m.Summary, " ")
+	if m.Event != "device_token_created" || m.Link != deviceBase+"/settings/integrations/tokens" ||
+		!strings.Contains(body, "stackurity-scan on laptop-1") || !strings.Contains(body, "203.0.113.9") ||
+		!strings.Contains(body, "90 days") || !strings.Contains(body, "revoke") {
+		t.Errorf("notice: %+v", m)
 	}
 }
