@@ -2487,13 +2487,6 @@ export async function importVEX(file: Blob, q: { filename: string; source_id?: n
   return data as VEXImportResult;
 }
 
-/** The download link for the fix loop's proof export (verified closures in a period); project scoping follows the switcher. */
-export function closuresExportURL(format: "csv" | "json", from: string, to: string): string {
-  const params = new URLSearchParams({ format, from, to });
-  if (activeProject > 0) params.set("project_id", String(activeProject));
-  return `/api/v1/reports/closures?${params}`;
-}
-
 /** The download link for a VEX export; project scoping follows the switcher. */
 export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, notes?: boolean): string {
   const params = new URLSearchParams({ format });

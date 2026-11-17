@@ -3,7 +3,7 @@ import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { ProNotice } from "../components/ProNotice";
 import { Link, useSearchParams } from "react-router";
-import { api, closuresExportURL, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
+import { api, ASSET_STATUSES, EVIDENCE_STATE_LABEL, PRIORITIES, SEVERITIES, type EvidenceReport, type ReportDrift, type ReportException } from "../api";
 import { ProjectFilter } from "../components/AssetPicker";
 import { useLoad } from "../hooks";
 import { absTime, assetKindLabel, durationDays, humanize, percent, plural, utcDay } from "../format";
@@ -62,36 +62,12 @@ export function ReportsPage() {
       <>
         <PageHeader title="Reports" />
         <ProNotice feature="evidence_report">
-          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires, with the
-          proof behind every closed finding (closure proofs, as CSV).{" "}
+          It turns coverage, findings, time to fix and exceptions into a report for audits and security questionnaires.{" "}
         </ProNotice>
       </>
     );
   }
   return <EvidenceReportPage />;
-}
-
-/**
- * The fix loop's proof export: one row per finding closed in the period,
- * saying whether a check saw the fix, with the versions before and after,
- * the check, who fixed it and time to fix against the SLA.
- */
-function ClosureProofs({ from, to }: { from: string; to: string }) {
-  const { has } = useAuth();
-  return has("fix_loop") ? <ClosureProofsLink from={from} to={to} /> : null;
-}
-
-export function ClosureProofsLink({ from, to }: { from: string; to: string }) {
-  return (
-    <a
-      className="btn"
-      href={closuresExportURL("csv", from, to)}
-      download
-      title="Every finding closed in this period: whether a check saw the fix, versions before and after, who fixed it and time to fix against your SLA"
-    >
-      Download closure proofs (CSV)
-    </a>
-  );
 }
 
 function EvidenceReportPage() {
@@ -141,7 +117,6 @@ function EvidenceReportPage() {
             <button type="button" className="btn" onClick={() => (countExport("evidence_print"), window.print())} disabled={!r}>
               Print
             </button>
-            <ClosureProofs from={from} to={to} />
           </>
         }
       />

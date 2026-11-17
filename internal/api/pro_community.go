@@ -35,7 +35,6 @@ func (s *Server) proIngestRoutes(r chi.Router) {
 
 func (s *Server) proViewerRoutes(r chi.Router) {
 	r.Get("/reports/evidence", s.needs(license.EvidenceReport))
-	r.Get("/reports/closures", s.needs(license.FixLoop))
 	r.Get("/remediation/plans", s.needs(license.Remediation))
 	r.Get("/assets/{id}/remediation", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, 200, all([]struct{}{})) })
 }
