@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 10 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -109,7 +109,7 @@ func TestProtocol(t *testing.T) {
 		ann := x.(map[string]any)["annotations"].(map[string]any)
 		hints[x.(map[string]any)["name"].(string)] = [2]bool{ann["destructiveHint"].(bool), ann["openWorldHint"].(bool)}
 	}
-	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project"} {
+	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project", "set_notification_enabled"} {
 		if !hints[n][0] {
 			t.Errorf("%s is not marked destructive", n)
 		}
@@ -218,6 +218,10 @@ func (f *writeAPI) Do(_ context.Context, method, path string, body io.Reader, _ 
 		resp = `{"invitation":{"id":2},"emailed":false,"link":"https://stk.example/invite#inv_secret"}`
 	case path == "/api/v1/enrollments":
 		resp = `{"enrollment":{"id":4},"code":"enr_abc"}`
+	case path == "/api/v1/channels" && method == "GET":
+		resp = `{"items":[{"id":1,"kind":"slack","name":"Slack","enabled":true}]}`
+	case path == "/api/v1/routes" && method == "GET":
+		resp = `{"items":[{"id":10,"name":"Urgent","channel_id":1,"enabled":true,"events":["urgent"]}]}`
 	default:
 		resp = `{"id":1}`
 	}
@@ -272,6 +276,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 		"ignore":                     {"finding_ids": []any{7.0}, "reason": "mitigated", "note": "behind the WAF", "expiry": "date", "until": future},
 		"check_again":                {"fix_group": "9:package_upgrade:1"},
 		"invite_to_project":          {"email": "new@x.io", "project_id": 3.0, "role": "viewer"},
+		"set_notification_enabled":   {"target": "channel", "id": 1.0, "enabled": false},
 	}
 	if len(cases) != len(writeTools) {
 		t.Fatalf("a write tool has no case here")

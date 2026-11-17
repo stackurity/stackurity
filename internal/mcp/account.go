@@ -92,8 +92,9 @@ func init() {
 	}
 	tools["integrations_status"] = tool{
 		description: "Which integrations and notification channels the organisation has connected and whether each is on, read-only. " +
-			"channels (security role and above): each notification channel's kind (slack, slack_app, teams, teams_app, email, " +
-			"stackurity_email, webhook, jira, pagerduty, servicenow), name, enabled, where it belongs (organisation, or a project or asset id), " +
+			"channels (security role and above): each notification channel's id, kind (slack, teams, email, stackurity_email, webhook, " +
+			"jira, pagerduty, servicenow; for slack and teams, app is true when added with the Stackurity app and false for an incoming " +
+			"webhook), name, enabled, where it belongs (organisation, or a project or asset id), " +
 			"when it last worked and last delivered a message, whether its stored credential is missing, and its last error. " +
 			"sources (engineer and above): scanning integrations (repositories, images, registries, cloud accounts) with kind, name, " +
 			"enabled, schedule and last run. github, gitlab, jira and digitalocean: app installations and connections and their status. " +
@@ -108,8 +109,9 @@ func init() {
 			"new_issues, regressed, overdue, connected, problems, daily_summary, weekly_summary; mode), the lowest priority it sends " +
 			"(min_priority, P1 the most urgent; new_issues_min_priority for new issues), sos_only, the asset kinds, environments, projects " +
 			"and teams it is limited to (empty: all), resolved notices, summary time and day, quiet hours, timezone and the hourly cap. " +
-			"A rule sends only when it and its channel are both enabled. project_chat_apps says whether project admins may connect their " +
-			"own Slack or Teams. Use it for 'are we notified about critical issues' (critical findings are usually P1 or P2).",
+			"A rule sends only when it and its channel are both enabled. possible_duplicates lists enabled Slack or Teams channels in the " +
+			"same place that enabled rules send the same events to, which may post each message twice (set_notification_enabled turns " +
+			"one off). project_chat_apps says whether project admins may connect their own Slack or Teams. Use it for 'are we notified about critical issues' (critical findings are usually P1 or P2).",
 		schema: obj(map[string]any{}),
 		run:    notificationSettings,
 	}
@@ -417,33 +419,7 @@ func notificationSettings(ctx context.Context, api API, _ map[string]any) (any, 
 	}
 
 	var routes struct {
-		Items []struct {
-			ID             int64            `json:"id"`
-			Name           string           `json:"name"`
-			ChannelID      int64            `json:"channel_id"`
-			Enabled        bool             `json:"enabled"`
-			MinPriority    string           `json:"min_priority"`
-			NewMinPriority string           `json:"new_min_priority"`
-			SOSOnly        bool             `json:"sos_only"`
-			Kinds          []string         `json:"kinds"`
-			Environments   []string         `json:"environments"`
-			TeamIDs        []int64          `json:"team_ids"`
-			ProjectIDs     []int64          `json:"project_ids"`
-			Escalation     bool             `json:"escalation"`
-			SendResolved   bool             `json:"send_resolved"`
-			QuietStart     string           `json:"quiet_start"`
-			QuietEnd       string           `json:"quiet_end"`
-			Timezone       string           `json:"timezone"`
-			MaxPerHour     int              `json:"max_per_hour"`
-			Mode           string           `json:"mode"`
-			SummaryTime    string           `json:"summary_time"`
-			SummaryDay     string           `json:"summary_day"`
-			Events         []string         `json:"events"`
-			EventChannels  map[string]int64 `json:"event_channels"`
-			SummaryUpdates bool             `json:"summary_updates"`
-			OwnerProjectID *int64           `json:"owner_project_id"`
-			OwnerAssetID   *int64           `json:"owner_asset_id"`
-		} `json:"items"`
+		Items []rule `json:"items"`
 	}
 	if p.get(ctx, api, "rules", "/api/v1/routes", &routes) {
 		list := make([]map[string]any, 0, len(routes.Items))
@@ -484,6 +460,13 @@ func notificationSettings(ctx context.Context, api API, _ map[string]any) (any, 
 			list = append(list, m)
 		}
 		out["rules"] = list
+		if len(byID) > 0 {
+			dups := possibleDuplicates(chans.Items, routes.Items, 0)
+			out["possible_duplicates"] = dups
+			if len(dups) > 0 {
+				out["possible_duplicates_note"] = duplicatesNote
+			}
+		}
 	}
 
 	var ns struct {
@@ -498,8 +481,38 @@ func notificationSettings(ctx context.Context, api API, _ map[string]any) (any, 
 	return out, nil
 }
 
-// channel is what the account tools read of a notification channel. Its
-// config and secret_ref are not even decoded.
+// rule is what the account tools read of a notification rule.
+type rule struct {
+	ID             int64            `json:"id"`
+	Name           string           `json:"name"`
+	ChannelID      int64            `json:"channel_id"`
+	Enabled        bool             `json:"enabled"`
+	MinPriority    string           `json:"min_priority"`
+	NewMinPriority string           `json:"new_min_priority"`
+	SOSOnly        bool             `json:"sos_only"`
+	Kinds          []string         `json:"kinds"`
+	Environments   []string         `json:"environments"`
+	TeamIDs        []int64          `json:"team_ids"`
+	ProjectIDs     []int64          `json:"project_ids"`
+	Escalation     bool             `json:"escalation"`
+	SendResolved   bool             `json:"send_resolved"`
+	QuietStart     string           `json:"quiet_start"`
+	QuietEnd       string           `json:"quiet_end"`
+	Timezone       string           `json:"timezone"`
+	MaxPerHour     int              `json:"max_per_hour"`
+	Mode           string           `json:"mode"`
+	SummaryTime    string           `json:"summary_time"`
+	SummaryDay     string           `json:"summary_day"`
+	Events         []string         `json:"events"`
+	EventChannels  map[string]int64 `json:"event_channels"`
+	SummaryUpdates bool             `json:"summary_updates"`
+	OwnerProjectID *int64           `json:"owner_project_id"`
+	OwnerAssetID   *int64           `json:"owner_asset_id"`
+}
+
+// channel is what the account tools read of a notification channel. Of its
+// config only two flags are decoded (added with the Stackurity Slack or
+// Teams app), and its secret_ref not at all.
 type channel struct {
 	ID             int64      `json:"id"`
 	Kind           string     `json:"kind"`
@@ -511,11 +524,22 @@ type channel struct {
 	OwnerProjectID *int64     `json:"owner_project_id"`
 	OwnerAssetID   *int64     `json:"owner_asset_id"`
 	SecretSource   string     `json:"secret_source"`
+	Config         struct {
+		SlackApp bool `json:"slack_app"`
+		TeamsApp bool `json:"teams_app"`
+	} `json:"config"`
 }
+
+// app reports whether the channel was added with the Stackurity Slack or
+// Teams app (otherwise a Slack or Teams channel is an incoming webhook).
+func (c channel) app() bool { return c.Config.SlackApp || c.Config.TeamsApp }
 
 func (c channel) public() map[string]any {
 	m := map[string]any{"id": c.ID, "kind": c.Kind, "name": withoutURLs(c.Name), "enabled": c.Enabled,
 		"belongs_to": owner(c.OwnerProjectID, c.OwnerAssetID), "last_worked_at": c.LastOKAt, "last_delivered_at": c.LastDeliveryAt}
+	if c.Kind == "slack" || c.Kind == "teams" {
+		m["app"] = c.app()
+	}
 	if c.SecretSource == "missing" {
 		m["credential_missing"] = true
 	}
