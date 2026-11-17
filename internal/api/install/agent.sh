@@ -10,7 +10,7 @@
 # the setting it had.
 #
 # Add STACKURITY_PROCESSES=1 to let the agent see which packages running
-# processes use (CAP_SYS_PTRACE, also equivalent to root; see
+# processes use (CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH, also equivalent to root; see
 # docs/reachability.md). STACKURITY_PROCESSES=0 turns it off; an upgrade
 # keeps the setting it had.
 #
@@ -153,15 +153,15 @@ if [ -z "$PROCS" ] && grep -q '^STACKURITY_PROCESSES=true$' "$CONF/agent.env"; t
 CAPS="CapabilityBoundingSet="
 case "$PROCS" in
   1 | true)
-    CAPS="CapabilityBoundingSet=CAP_SYS_PTRACE
-AmbientCapabilities=CAP_SYS_PTRACE
+    CAPS="CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH
 SystemCallFilter=~ptrace process_vm_readv process_vm_writev pidfd_getfd kcmp
 StateDirectory=stackurity-agent
 StateDirectoryMode=0700"
     sed -i '/^STACKURITY_PROCESSES=/d' "$CONF/agent.env"
     echo "STACKURITY_PROCESSES=true" >>"$CONF/agent.env"
-    say "Process access: the agent reads each process's program, the file names in its memory map and its open sockets under /proc."
-    say "warning: CAP_SYS_PTRACE is equivalent to root on this host: a process holding it can read any process's memory (through /proc/<pid>/mem, which cannot be blocked) and its files. The agent never reads process memory or environments. Blocking the ptrace, process_vm, pidfd_getfd and kcmp system calls narrows what it can be made to do, but is not protection. Run with STACKURITY_PROCESSES=0 to turn it off."
+    say "Process access: the agent reads each process's program, the file names in its memory map and its open sockets under /proc, and the crontabs that start programs (/var/spool/cron, closed to other users on Debian and Ubuntu)."
+    say "warning: CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH are equivalent to root on this host: a process holding them can read any process's memory (through /proc/<pid>/mem, which cannot be blocked) and any file. The agent never reads process memory or environments. Blocking the ptrace, process_vm, pidfd_getfd and kcmp system calls narrows what it can be made to do, but is not protection. Run with STACKURITY_PROCESSES=0 to turn it off."
     ;;
   *)
     sed -i '/^STACKURITY_PROCESSES=/d' "$CONF/agent.env"

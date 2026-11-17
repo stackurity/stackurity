@@ -253,8 +253,9 @@ func TestInstallScriptHTTPGuard(t *testing.T) {
 }
 
 // Process access (STACKURITY_PROCESSES) is opt-in and kept across upgrades:
-// only then does the unit get CAP_SYS_PTRACE, always with the ptrace and
-// process_vm system calls blocked.
+// only then does the unit get CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH (to
+// read Debian's crontabs), always with the ptrace and process_vm system
+// calls blocked.
 func TestInstallScriptProcessAccess(t *testing.T) {
 	if _, err := exec.LookPath("sh"); err != nil {
 		t.Skip("no sh")
@@ -294,7 +295,8 @@ func TestInstallScriptProcessAccess(t *testing.T) {
 			t.Fatalf("%+v: %v %s", c, err, out)
 		}
 		caps := string(out)
-		on := strings.Contains(caps, "AmbientCapabilities=CAP_SYS_PTRACE")
+		on := strings.Contains(caps, "AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH\n") &&
+			strings.Contains(caps, "CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH\n")
 		if on != c.want {
 			t.Errorf("%+v: %q", c, caps)
 		}
