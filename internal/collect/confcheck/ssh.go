@@ -32,7 +32,7 @@ const (
 	RuleSSHKeySingleSource  = "ssh-root-key-no-from"
 	RuleSSHUserCIKey        = "ssh-user-key-ci-unrestricted"
 	RuleSSHPermitRootLogin  = "ssh-permit-root-login"
-	RuleSSHRootPasswordAuth = "ssh-root-password-login"
+	RuleSSHRootPWLogin = "ssh-root-password-login"
 )
 
 // authKey is one line of an authorized_keys file, without the key.
@@ -276,7 +276,7 @@ func (h *hostFS) sshAccess(accounts []account, logins map[string]*keyUse) []mode
 			file = "/etc/ssh/sshd_config"
 		}
 		if pw.Value != "no" {
-			out = append(out, finding(RuleSSHRootPasswordAuth, model.ConfigSSH, "Root can log in over SSH with a password", "medium",
+			out = append(out, finding(RuleSSHRootPWLogin, model.ConfigSSH, "Root can log in over SSH with a password", "medium",
 				file, prl.Line, "PermitRootLogin yes",
 				"PermitRootLogin yes with password authentication on (PasswordAuthentication "+pw.Value+
 					") lets anyone who guesses or reuses root's password log in as root from anywhere.",

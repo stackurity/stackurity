@@ -118,8 +118,8 @@ func TestHostChecks(t *testing.T) {
 		t.Errorf("mcp: %+v", m)
 	}
 
-	if p := got[RuleSSHPermitRootLogin]; len(p) != 1 || p[0].Severity != "medium" || p[0].Line != 2 || len(got[RuleSSHRootPasswordAuth]) != 0 {
-		t.Errorf("PermitRootLogin (password auth off in an included file): %+v %+v", p, got[RuleSSHRootPasswordAuth])
+	if p := got[RuleSSHPermitRootLogin]; len(p) != 1 || p[0].Severity != "medium" || p[0].Line != 2 || len(got[RuleSSHRootPWLogin]) != 0 {
+		t.Errorf("PermitRootLogin (password auth off in an included file): %+v %+v", p, got[RuleSSHRootPWLogin])
 	}
 	if c := got[RuleSSHRootCIKey]; len(c) != 1 || c[0].Severity != "medium" || c[0].Line != 3 || !strings.Contains(c[0].Fix, `restrict,command="/usr/local/sbin/deploy"`) ||
 		!strings.HasSuffix(c[0].Subject, " github-actions-deploy") || !strings.HasPrefix(c[0].Subject, "SHA256:") {
@@ -194,7 +194,7 @@ func TestHostChecksNoRootLogin(t *testing.T) {
 	}
 	writeTree(t, root, map[string]string{"etc/ssh/sshd_config": "PermitRootLogin yes\n"})
 	got := byRule(Host(context.Background(), root, nil).Found)
-	if p := got[RuleSSHRootPasswordAuth]; len(p) != 1 || p[0].Severity != "medium" {
+	if p := got[RuleSSHRootPWLogin]; len(p) != 1 || p[0].Severity != "medium" {
 		t.Errorf("password login for root by default: %+v", got)
 	}
 }
