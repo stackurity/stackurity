@@ -12,7 +12,7 @@ It is for people at a terminal. CI jobs keep using [keyless CI tokens](install.m
 4. When the request came from a different network than the browser (another IPv4 /24 or IPv6 /48), the page says so and to deny it unless the person started it on another computer, such as a server over SSH.
 5. **Approve** or **Deny**. The tool finishes by itself within a few seconds.
 
-Approving needs the **Engineer** role or above for the whole organisation, the same as uploading with an API token of your own. Someone with access to some projects only, or a viewer, sees why they cannot approve; they can still deny.
+Approving needs the **Engineer** role or above for the whole organisation, the same as uploading with an API token of your own. Where the organisation's two-factor policy requires a second factor of the person, they must also have confirmed one in the last 15 minutes: the page asks for it (a passkey, or a code from the app or email) before it offers **Approve**, because approving creates a credential. Single sign-on sessions are left to the identity provider, as by the policy. Someone with access to some projects only, or a viewer, sees why they cannot approve; they can still deny.
 
 Codes are eight letters from an alphabet without vowels or look-alike characters (`BCDFGHJKLMNPQRSTVWXZ`), case and the hyphen do not matter, and each works once, for 10 minutes.
 
@@ -37,7 +37,8 @@ Every approval emails the person who approved it (in the usual account email lay
 - Only hashes of the device code and the user code are stored (migration `0113_device_authorizations`). Tokens, codes and request bodies are never logged.
 - Approve and Deny need a signed-in browser session (never an API token), the dashboard's `X-Stackurity-CSRF` header and the `SameSite=Strict` session cookie; a browser that says the request came from another site (`Sec-Fetch-Site`) is refused.
 - The page names the tool from the server's own list (`stackurity-scan`, `stackurity`), not from the request, and warns to approve only a sign-in you started yourself just now: anyone can start a request and send you its code.
-- Rate limits: 10 new requests a minute and 60 an hour per address; 120 polls a minute per address (answered `slow_down`); polling faster than the interval answers `slow_down` and lengthens it by 5 seconds; 20 codes per person and 40 per address in 15 minutes on the page.
+- Rate limits: 10 new requests a minute and 60 an hour per address; 120 polls a minute per address (answered `slow_down`); polling faster than the interval answers `slow_down` and lengthens it by 5 seconds; 20 codes per person and 40 per address in 15 minutes on the page; and 1,000 wrong codes in 15 minutes on the whole server, after which the page refuses every code until the window ends (logged as a warning), so guessing spread over many accounts and addresses gets nowhere either.
+- Every 5 minutes the server revokes the token of an approved request its tool never collected, and deletes requests that ended more than a day ago.
 - Audit log: `device.approve` (with `token.create`, `via: device_login`), `device.deny`, and `device.token_collected` when the tool picks the token up.
 
 ## Turning it on

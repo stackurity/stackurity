@@ -12,6 +12,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
@@ -556,5 +557,91 @@ func TestDeviceLoginNoticeAndLifetime(t *testing.T) {
 		!strings.Contains(body, "stackurity-scan on laptop-1") || !strings.Contains(body, "203.0.113.9") ||
 		!strings.Contains(body, "90 days") || !strings.Contains(body, "revoke") {
 		t.Errorf("notice: %+v", m)
+	}
+}
+
+// Under a two-factor policy, approving needs a second factor confirmed in
+// the last 15 minutes; confirming (step-up) makes it count again.
+func TestDeviceLoginNeedsARecentFactorUnderPolicy(t *testing.T) {
+	e := newMFAEnvWith(t, func(s *api.Server) { s.BaseURL = deviceBase })
+	e.user("eng@x.io", auth.RoleEngineer)
+	eng := e.login("eng@x.io")
+	secret, _ := enrol(t, eng)
+	ctx := tenant.System(context.Background())
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace,
+		store.MFAPolicy{Require: store.PolicyEveryone, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	// The session confirmed its app code an hour ago.
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE sessions SET mfa_method = 'totp', mfa_at = now() - interval '1 hour'`); err != nil {
+		t.Fatal(err)
+	}
+	d := startDevice(t, e, "laptop-1")
+	var pv struct {
+		ConfirmFirst   bool     `json:"confirm_first"`
+		ConfirmMethods []string `json:"confirm_methods"`
+		Workspace      struct{ ID int64 }
+	}
+	if code := eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d.UserCode}, &pv); code != 200 {
+		t.Fatalf("preview: %d", code)
+	}
+	if !pv.ConfirmFirst || len(pv.ConfirmMethods) != 1 || pv.ConfirmMethods[0] != "totp" {
+		t.Fatalf("preview: %+v", pv)
+	}
+	approve := map[string]any{"user_code": d.UserCode, "decision": "approve", "workspace_id": pv.Workspace.ID}
+	var body struct{ Error struct{ Code string } }
+	if code := eng.do("POST", "/api/v1/device/decision", approve, &body); code != 403 || body.Error.Code != "mfa_step_up_required" {
+		t.Fatalf("approve with an old confirmation: %d %+v", code, body)
+	}
+	if code := eng.do("POST", "/api/v1/auth/mfa/step-up", map[string]string{"code": totpAt(t, secret, 30*time.Second)}, nil); code != 200 {
+		t.Fatalf("step-up: %d", code)
+	}
+	pv.ConfirmFirst = true
+	eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d.UserCode}, &pv)
+	if pv.ConfirmFirst {
+		t.Error("still asked to confirm after confirming")
+	}
+	if code := eng.do("POST", "/api/v1/device/decision", approve, nil); code != 200 {
+		t.Fatalf("approve after confirming: %d", code)
+	}
+
+	// Without a policy requiring it, an old sign-in is enough.
+	if _, err := e.st.SetMFAPolicy(context.Background(), tenant.DefaultWorkspace, store.MFAPolicy{Require: store.PolicyOptional, Methods: []string{"passkey", "totp"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.Pool.Exec(ctx, `UPDATE sessions SET mfa_at = now() - interval '1 hour'`); err != nil {
+		t.Fatal(err)
+	}
+	d2 := startDevice(t, e, "laptop-2")
+	pv.ConfirmFirst = true
+	eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": d2.UserCode}, &pv)
+	if pv.ConfirmFirst {
+		t.Error("asked to confirm without a policy")
+	}
+}
+
+// Wrong codes are capped on the whole server, not only per person and
+// address: past the cap every code is refused until the window ends.
+func TestDeviceLoginServerWideWrongCodes(t *testing.T) {
+	e := newDeviceEnv(t)
+	e.user("eng@x.io", auth.RoleEngineer)
+	eng := e.login("eng@x.io")
+	d := startDevice(t, e, "laptop-1")
+	ctx := context.Background()
+	for i := 0; i < 999; i++ {
+		if _, err := e.st.RateLimitHit(ctx, "device-entry-miss", "server", 15*time.Minute); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One more wrong code reaches the cap ...
+	if code := eng.do("POST", "/api/v1/device/preview", map[string]string{"user_code": "BCDF-BCDF"}, nil); code != 404 {
+		t.Fatalf("wrong code: %d", code)
+	}
+	// ... and now even the right one waits.
+	b, _ := json.Marshal(map[string]string{"user_code": d.UserCode})
+	resp := eng.req("POST", "/api/v1/device/preview", strings.NewReader(string(b)), map[string]string{"X-Stackurity-CSRF": "1", "Content-Type": "application/json"})
+	resp.Body.Close()
+	if resp.StatusCode != 429 || resp.Header.Get("Retry-After") == "" {
+		t.Errorf("right code past the server-wide cap: %d", resp.StatusCode)
 	}
 }
