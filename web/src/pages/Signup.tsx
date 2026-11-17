@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { KEY_LINK_RESUME, resumePath } from "../keyLink";
+import { DEVICE_RESUME, deviceResumePath } from "../deviceLogin";
 import { api, ApiError, type SignupMeta, type SocialMeta } from "../api";
 import { useAuth } from "../auth";
 import { useAction } from "../hooks";
@@ -343,7 +344,8 @@ export function VerifySignupPage() {
         // up from a self-hosted server's "Get a free key": back to that.
         let next: string | null = null;
         try {
-          next = resumePath(localStorage.getItem(KEY_LINK_RESUME), Date.now());
+          // …or from a terminal signing in (/device).
+          next = resumePath(localStorage.getItem(KEY_LINK_RESUME), Date.now()) ?? deviceResumePath(localStorage.getItem(DEVICE_RESUME), Date.now());
         } catch {
           // none kept
         }

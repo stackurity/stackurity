@@ -182,6 +182,10 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				s.credentialsUnavailable(w, r, err)
 				return
 			}
+			if p.uploadToken() && !uploadTokenRequest(r) {
+				writeError(w, 403, "forbidden", "this token was made by signing in from a terminal and can only upload scans (POST /ingest and /sbom/import) and read their results")
+				return
+			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
 			sess, err := s.Store.SessionInfo(r.Context(), c.Value)
 			switch {
@@ -226,7 +230,16 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 						s.credentialsUnavailable(w, r, err)
 						return
 					}
-					if p.Token != nil {
+					if p.Token != nil && p.Token.Role == auth.RoleCollector {
+						// A person's upload token (device sign-in,
+						// device_login.go): it uploads while they may
+						// upload themselves (an organisation-wide engineer
+						// or above), and does nothing else.
+						p.Role, p.ProjectRole = "", ""
+						if access.OrgRole.CanIngest() && !access.Restricted() {
+							p.Role = auth.RoleCollector
+						}
+					} else if p.Token != nil {
 						// TokenPrincipal capped the token at the user's
 						// highest role; it never acts above either.
 						p.Role = auth.Lower(p.Token.Role, access.OrgRole)

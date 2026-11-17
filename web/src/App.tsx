@@ -20,6 +20,7 @@ import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
 import { EmailPreferencesPage } from "./pages/EmailPreferences";
 import { AssistantsPage, ConnectAssistantPage } from "./pages/Assistants";
+import { DeviceLoginPage, DeviceSignIn } from "./pages/DeviceLogin";
 import { OnboardingPage } from "./pages/Onboarding";
 import { SignupPage, VerifySignupPage } from "./pages/Signup";
 import { CommunityKeyPage, VerifyCommunityKeyPage } from "./pages/CommunityKey";
@@ -180,6 +181,10 @@ export function App() {
   // The address and its query stay the same while signing in.
   if (pathname === "/oauth/authorize" && state.phase === "login") return <LoginPage />;
   if (pathname === "/oauth/authorize" && state.phase === "ready") return <ConnectAssistantPage />;
+  // A command-line tool signing in (stackurity-scan --upload): sign in or
+  // sign up first, then enter or confirm its code and approve. The address
+  // and its ?user_code= stay the same while signing in.
+  if (pathname === "/device" && state.phase === "login") return <DeviceSignIn />;
   // Back from "Add to Slack": sign in first; the address and query stay.
   // Without our state (an install Slack started) or with an error (Cancel
   // on Slack's page) there is nothing to exchange: the page explains, signed
@@ -224,6 +229,7 @@ export function App() {
   // confirm with the method it requires.
   if (state.phase === "ready" && state.me.mfa_enrolment_required) return <MfaEnrolmentPage />;
   if (state.phase === "ready" && state.me.mfa_step_up_required) return <MfaStepUpPage />;
+  if (pathname === "/device" && state.phase === "ready") return <DeviceLoginPage />;
   if (communityKeys && pathname === KEY_LINK_PATH && state.phase === "ready") return <CommunityKeyLinkPage />;
   // Back from Stackurity Cloud with this self-hosted server's free key
   // (KeyReturn.tsx), before the key step. Signed out, the key is dropped

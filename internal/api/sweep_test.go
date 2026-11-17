@@ -78,6 +78,10 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/auth/logout":             {class: "skip"},
 	"POST /api/v1/enroll":                  {class: "public"},
 	"POST /api/v1/ci/token":                {class: "public"},
+	// Device sign-in (device_login.go): the tool's endpoints take no
+	// credentials; codes have no organisation until someone approves them.
+	"POST /api/v1/device/code":  {class: "public"},
+	"POST /api/v1/device/token": {class: "public"},
 	// Error reports from the dashboard, signed in or not: they write to
 	// the caller's own workspace only, and nothing comes back
 	// (client_errors_test.go).
@@ -280,6 +284,10 @@ var routeRules = map[string]routeRule{
 	// The consent page: allowing an assistant on A's project must fail.
 	"POST /api/v1/oauth/authorize/preview": {class: "create", body: func(a *tenantFx) any { return a.authorizeParams(false) }},
 	"POST /api/v1/oauth/authorize":         {class: "create", body: func(a *tenantFx) any { return a.authorizeParams(true) }},
+	"POST /api/v1/device/preview":          {class: "create", body: func(*tenantFx) any { return map[string]string{"user_code": "BCDF-GHJK"} }},
+	"POST /api/v1/device/decision": {class: "create", body: func(*tenantFx) any {
+		return map[string]any{"user_code": "BCDF-GHJK", "decision": "approve", "workspace_id": 1}
+	}},
 	// The caller's own connected assistants; A's cannot be disconnected.
 	"GET /api/v1/assistants":         {class: "list"},
 	"DELETE /api/v1/assistants/{id}": {class: "object", obj: id("assistant")},
