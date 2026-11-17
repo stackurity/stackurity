@@ -2,7 +2,7 @@
 
 A policy gate is a rule your organisation writes once, such as "no known exploited vulnerability on an internet-facing asset", that every asset is held to. Instead of each pipeline deciding for itself with `stackurity scan --fail-on high`, the security team keeps the rules in Stackurity, and the Dashboard, CI jobs and deploy pipelines all read the same answer.
 
-This page describes what is available now: rules, where they apply, their modes and the API. Checking a build or a deploy against them (`stackurity scan --policy`, `stackurity policy check`), the dashboard pages and exceptions come in later releases ([design](design/policy-gates.md)).
+This page describes what is available now: rules, where they apply, their modes, checking a build or a deploy against them, and the API. The dashboard pages and asking for exceptions come in later releases ([design](design/policy-gates.md)).
 
 ## Rules
 
@@ -44,13 +44,90 @@ Organisation admins manage the organisation's policies; anyone with the security
 
 ## Modes
 
-Each policy is `off`, `warn` or `enforce`. New policies start in `warn`, so turning one on never breaks a build without warning. A policy that is off has no violations. (`enforce` makes a CI or deploy check fail once those checks are released.)
+Each policy is `off`, `warn` or `enforce`. New policies start in `warn`, so turning one on never breaks a build without warning. A policy that is off has no violations. A violation of a policy in `warn` mode is reported by CI and deploy checks but lets them pass; a violation of a policy in `enforce` mode makes them fail.
+
+Enforce mode needs a paid plan. In the Community edition a policy can be set to `enforce`, but checks count its violations as warnings and say so ("not enforced on this plan").
 
 ## Violations
 
 Violations are worked out from the current findings and leaked keys each time they are read, so they are never out of date. Each one names the policy and its mode, the asset, the component, a sentence saying why (for example "CVE-2026-1234 in openssl 3.0.2 is known to be exploited") and a link to the finding or to the asset's leaked keys.
 
 Once an hour Stackurity counts each policy's violations into a daily history (violations and assets at the end of the day, and how many were opened and closed that day). A deleted policy keeps its history.
+
+## In CI
+
+`stackurity scan` checks the policies itself. After it uploads the scan, it asks the server which policies apply to the repository; if any do, it waits for the server to evaluate the scan (as `--fail-on` does, up to `--wait`) and then asks for the answer. It prints a "Policy gates" block:
+
+```
+Policy gates: fail, 2 violations (3 policies checked)
+  No known exploited vulnerabilities [enforce]
+    CVE-2026-1234 in openssl 3.0.2 is known to be exploited
+    https://stackurity.example.com/findings/812
+  No old criticals in production [warn]
+    CVE-2026-0042 in zlib 1.2.11 (critical) has been open for 30 days; the limit is 14
+    https://stackurity.example.com/findings/790
+```
+
+- Violations of policies in `warn` mode are printed and the job passes (exit 0).
+- A violation of a policy in `enforce` mode fails the job with exit status 3, the same status `--fail-on` uses.
+- `--fail-on`, `--fail-on-priority` and `--fail-on-kev` keep working and are applied as well: either can fail the job.
+- If no policy applies to the repository, or the server is older than policy gates, nothing is printed and the scan behaves as before, without waiting.
+- If `--wait` runs out before the server has evaluated the scan, the job fails with status 4 when a policy is enforced; otherwise it prints a warning and passes.
+- If the check itself cannot be made (the server is unreachable, say), the job fails when a policy is enforced and prints a warning otherwise.
+
+`--policy=auto` is the default; `--policy=off` skips the check. A CI job's token from the ID-token exchange can check only its own repository, and any collector token can check the scan it uploaded. In GitHub Actions the [scan action](https://github.com/stackurity/scan-action) has a `policy` input (`auto` or `off`) that it passes on.
+
+```sh
+stackurity scan . --git-url "$CI_REPOSITORY_URL"                    # policy gates checked
+stackurity scan . --git-url "$CI_REPOSITORY_URL" --policy=off       # not checked
+```
+
+Each check is recorded on the server with the commit and the branch or tag (from `GITHUB_REF`, `CI_COMMIT_REF_NAME` and the like).
+
+## At deploy
+
+`stackurity policy check` asks the same question for any asset, for deploy pipelines. Name the asset with one of:
+
+- `--asset 42`: the asset's id;
+- `--image ghcr.io/acme/shop@sha256:…` or `--image sha256:…`: a container image, by digest (an image Stackurity has scanned, from a registry or a host);
+- `--repo https://github.com/acme/shop`: a repository, by the URL it was scanned with.
+
+`--commit` and `--ref` are recorded with the check. Violations of policies in `warn` mode are printed and the command exits 0; a violation of a policy in `enforce` mode exits with status 3. `--json` prints the server's answer as JSON instead of text, with the same exit status. Unlike `stackurity scan`, the command fails on a server without policy gates, since the pipeline asked for a check.
+
+```sh
+stackurity policy check --image "ghcr.io/acme/shop@$DIGEST" --commit "$GIT_SHA" --ref "$RELEASE"
+```
+
+The token needs the viewer role (an API token made under **Integrations → API tokens**), or is a collector token bound to the asset. The check answers from what the server knows now: scan the image or repository first if it may have changed.
+
+The answer, from `POST /api/v1/gate-policies/check`:
+
+```json
+{
+  "check_id": 518,
+  "result": "warn",
+  "asset_id": 42,
+  "asset_name": "ghcr.io/acme/shop:1.4.0",
+  "policies_evaluated": 2,
+  "policies_enforced": 0,
+  "violations": [
+    {
+      "policy_id": 3,
+      "policy_name": "No known exploited vulnerabilities",
+      "mode": "enforce",
+      "kind": "known_exploited",
+      "reason": "CVE-2026-1234 in openssl 3.0.2 is known to be exploited",
+      "component": "openssl 3.0.2",
+      "key": "CVE-2026-1234",
+      "finding_id": 812,
+      "link": "https://stackurity.example.com/findings/812",
+      "enforce_requires_plan": true
+    }
+  ]
+}
+```
+
+`result` is `pass` (no violation), `warn` (violations of policies in warn mode only) or `fail` (a violation of an enforced policy). Approved exceptions that have not expired are honoured. Every check, from CI, a deploy or the API, is recorded with who asked, the asset, the commit, branch or image digest, the result and the violations, for audit and evidence.
 
 ## History
 
@@ -66,6 +143,7 @@ Every change is recorded in the audit log: `gate_policy.create`, `gate_policy.up
 | `PUT /api/v1/gate-policies/{id}` | admin | change a policy (a `mode` left out keeps the current one) |
 | `DELETE /api/v1/gate-policies/{id}` | admin | delete a policy |
 | `GET /api/v1/gate-policies/violations` | security | current violations; filter with `policy_id`, `asset_id`, `project_id` |
+| `POST /api/v1/gate-policies/check` | viewer, or a collector token for its own asset | check one asset now and record it ([At deploy](#at-deploy)) |
 | `GET /api/v1/projects/{id}/gate-policies` | security on the project | what the project inherits (and whether it is on, off or edited) and its own policies |
 | `POST /api/v1/projects/{id}/gate-policies` | admin on the project | add a project policy |
 | `PUT`, `DELETE /api/v1/projects/{id}/gate-policies/{pid}` | admin on the project | change or delete one of the project's policies |
