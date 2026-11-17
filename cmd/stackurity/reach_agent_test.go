@@ -18,6 +18,7 @@ func TestForServer(t *testing.T) {
 		host.Observations = []model.Observation{{Purl: "pkg:deb/debian/nginx@1.22.1-9", Version: "1.22.1-9",
 			Reachability: &model.Reachability{Status: model.ReachReachable, Evidence: []string{"Running: nginx (pid 100) is /usr/sbin/nginx."}}}}
 		host.Leaks = &model.LeakScan{}
+		host.ConfigFindings = &model.ConfigScan{}
 		img := model.NewBatch(model.Collector{ID: docker.CollectorID}, model.AssetRef{Kind: model.AssetImage, Name: "postgres:16"})
 		return []*model.ObservationBatch{host, img}
 	}
@@ -30,11 +31,11 @@ func TestForServer(t *testing.T) {
 	}
 
 	all := forServer(batches(), serverTakes{appList: true, hostImages: true, leaks: true, configFindings: true, reachability: true})
-	if s := sent(all); len(all) != 2 || !strings.Contains(s, `"reachability"`) || !strings.Contains(s, `"leaks"`) {
+	if s := sent(all); len(all) != 2 || !strings.Contains(s, `"reachability"`) || !strings.Contains(s, `"leaks"`) || !strings.Contains(s, `"config_findings"`) {
 		t.Errorf("a current server: %d batches, %s", len(all), s)
 	}
 	old := forServer(batches(), serverTakes{})
-	if s := sent(old); len(old) != 1 || strings.Contains(s, `"reachability"`) || strings.Contains(s, `"leaks"`) {
+	if s := sent(old); len(old) != 1 || strings.Contains(s, `"reachability"`) || strings.Contains(s, `"leaks"`) || strings.Contains(s, `"config_findings"`) {
 		t.Errorf("an older server: %d batches, %s", len(old), s)
 	}
 }
