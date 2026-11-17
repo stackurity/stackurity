@@ -237,6 +237,9 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/projects/{id}/notifications/teams/install":       scopedWrite,
 	// Policy gates of a project or asset (gate_policies.go): security on
 	// it reads, admin on it changes, as notifications.
+	// The policy gate check: the asset is read as the caller sees it, and
+	// collector tokens may check only what they report (gate_check.go).
+	"POST /api/v1/gate-policies/check":                        scopedRead,
 	"GET /api/v1/projects/{id}/gate-policies":                 scopedRead,
 	"POST /api/v1/projects/{id}/gate-policies":                scopedWrite,
 	"PUT /api/v1/projects/{id}/gate-policies/{pid}":           scopedWrite,

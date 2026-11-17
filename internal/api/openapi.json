@@ -18487,6 +18487,45 @@
     }
    }
   },
+  "/gate-policies/check": {
+   "post": {
+    "operationId": "post_gate_policies_check",
+    "summary": "Check an asset against its policy gates",
+    "description": "Whether one asset passes the policy gates that apply to it now (docs/policy-gates.md, \"In CI\" and \"At deploy\"); used by `stackurity scan --policy` and `stackurity policy check`. Name the asset by one of `asset_id`, `repository_url` and `image_digest` (`sha256:…`, or `name@sha256:…`), or by `collection_id` (an upload) alone; `source` is `ci`, `deploy` or `api` (default), with optional `commit` and `ref`. Approved exceptions that have not expired are honoured. Answers `result` (`pass`, `warn`: violations of policies in warn mode only, `fail`: a violation of an enforced policy), `asset_id`, `asset_name`, `policies_evaluated`, `policies_enforced`, `check_id` and `violations`, each with `policy_id`, `policy_name`, `mode`, `kind`, `reason`, `component`, `key`, `finding_id` or `leak_id`, and `link` (absolute when the server's public URL is set). In the Community edition a policy in `enforce` mode counts as a warning and its violations carry `enforce_requires_plan: true`. Every check is recorded for audit; `dry_run: true` only answers `policies_evaluated` and `policies_enforced`, without reading findings or recording anything. A collector token may check only what it reports: a CI job's token its own repository, a token bound to a host that host, any collector token the asset of its own upload (`collection_id`).\n\nRole: viewer (on the asset or its project), or a collector token for its own asset",
+    "tags": [
+     "Policy gates"
+    ],
+    "x-stackurity-role": "viewer (on the asset or its project), or a collector token for its own asset",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/gate-policies/violations": {
    "get": {
     "operationId": "get_gate_policies_violations",

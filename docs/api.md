@@ -1885,7 +1885,7 @@ One-click unsubscribe (RFC 8058) from a bulk email's `List-Unsubscribe` header, 
 
 ## Policy gates
 
-[Policy gates](policy-gates.md): rules an organisation writes once and every asset is held to. A policy has `name`, `description`, `kind` (`known_exploited`, `end_of_life`, `finding_age` or `leaked_key`), `params` for its kind (`end_of_life`: `after`, `products`; `finding_age`: `min_severity`, `max_days`, `only_fixable`; `leaked_key`: `min_severity`, `served_only`; none for `known_exploited`), `filters` (`asset_kinds`, `environments` where `production` means the risk policy's production environments, `exposure` `any` or `exposed`, `tags`), `mode` (`off`, `warn`, the default, or `enforce`), `owner_project_id` and `owner_asset_id` (both null for the organisation's), `inherits_policy_id` for an edited copy, `rule_version` (raised by every change of kind, params or filters), and who created and last changed it. Policies are scoped like [notifications of projects and assets](#notifications-of-projects-and-assets). Every change is audited (`gate_policy.create`, `gate_policy.update`, `gate_policy.mode`, `gate_policy.delete`, `gate_policy.exclude`, `gate_policy.include`, `gate_policy.customise`), with a one-line `summary` and the policy `before` and `after`. `enforce` is accepted in every edition for now.
+[Policy gates](policy-gates.md): rules an organisation writes once and every asset is held to. A policy has `name`, `description`, `kind` (`known_exploited`, `end_of_life`, `finding_age` or `leaked_key`), `params` for its kind (`end_of_life`: `after`, `products`; `finding_age`: `min_severity`, `max_days`, `only_fixable`; `leaked_key`: `min_severity`, `served_only`; none for `known_exploited`), `filters` (`asset_kinds`, `environments` where `production` means the risk policy's production environments, `exposure` `any` or `exposed`, `tags`), `mode` (`off`, `warn`, the default, or `enforce`), `owner_project_id` and `owner_asset_id` (both null for the organisation's), `inherits_policy_id` for an edited copy, `rule_version` (raised by every change of kind, params or filters), and who created and last changed it. Policies are scoped like [notifications of projects and assets](#notifications-of-projects-and-assets). Every change is audited (`gate_policy.create`, `gate_policy.update`, `gate_policy.mode`, `gate_policy.delete`, `gate_policy.exclude`, `gate_policy.include`, `gate_policy.customise`), with a one-line `summary` and the policy `before` and `after`. `enforce` is accepted in every edition for now; in the Community edition a check (`POST /gate-policies/check`) counts it as a warning.
 
 ### `GET /gate-policies`
 
@@ -1904,6 +1904,18 @@ Adds a policy of the organisation. 400 for an unknown kind, mode or parameter; 4
 **Who:** security
 
 The current violations of every policy that is not off, worked out now from open findings and leaked keys: `policy_id`, `policy_name`, `mode`, `kind`, `asset_id`, `asset_name`, `reason` (a sentence), `finding_id` or `leak_id`, `component`, `key`, `link` (a dashboard path) and `violation_key`. Snoozed, risk-accepted and rejected findings never count; an approved exception that has not expired takes out what it covers. Query: `policy_id`, `asset_id`, `project_id`.
+
+### `POST /gate-policies/check`
+
+**Who:** viewer (on the organisation, or on the asset's project), or a collector token for an asset it reports
+
+Whether one asset passes the policies that apply to it now; `stackurity scan` asks after its upload is evaluated (`--policy`), `stackurity policy check` from deploy pipelines. Body: the asset, by one of `asset_id`, `repository_url` (matched as `stackurity scan --git-url` records it, whatever the case) and `image_digest` (`sha256:…` or `name@sha256:…`), or by `collection_id` (an upload) alone, or with one of them if it is of the same asset; `source` (`ci`, `deploy` or `api`, the default); optional `commit` and `ref`; `dry_run`.
+
+Answers `result` (`pass`: no violation; `warn`: violations of policies in warn mode only; `fail`: a violation of an enforced policy), `asset_id`, `asset_name`, `policies_evaluated` (the policies that apply and are not off), `policies_enforced` (those that can fail it), `check_id` and `violations`, each with `policy_id`, `policy_name`, `mode`, `kind`, `reason`, `component`, `key`, `finding_id` or `leak_id`, and `link` (absolute when the server's public URL is set). Approved exceptions that have not expired are honoured, as in the violations list. In the Community edition a policy in `enforce` mode counts as a warning: its violations carry `enforce_requires_plan: true` and the result is never `fail`.
+
+Every check is recorded (who, asset, source, commit, ref, image digest, repository, result and violations) for audit and evidence. `dry_run: true` answers `policies_evaluated` and `policies_enforced` only: no findings are read and nothing is recorded.
+
+A collector token may check only what it reports: a CI job's token (`POST /ci/token`) its own repository, a token bound to a host that host, and any collector token the asset of its own upload (`collection_id`); otherwise 403. Another token's upload, and an asset the caller cannot see, are 404 (`no asset matches, or this token cannot see it`). 400 for a request that names no asset or two, an unknown `source`, or a digest that is not sha256.
 
 ### `GET /gate-policies/{id}`
 

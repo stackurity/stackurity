@@ -89,3 +89,12 @@ func TrustBadgePlanOf(s *Server, ctx context.Context) TrustBadgePlan { return s.
 
 // TeaserFeature reports whether a locked-notice feature key is counted.
 func TeaserFeature(k string) bool { return teaserFeatures[k] }
+
+// SetGateEnforce makes enforce-mode policy gates fail checks (as the
+// licensed build will, delivery step 4) or not, and returns a function
+// that restores the default.
+func SetGateEnforce(on bool) (restore func()) {
+	old := gateEnforceAllowed
+	gateEnforceAllowed = func(context.Context) bool { return on }
+	return func() { gateEnforceAllowed = old }
+}

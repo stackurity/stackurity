@@ -404,6 +404,9 @@ func (s *Server) Handler() http.Handler {
 			r.With(requireIngest).Post("/ingest", s.ingest)
 			r.With(requireIngest).Post("/kubernetes/report", s.kubernetesReport)
 			r.With(requireIngest).Get("/collections/{id}/result", s.collectionResult)
+			// Policy gate check (gate_check.go): readers, and collector
+			// tokens for what they report (checked inside).
+			r.Post("/gate-policies/check", s.checkGatePolicies)
 			r.With(requireIngest).Post("/sbom/import", s.importSBOM)
 			r.With(requireIngest).Get("/agent/check", s.agentCheck)
 			r.Group(func(r chi.Router) {
