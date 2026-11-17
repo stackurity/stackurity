@@ -31,9 +31,10 @@ func main() {
 	name := flag.String("name", "", "the person a community key is for")
 	assets := flag.Int("assets", 0, "asset limit (0 = unlimited)")
 	months := flag.Int("months", 12, "validity in months")
+	addons := flag.String("addons", "", "comma-separated add-ons on a paid edition (compliance_addon)")
 	flag.Parse()
 	if *keyFile == "" || *customer == "" {
-		fmt.Fprintln(os.Stderr, "usage: license --key FILE --customer NAME [--edition community|pro|enterprise] [--name PERSON] [--assets N] [--months N]")
+		fmt.Fprintln(os.Stderr, "usage: license --key FILE --customer NAME [--edition community|pro|enterprise] [--name PERSON] [--assets N] [--months N] [--addons compliance_addon]")
 		os.Exit(2)
 	}
 	raw, err := os.ReadFile(*keyFile)
@@ -49,6 +50,11 @@ func main() {
 	now := time.Now().UTC().Truncate(time.Second)
 	l := license.License{ID: "lic_" + hex.EncodeToString(id), Customer: *customer, Name: *name, Email: *email,
 		Edition: license.Edition(*edition), MaxAssets: *assets, IssuedAt: now, ExpiresAt: now.AddDate(0, *months, 0)}
+	for _, a := range strings.Split(*addons, ",") {
+		if a = strings.TrimSpace(a); a != "" {
+			l.Addons = append(l.Addons, license.Feature(a))
+		}
+	}
 	if l.Edition == license.Community {
 		l.ID, l.MaxAssets, l.ExpiresAt = "ck_"+hex.EncodeToString(id), 0, now.Add(license.CommunityValidity)
 	}

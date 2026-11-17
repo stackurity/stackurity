@@ -389,6 +389,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/second-checks":           {class: "list"},
 	"GET /api/v1/reports/outcomes":        {class: "list"},
 	"GET /api/v1/reports/evidence":        {class: "list"},
+	"GET /api/v1/reports/evidence-pack":   {class: "list"},
 	"GET /api/v1/incidents":               {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
 	"GET /api/v1/risk-policy":             {class: "list"},
 	"GET /api/v1/settings/fix-grouping":   {class: "list"},
@@ -456,9 +457,6 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/leaks/{id}/assign":                            {class: "object", obj: id("leak"), body: func(*tenantFx) any { return map[string]any{"user_id": 0} }},
 	"POST /api/v1/leaks/{id}/rotated":                           {class: "object", obj: id("leak"), body: func(*tenantFx) any { return map[string]any{"note": "sweep", "check": true} }},
 	"POST /api/v1/leaks/{id}/check-again":                       {class: "object", obj: id("leak")},
-	"GET /api/v1/assets/{id}/config-findings":                   {class: "object", obj: id("asset")},
-	"POST /api/v1/config-findings/{id}/dismiss":                 {class: "object", obj: id("configfinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
-	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/closure":                         {class: "object", obj: id("finding")},
@@ -756,11 +754,6 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 			b.Leaks = &model.LeakScan{Complete: true, Found: []model.Leak{{Rule: "aws-access-key-id", Title: "AWS access key ID",
 				Severity: "high", Path: "/srv/" + tag + "/.env", Line: 3, Name: "AWS_ACCESS_KEY_ID", Fingerprint: strings.Repeat("ab", 16),
 				Preview: "AKIA…" + tag[:min(4, len(tag))]}}}
-			// And a risky setting.
-			b.ConfigFindings = &model.ConfigScan{Complete: true, Found: []model.ConfigFinding{{Rule: "ssh-root-key-ci-unrestricted",
-				Category: model.ConfigSSH, Title: "CI or deploy key has an unrestricted root shell", Severity: "medium",
-				Path: "/root/.ssh/authorized_keys", Line: 2, Subject: "SHA256:" + tag + " deploy@" + tag, Why: "why", Fix: "fix",
-				Fingerprint: strings.Repeat("cd", 16)}}}
 		}
 		raw, _ := json.Marshal(b)
 		req, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/ingest", strings.NewReader(string(raw)))
@@ -786,11 +779,6 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s leaks: %v %v", tag, leaks, err)
 	}
 	set("leak", leaks[0].ID)
-	configs, _, err := e.st.ListConfigFindings(ctx, store.ConfigFindingFilter{AssetID: main.AssetID})
-	if err != nil || len(configs) != 1 {
-		t.Fatalf("%s config findings: %v %v", tag, configs, err)
-	}
-	set("configfinding", configs[0].ID)
 	second := ingest("db-"+tag, []model.Identifier{{Scheme: "machine-id", Value: tag + "-m2"}},
 		model.Observation{Purl: "pkg:npm/" + tag + "-db-lib@2.0.0", Confidence: model.ConfidenceConfirmed})
 	set("asset2", second.AssetID)
@@ -1507,7 +1495,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	var b strings.Builder
 	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
-		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/assets/{asset}/config-findings?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
+		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments", "/api/v1/ci-trusts",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
 		"/api/v1/aws/connections", "/api/v1/aws/connections/{awsconnection}", "/api/v1/aws/connections/{awsconnection}/installs",

@@ -81,6 +81,7 @@ export const HELP_SLUGS: readonly string[] = [
   "updates-available",
   "coverage-intelligence",
   "how-stackurity-knows",
+  "evidence-pack",
   "evidence-report",
   "remediation-outcomes",
   "remediation-overview",

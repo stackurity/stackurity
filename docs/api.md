@@ -2527,6 +2527,11 @@ Downloads an enabled pack, for clients that run it themselves (`stackurity scan`
 
 Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; default the last 30 days, at most a year). See [Evidence report](#evidence-report).
 
+### `GET /reports/evidence-pack`
+
+**Who:** viewer · licensed build (402 in Community)
+
+The audit evidence pack for a period (`from`, `to`: dates, `to` inclusive; default the last 90 days, at most a year), mapped to framework controls. `frameworks`: comma-separated `soc2`, `iso27001_2022`, `pci_dss_4_0`, `eu_cra` (default: every one the plan includes; PCI DSS and the CRA need the Compliance add-on, else 402). `format`: `json` (default), `pdf` or `zip`. `label`: the period's name, such as `2026-Q3`. See [Audit evidence pack](#audit-evidence-pack).
 
 ### `GET /reports/outcomes`
 
@@ -3149,6 +3154,23 @@ Only coverage `unsupported`, or a not-evaluated reason known to be Stackurity's 
 - drift for each `replica_of` pair.
 
 In trial report mode every report and export carries a watermark ([asset-limits.md](asset-limits.md#trial-reports)).
+
+## Audit evidence pack
+
+`GET /reports/evidence-pack` (licensed build) answers an auditor's "how do you manage vulnerabilities?" for one period. It is evidence for the controls it lists, never a statement that the organisation is compliant or certified.
+
+- **Controls:** SOC 2 CC7.1 and CC8.1, ISO 27001:2022 A.8.8 and A.8.9 (Team and up); PCI DSS 4.0 6.3.1, 6.3.3 and 11.3, and the EU Cyber Resilience Act Annex I part II (1) to (4) (Compliance add-on). Each control says what in the pack is evidence for it and what Stackurity does not show (for example, it is not an Approved Scanning Vendor for PCI DSS 11.3.2).
+- **Monitoring:** every asset with the reports received in the period, the hours with at least one report out of the hours monitored, and the longest gap between reports.
+- **Findings:** open at the start and the end, opened and fixed in the period, and every finding open at the end with its CVSS score and deadline status (`within`, `overdue`, `no_deadline`, `excepted`).
+- **Time to fix:** the risk policy's deadline for each priority, and fixes by their deadline, median and 90th-percentile days per priority. As in the evidence report, only upgrades and removals count as fixes.
+- **Exceptions:** every exception active in the period, with reason, requester, approver, expiry and how it ended.
+- **Closures** (verified closure) and **policies** (policy gates), when those features are on.
+
+`format=zip` holds the PDF, a CSV of each table, `pack.json` and `manifest.json` with each file's SHA-256; with the Compliance add-on also a CycloneDX SBOM of each asset (up to 500) and an OpenVEX document. SBOM and VEX files show the inventory as it is now. The ZIP is streamed and stops adding SBOM and VEX files at 200 MB, saying so in the pack. The open-findings list stops at 20,000 rows (`open_omitted` counts the rest; the totals stay complete). The JSON schema is `schema_version` 1. Every delivered pack is in the audit log (`evidence_pack.export`). In trial report mode lists keep their first rows and the pack says so.
+
+What the pack contains: the organisation's and projects' names, asset names, component names and versions, findings, and every exception with its reason, note and mitigation as people wrote them, and the display names of who asked for and approved it (where a person has no display name, a masked address such as a***@example.com). Share it as you would the dashboard's Reports page.
+
+Limits: one pack is built at a time per organisation (`429 busy` while one is in progress), ten an hour per organisation (`429 rate_limited`), and each must finish within 3 minutes. A member who sees only some projects must choose one (`400`); the pack then covers that project.
 
 ## Uploads into a project
 

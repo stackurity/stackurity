@@ -147,6 +147,7 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/evaluation-gaps":              scopedRead,
 	"GET /api/v1/reports/outcomes":             scopedRead,
 	"GET /api/v1/reports/evidence":             scopedRead,
+	"GET /api/v1/reports/evidence-pack":        scopedRead,
 	"GET /api/v1/incidents":                    scopedRead,
 	"GET /api/v1/incidents/{id}":               scopedRead,
 	"GET /api/v1/risk-policy":                  scopedRead,
