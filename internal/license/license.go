@@ -367,10 +367,13 @@ func (g *Gate) Has(ctx context.Context, f Feature) bool {
 	if e.Includes(f) {
 		return true
 	}
-	if !IsAddon(f) || e == Community {
+	// Only an add-on bought on the licence counts here: an Enterprise
+	// licence includes the add-on by its edition, which the workspace's
+	// lower plan has already capped.
+	if !IsAddon(f) || e == Community || st.License == nil || st.State == StateExpired {
 		return false
 	}
-	for _, x := range st.Features {
+	for _, x := range st.License.Addons {
 		if x == f {
 			return true
 		}

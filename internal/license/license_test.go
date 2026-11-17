@@ -144,4 +144,15 @@ func TestAddons(t *testing.T) {
 	if g.Has(context.WithValue(context.Background(), key{}, Enterprise), ComplianceAddon) {
 		t.Error("add-on without it on the licence")
 	}
+	// An Enterprise licence includes the add-on, but a workspace capped at
+	// Pro does not get it (review, 17 Nov).
+	ent := base
+	ent.Edition = Enterprise
+	h.Set(&ent)
+	if g.Has(context.WithValue(context.Background(), key{}, Pro), ComplianceAddon) {
+		t.Error("an Enterprise licence gave the add-on to a Pro workspace")
+	}
+	if !g.Has(context.WithValue(context.Background(), key{}, Enterprise), ComplianceAddon) {
+		t.Error("an Enterprise workspace lacks the add-on")
+	}
 }
