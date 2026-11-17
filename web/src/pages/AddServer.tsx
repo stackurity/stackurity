@@ -22,6 +22,7 @@ import {
 } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
+import { PROCESS_ACCESS_TEXT } from "../components/Reachability";
 import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
 import { AgentFacts } from "../components/AgentFacts";
 import { GroupCrumb } from "../components/nav";
@@ -33,8 +34,8 @@ type Mode = "one" | "fleet" | "digitalocean";
  * docker, it also gives the agent access to the Docker socket
  * (STACKURITY_DOCKER=1) so it checks the images of running containers.
  */
-export function installCommand(code: string, docker = false): { command: string; insecure: boolean } {
-  return linuxCommand(code, window.location, docker);
+export function installCommand(code: string, docker = false, processes = false): { command: string; insecure: boolean } {
+  return linuxCommand(code, window.location, docker, processes);
 }
 
 /** The one-line installer for a new Windows host (installCommand.ts). */
@@ -56,14 +57,16 @@ export function InstallCommandTabs({
   onOS,
   idPrefix,
   docker = false,
+  processes = false,
 }: {
   code: string;
   os: ServerOS;
   onOS: (os: ServerOS) => void;
   idPrefix: string;
   docker?: boolean;
+  processes?: boolean;
 }) {
-  const { command } = os === "windows" ? windowsInstallCommand(code) : os === "macos" ? macInstallCommand(code) : installCommand(code, docker);
+  const { command } = os === "windows" ? windowsInstallCommand(code) : os === "macos" ? macInstallCommand(code) : installCommand(code, docker, processes);
   return (
     <div className="install-command">
       <Tabs<ServerOS>
@@ -97,6 +100,22 @@ export function CheckDocker({ checked, onChange }: { id: string; checked: boolea
       onChange={onChange}
       label="Also check Docker containers"
       description="Reads the images of running containers (OS packages and app libraries), including images built on the server. The agent's user joins the group of the Docker socket, which is equivalent to root on the server. It only lists containers and exports images."
+    />
+  );
+}
+
+/**
+ * "See which packages are running": adds STACKURITY_PROCESSES=1 to the
+ * install command. Off by default: CAP_SYS_PTRACE is equivalent to root on
+ * the server (docs/reachability.md).
+ */
+export function CheckProcesses({ checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <CheckCard
+      checked={checked}
+      onChange={onChange}
+      label="See which packages are running"
+      description={PROCESS_ACCESS_TEXT}
     />
   );
 }
@@ -246,7 +265,8 @@ function OneServer() {
 function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
   const [os, setOS] = useState<ServerOS>("linux");
   const [docker, setDocker] = useState(false);
-  const { insecure } = installCommand(created.code, docker);
+  const [processes, setProcesses] = useState(false);
+  const { insecure } = installCommand(created.code, docker, processes);
   const e = created.enrollment;
   const appsAsked = e.discover_apps || (e.app_dirs?.length ?? 0) > 0;
   return (
@@ -264,11 +284,16 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             from there instead.
           </Notice>
         )}
-        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" docker={docker} />
+        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" docker={docker} processes={processes} />
         {os === "linux" && (
-          <div className="field">
-            <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
-          </div>
+          <>
+            <div className="field">
+              <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
+            </div>
+            <div className="field">
+              <CheckProcesses id="ic-processes" checked={processes} onChange={setProcesses} />
+            </div>
+          </>
         )}
         {os === "windows" && appsAsked && (
           <Notice kind="info">

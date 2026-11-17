@@ -17,12 +17,24 @@ function isInsecure(loc: Origin): boolean {
 
 /**
  * The one-line installer for a new Linux host. With docker, it also gives
- * the agent access to the Docker socket (STACKURITY_DOCKER=1).
+ * the agent access to the Docker socket (STACKURITY_DOCKER=1); with
+ * processes, it lets the agent read which packages running processes use
+ * (STACKURITY_PROCESSES=1, CAP_SYS_PTRACE).
  */
-export function linuxCommand(code: string, loc: Origin, docker = false): { command: string; insecure: boolean } {
+export function linuxCommand(code: string, loc: Origin, docker = false, processes = false): { command: string; insecure: boolean } {
   const insecure = isInsecure(loc);
-  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}${docker ? " STACKURITY_DOCKER=1" : ""}`;
+  const env = `STACKURITY_ENROLL_CODE=${code}${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""}${docker ? " STACKURITY_DOCKER=1" : ""}${processes ? " STACKURITY_PROCESSES=1" : ""}`;
   return { command: `curl -fsSL ${loc.origin}/install/agent.sh | sudo ${env} sh`, insecure };
+}
+
+/**
+ * Turning process access on for a Linux host that already reports: the
+ * installer run again upgrades the agent, keeps its enrollment and other
+ * settings, and adds CAP_SYS_PTRACE to its service.
+ */
+export function processAccessCommand(loc: Origin): string {
+  const insecure = isInsecure(loc);
+  return `curl -fsSL ${loc.origin}/install/agent.sh | sudo${insecure ? " STACKURITY_ALLOW_HTTP=1" : ""} STACKURITY_PROCESSES=1 sh`;
 }
 
 /** The one-line installer for a Mac (agent-macos.sh, a LaunchDaemon). */
