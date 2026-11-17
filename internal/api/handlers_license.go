@@ -32,6 +32,10 @@ func featureName(f license.Feature) string {
 		return "Single sign-on"
 	case license.EnterprisePacks:
 		return "This stack pack (Enterprise)"
+	case license.GateEnforce:
+		return "Enforcing policy gates"
+	case license.GateDeploy:
+		return "The policy gate for deploys"
 	}
 	return string(f)
 }

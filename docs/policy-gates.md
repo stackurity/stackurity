@@ -46,7 +46,7 @@ Organisation admins manage the organisation's policies; anyone with the security
 
 Each policy is `off`, `warn` or `enforce`. New policies start in `warn`, so turning one on never breaks a build without warning. A policy that is off has no violations. A violation of a policy in `warn` mode is reported by CI and deploy checks but lets them pass; a violation of a policy in `enforce` mode makes them fail.
 
-Enforce mode needs a paid plan. In the Community edition a policy can be set to `enforce`, but checks count its violations as warnings and say so ("not enforced on this plan").
+Enforce mode needs a paid plan (the `gate_enforce` feature: Pro and Enterprise licences, and the Team and Business plans on Stackurity Cloud, trials included). Without it a policy can still be set to `enforce`, but checks count its violations as warnings and say so ("not enforced on this plan", `enforce_requires_plan` in the answer). Settings → Policy gates shows a Pro badge and notice on Enforce. Warn mode in CI is free.
 
 ## Violations
 
@@ -103,7 +103,9 @@ Each check is recorded on the server with the commit and the branch or tag (from
 - `--image ghcr.io/acme/shop@sha256:…` or `--image sha256:…`: a container image, by digest (an image Stackurity has scanned, from a registry or a host);
 - `--repo https://github.com/acme/shop`: a repository, by the URL it was scanned with.
 
-`--commit` and `--ref` are recorded with the check. Violations of policies in `warn` mode are printed and the command exits 0; a violation of a policy in `enforce` mode exits with status 3. `--json` prints the server's answer as JSON instead of text, with the same exit status. Unlike `stackurity scan`, the command fails on a server without policy gates, since the pipeline asked for a check.
+`--commit` and `--ref` are recorded with the check. Violations of policies in `warn` mode are printed and the command exits 0; a violation of a policy in `enforce` mode exits with status 3.
+
+The deploy gate (checks with `source: deploy`, which `stackurity policy check` sends) is part of the paid plans, with enforce mode (the `gate_deploy` feature). Without it a deploy check still answers, lists every violation and is recorded, but its result is never `fail`: the answer carries `deploy_requires_plan: true`, enforced policies' violations carry `enforce_requires_plan: true`, and the command prints one line on stderr (`notice: the deploy gate needs a paid plan; …`) and exits 0. This is on purpose rather than a `402` refusal: a pipeline set up during a trial keeps deploying, with the violations in its log, when the plan changes. Settings → Policy gates shows the command with a Pro badge and notice. `--json` prints the server's answer as JSON instead of text, with the same exit status. Unlike `stackurity scan`, the command fails on a server without policy gates, since the pipeline asked for a check.
 
 ```sh
 stackurity policy check --image "ghcr.io/acme/shop@$DIGEST" --commit "$GIT_SHA" --ref "$RELEASE"
@@ -138,7 +140,7 @@ The answer, from `POST /api/v1/gate-policies/check`:
 }
 ```
 
-`result` is `pass` (no violation), `warn` (violations of policies in warn mode only) or `fail` (a violation of an enforced policy). Approved exceptions that have not expired are honoured. Every check, from CI, a deploy or the API, is recorded with who asked, the asset, the commit, branch or image digest, the result and the violations, for audit and evidence.
+`result` is `pass` (no violation), `warn` (violations of policies in warn mode only, or of enforced policies the plan does not enforce) or `fail` (a violation of an enforced policy). `deploy_requires_plan: true` appears on a deploy check without the deploy gate. Approved exceptions that have not expired are honoured. Every check, from CI, a deploy or the API, is recorded with who asked, the asset, the commit, branch or image digest, the result and the violations, for audit and evidence.
 
 ## History
 
