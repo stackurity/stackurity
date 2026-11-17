@@ -1917,6 +1917,36 @@ Every check is recorded (who, asset, source, commit, ref, image digest, reposito
 
 A collector token may check only what it reports: a CI job's token (`POST /ci/token`) its own repository, a token bound to a host that host, and any collector token the asset of its own upload (`collection_id`); otherwise 403. Another token's upload, and an asset the caller cannot see, are 404 (`no asset matches, or this token cannot see it`). 400 for a request that names no asset or two, an unknown `source`, or a digest that is not sha256.
 
+### `GET /gate-policies/exceptions`
+
+**Who:** viewer (narrowed to the assets the caller can see)
+
+Exceptions to policy gates, newest first (pending ones oldest first). Each has `id`, `policy_id`, `policy_name`, `rule_version` (of the policy when it was asked), `target_kind` (`asset`, `component` or `finding`), `asset_id`, `asset_name`, `finding_id` or `leak_id`, `component_key`, `target_label` (what it covers, in words), `reason` (`accepted_risk`, `false_positive`, `mitigated` or `no_fix`), `note`, `status` (`pending`, `approved`, `declined` or `ended`), `requested_by`, `requested_at`, `requested_expires_at`, `decided_by`, `decided_at`, `decision_note`, `expires_at`, `ended_at`, `ended_by`, `end_reason` (`expired` or `revoked`) and `end_note`. An approved exception past its `expires_at` is reported as `ended` with `end_reason` `expired`. Query: `status` (`pending`, `approved` for those in force now, `declined`, `ended` or `all`, the default), `policy_id`, `asset_id`, `limit`, `offset`. The answer also has `can_decide` (the caller has security or admin, on the organisation or through a project or asset grant) and `second_approver` (always `false` in the Community edition).
+
+### `POST /gate-policies/exceptions`
+
+**Who:** viewer on the asset (on the organisation, or through a project or asset grant)
+
+Asks for a policy not to count against an asset until a date. Body: `policy_id`, `asset_id`, `target_kind` (`asset`: every violation of the policy on the asset; `component`: one component, by `component_key`, its purl key; `finding`: one `finding_id` or `leak_id` on the asset), `reason` (`accepted_risk`, `false_positive`, `mitigated` or `no_fix`), `note` (why; required, up to 4000 characters) and optional `expires_at` (within the risk policy's `exception_max_days`). Answers 201 with the exception, `pending`. 400 when the policy does not apply to the asset, the target is not on it, or a field is missing or out of range; 409 while an exception for the same target is pending or in force. Audited as `policy_exception.request`.
+
+### `GET /gate-policies/exceptions/{id}`
+
+**Who:** viewer (narrowed to the assets the caller can see)
+
+One exception, as in the list. 404 for one on an asset the caller cannot see.
+
+### `POST /gate-policies/exceptions/{id}/decision`
+
+**Who:** security on the exception's asset (on the organisation, or through a project or asset grant)
+
+Body: `decision` (`approve` or `decline`), `note` (required to decline) and, to approve, optional `expires_at`. An approved exception ends at `expires_at`, else at the date asked for, else at the risk policy's limit, and never later than `exception_max_days` from now; until then its violations are left out of the violations list, checks, the Dashboard and the weekly summary. 409 for a request already decided. Audited as `policy_exception.approve` or `policy_exception.decline`. In the Community edition one approver decides, who may be the person who asked.
+
+### `POST /gate-policies/exceptions/{id}/end`
+
+**Who:** security on the exception's asset (on the organisation, or through a project or asset grant)
+
+Ends an approved exception early (`end_reason` `revoked`), with an optional `note`: the violations it covered count again. 409 for an exception that is not in force. Audited as `policy_exception.end`. Exceptions past their expiry end by themselves (`end_reason` `expired`).
+
 ### `GET /gate-policies/{id}`
 
 **Who:** security

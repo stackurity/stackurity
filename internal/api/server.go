@@ -478,6 +478,11 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/ignore-requests", s.listIgnoreRequests)
 				r.Post("/ignore-requests", s.createIgnoreRequest)
 				r.Get("/ignore-requests/{id}", s.getIgnoreRequest)
+				// Exceptions to policy gates (gate_exceptions.go): anyone
+				// who sees the asset may ask; security on it decides.
+				r.Get("/gate-policies/exceptions", s.listGateExceptions)
+				r.Post("/gate-policies/exceptions", s.requestGateException)
+				r.Get("/gate-policies/exceptions/{id}", s.getGateException)
 				s.proViewerRoutes(r)
 				r.Get("/inventory", s.listInventory)
 				r.Get("/inventory/updates", s.inventoryUpdates)
@@ -548,6 +553,8 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/notification-options", s.notificationOptions)
 				r.Get("/email-recipients", s.listEmailRecipients)
 				r.Post("/ignore-requests/{id}/decision", s.decideIgnoreRequest)
+				r.Post("/gate-policies/exceptions/{id}/decision", s.decideGateException)
+				r.Post("/gate-policies/exceptions/{id}/end", s.endGateException)
 				r.Delete("/ignore-rules/{id}", s.endIgnoreRule)
 				r.Post("/vex/documents/{id}/decision", s.decideVEXDocument)
 				r.Get("/vex/sources", s.listVEXSources)

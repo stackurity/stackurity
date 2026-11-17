@@ -974,7 +974,7 @@ func (o *org) betaFixture() *tenantFx {
 	ids["slacktoken"] = "slk_guessed"
 	ids["fixgroup"] = o.fixGroup
 	for _, k := range []string{"user", "job", "channel", "route", "delivery", "integration", "enrollment", "token", "conflict",
-		"plan", "policy", "gatepolicy", "action", "collector-token", "invitation", "assistant", "oauthclient"} {
+		"plan", "policy", "gatepolicy", "gateexception", "action", "collector-token", "invitation", "assistant", "oauthclient"} {
 		ids[k] = "999999999"
 	}
 	ids["secret"] = "BETA_TOKEN"
@@ -1116,8 +1116,9 @@ func TestProjectIsolationSweep(t *testing.T) {
 			if code >= 500 {
 				t.Errorf("%s: %d %s", where, code, resp)
 			}
-			// An organisation viewer may ask to ignore any issue it sees.
-			if scope == "scoped-write" && r != "POST /api/v1/ignore-requests" && code < 400 {
+			// An organisation viewer may ask to ignore any issue it sees,
+			// and for an exception to a policy gate on any asset it sees.
+			if scope == "scoped-write" && r != "POST /api/v1/ignore-requests" && r != "POST /api/v1/gate-policies/exceptions" && code < 400 {
 				t.Errorf("%s: %d %s, want a refusal: the Alpha role does not reach Beta", where, code, resp)
 			}
 			if scope == "org" && code < 400 && rule.class != "create" {

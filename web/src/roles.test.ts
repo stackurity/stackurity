@@ -31,11 +31,11 @@ const scoped = new Set([...projects.matchAll(/^\s*"([A-Z]+ \/api\/v1[^"]+)":\s*(
 
 const proof: Record<string, string[]> = {
   "See the assets": ["GET /findings", "GET /assets/{id}", "GET /fix-groups", "GET /incidents", "GET /reports/outcomes", "GET /audit"],
-  "Ask for an issue": ["POST /ignore-requests", "POST /tokens"],
+  "Ask for an issue": ["POST /ignore-requests", "POST /gate-policies/exceptions", "POST /tokens"],
   "Acknowledge, start": ["POST /findings/{id}/actions", "POST /fix-groups/{id}/applied", "POST /assets/{id}/check"],
   "Edit assets": ["PATCH /assets/{id}", "POST /assets/{id}/relations"],
   "See integrations": ["GET /integrations", "POST /integrations/{id}/run", "POST /feeds/{name}/refresh", "POST /vex/import"],
-  "Snooze, accept": ["POST /ignore-requests/{id}/decision", "DELETE /ignore-rules/{id}"],
+  "Snooze, accept": ["POST /ignore-requests/{id}/decision", "POST /gate-policies/exceptions/{id}/decision", "POST /gate-policies/exceptions/{id}/end", "DELETE /ignore-rules/{id}"],
   "See notification": ["GET /channels", "GET /routes", "GET /deliveries", "POST /vex/documents/{id}/decision"],
   "Manage users": ["POST /users", "PATCH /users/{id}", "POST /teams", "POST /invitations", "POST /projects", "POST /access-grants"],
   "Set up integrations": ["POST /integrations", "POST /routes", "PUT /risk-policy", "PUT /secrets/{name}", "DELETE /assets/{id}"],

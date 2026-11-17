@@ -80,7 +80,11 @@ CREATE POLICY sys ON gate_policy_exclusions USING (stackurity_system()) WITH CHE
 -- then approved or declined, as ignore requests (migration 0031). An
 -- approved exception always has an expiry (capped by the risk policy's
 -- exception_max_days); past it, it counts as ended with end_reason
--- 'expired'. The API comes in a later step; the table is complete now.
+-- 'expired' (the upkeep tick then records it as ended). While pending,
+-- requested_expires_at is the date the requester asked for; expires_at is
+-- set on approval. end_note says why an approved exception was ended
+-- early (end_reason 'revoked'). Rows are narrowed to the assets a member
+-- with project access can see, as gate_policy_checks.
 --
 -- finding_id and leak_id name rows that may be rewritten by evaluations,
 -- so they carry no foreign key: an exception whose finding is gone simply
@@ -108,11 +112,13 @@ CREATE TABLE gate_policy_exceptions (
     decided_by_name   text NOT NULL DEFAULT '',
     decided_at        timestamptz,
     decision_note     text NOT NULL DEFAULT '' CHECK (length(decision_note) <= 4000),
+    requested_expires_at timestamptz,
     expires_at        timestamptz,
     ended_at          timestamptz,
     ended_by          bigint REFERENCES users(id) ON DELETE SET NULL,
     ended_by_name     text NOT NULL DEFAULT '',
     end_reason        text NOT NULL DEFAULT '' CHECK (end_reason IN ('', 'expired', 'revoked', 'fixed')),
+    end_note          text NOT NULL DEFAULT '' CHECK (length(end_note) <= 4000),
     CHECK (target_kind <> 'finding' OR num_nonnulls(finding_id, leak_id) = 1),
     CHECK (target_kind <> 'component' OR (component_key <> '' AND finding_id IS NULL AND leak_id IS NULL)),
     CHECK (target_kind <> 'asset' OR (component_key = '' AND finding_id IS NULL AND leak_id IS NULL)),
@@ -123,8 +129,13 @@ CREATE TABLE gate_policy_exceptions (
 CREATE INDEX gate_policy_exceptions_workspace ON gate_policy_exceptions (workspace_id);
 CREATE INDEX gate_policy_exceptions_active ON gate_policy_exceptions (policy_id, asset_id) WHERE status = 'approved';
 CREATE INDEX gate_policy_exceptions_pending ON gate_policy_exceptions (requested_at) WHERE status = 'pending';
+CREATE INDEX gate_policy_exceptions_asset ON gate_policy_exceptions (asset_id);
 ALTER TABLE gate_policy_exceptions ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
-CREATE POLICY ws ON gate_policy_exceptions USING (workspace_id = stackurity_ws()) WITH CHECK (workspace_id = stackurity_ws());
+CREATE POLICY ws ON gate_policy_exceptions
+    USING (workspace_id = stackurity_ws() AND ((SELECT stackurity_narrowed()) IS NOT TRUE
+        OR asset_id IN (SELECT unnest(stackurity_visible_assets()))))
+    WITH CHECK (workspace_id = stackurity_ws() AND ((SELECT stackurity_narrowed()) IS NOT TRUE
+        OR asset_id IN (SELECT unnest(stackurity_visible_assets()))));
 CREATE POLICY sys ON gate_policy_exceptions USING (stackurity_system()) WITH CHECK (stackurity_system());
 
 -- One check a pipeline (or the API) asked for: who, which asset and

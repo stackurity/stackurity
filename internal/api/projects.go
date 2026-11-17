@@ -239,7 +239,15 @@ var projectRoutes = map[string]projectScope{
 	// it reads, admin on it changes, as notifications.
 	// The policy gate check: the asset is read as the caller sees it, and
 	// collector tokens may check only what they report (gate_check.go).
-	"POST /api/v1/gate-policies/check":                        scopedRead,
+	"POST /api/v1/gate-policies/check": scopedRead,
+	// Exceptions to policy gates (gate_exceptions.go): rows narrowed to
+	// the caller's assets; asking needs viewer, deciding and ending
+	// security, on the exception's asset.
+	"GET /api/v1/gate-policies/exceptions":                    scopedRead,
+	"GET /api/v1/gate-policies/exceptions/{id}":               scopedRead,
+	"POST /api/v1/gate-policies/exceptions":                   scopedWrite,
+	"POST /api/v1/gate-policies/exceptions/{id}/decision":     scopedWrite,
+	"POST /api/v1/gate-policies/exceptions/{id}/end":          scopedWrite,
 	"GET /api/v1/projects/{id}/gate-policies":                 scopedRead,
 	"POST /api/v1/projects/{id}/gate-policies":                scopedWrite,
 	"PUT /api/v1/projects/{id}/gate-policies/{pid}":           scopedWrite,

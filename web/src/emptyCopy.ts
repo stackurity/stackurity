@@ -390,3 +390,23 @@ export function gateViolationsEmpty(o: { policies: number | undefined; filtered:
     after: "If a later scan finds something a policy does not allow, it appears here, and CI and deploy checks report it.",
   };
 }
+
+/**
+ * Approvals, Policy exceptions: nothing to show. status: the list's
+ * filter. canDecide: may decide (security or admin somewhere).
+ */
+export function gateExceptionsEmpty(status: "pending" | "all", canDecide: boolean): EmptyCopy {
+  if (status === "pending") {
+    return {
+      title: "No exceptions waiting",
+      why: canDecide ? "Nobody is waiting for a decision on an exception to a policy gate." : "None of the exceptions you can see is waiting for a decision.",
+      after: "When someone uses Ask for an exception on a policy violation or a policy, the request waits here until a security or admin user of the asset decides.",
+      action: { label: "Go to policy violations", to: "/fixes/policy-violations", permitted: canDecide, otherwise: "Security and admin users see the violations." },
+    };
+  }
+  return {
+    title: "No exceptions yet",
+    why: "Nobody has asked for an exception to a policy gate on the assets you can see.",
+    after: "Approved exceptions take a violation out of CI and deploy checks until their end date; then it counts again.",
+  };
+}
