@@ -18,3 +18,10 @@ read by local name, so a NameID in a foreign namespace could stand in for saml:N
 Subject with a NameID outside the SAML assertion namespace (stackurity-pro, TestSAMLXMLAttacks), and it
 needed a signature by the organisation's own identity provider anyway. Re-check when crewjam/saml releases
 a fix or before the expiry."""
+
+[[IgnoredVulns]]
+id = "GHSA-fc5q-39xc-vjpf"
+ignoreUntil = 2026-12-17
+reason = """picomatch <=4.0.7 (web build tooling only: vite, tinyglobby, fdir) ReDoS through repeated extglobs; no
+fixed version exists. The globs are our own build configuration matched against our own source paths, never user
+input, and nothing of picomatch ships in the web bundle or the image. Remove when picomatch releases a fix."""
