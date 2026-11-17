@@ -1524,7 +1524,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/AssetList"
         }
        }
       }
@@ -1593,7 +1593,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/AssetDetail"
         }
        }
       }
@@ -2525,18 +2525,25 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/LoginRequest"
        }
       }
      }
     },
     "responses": {
      "2XX": {
-      "description": "Success",
+      "description": "Signed in: the user, and the stackurity_session cookie is set. Or, for an account with a second factor, mfa_required and no session yet.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "oneOf": [
+          {
+           "$ref": "#/components/schemas/User"
+          },
+          {
+           "$ref": "#/components/schemas/MFARequired"
+          }
+         ]
         }
        }
       }
@@ -2559,19 +2566,9 @@
      "Account"
     ],
     "x-stackurity-role": "any signed-in user",
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
     "responses": {
      "2XX": {
-      "description": "Success (usually 204 No Content)"
+      "description": "Signed out: the session ends and its cookie is cleared. No body."
      },
      "4XX": {
       "$ref": "#/components/responses/Error"
@@ -2597,7 +2594,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/Me"
         }
        }
       }
@@ -2687,7 +2684,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/PasswordChangeRequest"
        }
       }
      }
@@ -2698,7 +2695,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/PasswordChangeResult"
         }
        }
       }
@@ -2937,18 +2934,18 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/MFAVerifyRequest"
        }
       }
      }
     },
     "responses": {
      "2XX": {
-      "description": "Success",
+      "description": "Signed in: the user, and the stackurity_session cookie is set. 401 mfa_invalid: a wrong code; 401 mfa_expired: start again with POST /auth/login.",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/User"
         }
        }
       }
@@ -5093,7 +5090,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FindingList"
         }
        }
       }
@@ -5573,7 +5570,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FindingDetail"
         }
        }
       }
@@ -5918,7 +5915,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixGroupList"
         }
        }
       }
@@ -5969,7 +5966,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixPlanSummary"
         }
        }
       }
@@ -6009,7 +6006,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixWorkList"
         }
        }
       }
@@ -6064,7 +6061,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixGroupDetail"
         }
        }
       }
@@ -6097,23 +6094,13 @@
       }
      }
     ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
     "responses": {
      "2XX": {
       "description": "Success",
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixApplied"
         }
        }
       }
@@ -6146,16 +6133,6 @@
       }
      }
     ],
-    "requestBody": {
-     "required": true,
-     "content": {
-      "application/json": {
-       "schema": {
-        "type": "object"
-       }
-      }
-     }
-    },
     "responses": {
      "2XX": {
       "description": "Success",
@@ -10602,7 +10579,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixGrouping"
         }
        }
       }
@@ -10628,7 +10605,7 @@
      "content": {
       "application/json": {
        "schema": {
-        "type": "object"
+        "$ref": "#/components/schemas/FixGrouping"
        }
       }
      }
@@ -10639,7 +10616,7 @@
       "content": {
        "application/json": {
         "schema": {
-         "type": "object"
+         "$ref": "#/components/schemas/FixGrouping"
         }
        }
       }
@@ -19046,6 +19023,2728 @@
       "type": "boolean"
      }
     }
+   },
+   "User": {
+    "type": "object",
+    "description": "An account, as the organisation the request works in sees it (internal/store.User).",
+    "required": [
+     "id",
+     "email",
+     "name",
+     "role",
+     "disabled",
+     "created_at"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       1
+      ]
+     },
+     "email": {
+      "type": "string",
+      "format": "email",
+      "examples": [
+       "alex@example.com"
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "Alex Demo"
+      ]
+     },
+     "role": {
+      "type": "string",
+      "description": "Organisation-wide role in this organisation; empty for a member with project access only (access is then projects).",
+      "examples": [
+       "admin",
+       "security",
+       "engineer",
+       "viewer",
+       ""
+      ]
+     },
+     "disabled": {
+      "type": "boolean"
+     },
+     "created_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_login_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "teams": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     },
+     "instance_admin": {
+      "type": "boolean"
+     },
+     "access": {
+      "type": "string",
+      "enum": [
+       "organisation",
+       "projects",
+       ""
+      ]
+     },
+     "mfa_enabled": {
+      "type": "boolean"
+     },
+     "mfa_methods": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string",
+       "enum": [
+        "passkey",
+        "totp",
+        "email"
+       ]
+      }
+     },
+     "phone": {
+      "type": "string"
+     },
+     "project_grants": {
+      "type": "integer"
+     },
+     "asset_grants": {
+      "type": "integer"
+     },
+     "access_teams": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     }
+    }
+   },
+   "LoginRequest": {
+    "type": "object",
+    "required": [
+     "email",
+     "password"
+    ],
+    "properties": {
+     "email": {
+      "type": "string",
+      "format": "email"
+     },
+     "password": {
+      "type": "string",
+      "format": "password"
+     }
+    },
+    "examples": [
+     {
+      "email": "alex@example.com",
+      "password": "correct horse battery staple"
+     }
+    ]
+   },
+   "MFARequired": {
+    "type": "object",
+    "description": "The account has a second factor: no session yet. A short-lived challenge cookie is set for /api/v1/auth/mfa; finish with POST /auth/mfa/verify (a code) or POST /auth/mfa/passkey/begin and /finish.",
+    "required": [
+     "mfa_required",
+     "methods"
+    ],
+    "properties": {
+     "mfa_required": {
+      "const": true
+     },
+     "methods": {
+      "type": "array",
+      "description": "What the second step offers, strongest first. email appears only for an account with no other method.",
+      "items": {
+       "type": "string",
+       "enum": [
+        "passkey",
+        "totp",
+        "recovery",
+        "email"
+       ]
+      }
+     }
+    },
+    "examples": [
+     {
+      "mfa_required": true,
+      "methods": [
+       "totp",
+       "recovery"
+      ]
+     }
+    ]
+   },
+   "MFAVerifyRequest": {
+    "type": "object",
+    "required": [
+     "code"
+    ],
+    "properties": {
+     "code": {
+      "type": "string",
+      "description": "A 6-digit code from the authenticator app or the email, or one recovery code."
+     }
+    },
+    "examples": [
+     {
+      "code": "123456"
+     }
+    ]
+   },
+   "PasswordChangeRequest": {
+    "type": "object",
+    "required": [
+     "current_password",
+     "new_password"
+    ],
+    "properties": {
+     "current_password": {
+      "type": "string",
+      "format": "password"
+     },
+     "new_password": {
+      "type": "string",
+      "format": "password",
+      "description": "Must meet the organisation's password rules; otherwise 400 password_too_weak with the rules missed in details."
+     },
+     "revoke_tokens": {
+      "type": "boolean",
+      "default": false,
+      "description": "Also revoke your API tokens."
+     },
+     "revoke_assistants": {
+      "type": "boolean",
+      "default": true,
+      "description": "Also disconnect the AI assistants connected as you."
+     }
+    },
+    "examples": [
+     {
+      "current_password": "old passphrase",
+      "new_password": "a new, longer passphrase",
+      "revoke_tokens": false
+     }
+    ]
+   },
+   "PasswordChangeResult": {
+    "type": "object",
+    "required": [
+     "revoked",
+     "tokens_kept"
+    ],
+    "properties": {
+     "revoked": {
+      "type": "object",
+      "description": "What the new password ended. This session stays signed in (with a new session ID).",
+      "required": [
+       "sessions",
+       "tokens",
+       "assistants"
+      ],
+      "properties": {
+       "sessions": {
+        "type": "integer"
+       },
+       "tokens": {
+        "type": "integer"
+       },
+       "assistants": {
+        "type": "integer"
+       }
+      }
+     },
+     "tokens_kept": {
+      "type": "integer",
+      "description": "Your API tokens that still work."
+     }
+    },
+    "examples": [
+     {
+      "revoked": {
+       "sessions": 2,
+       "tokens": 0,
+       "assistants": 1
+      },
+      "tokens_kept": 3
+     }
+    ]
+   },
+   "Me": {
+    "type": "object",
+    "description": "The caller. Fields not listed here may be added; clients should ignore what they do not know.",
+    "required": [
+     "user",
+     "role",
+     "access",
+     "edition",
+     "features",
+     "workspace",
+     "workspaces",
+     "projects",
+     "default_project_id",
+     "invite_only"
+    ],
+    "properties": {
+     "user": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/User"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "null for a collector token"
+     },
+     "role": {
+      "type": "string",
+      "description": "Organisation-wide role; empty with project access only."
+     },
+     "access": {
+      "type": "string",
+      "enum": [
+       "organisation",
+       "projects"
+      ]
+     },
+     "project_role": {
+      "type": "string"
+     },
+     "edition": {
+      "type": "string",
+      "enum": [
+       "community",
+       "pro",
+       "enterprise"
+      ]
+     },
+     "features": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "remediation",
+        "teams",
+        "evidence_report",
+        "sso"
+       ]
+      ]
+     },
+     "feedback_enabled": {
+      "type": "boolean"
+     },
+     "workspace": {
+      "oneOf": [
+       {
+        "type": "null"
+       },
+       {
+        "type": "object",
+        "required": [
+         "id",
+         "name",
+         "slug"
+        ],
+        "properties": {
+         "id": {
+          "type": "integer"
+         },
+         "name": {
+          "type": "string"
+         },
+         "slug": {
+          "type": "string"
+         },
+         "read_only": {
+          "oneOf": [
+           {
+            "type": "null"
+           },
+           {
+            "type": "object",
+            "required": [
+             "since",
+             "reason"
+            ],
+            "properties": {
+             "since": {
+              "type": "string",
+              "format": "date-time"
+             },
+             "reason": {
+              "type": "string"
+             }
+            }
+           }
+          ],
+          "description": "Set when the organisation is read-only: since when and why."
+         },
+         "report_mode": {
+          "type": "string"
+         }
+        }
+       }
+      ]
+     },
+     "workspaces": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Organisations the caller belongs to."
+     },
+     "projects": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      },
+      "description": "Projects for the project switcher."
+     },
+     "default_project_id": {
+      "type": "integer",
+      "description": "0: All projects."
+     },
+     "mfa_enrolment_required": {
+      "type": "boolean"
+     },
+     "mfa_step_up_required": {
+      "type": "boolean"
+     },
+     "mfa_accepted": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      }
+     },
+     "mfa_recovery_accepted": {
+      "type": "boolean"
+     },
+     "password_change_required": {
+      "type": "boolean"
+     },
+     "invite_only": {
+      "type": "boolean",
+      "description": "People join by invitation: POST /users is refused."
+     }
+    }
+   },
+   "ProjectRef": {
+    "type": "object",
+    "description": "A project, by ID and name (internal/store.ProjectRef).",
+    "required": [
+     "id",
+     "name"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       3
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "demo-shop"
+      ]
+     }
+    }
+   },
+   "Reporting": {
+    "type": "object",
+    "description": "How an asset reports and what is expected of it (internal/store.Reporting).",
+    "required": [
+     "source",
+     "override",
+     "mode",
+     "runs",
+     "usual_seconds",
+     "due_after_seconds"
+    ],
+    "properties": {
+     "source": {
+      "type": "string",
+      "description": "What reports this asset (agent, an integration, a CLI or CI upload).",
+      "examples": [
+       "agent"
+      ]
+     },
+     "override": {
+      "type": "string",
+      "description": "A reporting mode set by hand; empty when learned."
+     },
+     "mode": {
+      "type": "string",
+      "description": "What the dashboard shows: agent, scheduled (a learned or set cadence), one_off (no further report expected), integration, or unknown (no report yet).",
+      "examples": [
+       "agent",
+       "scheduled",
+       "one_off",
+       "integration",
+       "unknown"
+      ]
+     },
+     "runs": {
+      "type": "integer",
+      "description": "Reports seen an hour apart or more, up to 6.",
+      "examples": [
+       6
+      ]
+     },
+     "usual_seconds": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "Median gap between those reports (2 runs or more).",
+      "examples": [
+       21600
+      ]
+     },
+     "due_after_seconds": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "How long after the last report the asset is overdue; null when nothing is expected.",
+      "examples": [
+       43200
+      ]
+     },
+     "as_of": {
+      "type": "string",
+      "format": "date-time",
+      "description": "The date the results are from when no further report is expected (one-off); absent otherwise."
+     }
+    }
+   },
+   "Asset": {
+    "type": "object",
+    "description": "A server, application, repository, image or other asset (internal/store.Asset).",
+    "required": [
+     "id",
+     "kind",
+     "name",
+     "environment",
+     "owner_team_id",
+     "owner_team",
+     "provider",
+     "region",
+     "criticality",
+     "internet_exposed",
+     "exposed",
+     "tags",
+     "attributes",
+     "first_seen",
+     "last_seen",
+     "collection_status",
+     "component_count",
+     "agent_polled_at",
+     "projects",
+     "reporting"
+    ],
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "description": "host, application, repository, image, managed_service, sbom, cluster or workload.",
+      "examples": [
+       "host",
+       "application",
+       "repository",
+       "image",
+       "managed_service",
+       "sbom",
+       "cluster",
+       "workload"
+      ]
+     },
+     "name": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "owner_team_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The owning team; null when none."
+     },
+     "owner_team": {
+      "type": "string",
+      "description": "The owning team's name; empty when none.",
+      "examples": [
+       "Platform"
+      ]
+     },
+     "provider": {
+      "type": "string",
+      "description": "Cloud or platform, when known (aws, gcp, kubernetes...).",
+      "examples": [
+       "aws"
+      ]
+     },
+     "region": {
+      "type": "string",
+      "examples": [
+       "eu-west-1"
+      ]
+     },
+     "criticality": {
+      "type": "string",
+      "examples": [
+       "high"
+      ]
+     },
+     "internet_exposed": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "Internet exposure set by hand; null when not set."
+     },
+     "exposed": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "The exposure risk scoring uses: internet_exposed when set, else what collectors observed; null when not known."
+     },
+     "tags": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "demo"
+       ]
+      ]
+     },
+     "attributes": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "additionalProperties": {
+       "type": "string"
+      },
+      "description": "Facts collectors reported, such as os, os_version and arch."
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "collection_status": {
+      "type": "string",
+      "description": "ok, partial, stale (overdue) or removed.",
+      "examples": [
+       "ok",
+       "partial",
+       "stale",
+       "removed"
+      ]
+     },
+     "component_count": {
+      "type": "integer",
+      "description": "Components currently installed or declared.",
+      "examples": [
+       412
+      ]
+     },
+     "agent_polled_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the asset's agent last asked whether to report now; null for older agents and assets without one."
+     },
+     "projects": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/ProjectRef"
+      },
+      "description": "The active projects the asset belongs to that the caller may see."
+     },
+     "reporting": {
+      "$ref": "#/components/schemas/Reporting"
+     }
+    }
+   },
+   "Identifier": {
+    "type": "object",
+    "description": "One of the identifiers an asset is matched by across reports (internal/store.Identifier).",
+    "required": [
+     "scheme",
+     "value",
+     "first_seen"
+    ],
+    "properties": {
+     "scheme": {
+      "type": "string",
+      "examples": [
+       "hostname",
+       "machine-id",
+       "image-ref",
+       "git-url",
+       "demo"
+      ]
+     },
+     "value": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     }
+    }
+   },
+   "AssetDetail": {
+    "type": "object",
+    "required": [
+     "asset",
+     "identifiers"
+    ],
+    "properties": {
+     "asset": {
+      "$ref": "#/components/schemas/Asset"
+     },
+     "identifiers": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "$ref": "#/components/schemas/Identifier"
+      }
+     }
+    }
+   },
+   "AssetList": {
+    "type": "object",
+    "description": "One page of results: the items, the number of matches and the page asked for.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Asset"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FindingList": {
+    "type": "object",
+    "description": "One page of results: the items, the number of matches and the page asked for.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Finding"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FindingVEX": {
+    "type": "object",
+    "description": "A VEX statement about a finding (internal/store.FindingVEX).",
+    "properties": {
+     "statement_id": {
+      "type": "integer"
+     },
+     "document_id": {
+      "type": "integer"
+     },
+     "source": {
+      "type": "string"
+     },
+     "status": {
+      "type": "string",
+      "examples": [
+       "not_affected",
+       "affected",
+       "fixed",
+       "under_investigation"
+      ]
+     },
+     "justification": {
+      "type": "string"
+     },
+     "impact_statement": {
+      "type": "string"
+     },
+     "action_statement": {
+      "type": "string"
+     },
+     "status_notes": {
+      "type": "string"
+     },
+     "vulnerability": {
+      "type": "string",
+      "examples": [
+       "CVE-2024-45337"
+      ]
+     },
+     "effective_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "request_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "request_status": {
+      "type": "string",
+      "description": "For a not_affected statement: pending, approved or declined; empty otherwise or when the caller cannot see the inbox.",
+      "examples": [
+       "pending",
+       "approved",
+       "declined",
+       ""
+      ]
+     },
+     "applied": {
+      "type": "boolean",
+      "description": "The finding is ignored by a rule made from this statement."
+     }
+    },
+    "required": [
+     "statement_id",
+     "document_id",
+     "source",
+     "status",
+     "justification",
+     "impact_statement",
+     "action_statement",
+     "status_notes",
+     "vulnerability",
+     "effective_at",
+     "request_id",
+     "request_status",
+     "applied"
+    ]
+   },
+   "Finding": {
+    "type": "object",
+    "description": "A vulnerability or end-of-life issue of one component on one asset (internal/store.Finding).",
+    "properties": {
+     "id": {
+      "type": "integer",
+      "examples": [
+       173
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "description": "vulnerability, end_of_life and the other finding kinds.",
+      "examples": [
+       "vulnerability",
+       "end_of_life"
+      ]
+     },
+     "key": {
+      "type": "string",
+      "description": "The CVE or other advisory ID, or the end-of-life product and cycle.",
+      "examples": [
+       "CVE-2024-45337"
+      ]
+     },
+     "inventory_id": {
+      "type": "integer"
+     },
+     "asset_id": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "asset_name": {
+      "type": "string",
+      "examples": [
+       "demo-web-1"
+      ]
+     },
+     "asset_kind": {
+      "type": "string",
+      "examples": [
+       "host"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "component_id": {
+      "type": "integer"
+     },
+     "component_name": {
+      "type": "string",
+      "examples": [
+       "golang.org/x/crypto"
+      ]
+     },
+     "component_type": {
+      "type": "string",
+      "examples": [
+       "go"
+      ]
+     },
+     "version": {
+      "type": "string",
+      "examples": [
+       "0.26.0"
+      ]
+     },
+     "location": {
+      "type": "string",
+      "description": "Where the component was found (a path or manifest).",
+      "examples": [
+       "/usr/local/bin/app"
+      ]
+     },
+     "direct": {
+      "type": [
+       "boolean",
+       "null"
+      ],
+      "description": "A direct dependency (true) or a transitive one (false); null when not known."
+     },
+     "status": {
+      "type": "string",
+      "description": "open or resolved.",
+      "examples": [
+       "open",
+       "resolved"
+      ]
+     },
+     "verification": {
+      "type": "string",
+      "description": "How certain the match is.",
+      "examples": [
+       "confirmed",
+       "needs_validation",
+       "stale"
+      ]
+     },
+     "severity": {
+      "type": "string",
+      "examples": [
+       "critical",
+       "high",
+       "medium",
+       "low",
+       "unknown"
+      ]
+     },
+     "score": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "CVSS base score; null when not known.",
+      "examples": [
+       9.1
+      ]
+     },
+     "title": {
+      "type": "string"
+     },
+     "fixed_version": {
+      "type": "string",
+      "description": "The first version that fixes it; empty when none is known.",
+      "examples": [
+       "0.31.0"
+      ]
+     },
+     "sources": {
+      "type": [
+       "array",
+       "null"
+      ],
+      "items": {
+       "type": "string"
+      },
+      "description": "IDs of the advisories that matched."
+     },
+     "evidence": {
+      "description": "Why it matched (JSON; shape depends on the collector)."
+     },
+     "first_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "last_seen": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "resolved_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "resolution": {
+      "type": "string",
+      "description": "How it was resolved; empty while open."
+     },
+     "known_exploited": {
+      "type": "boolean",
+      "description": "Listed in CISA's Known Exploited Vulnerabilities."
+     },
+     "state": {
+      "type": "string",
+      "description": "Workflow state."
+     },
+     "priority": {
+      "type": "string",
+      "examples": [
+       "P1",
+       "P2",
+       "P3",
+       "P4",
+       "lower_priority"
+      ]
+     },
+     "priority_score": {
+      "type": "number"
+     },
+     "priority_factors": {
+      "description": "What made up the priority (JSON)."
+     },
+     "sos": {
+      "type": "boolean",
+      "description": "Matched an urgent (SOS) rule of the risk policy."
+     },
+     "sos_rule": {
+      "type": "string"
+     },
+     "assignee_user_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "assignee_email": {
+      "type": "string"
+     },
+     "assignee_team_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "assignee_team": {
+      "type": "string"
+     },
+     "ack_due": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "fix_due": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "acknowledged_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "suppressed_until": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "state_reason": {
+      "type": "string"
+     },
+     "mitigation": {
+      "type": "string"
+     },
+     "escalation_level": {
+      "type": "integer"
+     },
+     "incident_id": {
+      "type": [
+       "integer",
+       "null"
+      ]
+     },
+     "overdue": {
+      "type": "boolean"
+     },
+     "fix_group": {
+      "type": "string",
+      "description": "The fix (upgrade) this finding is part of."
+     },
+     "priority_policy_version": {
+      "type": "string",
+      "description": "The version of the risk policy that produced priority, priority_score, priority_factors and sos."
+     },
+     "regressed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the issue last came back after it was fixed."
+     },
+     "reachability": {
+      "type": "string",
+      "description": "Whether the vulnerable code can run: unknown, reachable, not_imported or not_running.",
+      "examples": [
+       "not_imported"
+      ]
+     },
+     "reachability_evidence": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "What the reachability status is based on; empty when it is unknown."
+     },
+     "until_fix": {
+      "type": "boolean",
+      "description": "Snoozed or ignored until a free fixed version exists."
+     },
+     "ignore_reason": {
+      "type": "string",
+      "description": "accepted_risk, false_positive, mitigated or no_fix.",
+      "examples": [
+       "accepted_risk",
+       "false_positive",
+       "mitigated",
+       "no_fix",
+       ""
+      ]
+     },
+     "exception_id": {
+      "type": [
+       "integer",
+       "null"
+      ],
+      "description": "The ignore rule that set or last set the state."
+     },
+     "display_state": {
+      "type": "string",
+      "description": "The state the dashboard shows.",
+      "examples": [
+       "new",
+       "to_do",
+       "in_progress",
+       "fixed",
+       "regressed",
+       "snoozed",
+       "accepted"
+      ]
+     },
+     "second_check": {
+      "type": "string",
+      "description": "Result of the independent second check: agreed, disagreed or could_not_check; empty when none. A disagreement asks a person to look; it changes nothing.",
+      "examples": [
+       "agreed",
+       "disagreed",
+       "could_not_check",
+       ""
+      ]
+     },
+     "second_check_reason": {
+      "type": "string",
+      "description": "What the second check found."
+     },
+     "resolution_kind": {
+      "type": "string",
+      "description": "Why it closed; empty while open.",
+      "examples": [
+       "remediated",
+       "removed",
+       "superseded",
+       "advisory_withdrawn",
+       "advisory_changed",
+       "not_evaluated",
+       "other",
+       ""
+      ]
+     },
+     "resolution_detail": {
+      "description": "The facts behind resolution_kind (JSON: advisories, source, withdrawn_at, version, plan_id, successor)."
+     },
+     "epss": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "FIRST's probability (0 to 1) that the CVE is exploited in the next 30 days; null when there is no score.",
+      "examples": [
+       0.94
+      ]
+     },
+     "epss_percentile": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "The score's rank among all scored CVEs (0 to 1)."
+     },
+     "epss_date": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "The day the EPSS score is from."
+     },
+     "epss_model_version": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "epss_cve": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "description": "The CVE the EPSS score is for (the highest-scored of the finding's CVEs)."
+     },
+     "as_of": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "For an asset scanned once: the scan's date, which the finding is true as of. Null for assets that report regularly."
+     },
+     "vex": {
+      "oneOf": [
+       {
+        "$ref": "#/components/schemas/FindingVEX"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "description": "The latest imported VEX statement about this component version and vulnerability; null when none."
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "key",
+     "inventory_id",
+     "asset_id",
+     "asset_name",
+     "asset_kind",
+     "environment",
+     "component_id",
+     "component_name",
+     "component_type",
+     "version",
+     "location",
+     "direct",
+     "status",
+     "verification",
+     "severity",
+     "score",
+     "title",
+     "fixed_version",
+     "sources",
+     "evidence",
+     "first_seen",
+     "last_seen",
+     "resolved_at",
+     "resolution",
+     "known_exploited",
+     "state",
+     "priority",
+     "priority_score",
+     "priority_factors",
+     "sos",
+     "sos_rule",
+     "assignee_user_id",
+     "assignee_email",
+     "assignee_team_id",
+     "assignee_team",
+     "ack_due",
+     "fix_due",
+     "acknowledged_at",
+     "suppressed_until",
+     "state_reason",
+     "mitigation",
+     "escalation_level",
+     "incident_id",
+     "overdue",
+     "fix_group",
+     "priority_policy_version",
+     "regressed_at",
+     "until_fix",
+     "ignore_reason",
+     "exception_id",
+     "display_state",
+     "second_check",
+     "second_check_reason",
+     "resolution_kind",
+     "resolution_detail",
+     "epss",
+     "epss_percentile",
+     "epss_date",
+     "epss_model_version",
+     "epss_cve",
+     "as_of",
+     "vex"
+    ]
+   },
+   "Advisory": {
+    "type": "object",
+    "description": "One advisory record from a feed (internal/store.Advisory).",
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "The record's ID in its feed.",
+      "examples": [
+       "GHSA-f82v-jwr5-mffw"
+      ]
+     },
+     "feed": {
+      "type": "string",
+      "examples": [
+       "osv:npm"
+      ]
+     },
+     "group_key": {
+      "type": "string",
+      "description": "The CVE (or other ID) the record's aliases share; findings are keyed by it.",
+      "examples": [
+       "CVE-2025-29927"
+      ]
+     },
+     "aliases": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "CVE-2025-29927"
+       ]
+      ]
+     },
+     "summary": {
+      "type": "string",
+      "examples": [
+       "Authorization Bypass in Next.js Middleware"
+      ]
+     },
+     "severity": {
+      "type": "string",
+      "description": "critical, high, medium, low or unknown.",
+      "examples": [
+       "critical"
+      ]
+     },
+     "score": {
+      "type": [
+       "number",
+       "null"
+      ],
+      "description": "CVSS base score; null when the record has none.",
+      "examples": [
+       9.1
+      ]
+     },
+     "vector": {
+      "type": "string",
+      "examples": [
+       "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N"
+      ]
+     },
+     "severity_source": {
+      "type": "string",
+      "description": "Where the severity came from.",
+      "examples": [
+       "cvss_v3"
+      ]
+     },
+     "published": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     },
+     "modified": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "withdrawn": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "Set when the feed withdrew the record."
+     },
+     "references": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "url": {
+         "type": "string"
+        },
+        "type": {
+         "type": "string"
+        }
+       }
+      },
+      "description": "Links as the feed gives them.",
+      "examples": [
+       [
+        {
+         "url": "https://nvd.nist.gov/vuln/detail/CVE-2025-29927",
+         "type": "ADVISORY"
+        }
+       ]
+      ]
+     },
+     "known_exploited": {
+      "type": "boolean",
+      "description": "Listed in CISA's Known Exploited Vulnerabilities catalogue."
+     },
+     "fetched_at": {
+      "type": "string",
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "id",
+     "feed",
+     "group_key",
+     "aliases",
+     "summary",
+     "severity",
+     "score",
+     "vector",
+     "severity_source",
+     "published",
+     "modified",
+     "withdrawn",
+     "references",
+     "known_exploited",
+     "fetched_at"
+    ]
+   },
+   "WhyInstalled": {
+    "type": "object",
+    "description": "The version evidence: what was observed, where and when (internal/why.Installed).",
+    "properties": {
+     "version": {
+      "type": "string",
+      "examples": [
+       "13.4.0"
+      ]
+     },
+     "compared": {
+      "type": "string",
+      "description": "The version compared, when it was normalised first."
+     },
+     "from": {
+      "type": "string",
+      "description": "File, package database or collector the version was read from.",
+      "examples": [
+       "/srv/shop/node_modules/next@13.4.0"
+      ]
+     },
+     "collector": {
+      "type": "string",
+      "examples": [
+       "linux-apps"
+      ]
+     },
+     "confidence": {
+      "type": "string",
+      "examples": [
+       "confirmed"
+      ]
+     },
+     "observed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time"
+     }
+    },
+    "required": [
+     "version",
+     "from",
+     "collector",
+     "confidence",
+     "observed_at"
+    ]
+   },
+   "WhySource": {
+    "type": "object",
+    "description": "Where the claim comes from and how fresh it is (internal/why.Source).",
+    "properties": {
+     "record": {
+      "type": "string",
+      "description": "The advisory record that decided.",
+      "examples": [
+       "GHSA-f82v-jwr5-mffw"
+      ]
+     },
+     "ecosystem": {
+      "type": "string",
+      "examples": [
+       "npm"
+      ]
+     },
+     "feed": {
+      "type": "string",
+      "examples": [
+       "osv:npm"
+      ]
+     },
+     "refreshed_at": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "When the feed last synced; null when it never has."
+     },
+     "stale": {
+      "type": "boolean",
+      "description": "The feed has not synced for longer than expected."
+     }
+    },
+    "required": [
+     "feed",
+     "refreshed_at",
+     "stale"
+    ]
+   },
+   "WhyRule": {
+    "type": "object",
+    "description": "The matching rule that was applied (internal/why.Rule).",
+    "properties": {
+     "kind": {
+      "type": "string",
+      "description": "range, last_affected, no_fix_listed or listed_version for advisories; exact_cycle, version_prefix, package_name or windows_build for end of life.",
+      "examples": [
+       "range"
+      ]
+     },
+     "range": {
+      "type": "string",
+      "examples": [
+       ">= 13.0.0, < 13.5.9"
+      ]
+     },
+     "comparator": {
+      "type": "string",
+      "examples": [
+       "semver"
+      ]
+     },
+     "text": {
+      "type": "string",
+      "examples": [
+       "in range >= 13.0.0, < 13.5.9, compared with SemVer rules"
+      ]
+     },
+     "ambiguous": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "What made the matcher ask for a second check.",
+      "examples": [
+       [
+        "sources_disagree"
+       ]
+      ]
+     }
+    },
+    "required": [
+     "kind",
+     "text"
+    ]
+   },
+   "Explanation": {
+    "type": "object",
+    "description": "Why a finding matched and how sure that is (internal/why.Explanation). The finding page leads with `sentence`.",
+    "properties": {
+     "sentence": {
+      "type": "string",
+      "examples": [
+       "Installed 13.4.0 (from /srv/shop/node_modules/next@13.4.0, seen 28 min ago) is in the affected range >= 13.0.0, < 13.5.9 of GHSA-f82v-jwr5-mffw (osv:npm, refreshed 27 min ago), compared with SemVer rules; fixed in 13.5.9."
+      ]
+     },
+     "type": {
+      "type": "string",
+      "description": "package_advisory, os_package, container_image or end_of_life.",
+      "examples": [
+       "package_advisory"
+      ]
+     },
+     "installed": {
+      "$ref": "#/components/schemas/WhyInstalled"
+     },
+     "source": {
+      "$ref": "#/components/schemas/WhySource"
+     },
+     "rule": {
+      "$ref": "#/components/schemas/WhyRule"
+     },
+     "fixed_version": {
+      "type": "string",
+      "examples": [
+       "13.5.9"
+      ]
+     },
+     "evidence_state": {
+      "type": "string",
+      "description": "confirmed, needs_validation, stale or rejected (docs/verification.md, \"Evidence states\").",
+      "examples": [
+       "confirmed"
+      ]
+     },
+     "evidence_state_text": {
+      "type": "string",
+      "description": "What the evidence state means for this finding."
+     },
+     "as_of": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "The date of the only scan of an asset scanned once."
+     },
+     "as_of_text": {
+      "type": "string"
+     },
+     "missing_information": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "What exactly would resolve a finding that is not confirmed; empty when confirmed."
+     },
+     "second_check": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "The independent second check: result (agreed, disagreed …), reason, differences, what it derived (independent) and checked_at; null before it has run."
+     },
+     "needs_review": {
+      "type": "boolean",
+      "description": "The second check disagrees. It never lowers priority; it asks a person to look."
+     },
+     "second_check_text": {
+      "type": "string",
+      "examples": [
+       "The independent second check re-derived this from the raw advisory record and the raw observed version, and agreed."
+      ]
+     },
+     "reachability": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "Whether the vulnerable code can run and what that did to the priority: status (unknown, reachable, not_imported or not_running), evidence, lowered, kept and text; null when not assessed."
+     },
+     "epss": {
+      "type": "object",
+      "description": "FIRST's exploit prediction for the finding's CVE and what it does to the priority: cve, score, percentile, date, model_version, threshold, release_below, points, counted, text. Absent for findings without a CVE."
+     },
+     "package": {
+      "type": "object",
+      "description": "For application packages: ecosystem, name, direct (null when unknown) and location."
+     },
+     "os_package": {
+      "type": "object",
+      "description": "For operating-system packages: release, source_package, backport, subscription and source_fix."
+     },
+     "container_image": {
+      "type": "object",
+      "description": "For findings in a container image: image and inner_type (package_advisory or os_package)."
+     },
+     "end_of_life": {
+      "type": "object",
+      "description": "For end-of-life findings: product, cycle, eol_date and latest_in_cycle."
+     }
+    },
+    "required": [
+     "sentence",
+     "type",
+     "installed",
+     "source",
+     "rule",
+     "evidence_state",
+     "evidence_state_text",
+     "missing_information",
+     "second_check",
+     "needs_review",
+     "second_check_text"
+    ]
+   },
+   "SupportLine": {
+    "type": "object",
+    "description": "The support status of one release line (internal/upgrade.Line).",
+    "properties": {
+     "product": {
+      "type": "string",
+      "examples": [
+       "nextjs"
+      ]
+     },
+     "cycle": {
+      "type": "string",
+      "examples": [
+       "15"
+      ]
+     },
+     "status": {
+      "type": "string",
+      "description": "supported, security_only or end_of_life.",
+      "examples": [
+       "supported"
+      ]
+     },
+     "support_until": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "eol_date": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "latest": {
+      "type": "string",
+      "examples": [
+       "15.5.29"
+      ]
+     },
+     "link": {
+      "type": "string",
+      "examples": [
+       "https://endoflife.date/nextjs"
+      ]
+     }
+    },
+    "required": [
+     "product",
+     "cycle",
+     "status"
+    ]
+   },
+   "UpgradeRecommendation": {
+    "type": "object",
+    "description": "The version to move to, from stored release data (internal/upgrade.Recommendation).",
+    "properties": {
+     "purl_type": {
+      "type": "string",
+      "examples": [
+       "npm"
+      ]
+     },
+     "installed_version": {
+      "type": "string",
+      "examples": [
+       "13.4.0"
+      ]
+     },
+     "minimum_fixed_version": {
+      "type": "string",
+      "description": "The lowest version that fixes every issue it can.",
+      "examples": [
+       "15.5.28"
+      ]
+     },
+     "recommended_version": {
+      "type": "string",
+      "examples": [
+       "15.5.29"
+      ]
+     },
+     "basis": {
+      "type": "string",
+      "description": "How the recommendation was chosen.",
+      "examples": [
+       "latest_in_line"
+      ]
+     },
+     "change_type": {
+      "type": "string",
+      "description": "patch, minor, major or distro.",
+      "examples": [
+       "major"
+      ]
+     },
+     "requires_major": {
+      "type": "boolean"
+     },
+     "requires_subscription": {
+      "type": "string",
+      "description": "A paid channel the fix needs (Ubuntu Pro, SUSE LTSS)."
+     },
+     "source": {
+      "type": "object",
+      "description": "For a Debian or Ubuntu binary package built from a source package with another version: package, source_package, installed_source_version and fixed_source_version. Upgrade the binary package to a build from that source version; recommended_version is then empty."
+     },
+     "release_data": {
+      "type": "string",
+      "description": "Whether release data was available for the package.",
+      "examples": [
+       "available"
+      ]
+     },
+     "release_source": {
+      "type": "string",
+      "examples": [
+       "releases:npm"
+      ]
+     },
+     "release_checked_at": {
+      "type": "string",
+      "format": "date-time"
+     },
+     "latest_stable": {
+      "type": "string",
+      "examples": [
+       "16.4.6"
+      ]
+     },
+     "latest_in_line": {
+      "type": "string",
+      "description": "The newest stable release in the recommended version's major line.",
+      "examples": [
+       "15.5.29"
+      ]
+     },
+     "recommended_yanked": {
+      "type": "boolean",
+      "description": "The registry withdrew (yanked, retracted or unlisted) the recommended version."
+     },
+     "minimum_fixed_yanked": {
+      "type": "boolean"
+     },
+     "yanked_reason": {
+      "type": "string"
+     },
+     "installed_yanked": {
+      "type": "boolean"
+     },
+     "deprecated": {
+      "type": "string",
+      "description": "The maintainers' deprecation notice for the package."
+     },
+     "minimum_fixed_not_in_release_data": {
+      "type": "boolean"
+     },
+     "lifecycle": {
+      "$ref": "#/components/schemas/SupportLine"
+     },
+     "target_lifecycle": {
+      "$ref": "#/components/schemas/SupportLine"
+     },
+     "supported_line": {
+      "$ref": "#/components/schemas/SupportLine"
+     },
+     "fixes": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Finding keys the recommended version resolves.",
+      "examples": [
+       [
+        "CVE-2025-29927",
+        "nextjs:13"
+       ]
+      ]
+     },
+     "unfixed": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Keys it does not resolve (no fixed version, or a line that stays end of life)."
+     },
+     "rationale": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "15.5.29 is the newest stable release in the 15.x line and is at or above the minimum fixed version 15.5.28."
+       ]
+      ]
+     },
+     "open_findings": {
+      "type": "integer",
+      "examples": [
+       37
+      ]
+     }
+    },
+    "required": [
+     "purl_type",
+     "installed_version",
+     "basis",
+     "requires_major",
+     "release_data",
+     "recommended_yanked",
+     "minimum_fixed_yanked",
+     "installed_yanked",
+     "minimum_fixed_not_in_release_data",
+     "fixes",
+     "unfixed",
+     "rationale",
+     "open_findings"
+    ]
+   },
+   "FindingDetail": {
+    "type": "object",
+    "description": "One finding with why it matched, its advisories and, while it is open, its upgrade recommendation.",
+    "properties": {
+     "finding": {
+      "$ref": "#/components/schemas/Finding"
+     },
+     "why": {
+      "$ref": "#/components/schemas/Explanation"
+     },
+     "advisories": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Advisory"
+      },
+      "description": "Vulnerabilities only: the advisories that matched this component."
+     },
+     "related_advisories": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/Advisory"
+      },
+      "description": "Vulnerabilities only: other advisories sharing the CVE (for example the same issue in another package)."
+     },
+     "upgrade": {
+      "$ref": "#/components/schemas/UpgradeRecommendation",
+      "description": "Open findings only."
+     }
+    },
+    "required": [
+     "finding",
+     "why"
+    ]
+   },
+   "FixPlace": {
+    "type": "object",
+    "description": "One asset a fix applies to, when one fix is listed for several (internal/fixplan.Place).",
+    "properties": {
+     "group_id": {
+      "type": "string",
+      "description": "The asset's own fix group.",
+      "examples": [
+       "8:package_upgrade:40"
+      ]
+     },
+     "asset_id": {
+      "type": "integer",
+      "examples": [
+       8
+      ]
+     },
+     "asset_name": {
+      "type": "string",
+      "examples": [
+       "demo-wiki on demo-tools-1"
+      ]
+     },
+     "asset_kind": {
+      "type": "string",
+      "examples": [
+       "application"
+      ]
+     },
+     "app_dir": {
+      "type": "string",
+      "examples": [
+       "/srv/wiki"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "finding_count": {
+      "type": "integer",
+      "examples": [
+       53
+      ]
+     }
+    },
+    "required": [
+     "group_id",
+     "asset_id",
+     "asset_name",
+     "asset_kind",
+     "environment",
+     "finding_count"
+    ]
+   },
+   "FixGroup": {
+    "type": "object",
+    "description": "One fix: an action and the findings it resolves (internal/fixplan.Group). Grouped by fix (`group_by=fix`), the same change in several places is one item listing its `places`.",
+    "properties": {
+     "id": {
+      "type": "string",
+      "description": "Asset ID, kind and a number; percent-encode it in paths.",
+      "examples": [
+       "4:package_upgrade:11"
+      ]
+     },
+     "kind": {
+      "type": "string",
+      "description": "security_updates, windows_update, old_kernels, package_upgrade, program_update, end_of_life, release_upgrade or no_fix.",
+      "examples": [
+       "package_upgrade"
+      ]
+     },
+     "title": {
+      "type": "string",
+      "examples": [
+       "Upgrade lodash 4.17.20 → 4.18.1"
+      ]
+     },
+     "action": {
+      "type": "string",
+      "description": "What to do, in a sentence or a command.",
+      "examples": [
+       "Update lodash to 4.18.1, the newest stable release in its line, in the lockfile and redeploy. Any version from 4.18.0 fixes these issues."
+      ]
+     },
+     "asset_id": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "asset_name": {
+      "type": "string",
+      "examples": [
+       "demo-shop on demo-web-1"
+      ]
+     },
+     "asset_kind": {
+      "type": "string",
+      "examples": [
+       "application"
+      ]
+     },
+     "environment": {
+      "type": "string",
+      "examples": [
+       "production"
+      ]
+     },
+     "app_dir": {
+      "type": "string",
+      "examples": [
+       "/srv/shop"
+      ]
+     },
+     "fix_key": {
+      "type": "string",
+      "description": "The same for groups that make the same change in different places.",
+      "examples": [
+       "package_upgrade:npm:lodash:4.17.20>4.18.0"
+      ]
+     },
+     "component": {
+      "type": "string",
+      "examples": [
+       "lodash"
+      ]
+     },
+     "from_version": {
+      "type": "string",
+      "examples": [
+       "4.17.20"
+      ]
+     },
+     "to_version": {
+      "type": "string",
+      "description": "The minimum fixed version.",
+      "examples": [
+       "4.18.0"
+      ]
+     },
+     "packages": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "lodash"
+       ]
+      ]
+     },
+     "package_count": {
+      "type": "integer",
+      "examples": [
+       1
+      ]
+     },
+     "finding_count": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     },
+     "unique_issues": {
+      "type": "integer",
+      "description": "Distinct CVE or advisory keys.",
+      "examples": [
+       4
+      ]
+     },
+     "by_priority": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "description": "Findings per priority.",
+      "examples": [
+       {
+        "P1": 2,
+        "P2": 2
+       }
+      ]
+     },
+     "by_severity": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "description": "Findings per severity.",
+      "examples": [
+       {
+        "high": 2,
+        "medium": 2
+       }
+      ]
+     },
+     "top_priority": {
+      "type": "string",
+      "examples": [
+       "P1"
+      ]
+     },
+     "sos": {
+      "type": "boolean",
+      "description": "An issue of this fix is an SOS (drop everything)."
+     },
+     "known_exploited": {
+      "type": "integer",
+      "description": "Findings known to be exploited.",
+      "examples": [
+       0
+      ]
+     },
+     "needs": {
+      "type": "string",
+      "description": "A paid channel the fix needs (ubuntu-pro, SUSE LTSS)."
+     },
+     "effort": {
+      "type": "string",
+      "description": "low, medium or high.",
+      "examples": [
+       "medium"
+      ]
+     },
+     "note": {
+      "type": "string"
+     },
+     "recommended_version": {
+      "type": "string",
+      "examples": [
+       "4.18.1"
+      ]
+     },
+     "target_version": {
+      "type": "string",
+      "description": "The version the title names: the recommended version when it is in the minimum fix's major line, otherwise the minimum fixed version.",
+      "examples": [
+       "4.18.1"
+      ]
+     },
+     "change_type": {
+      "type": "string",
+      "examples": [
+       "minor"
+      ]
+     },
+     "requires_major": {
+      "type": "boolean"
+     },
+     "recommended_yanked": {
+      "type": "boolean"
+     },
+     "rationale": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "examples": [
+       [
+        "4.18.1 is the newest stable release in the 4.x line and is at or above the minimum fixed version 4.18.0."
+       ]
+      ]
+     },
+     "reboot": {
+      "type": "boolean",
+      "description": "The change takes effect only after a restart (a Windows cumulative update, or OS updates that include the kernel)."
+     },
+     "no_fix_advice": {
+      "type": "object",
+      "description": "For a fix with no fixed version: per-package advice in `sections` (kind, title, issues, items) and, for packages that come with an application, `bundled` (app, text, commands)."
+     },
+     "places": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FixPlace"
+      },
+      "description": "Every asset the fix applies to, when groups are merged by fix_key; absent for one asset's group."
+     }
+    },
+    "required": [
+     "id",
+     "kind",
+     "title",
+     "action",
+     "asset_id",
+     "asset_name",
+     "asset_kind",
+     "environment",
+     "fix_key",
+     "packages",
+     "package_count",
+     "finding_count",
+     "unique_issues",
+     "by_priority",
+     "by_severity",
+     "top_priority",
+     "sos",
+     "known_exploited",
+     "effort"
+    ]
+   },
+   "FixGroupList": {
+    "type": "object",
+    "description": "One page of results: the items, the number of matches and the page asked for.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FixGroup"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FixOwner": {
+    "type": "object",
+    "description": "Who a fix's open issues are assigned to (internal/store.OwnerCount).",
+    "properties": {
+     "user_email": {
+      "type": "string",
+      "description": "Empty when assigned to a team or no one.",
+      "examples": [
+       ""
+      ]
+     },
+     "team_name": {
+      "type": "string",
+      "examples": [
+       "Development"
+      ]
+     },
+     "count": {
+      "type": "integer",
+      "examples": [
+       4
+      ]
+     }
+    },
+    "required": [
+     "user_email",
+     "team_name",
+     "count"
+    ]
+   },
+   "FixGroupDetail": {
+    "type": "object",
+    "description": "One fix with a page of its findings and who owns them.",
+    "properties": {
+     "group": {
+      "$ref": "#/components/schemas/FixGroup"
+     },
+     "findings": {
+      "$ref": "#/components/schemas/FindingList"
+     },
+     "owners": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FixOwner"
+      }
+     }
+    },
+    "required": [
+     "group",
+     "findings",
+     "owners"
+    ]
+   },
+   "FixWork": {
+    "type": "object",
+    "description": "Where the work on one fix stands, from its open issues (internal/store.FixWork).",
+    "properties": {
+     "group_id": {
+      "type": "string",
+      "examples": [
+       "4:package_upgrade:11"
+      ]
+     },
+     "active": {
+      "type": "integer",
+      "description": "Open issues that are not snoozed or accepted.",
+      "examples": [
+       4
+      ]
+     },
+     "due": {
+      "type": [
+       "string",
+       "null"
+      ],
+      "format": "date-time",
+      "description": "The earliest fix deadline of an active issue; null when none."
+     },
+     "overdue": {
+      "type": "integer",
+      "examples": [
+       0
+      ]
+     },
+     "in_progress": {
+      "type": "integer",
+      "description": "Applied, waiting for a check.",
+      "examples": [
+       0
+      ]
+     },
+     "regressed": {
+      "type": "integer",
+      "examples": [
+       0
+      ]
+     },
+     "owners": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "Users' emails or teams' names, most issues first, at most five.",
+      "examples": [
+       [
+        "Development"
+       ]
+      ]
+     },
+     "unassigned": {
+      "type": "integer",
+      "examples": [
+       0
+      ]
+     },
+     "mine": {
+      "type": "integer",
+      "description": "Open issues assigned to the caller.",
+      "examples": [
+       0
+      ]
+     },
+     "awaiting_approval": {
+      "type": "integer",
+      "description": "Open issues in a pending request to ignore them.",
+      "examples": [
+       0
+      ]
+     }
+    },
+    "required": [
+     "group_id",
+     "active",
+     "due",
+     "overdue",
+     "in_progress",
+     "regressed",
+     "owners",
+     "unassigned",
+     "mine",
+     "awaiting_approval"
+    ]
+   },
+   "FixWorkList": {
+    "type": "object",
+    "description": "Every fix asked for that has open issues the caller can see.",
+    "required": [
+     "items",
+     "total"
+    ],
+    "properties": {
+     "items": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FixWork"
+      }
+     },
+     "total": {
+      "type": "integer",
+      "description": "Matches in all pages.",
+      "examples": [
+       42
+      ]
+     },
+     "limit": {
+      "type": "integer",
+      "description": "Page size (default 100, at most 500); absent when 0."
+     },
+     "offset": {
+      "type": "integer",
+      "description": "Items skipped; absent when 0."
+     }
+    }
+   },
+   "FixPlanSummary": {
+    "type": "object",
+    "description": "Counts of the action plan, with the same fix in several places counted once when grouped by fix (internal/store.FixPlanSummary), and the focus view.",
+    "properties": {
+     "groups": {
+      "type": "integer",
+      "examples": [
+       24
+      ]
+     },
+     "findings": {
+      "type": "integer",
+      "examples": [
+       812
+      ]
+     },
+     "by_kind": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "object",
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "description": "groups and findings"
+      },
+      "description": "Per fix kind: groups and findings.",
+      "examples": [
+       {
+        "security_updates": {
+         "groups": 4,
+         "findings": 610
+        }
+       }
+      ]
+     },
+     "sos": {
+      "type": "integer",
+      "description": "Fixes with an SOS issue."
+     },
+     "sos_findings": {
+      "type": "integer"
+     },
+     "unique_issues": {
+      "type": "integer",
+      "description": "Distinct keys across all fixes."
+     },
+     "fixable_findings": {
+      "type": "integer",
+      "description": "Findings a routine update resolves today (security updates, kernel cleanup, package upgrades)."
+     },
+     "by_priority": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      },
+      "description": "Fixes by their most urgent issue.",
+      "examples": [
+       {
+        "P1": 6,
+        "P2": 11
+       }
+      ]
+     },
+     "overdue": {
+      "type": "integer",
+      "description": "Fixes with an active issue past its fix deadline."
+     },
+     "exploited": {
+      "type": "integer",
+      "description": "Fixes with a known exploited issue."
+     },
+     "urgent_findings": {
+      "type": "integer",
+      "description": "P1 and P2 findings of all the fixes."
+     },
+     "focus": {
+      "$ref": "#/components/schemas/FixFocus"
+     }
+    },
+    "required": [
+     "groups",
+     "findings",
+     "by_kind",
+     "sos",
+     "sos_findings",
+     "unique_issues",
+     "fixable_findings",
+     "by_priority",
+     "overdue",
+     "exploited",
+     "urgent_findings",
+     "focus"
+    ]
+   },
+   "FixGrouping": {
+    "type": "object",
+    "description": "How fix lists show the same fix in several places.",
+    "properties": {
+     "fix_grouping": {
+      "type": "string",
+      "description": "fix: one entry per fix, listing its places (the default); asset: one entry per asset and fix.",
+      "examples": [
+       "fix",
+       "asset"
+      ],
+      "enum": [
+       "fix",
+       "asset"
+      ]
+     }
+    },
+    "required": [
+     "fix_grouping"
+    ]
+   },
+   "FixApplied": {
+    "type": "object",
+    "description": "The result of \"I applied this\".",
+    "properties": {
+     "updated": {
+      "type": "integer",
+      "description": "Issues moved to in progress (applied, waiting for a check)."
+     },
+     "check": {
+      "type": "object",
+      "description": "The check requested to confirm the fix (as GET /checks lists it)."
+     }
+    },
+    "required": [
+     "updated",
+     "check"
+    ]
+   },
+   "FocusAsset": {
+    "type": "object",
+    "description": "An asset with fixes in focus.",
+    "properties": {
+     "asset_id": {
+      "type": "integer"
+     },
+     "asset_name": {
+      "type": "string"
+     },
+     "groups": {
+      "type": "integer"
+     },
+     "findings": {
+      "type": "integer"
+     }
+    },
+    "required": [
+     "asset_id",
+     "asset_name",
+     "groups",
+     "findings"
+    ]
+   },
+   "FixFocus": {
+    "type": "object",
+    "description": "How many fixes need a person now, why the others are left out of that view, and which assets the focus fixes are on (internal/store.FixFocus).",
+    "properties": {
+     "groups": {
+      "type": "integer"
+     },
+     "findings": {
+      "type": "integer"
+     },
+     "hidden": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "object",
+       "additionalProperties": {
+        "type": "integer"
+       },
+       "description": "groups and findings"
+      },
+      "description": "Fixes and findings per bucket other than focus."
+     },
+     "assets": {
+      "type": "array",
+      "items": {
+       "$ref": "#/components/schemas/FocusAsset"
+      }
+     }
+    },
+    "required": [
+     "groups",
+     "findings",
+     "hidden",
+     "assets"
+    ]
    }
   },
   "responses": {
