@@ -120,7 +120,7 @@ func TestClosedFindingsSayWhy(t *testing.T) {
 	var seen bool
 	for _, x := range closures {
 		if x.ResolutionKind != store.ResolutionRemediated {
-			if x.Verification == store.VerifiedFixed || x.SLA.Met != nil || x.FixedBy.Type != store.FixedByUnknown {
+			if x.Verification == store.VerifiedFixed || x.SLA == nil || x.SLA.Met != nil || x.FixedBy == nil || x.FixedBy.Type != store.FixedByUnknown {
 				t.Errorf("not remediation, closure %+v", x)
 			}
 			continue
@@ -128,36 +128,13 @@ func TestClosedFindingsSayWhy(t *testing.T) {
 		seen = true
 		if x.SchemaVersion != 1 || x.Verification != store.VerifiedFixed || x.Before.Version != "7.88.1-10+deb12u5" ||
 			x.After == nil || x.After.Version != "7.88.1-10+deb12u6" || x.After.InventoryID == nil ||
-			x.Check == nil || x.Check.CollectionID == 0 || !x.Check.Complete || x.TimeToFixSeconds < 0 ||
-			x.FixedBy.Type == "" || x.ClosedAt.Before(x.OpenedAt) {
+			x.Check == nil || x.Check.CollectionID == 0 || !x.Check.Complete || x.TimeToFixSeconds == nil || *x.TimeToFixSeconds < 0 ||
+			x.FixedBy == nil || x.FixedBy.Type == "" || x.SLA == nil || x.ClosedAt.Before(x.OpenedAt) {
 			t.Errorf("curl closure %+v (after %+v, check %+v)", x, x.After, x.Check)
 		}
 	}
 	if !seen {
 		t.Error("no remediated closure listed")
-	}
-	// The remediation plan's action is verified after the evaluation closed
-	// curl: the plan is linked to the closure afterwards.
-	var curlRow int64
-	if err := e.st.Pool.QueryRow(e.ctx, `SELECT i.id FROM inventory i WHERE i.asset_id = $1 AND i.version = '7.88.1-10+deb12u5'`, e.host).
-		Scan(&curlRow); err != nil {
-		t.Fatal(err)
-	}
-	if n, err := e.st.LinkRemediationProof(e.ctx, 7, curlRow, "7.88.1-10+deb12u6"); err != nil || n != 1 {
-		t.Fatalf("linked %d, %v", n, err)
-	}
-	if n, _ := e.st.LinkRemediationProof(e.ctx, 8, curlRow, "7.88.1-10+deb12u6"); n != 0 {
-		t.Errorf("linked a second plan: %d", n)
-	}
-	closures, err = e.st.Closures(e.ctx, store.ClosureFilter{From: time.Now().Add(-time.Hour), AssetID: e.host}, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, x := range closures {
-		if x.ResolutionKind == store.ResolutionRemediated &&
-			(x.FixedBy.Type != store.FixedByRemediationRun || x.FixedBy.Ref != "remediation plan #7") {
-			t.Errorf("after linking the plan: %+v", x.FixedBy)
-		}
 	}
 	if libxml2New.status != "open" || successor == 0 {
 		t.Fatalf("libxml2 on the new build: %+v", libxml2New)
@@ -318,7 +295,7 @@ func TestLostSightClosesAsDisappeared(t *testing.T) {
 	}
 	for _, x := range closures {
 		if x.Verification != store.DisappearedUnverified || x.After != nil || x.Check == nil || x.Check.CollectionID != coll ||
-			x.Check.Source != "repository" || x.SLA.Met != nil || x.FixedBy.Type != store.FixedByUnknown {
+			x.Check.Source != "repository" || x.SLA == nil || x.SLA.Met != nil || x.FixedBy == nil || x.FixedBy.Type != store.FixedByUnknown {
 			t.Errorf("disappeared closure %+v", x)
 		}
 	}

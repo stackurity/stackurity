@@ -87,7 +87,7 @@ for (const width of [1280, 390]) {
   await page.getByText("Disappeared (not verified)").first().waitFor();
   const warn = await page.locator(".alert-warn").first().innerText();
   ok(warn.includes("Disappeared (not verified)") && warn.includes("not counted as remediation"), `${tag} a disappeared finding says it was not verified and is not counted`);
-  ok(/Last seen by\s*a repository scan/.test(warn), `${tag} it says which check last saw the asset`);
+  ok(/Lost sight on\s*.*by a repository scan/.test(warn), `${tag} it says when Stackurity lost sight of the asset`);
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${tag} no horizontal scroll on a disappeared finding`);
   await ctx.close();
 }

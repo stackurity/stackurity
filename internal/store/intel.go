@@ -539,7 +539,9 @@ func (s *Store) ResolveRemovedFindings(ctx context.Context) (int64, error) {
 		  -- removal time (Ingest, removeGone and the integration and
 		  -- registry paths all use one time for both).
 		  LEFT JOIN LATERAL (SELECT c.id, c.method, c.observed_at, c.absence_unverified FROM collections c
-		    WHERE c.asset_id = f.asset_id AND c.observed_at = fi.removed_at ORDER BY c.id DESC LIMIT 1) pc ON true
+		    WHERE c.asset_id = f.asset_id AND c.observed_at = fi.removed_at
+		    -- Only a complete (or absence-proving) collection removes rows.
+		    ORDER BY (c.complete OR c.proves_absence) DESC, c.id DESC LIMIT 1) pc ON true
 		  LEFT JOIN LATERAL (SELECT ra.plan_id, ra.to_version FROM remediation_actions ra
 		    WHERE ra.inventory_id = f.inventory_id AND ra.status = 'verified' ORDER BY ra.verified_at DESC LIMIT 1) ra ON true
 		  LEFT JOIN LATERAL (SELECT cur.id, cur.version FROM inventory cur

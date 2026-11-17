@@ -2030,11 +2030,14 @@ export interface Closure {
   before: { component: string; version: string; inventory_id: number; last_seen_at: string | null };
   after: { version: string; inventory_id: number | null } | null;
   check: { collection_id: number; source: string; observed_at: string; complete: boolean } | null;
-  fixed_by: { type: "remediation_run" | "pull_request" | "agent_report" | "manual" | "unknown"; ref: string; actor: string; approver: string; merged_at: string | null };
+  /** Fix loop (paid) only: absent without it. */
+  fixed_by?: { type: "remediation_run" | "pull_request" | "agent_report" | "manual" | "unknown"; ref: string; actor: string; approver: string; merged_at: string | null };
   opened_at: string;
   closed_at: string;
-  time_to_fix_seconds: number;
-  sla: { policy_days: number | null; due_at: string | null; met: boolean | null };
+  /** Fix loop (paid) only: absent without it. */
+  time_to_fix_seconds?: number;
+  /** Fix loop (paid) only: absent without it. */
+  sla?: { policy_days: number | null; due_at: string | null; met: boolean | null };
 }
 
 /** Findings that closed with nothing changed on the asset: not remediation. */

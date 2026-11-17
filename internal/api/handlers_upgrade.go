@@ -2,6 +2,7 @@ package api
 
 import (
 	"encoding/json"
+	"github.com/stackurity/stackurity/internal/license"
 	"net/http"
 	"net/url"
 	"sort"
@@ -215,8 +216,8 @@ func (s *Server) verifySince(w http.ResponseWriter, r *http.Request) {
 // findingClosure is the proof behind a closed finding: verified fixed,
 // verified removed, disappeared (not verified) or closed without
 // remediation, with the versions before and after, the collection that saw
-// it, who fixed it and its time to fix against the fix-by date. An open
-// finding has none (404).
+// it; with the fix loop (paid) also who fixed it and its time to fix
+// against the fix-by date. An open finding has none (404).
 func (s *Server) findingClosure(w http.ResponseWriter, r *http.Request) {
 	id, err := idParam(r, "id")
 	if err != nil {
@@ -251,7 +252,11 @@ func (s *Server) findingClosure(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, store.ErrNotFound)
 		return
 	}
-	writeJSON(w, 200, list[0])
+	c := list[0]
+	if !s.has(r, license.FixLoop) {
+		c.Free() // who fixed it, time to fix and SLA are the fix loop's
+	}
+	writeJSON(w, 200, c)
 }
 
 // outcomesReport measures remediation over the last `days` days (default

@@ -36,7 +36,9 @@ test("proof rows: versions before and after, the check that saw it, the plan", (
     ["Version before", "1.0"],
     ["Version after", "not installed"],
   ]);
-  assert.equal(proofRows("disappeared", { method: "repository", checked_at: "2026-11-12T10:00:00Z" })[0][0], "Last seen by");
+  const lost = proofRows("disappeared", { method: "repository", checked_at: "2026-11-12T10:00:00Z", collection_id: 43 })[0];
+  assert.equal(lost[0], "Lost sight on");
+  assert.match(lost[1], /\(collection #43\), by a repository scan$/);
   // Closed before proofs were recorded: nothing to show.
   assert.deepEqual(proofRows("remediated", { version: "2.0" }), [["Version after", "2.0"]]);
   assert.deepEqual(proofRows("remediated", null), []);

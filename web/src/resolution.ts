@@ -94,7 +94,9 @@ export function proofRows(kind: string | undefined, d: ResolutionDetail | null |
   if (kind === "removed") rows.push(["Version after", "not installed"]);
   if (d.method && d.checked_at) {
     const how = METHOD_TEXT[d.method] ?? d.method;
-    rows.push([kind === "disappeared" ? "Last seen by" : "Seen by", `${how}, ${shortDate(d.checked_at)}${d.collection_id ? ` (collection #${d.collection_id})` : ""}`]);
+    const when = `${shortDate(d.checked_at)}${d.collection_id ? ` (collection #${d.collection_id})` : ""}`;
+    if (kind === "disappeared") rows.push(["Lost sight on", `${when}, by ${how}`]);
+    else rows.push(["Seen by", `${how}, ${when}`]);
   }
   if (d.plan_id) rows.push(["Fixed by", `remediation plan #${d.plan_id}`]);
   return rows;

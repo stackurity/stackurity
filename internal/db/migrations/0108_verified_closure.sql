@@ -19,6 +19,10 @@ SELECT set_config('stackurity.scope', 'system', true);
 
 ALTER TABLE collections ADD COLUMN absence_unverified boolean NOT NULL DEFAULT false;
 
+-- ResolveRemovedFindings finds the collection that removed a row by its
+-- time.
+CREATE INDEX collections_asset_observed ON collections (asset_id, observed_at);
+
 -- Past collections of that kind: empty, absence-proving, and noted in
 -- coverage history with the reason those three paths write.
 UPDATE collections c SET absence_unverified = true
@@ -37,6 +41,10 @@ WHERE c.proves_absence AND c.observation_count = 0 AND EXISTS (SELECT 1 FROM cov
 WITH d AS (SELECT f.id, c.id AS collection_id, c.method, c.observed_at
   FROM findings f JOIN inventory i ON i.id = f.inventory_id
   JOIN collections c ON c.asset_id = f.asset_id AND c.absence_unverified AND c.observed_at = i.removed_at
+    -- Only a collection before the closure: a row that came back (Ingest
+    -- clears removed_at) and was later lost sight of was really removed
+    -- the first time.
+    AND f.resolved_at >= c.observed_at
   WHERE f.status = 'resolved' AND f.resolution_kind = 'removed')
 UPDATE findings f SET resolution_kind = 'disappeared',
   resolution = 'disappeared: Stackurity can no longer see this asset, so the fix was not verified',
@@ -44,6 +52,6 @@ UPDATE findings f SET resolution_kind = 'disappeared',
     'checked_at', d.observed_at, 'previous_resolution_kind', f.resolution_kind, 'previous_resolution', f.resolution)
 FROM d WHERE d.id = f.id;
 
-UPDATE finding_events e SET detail = e.detail || jsonb_build_object('resolution_kind', 'disappeared')
+UPDATE finding_events e SET note = f.resolution, detail = e.detail || jsonb_build_object('resolution_kind', 'disappeared')
 FROM findings f
 WHERE e.finding_id = f.id AND e.action = 'resolved' AND e.at = f.resolved_at AND f.resolution_kind = 'disappeared';

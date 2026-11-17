@@ -54,24 +54,26 @@ func Verification(kind string) string {
 }
 
 type Closure struct {
-	SchemaVersion    int            `json:"schema_version"`
-	FindingID        int64          `json:"finding_id"`
-	AssetID          int64          `json:"asset_id"`
-	AssetName        string         `json:"asset_name"`
-	Kind             string         `json:"kind"`
-	Key              string         `json:"key"`
-	Severity         string         `json:"severity"`
-	Priority         string         `json:"priority"`
-	ResolutionKind   string         `json:"resolution_kind"`
-	Verification     string         `json:"verification"`
-	Before           ClosureBefore  `json:"before"`
-	After            *ClosureAfter  `json:"after"`
-	Check            *ClosureCheck  `json:"check"`
-	FixedBy          ClosureFixedBy `json:"fixed_by"`
-	OpenedAt         time.Time      `json:"opened_at"`
-	ClosedAt         time.Time      `json:"closed_at"`
-	TimeToFixSeconds int64          `json:"time_to_fix_seconds"`
-	SLA              ClosureSLA     `json:"sla"`
+	SchemaVersion  int           `json:"schema_version"`
+	FindingID      int64         `json:"finding_id"`
+	AssetID        int64         `json:"asset_id"`
+	AssetName      string        `json:"asset_name"`
+	Kind           string        `json:"kind"`
+	Key            string        `json:"key"`
+	Severity       string        `json:"severity"`
+	Priority       string        `json:"priority"`
+	ResolutionKind string        `json:"resolution_kind"`
+	Verification   string        `json:"verification"`
+	Before         ClosureBefore `json:"before"`
+	After          *ClosureAfter `json:"after"`
+	Check          *ClosureCheck `json:"check"`
+	// FixedBy, TimeToFixSeconds and SLA are the fix loop's (paid): the API
+	// leaves them out without it (Free).
+	FixedBy          *ClosureFixedBy `json:"fixed_by,omitempty"`
+	OpenedAt         time.Time       `json:"opened_at"`
+	ClosedAt         time.Time       `json:"closed_at"`
+	TimeToFixSeconds *int64          `json:"time_to_fix_seconds,omitempty"`
+	SLA              *ClosureSLA     `json:"sla,omitempty"`
 }
 
 type ClosureBefore struct {
@@ -123,6 +125,13 @@ type ClosureFilter struct {
 	Limit     int
 }
 
+// Free leaves out what only the fix loop (the paid fix_loop feature) shows:
+// who fixed it, the time to fix and the SLA. The proof itself (versions,
+// check, verification) stays.
+func (c *Closure) Free() {
+	c.FixedBy, c.TimeToFixSeconds, c.SLA = nil, nil, nil
+}
+
 // Closures lists closed findings with their proof, newest first, in the
 // caller's workspace. slaDays is the risk policy's fix days per priority
 // (risk.Policy.SLA), for policy_days.
@@ -168,29 +177,34 @@ func (s *Store) Closures(ctx context.Context, f ClosureFilter, slaDays map[strin
 		var complete bool
 		var applier *string
 		var resolved time.Time
+		var approver string
+		var due *time.Time
 		if err := rows.Scan(&x.FindingID, &x.AssetID, &x.AssetName, &x.Kind, &x.Key, &x.Severity, &x.Priority, &x.ResolutionKind,
 			&x.Before.Component, &x.Before.Version, &x.Before.InventoryID, &x.Before.LastSeenAt,
 			&afterVersion, &afterInv, &collID, &method, &observed, &complete,
-			&planID, &x.FixedBy.Approver, &applier, &x.OpenedAt, &resolved, &x.SLA.DueAt); err != nil {
+			&planID, &approver, &applier, &x.OpenedAt, &resolved, &due); err != nil {
 			return nil, err
 		}
 		x.SchemaVersion = ClosureSchemaVersion
 		x.ClosedAt = resolved
 		x.Verification = Verification(x.ResolutionKind)
-		x.TimeToFixSeconds = int64(resolved.Sub(x.OpenedAt).Seconds())
+		ttf := int64(resolved.Sub(x.OpenedAt).Seconds())
+		x.TimeToFixSeconds = &ttf
 		if afterVersion != nil {
 			x.After = &ClosureAfter{Version: *afterVersion, InventoryID: afterInv}
 		}
 		if collID != nil && method != nil && observed != nil {
 			x.Check = &ClosureCheck{CollectionID: *collID, Source: *method, ObservedAt: *observed, Complete: complete}
 		}
-		x.FixedBy = fixedBy(x, planID, applier, method)
-		if x.SLA.DueAt != nil {
+		fb := fixedBy(x.ResolutionKind, approver, planID, applier, method)
+		x.FixedBy = &fb
+		x.SLA = &ClosureSLA{DueAt: due}
+		if due != nil {
 			if d, ok := slaDays[x.Priority]; ok {
 				x.SLA.PolicyDays = &d
 			}
 			if CountsAsRemediation(x.ResolutionKind) {
-				met := !resolved.After(*x.SLA.DueAt)
+				met := !resolved.After(*due)
 				x.SLA.Met = &met
 			}
 		}
@@ -202,9 +216,9 @@ func (s *Store) Closures(ctx context.Context, f ClosureFilter, slaDays map[strin
 // fixedBy says who or what fixed a closure: a remediation plan, a person
 // who said they applied it, or the agent report that saw the new version.
 // Pull requests are attributed by the paid edition.
-func fixedBy(x Closure, planID *int64, applier, method *string) ClosureFixedBy {
-	fb := ClosureFixedBy{Type: FixedByUnknown, Approver: x.FixedBy.Approver}
-	if !CountsAsRemediation(x.ResolutionKind) {
+func fixedBy(kind, approver string, planID *int64, applier, method *string) ClosureFixedBy {
+	fb := ClosureFixedBy{Type: FixedByUnknown, Approver: approver}
+	if !CountsAsRemediation(kind) {
 		return fb
 	}
 	switch {
@@ -216,23 +230,4 @@ func fixedBy(x Closure, planID *int64, applier, method *string) ClosureFixedBy {
 		fb.Type = FixedByAgentReport
 	}
 	return fb
-}
-
-// LinkRemediationProof records that a remediation plan fixed the findings
-// closed on one inventory row. The paid edition's verifier calls it when it
-// marks a plan's action verified: the evaluation that saw the new version
-// may already have closed them as "upgraded to V", before the action was
-// verified, without the plan. It returns how many findings it linked.
-func (s *Store) LinkRemediationProof(ctx context.Context, planID, inventoryID int64, toVersion string) (int64, error) {
-	tag, err := s.Pool.Exec(ctx, `WITH r AS (UPDATE findings f SET
-		  resolution = 'fixed by remediation plan #' || $1::bigint || ' (upgraded to ' || COALESCE(NULLIF(f.resolution_detail->>'version', ''), $3) || ')',
-		  resolution_detail = f.resolution_detail || jsonb_build_object('plan_id', $1::bigint)
-		WHERE f.inventory_id = $2 AND f.status = 'resolved' AND f.resolution_kind = 'remediated' AND NOT f.resolution_detail ? 'plan_id'
-		RETURNING f.id, f.resolved_at, f.resolution)
-		UPDATE finding_events e SET note = r.resolution, detail = e.detail || jsonb_build_object('plan_id', $1::bigint)
-		FROM r WHERE e.finding_id = r.id AND e.action = 'resolved' AND e.at = r.resolved_at`, planID, inventoryID, toVersion)
-	if err != nil {
-		return 0, err
-	}
-	return tag.RowsAffected(), nil
 }

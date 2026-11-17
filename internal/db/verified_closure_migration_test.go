@@ -3,6 +3,7 @@ package db_test
 import (
 	"context"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -94,8 +95,16 @@ func TestVerifiedClosureBackfill(t *testing.T) {
 	lost, lostColl := gone(repo, repoInv, repoComp, "repository",
 		"no longer granted to the Stackurity GitHub App: the repository was removed from the installation on GitHub, or the app was uninstalled")
 	seen, _ := gone(host, hostInv, hostComp, "agent", "no longer installed on the host")
+	// A finding really removed earlier, whose row came back (Ingest clears
+	// removed_at) and was later lost sight of: it closed before the
+	// access-lost collection, so it stays removed.
+	other, otherInv, otherComp := ingest(model.AssetRepository, "acme/api", "pkg:npm/qs@6.0.0")
+	early, _ := gone(other, otherInv, otherComp, "repository",
+		"no longer granted to the Stackurity GitHub App: the repository was removed from the installation on GitHub, or the app was uninstalled")
+	exec(`UPDATE findings SET resolved_at = $2 WHERE id = $1`, early, closed.Add(-24*time.Hour))
 
 	exec(`ALTER TABLE collections DROP COLUMN absence_unverified`)
+	exec(`DROP INDEX collections_asset_observed`)
 	exec(`DELETE FROM schema_migrations WHERE name = '0108_verified_closure'`)
 	applied, err := db.Migrate(context.Background(), pool)
 	if err != nil {
@@ -121,17 +130,23 @@ func TestVerifiedClosureBackfill(t *testing.T) {
 	if kind != store.ResolutionRemoved {
 		t.Errorf("seen removed: %s", kind)
 	}
-	var evKind string
-	if err := owner.QueryRow(context.Background(), `SELECT detail->>'resolution_kind' FROM finding_events WHERE finding_id = $1`, lost).
-		Scan(&evKind); err != nil || evKind != store.ResolutionDisappeared {
-		t.Errorf("event kind %q %v", evKind, err)
+	var evKind, evNote string
+	if err := owner.QueryRow(context.Background(), `SELECT detail->>'resolution_kind', note FROM finding_events WHERE finding_id = $1`, lost).
+		Scan(&evKind, &evNote); err != nil || evKind != store.ResolutionDisappeared || !strings.HasPrefix(evNote, "disappeared:") {
+		t.Errorf("event kind %q note %q %v", evKind, evNote, err)
+	}
+	if err := owner.QueryRow(context.Background(), `SELECT resolution_kind FROM findings WHERE id = $1`, early).Scan(&kind); err != nil {
+		t.Fatal(err)
+	}
+	if kind != store.ResolutionRemoved {
+		t.Errorf("closed before access was lost: %s", kind)
 	}
 
 	r, err := s.OutcomesReport(ctx, closed.Add(-24*time.Hour), closed.Add(time.Hour), map[string]int{"P1": 3, "P2": 14, "P3": 45, "P4": 90})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if r.Removed != 1 || r.NotRemediation.ByKind[store.ResolutionDisappeared] != 1 {
+	if r.Removed != 2 || r.NotRemediation.ByKind[store.ResolutionDisappeared] != 1 {
 		t.Errorf("outcomes: removed %d, not remediation %+v", r.Removed, r.NotRemediation)
 	}
 }
