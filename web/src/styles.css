@@ -8203,8 +8203,3 @@ a.cov-chip:hover {
 .evidence-pack label.check.locked { color: var(--muted, #6b7280); }
 .evidence-pack .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 .evidence-pack .btn.disabled { pointer-events: none; opacity: 0.5; }
-.evidence-pack .pack-figures { margin: 12px 0; padding-left: 18px; }
-.evidence-pack .pack-framework h3 { margin: 16px 0 4px; font-size: 1rem; }
-.evidence-pack .pack-framework dl { margin: 0; }
-.evidence-pack .pack-framework dt { font-weight: 600; margin-top: 8px; }
-.evidence-pack .pack-framework dd { margin: 2px 0 0; }

@@ -3096,7 +3096,11 @@ In trial report mode every report and export carries a watermark ([asset-limits.
 - **Exceptions:** every exception active in the period, with reason, requester, approver, expiry and how it ended.
 - **Closures** (verified closure) and **policies** (policy gates), when those features are on.
 
-`format=zip` holds the PDF, a CSV of each table, `pack.json` and `manifest.json` with each file's SHA-256; with the Compliance add-on also a CycloneDX SBOM of each asset (up to 500) and an OpenVEX document. SBOM and VEX files show the inventory as it is now. The JSON schema is `schema_version` 1. Every download is in the audit log (`evidence_pack.export`). In trial report mode lists keep their first rows and the pack says so.
+`format=zip` holds the PDF, a CSV of each table, `pack.json` and `manifest.json` with each file's SHA-256; with the Compliance add-on also a CycloneDX SBOM of each asset (up to 500) and an OpenVEX document. SBOM and VEX files show the inventory as it is now. The ZIP is streamed and stops adding SBOM and VEX files at 200 MB, saying so in the pack. The open-findings list stops at 20,000 rows (`open_omitted` counts the rest; the totals stay complete). The JSON schema is `schema_version` 1. Every delivered pack is in the audit log (`evidence_pack.export`). In trial report mode lists keep their first rows and the pack says so.
+
+What the pack contains: the organisation's and projects' names, asset names, component names and versions, findings, and every exception with its reason, note and mitigation as people wrote them, and the names of who asked for and approved it as the dashboard shows them (an email address where a person has no name). Share it as you would the dashboard's Reports page.
+
+Limits: one pack is built at a time per organisation (`429 busy` while one is in progress), ten an hour per organisation (`429 rate_limited`), and each must finish within 3 minutes. A member who sees only some projects must choose one (`400`); the pack then covers that project.
 
 ## Uploads into a project
 
