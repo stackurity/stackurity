@@ -733,11 +733,14 @@ config findings; --no-config-checks turns them off.`,
 				}
 				return leakErr
 			}
-			if b.Leaks != nil {
-				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureLeaks) {
-					fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
-					b.Leaks = nil
-				}
+			m, merr := cl.Meta(cmd.Context())
+			if b.Leaks != nil && (merr != nil || !m.Has(client.FeatureLeaks)) {
+				fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
+				b.Leaks = nil
+			}
+			if merr != nil || !m.Has(client.FeatureReachability) {
+				// Older servers refuse the field; the inventory is sent without it.
+				b.StripReachability()
 			}
 			if b.ConfigFindings != nil {
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureConfigFindings) {

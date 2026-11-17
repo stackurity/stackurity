@@ -1,0 +1,29 @@
+{
+  "packages": [
+    {
+      "name": "guzzlehttp/guzzle",
+      "version": "7.8.0",
+      "provide": {
+        "psr/http-client-implementation": "1.0"
+      },
+      "autoload": {
+        "psr-4": {
+          "GuzzleHttp\\": "src/"
+        }
+      }
+    },
+    {
+      "name": "acme/sdk",
+      "version": "1.0.0",
+      "require": {
+        "psr/http-client-implementation": "*"
+      },
+      "autoload": {
+        "psr-4": {
+          "Acme\\Sdk\\": "src/"
+        }
+      }
+    }
+  ],
+  "packages-dev": []
+}

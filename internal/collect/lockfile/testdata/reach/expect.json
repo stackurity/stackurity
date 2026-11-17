@@ -1,0 +1,164 @@
+{
+  "_comment": "Expected reachability per case: package name -> status, with an optional substring of the first evidence line. Packages left out are not checked.",
+  "npm": {
+    "express": {
+      "status": "reachable",
+      "evidence": "src/app.ts"
+    },
+    "lodash": {
+      "status": "reachable"
+    },
+    "pg": {
+      "status": "unknown",
+      "evidence": "named in src/db.js"
+    },
+    "left-pad": {
+      "status": "not_imported",
+      "evidence": "no import or require of left-pad in 2",
+      "also": "no other package in package-lock.json depends on it"
+    },
+    "eslint": {
+      "status": "unknown",
+      "evidence": "named in package.json"
+    },
+    "@types/node": {
+      "status": "not_imported",
+      "also": "development dependency"
+    },
+    "body-parser": {
+      "status": "unknown",
+      "evidence": "not a direct dependency"
+    },
+    "qs": {
+      "status": "unknown",
+      "evidence": "express depends on qs"
+    }
+  },
+  "npm-dynamic": {
+    "express": {
+      "status": "reachable"
+    },
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "computed require"
+    }
+  },
+  "go": {
+    "golang.org/x/text": {
+      "status": "reachable",
+      "evidence": "cmd/app/main.go"
+    },
+    "github.com/stretchr/testify": {
+      "status": "unknown",
+      "evidence": "go.mod does not record"
+    },
+    "github.com/pkg/errors": {
+      "status": "unknown",
+      "evidence": "go.mod does not record"
+    }
+  },
+  "composer": {
+    "monolog/monolog": {
+      "status": "reachable",
+      "evidence": "src/index.php"
+    },
+    "guzzlehttp/guzzle": {
+      "status": "unknown",
+      "evidence": "autoload files"
+    },
+    "symfony/yaml": {
+      "status": "not_imported",
+      "evidence": "Symfony\\Component\\Yaml",
+      "also": "no other package in composer.lock depends on it"
+    },
+    "acme/legacy": {
+      "status": "unknown",
+      "evidence": "class map"
+    },
+    "psr/log": {
+      "status": "unknown",
+      "evidence": "monolog/monolog depends on psr/log"
+    }
+  },
+  "python": {
+    "requests": {
+      "status": "reachable"
+    },
+    "pyyaml": {
+      "status": "unknown",
+      "evidence": "Python import names"
+    },
+    "six": {
+      "status": "unknown"
+    }
+  },
+  "npm-templates": {
+    "chart.js": {
+      "status": "unknown",
+      "evidence": "named in views/index.html"
+    },
+    "prettier-cli": {
+      "status": "unknown",
+      "evidence": "named in Makefile"
+    },
+    "left-pad": {
+      "status": "not_imported"
+    }
+  },
+  "npm-bundle": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "minified bundle public/vendor.min.js"
+    }
+  },
+  "npm-symlink": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "symbolic link to source"
+    }
+  },
+  "npm-yarn": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "yarn.lock does not record"
+    }
+  },
+  "npm-more": {
+    "typescript": {
+      "status": "unknown",
+      "evidence": "its program tsc is named in package.json"
+    },
+    "dotenv": {
+      "status": "unknown",
+      "evidence": "named in Procfile"
+    },
+    "bootstrap": {
+      "status": "unknown",
+      "evidence": "named in styles/app.scss"
+    },
+    "left-pad": {
+      "status": "not_imported"
+    }
+  },
+  "npm-vendor": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "vendor was not read"
+    }
+  },
+  "npm-outside": {
+    "left-pad": {
+      "status": "unknown",
+      "evidence": "outside the scanned tree (../shared"
+    }
+  },
+  "composer-provide": {
+    "acme/sdk": {
+      "status": "reachable"
+    },
+    "guzzlehttp/guzzle": {
+      "status": "unknown",
+      "evidence": "psr/http-client-implementation"
+    }
+  }
+}
