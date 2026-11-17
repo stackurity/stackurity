@@ -20114,6 +20114,20 @@
       "format": "date-time",
       "description": "When the issue last came back after it was fixed."
      },
+     "reachability": {
+      "type": "string",
+      "description": "Whether the vulnerable code can run: unknown, reachable, not_imported or not_running.",
+      "examples": [
+       "not_imported"
+      ]
+     },
+     "reachability_evidence": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      },
+      "description": "What the reachability status is based on; empty when it is unknown."
+     },
      "until_fix": {
       "type": "boolean",
       "description": "Snoozed or ignored until a free fixed version exists."
@@ -20660,6 +20674,13 @@
       "examples": [
        "The independent second check re-derived this from the raw advisory record and the raw observed version, and agreed."
       ]
+     },
+     "reachability": {
+      "type": [
+       "object",
+       "null"
+      ],
+      "description": "Whether the vulnerable code can run and what that did to the priority: status (unknown, reachable, not_imported or not_running), evidence, lowered, kept and text; null when not assessed."
      },
      "epss": {
       "type": "object",
