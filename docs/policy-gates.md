@@ -2,7 +2,7 @@
 
 A policy gate is a rule your organisation writes once, such as "no known exploited vulnerability on an internet-facing asset", that every asset is held to. Instead of each pipeline deciding for itself with `stackurity scan --fail-on high`, the security team keeps the rules in Stackurity, and the Dashboard, CI jobs and deploy pipelines all read the same answer.
 
-This page describes what is available now: rules, where they apply, their modes, the dashboard pages, the weekly summary, checking a build or a deploy against them, and the API. Asking for exceptions comes in a later release ([design](design/policy-gates.md)).
+This page describes what is available now: rules, where they apply, their modes, exceptions, the dashboard pages, the weekly summary, checking a build or a deploy against them, and the API ([design](design/policy-gates.md)).
 
 ## Rules
 
@@ -54,11 +54,26 @@ Violations are worked out from the current findings and leaked keys each time th
 
 Once an hour Stackurity counts each policy's violations into a daily history (violations and assets at the end of the day, and how many were opened and closed that day). A deleted policy keeps its history.
 
+## Exceptions
+
+Sometimes a violation cannot be fixed yet: the vendor has no fixed version, or a firewall rule already blocks the attack. An exception says that a policy does not count against an asset until a date, with the reason, who asked and who approved it.
+
+- **What it covers.** One issue or leaked key on the asset (the default when asked from a violation), or every violation of the policy on the asset, including ones found later. The API can also name one component on the asset by its purl key.
+- **Asking.** Anyone who can see the asset can ask: use **Ask for an exception** on a row of **Fixes → Policy violations**, or on a policy in an asset's **Policy gates** card (for the whole asset). Give a reason (accepted risk, mitigated, no fix yet or false positive), say why, and choose the day it ends. The end can be at most the risk policy's limit for exceptions (**Settings → Risk policy**, the same limit as for ignoring issues) from today.
+- **Deciding.** A security or admin user of the asset (on the organisation, or through a project or asset grant) approves or declines it on **Approvals → Policy exceptions**. Approving can shorten the end date; left empty, the exception ends on the date asked for. A decline needs a reason, which the person who asked sees. One approver is enough, as for requests to ignore issues; that can be the person who asked.
+- **While it is in force.** What it covers is left out of the violations list, the Dashboard, the weekly summary and CI and deploy checks. The Violations page lists the exceptions in force below the table, an asset's card and Settings → Policy gates count them per policy, and a request still waiting is shown on its violation's row so nobody asks twice.
+- **When it ends.** On its end date the exception ends by itself and the violation counts again. A security or admin user of the asset can also end it early (**End early** on Approvals, with an optional note).
+
+Every step is recorded in the audit log: `policy_exception.request`, `policy_exception.approve`, `policy_exception.decline` and `policy_exception.end`, with the policy, the asset, what it covers, the notes and the dates. An exception also records the policy's `rule_version` when it was asked.
+
+Paid plans add to this workflow: a second approver (the person who asked cannot approve), approver groups and reminders before an exception ends.
+
 ## In the dashboard
 
 - **Settings → Policy gates** lists the organisation's policies: each one's rule in words, its mode, the assets it looks at, where it is turned off ("Off for 2 projects") and how many violations it has, with a link to them. Organisation admins add, edit and delete policies here; anyone with the security role can read them. The form asks for the rule and its settings, the assets it looks at (kinds of asset, environments, internet-facing only, tags) and the mode. A new policy starts in warn mode. On a plan without enforce, the Enforce option carries a Pro badge and notice; it can still be chosen, and checks then report its violations as warnings.
 - **A project's page and an asset's page** have a **Policy gates** card, like their Notifications card: the policies they inherit from the organisation (and, for an asset, from its projects), each **On**, **Off for this project** or **Edited for this project**, with buttons to turn one off, turn it on again, or edit it for this project or asset only; and their own policies, which their admins add, edit and delete.
 - **Fixes → Policy violations** lists every current violation: the policy and its mode, the asset, the component, why it fails and a link to the issue or the leaked key. Filter it by policy, mode or rule; each filter on shows as a chip. Links from the weekly summary and the project and asset cards open it filtered by policy, asset or project. It needs the security role across the organisation.
+- **Approvals → Policy exceptions** lists requests for exceptions waiting for a decision (tick the box to see decided and ended ones too), with Approve, Decline and End early for security and admin users of each asset. See [Exceptions](#exceptions).
 - **The Dashboard's Needs your attention** band has a row such as "5 policy violations on 2 assets" while any policy has violations, opening the Violations page. It is shown to the security role and above.
 
 ## In the weekly summary
@@ -138,7 +153,7 @@ The answer, from `POST /api/v1/gate-policies/check`:
 }
 ```
 
-`result` is `pass` (no violation), `warn` (violations of policies in warn mode only) or `fail` (a violation of an enforced policy). Approved exceptions that have not expired are honoured. Every check, from CI, a deploy or the API, is recorded with who asked, the asset, the commit, branch or image digest, the result and the violations, for audit and evidence.
+`result` is `pass` (no violation), `warn` (violations of policies in warn mode only) or `fail` (a violation of an enforced policy). Approved [exceptions](#exceptions) that have not expired are honoured. Every check, from CI, a deploy or the API, is recorded with who asked, the asset, the commit, branch or image digest, the result and the violations, for audit and evidence.
 
 ## History
 
@@ -155,6 +170,11 @@ Every change is recorded in the audit log: `gate_policy.create`, `gate_policy.up
 | `DELETE /api/v1/gate-policies/{id}` | admin | delete a policy |
 | `GET /api/v1/gate-policies/violations` | security | current violations; filter with `policy_id`, `asset_id`, `project_id` |
 | `POST /api/v1/gate-policies/check` | viewer, or a collector token for its own asset | check one asset now and record it ([At deploy](#at-deploy)) |
+| `GET /api/v1/gate-policies/exceptions` | viewer (on the assets they can see) | exceptions; filter with `status` (`pending`, `approved`, `declined`, `ended`, `all`), `policy_id`, `asset_id` |
+| `POST /api/v1/gate-policies/exceptions` | viewer on the asset | ask for an exception: `policy_id`, `asset_id`, `target_kind` (`finding` with `finding_id` or `leak_id`, `asset`, or `component` with `component_key`), `reason`, `note`, `expires_at` |
+| `GET /api/v1/gate-policies/exceptions/{id}` | viewer (on the asset) | one exception |
+| `POST /api/v1/gate-policies/exceptions/{id}/decision` | security on the asset | `{"decision": "approve" \| "decline", "note", "expires_at"}` |
+| `POST /api/v1/gate-policies/exceptions/{id}/end` | security on the asset | end an approved exception early, with an optional `note` |
 | `GET /api/v1/projects/{id}/gate-policies` | security on the project | what the project inherits (and whether it is on, off or edited) and its own policies |
 | `POST /api/v1/projects/{id}/gate-policies` | admin on the project | add a project policy |
 | `PUT`, `DELETE /api/v1/projects/{id}/gate-policies/{pid}` | admin on the project | change or delete one of the project's policies |
