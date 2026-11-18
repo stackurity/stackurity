@@ -6,6 +6,16 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.12
+
+### Added
+
+- **Filter by reachability** (Pro and Enterprise): **All issues** has a **Reachability** filter (reachable, not reached, not imported, not running, not assessed) and the **Reachable** and **Not reached** presets; `GET /api/v1/findings` and `GET /api/v1/findings/by-asset` take `reachability=` (comma-separated, `not_reached` for both), and so does the `list_findings` tool. In Community the filter shows locked and the API answers `402 plan_required`; every edition still shows each issue's reachability. See [docs/reachability.md](docs/reachability.md#what-it-does-to-a-priority).
+
+### Fixed
+
+- **The trust badge no longer drops to "not active" for re-checks it does not need.** When a vulnerability source refreshed, only the packages whose advisories changed were re-checked, and every other package kept counting as checked against the old refresh. An asset not collected again within the source's freshness window, such as a repository read every 6 hours, then looked overdue for a re-check (`recheck_overdue`) and the badge flapped. After each successful refresh, packages the refresh did not change are now recorded as checked against it. Packages still waiting for an earlier refresh's re-check are left as they are.
+
 ## 0.20.11
 
 ### Changed
