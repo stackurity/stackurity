@@ -136,6 +136,11 @@ type SyncResult struct {
 	// could not read and kept as last read): the sync succeeds and the feed
 	// shows the warning as its last error until a sync without one.
 	Warning string
+
+	// evalIDs caches ComponentsToEvaluate for this result, so the sync and
+	// its Changed hook agree on (and read once) the components re-evaluated.
+	evalIDs  []int64
+	evalDone bool
 }
 
 // noteEcosystems records the ecosystem strings of base that vs name.
@@ -193,6 +198,19 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	if base, vuln := feedEcosystem(name); vuln && err == nil && res != nil {
 		pending, err = s.collectPending(ctx, feed, base, res)
 	}
+	// What this sync hands to re-evaluation, read before the hook queues
+	// it: every other row evaluated against the previous refresh is carried
+	// forward to the new one once the sync has recorded its success.
+	var carry []int64
+	canCarry := false
+	if err == nil && feed.LastSuccess != nil && (res == nil || !res.All) {
+		ids, cerr := ComponentsToEvaluate(ctx, s.Store, name, res)
+		if cerr != nil {
+			s.Log.Warn("listing components to re-evaluate; evaluations are not carried forward", "feed", name, "err", cerr)
+		} else {
+			carry, canCarry = ids, true
+		}
+	}
 	if err == nil && s.Changed != nil {
 		if cerr := s.Changed(ctx, name, res); cerr != nil {
 			err = fmt.Errorf("queue re-evaluation: %w", cerr)
@@ -223,6 +241,21 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		// is reported as not evaluated rather than clean.
 		if rerr := s.Store.UpdateFeedEcosystems(ctx, name, base, keys(res.Ecosystems), res.Full); rerr != nil {
 			err = rerr
+		}
+	}
+	if err == nil && canCarry {
+		// A row whose package the refresh did not change has, in effect,
+		// been evaluated against the new refresh: re-evaluating it would
+		// give the same result. Without this only changed packages ever
+		// caught up, and an asset not collected again within the source's
+		// freshness window (a repository read every 6 hours) looked overdue
+		// for a re-check it did not need. Rows still waiting for an earlier
+		// refresh's re-evaluation are left alone.
+		n, cerr := s.Store.CarryForwardEvaluations(context.WithoutCancel(ctx), name, *feed.LastSuccess, carry)
+		if cerr != nil {
+			s.Log.Warn("carrying evaluations forward to the new refresh", "feed", name, "err", cerr)
+		} else if n > 0 {
+			s.Log.Debug("evaluations carried forward to the new refresh", "feed", name, "rows", n)
 		}
 	}
 	return res, err

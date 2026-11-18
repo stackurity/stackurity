@@ -1,0 +1,3 @@
+### Fixed
+
+- **The trust badge no longer drops to "not active" for re-checks it does not need.** When a vulnerability source refreshed, only the packages whose advisories changed were re-checked, and every other package kept counting as checked against the old refresh. An asset not collected again within the source's freshness window, such as a repository read every 6 hours, then looked overdue for a re-check (`recheck_overdue`) and the badge flapped. After each successful refresh, packages the refresh did not change are now recorded as checked against it. Packages still waiting for an earlier refresh's re-check are left as they are.

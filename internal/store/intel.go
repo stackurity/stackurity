@@ -671,6 +671,32 @@ func (s *Store) SetCoverage(ctx context.Context, rows []RowCoverage) error {
 	return nil
 }
 
+// CarryForwardEvaluations moves the rows evaluated against a feed's
+// previous refresh (prev, its last successful sync before this one) to its
+// current refresh, except rows of the components the sync re-evaluates
+// (reevaluated). The sync changed nothing those rows were matched on, so
+// they stand evaluated against the new refresh; evaluated_at stays when
+// the matcher last ran. Rows behind an older refresh (their re-evaluation
+// is still queued) are not touched. Returns the rows moved.
+func (s *Store) CarryForwardEvaluations(ctx context.Context, feed string, prev time.Time, reevaluated []int64) (int64, error) {
+	if reevaluated == nil {
+		reevaluated = []int64{}
+	}
+	var n int64
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		return asSystem(ctx, tx, func() error {
+			tag, err := tx.Exec(ctx, `UPDATE inventory_evaluations e
+				SET feed_cursor = f.cursor, feed_last_success = f.last_success
+				FROM feeds f, inventory i
+				WHERE f.name = $1 AND e.feed = $1 AND e.feed_last_success = $2 AND f.last_success > $2
+				  AND i.id = e.inventory_id AND NOT (i.component_id = ANY($3::bigint[]))`, feed, prev, reevaluated)
+			n = tag.RowsAffected()
+			return err
+		})
+	})
+	return n, err
+}
+
 // --- releases and lifecycle
 
 type Release struct {
