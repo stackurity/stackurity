@@ -19,7 +19,7 @@ function isInsecure(loc: Origin): boolean {
  * The one-line installer for a new Linux host. With docker, it also gives
  * the agent access to the Docker socket (STACKURITY_DOCKER=1); with
  * processes, it lets the agent read which packages running processes use
- * (STACKURITY_PROCESSES=1, CAP_SYS_PTRACE).
+ * (STACKURITY_PROCESSES=1, CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH).
  */
 export function linuxCommand(code: string, loc: Origin, docker = false, processes = false): { command: string; insecure: boolean } {
   const insecure = isInsecure(loc);
@@ -30,7 +30,7 @@ export function linuxCommand(code: string, loc: Origin, docker = false, processe
 /**
  * Turning process access on for a Linux host that already reports: the
  * installer run again upgrades the agent, keeps its enrollment and other
- * settings, and adds CAP_SYS_PTRACE to its service.
+ * settings, and adds CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH to its service.
  */
 export function processAccessCommand(loc: Origin): string {
   const insecure = isInsecure(loc);

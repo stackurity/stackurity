@@ -106,7 +106,7 @@ export function CheckDocker({ checked, onChange }: { id: string; checked: boolea
 
 /**
  * "See which packages are running": adds STACKURITY_PROCESSES=1 to the
- * install command. Off by default: CAP_SYS_PTRACE is equivalent to root on
+ * install command. Off by default: CAP_SYS_PTRACE (with CAP_DAC_READ_SEARCH) is equivalent to root on
  * the server (docs/reachability.md).
  */
 export function CheckProcesses({ checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
