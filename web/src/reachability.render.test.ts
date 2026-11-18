@@ -89,3 +89,15 @@ test("process access on a host page: the command only while it is off, and what 
   assert.ok(!on.includes("STACKURITY_PROCESSES"), on);
   assert.equal(render(R.ProcessAccessFact, { value: undefined, command: cmd }), "");
 });
+
+test("Reachability filter: paid plans pick a status; Community sees it locked with what it does", () => {
+  const paid = render(R.ReachabilityFilter, { paid: true, value: "not_reached", onChange: () => {} });
+  assert.match(paid, /<select id="fd-reach"(?![^>]*disabled)/);
+  assert.match(paid, /Not reached \(not imported or not running\)/);
+  assert.doesNotMatch(paid, /pro-badge/);
+  const free = render(R.ReachabilityFilter, { paid: false, value: "", onChange: () => {} });
+  assert.match(free, /disabled/);
+  assert.match(free, /pro-badge/);
+  assert.match(free, /Filtering by it is part of Stackurity Pro/);
+  assert.doesNotMatch(free, /Not imported/);
+});

@@ -3,7 +3,7 @@ import type { ReachabilityDetail, ReachabilityStatus } from "../api";
 import { useAuth } from "../auth";
 import { Badge, type Tone } from "./Badge";
 import { CodeBlock } from "./ui";
-import { ProNotice } from "./ProNotice";
+import { ProBadge, ProNotice } from "./ProNotice";
 
 const LABELS: Record<ReachabilityStatus, string> = {
   unknown: "Not assessed",
@@ -116,6 +116,47 @@ export function ProcessAccessFact({ value, command }: { value?: string; command:
         turn it on, run this on the server (it keeps the agent's enrollment and other settings):
       </p>
       <CodeBlock text={command} label="Command that turns on process access" />
+    </div>
+  );
+}
+
+/** Reachability statuses offered in the findings filter (a paid filter): [reachability, label]. */
+export const REACH_FILTER: [string, string][] = [
+  ["reachable", "Reachable (imported or running)"],
+  ["not_reached", "Not reached (not imported or not running)"],
+  ["not_imported", "Not imported"],
+  ["not_running", "Not running"],
+  ["unknown", "Not assessed"],
+];
+
+/**
+ * The findings list's reachability filter. Filtering by reachability is part
+ * of the paid plans: without it the filter shows locked, with a Pro badge and
+ * what it would do (the status itself shows on every issue in every plan).
+ */
+export function ReachabilityFilter({ paid, value, onChange }: { paid: boolean; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="field">
+      <label htmlFor="fd-reach">Reachability {!paid && <ProBadge />}</label>
+      {paid ? (
+        <select id="fd-reach" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Any</option>
+          {REACH_FILTER.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <select id="fd-reach" value="" disabled aria-describedby="fd-reach-hint">
+            <option value="">Any</option>
+          </select>
+          <p id="fd-reach-hint" className="hint">
+            Every issue shows whether its package is imported or running. Filtering by it is part of Stackurity Pro.
+          </p>
+        </>
+      )}
     </div>
   );
 }

@@ -1058,7 +1058,11 @@ type FindingFilter struct {
 	Exploited    bool
 	// EPSSMin keeps vulnerability findings whose EPSS (EPSSCVE's) is at
 	// least this probability (0 to 1); 0 means no filter.
-	EPSSMin      float64
+	EPSSMin float64
+	// Reachability keeps findings whose package has one of these statuses
+	// (model.ReachUnknown …); empty means no filter. A paid filter: the API
+	// checks the plan (license.Reachability).
+	Reachability []string
 	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted), regressed
 	Priority     []string
 	SOS          bool
@@ -1172,6 +1176,10 @@ func (s *Store) findingConditions(ctx context.Context, f FindingFilter) (finding
 	}
 	if f.Exploited {
 		w.conds = append(w.conds, "(f.evidence->>'known_exploited')::boolean")
+	}
+	if len(f.Reachability) > 0 {
+		// The count's FROM has no inventory join, so both test it by key.
+		w.add("EXISTS (SELECT 1 FROM inventory ir WHERE ir.id = f.inventory_id AND ir.reachability = ANY(?))", f.Reachability)
 	}
 	switch f.State {
 	case "":
