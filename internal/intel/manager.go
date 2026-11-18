@@ -145,7 +145,21 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 // ComponentsToEvaluate maps a sync result to the components that need
 // re-evaluation. nil means none.
 func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res *SyncResult) ([]int64, error) {
-	if res == nil || (res.Changed == 0 && len(res.Packages) == 0 && !res.All) {
+	if res == nil {
+		return nil, nil
+	}
+	if res.evalDone {
+		return res.evalIDs, nil
+	}
+	ids, err := componentsToEvaluate(ctx, s, feed, res)
+	if err == nil {
+		res.evalIDs, res.evalDone = ids, true
+	}
+	return ids, err
+}
+
+func componentsToEvaluate(ctx context.Context, s *store.Store, feed string, res *SyncResult) ([]int64, error) {
+	if res.Changed == 0 && len(res.Packages) == 0 && !res.All {
 		return nil, nil
 	}
 	switch {
