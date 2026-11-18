@@ -179,6 +179,9 @@ func (b *ObservationBatch) Validate() error {
 	if b.Leaks != nil {
 		b.Leaks.validate(add)
 	}
+	if b.AssistantConfig != nil {
+		b.AssistantConfig.validate(add)
+	}
 	for i, c := range b.Coverage {
 		switch c.Status {
 		case "checked", "skipped", "failed", "unsupported", "partial":

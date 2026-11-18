@@ -645,7 +645,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `assistant_config` means `POST /ingest` stores a batch's `assistant_config` ([AI assistant settings](assistant-config.md)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -974,6 +974,12 @@ Records that the application is not built from the repository, so the pair is no
 
 The asset's [leaked keys](leaked-keys.md), paged, with the filters of [`GET /leaks`](#get-leaks), and `scans`: the last key scan by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`). No scan means the asset's files were never checked for keys, which is not the same as none found.
 
+### `GET /assets/{id}/assistant-findings`
+
+**Who:** viewer
+
+The asset's [risky AI assistant settings](assistant-config.md), paged, with the filters of [`GET /assistant-findings`](#get-assistant-findings), and `scans`: the last check by each collector (`collector_id`, `complete`, `reason`, `files` read, `found`, `scanned_at`). No scan means the asset was never checked, which is not the same as nothing found.
+
 ### `GET /assets/{id}/drift`
 
 **Who:** viewer
@@ -1182,6 +1188,24 @@ The same action on up to 500 findings (`ids`).
 **Who:** viewer
 
 [Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were scanned for keys at all. With none, an empty list means nothing was checked yet, not that no keys were found. Each also has its owner (`assignee_user_id`, `assignee_email`, `assignee_team_id`, `assignee_team`, and `asset_owner_team`, the asset's owner team, for when nobody is assigned), `due_at` (when it should be rotated by: 1 day for critical, 7 for high and 30 for medium, or the [risk policy](#get-risk-policy)'s fix days for P1, P2 and P3 when the workspace changed them; none for low), `overdue`, `rotated_at`, `rotated_by`, `rotated_by_name`, `rotation_note` and `state`: `needs_rotation`, `waiting_check` (marked rotated, waiting for a scan), `still_found` (a scan after it was marked rotated still saw the key), `verified_gone` (a complete scan no longer sees it) or `dismissed`. More query: `state` (one of those, or `overdue`; it implies its `status`), `assignee_user`, `assignee_team`, `assignee=none`.
+
+### `GET /assistant-findings`
+
+**Who:** viewer
+
+[Risky AI assistant settings](assistant-config.md): hooks, MCP servers and tasks in AI coding assistants' configuration files (`.claude/settings.json`, `.mcp.json`, `.vscode/tasks.json` and others) that run on their own and download or run code, open and most severe first, paged. Each has `asset_id`, `asset_name`, `asset_kind`, `collector_id`, `rule` (`remote-code`, `network`, `mcp-from-url`, `api-redirect`, `mcp-unpinned`, `auto-approve` or `auto-task`), `title`, `tool` (the assistant that reads the file), `path`, `line`, `setting` (where in the file, such as `hooks.SessionStart`), `command` (what runs, with keys and passwords masked), `fingerprint`, `severity`, `why` (one line saying what it does and what to do; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen`, `resolved_at` and `asset_owner_team`. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were checked at all.
+
+### `POST /assistant-findings/{id}/dismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Dismiss a setting the team added on purpose, with an optional `note` (up to 1,000 characters). It stays dismissed whatever later scans see. Recorded in the activity log.
+
+### `POST /assistant-findings/{id}/undismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Open a dismissed finding again. `409` for one that is not dismissed: one resolved as gone stays resolved until a scan sees it again.
 
 ### `GET /leaks/summary`
 
@@ -3209,6 +3233,7 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
 - `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters) and `exposure` (`served`, `world_readable` or empty). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
+- `assistant_config` (optional, servers listing the `assistant_config` feature): `{"found": [...], "complete": true, "reason": "", "files": 2}`, the [risky AI assistant settings](assistant-config.md) the collector found, at most 500, and how many configuration files it read. Each has `rule`, `title`, `severity`, `path`, `line`, `tool`, `setting`, `command` (at most 512 bytes, credentials masked) and `fingerprint` (32 lower-case hex characters). A finding seen again stays one finding (by asset, collector, fingerprint and file); when `complete`, the collector's open findings on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed finding stays dismissed. The result counts `assistant_found` and `assistant_gone`. Without `assistant_config`, findings reported before are kept.
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported` or `partial`.
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
 
@@ -3379,6 +3404,7 @@ Findings with the same `kind` and `key` whose assets belong to the same owner te
 - a stale asset or failing integration (`collection`)
 - a drop of more than half in an asset's collected inventory (`coverage`)
 - open critical or high [leaked keys](leaked-keys.md) on an asset (`leak`, key `asset:<id>`; `P1` when one is critical, else `P2`); these go where new issues go right away (`urgent` or `new_issues`), not with problems
+- open critical or high [risky AI assistant settings](assistant-config.md) on an asset (`assistant`, key `asset:<id>`; `P1` when one is critical, else `P2`); like leaked keys, these go where new issues go right away
 - in the operators' workspace only (the default workspace, or `STACKURITY_PLATFORM_WORKSPACE`), a critical problem with the installation itself, such as a background task that keeps failing or intelligence that never synced (`platform`)
 
 Routes send to channels and filter by SOS only, kinds, environments, owner teams and projects. People get a few grouped messages that link to the dashboard, never one message per incident. A route's `events` decide which (the dashboard calls them the integration's **Trigger**):

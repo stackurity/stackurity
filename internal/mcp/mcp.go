@@ -153,7 +153,8 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-	"list_leaks lists keys, tokens and passwords found written in files (never their values). For questions about the " +
+	"list_leaks lists keys, tokens and passwords found written in files (never their values); list_assistant_findings " +
+	"lists hooks, MCP servers and tasks in AI coding assistants' configuration that download or run code. For questions about the " +
 	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
 	"integrations and notification channels are connected and on, never their addresses or credentials) and " +
 	"notification_settings (the notification rules in effect)."
@@ -505,6 +506,50 @@ var tools = map[string]tool{
 				res.Items = []map[string]any{}
 			}
 			out := map[string]any{"leaks": res.Items, "total": res.Total, "shown": len(res.Items)}
+			if res.Scans != nil {
+				out["scans"] = res.Scans
+			}
+			return out, nil
+		},
+	},
+	"list_assistant_findings": {
+		description: "Risky settings in AI coding assistants' configuration files (.claude/settings.json, .mcp.json, " +
+			".cursor/mcp.json, .vscode/tasks.json and others), most severe first: a hook, MCP server or task that runs on its " +
+			"own and downloads or runs code, an MCP server installed from a Git repository or URL, a setting that sends the " +
+			"assistant's requests to another host. Each has the rule, the assistant (tool), the file and line, the setting, the " +
+			"command with credentials masked, and why: one line saying what it does and what to do. Severity critical,high " +
+			"returns what raises an alert. With asset_id, scans says whether that asset's last check was complete: no scan " +
+			"means it was never checked.",
+		schema: obj(map[string]any{
+			"asset_id": num("Limit to one asset"),
+			"severity": str("Comma-separated: critical, high, medium, low"),
+			"status":   str("open (the default), resolved (gone or dismissed) or all"),
+			"limit":    num("At most this many (default 50, max 200)"),
+		}),
+		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
+			limit := 50
+			if n, ok := intArg(a["limit"]); ok && n > 0 {
+				limit = min(n, 200)
+			}
+			q := url.Values{"limit": {strconv.Itoa(limit)}}
+			set(q, "severity", a["severity"])
+			set(q, "status", a["status"])
+			var res struct {
+				Items []map[string]any `json:"items"`
+				Total int64            `json:"total"`
+				Scans []map[string]any `json:"scans,omitempty"`
+			}
+			path := "/api/v1/assistant-findings?"
+			if id, ok := intArg(a["asset_id"]); ok && id > 0 {
+				path = "/api/v1/assets/" + strconv.Itoa(id) + "/assistant-findings?"
+			}
+			if err := api.Do(ctx, "GET", path+q.Encode(), nil, nil, &res); err != nil {
+				return nil, err
+			}
+			if res.Items == nil {
+				res.Items = []map[string]any{}
+			}
+			out := map[string]any{"findings": res.Items, "total": res.Total, "shown": len(res.Items)}
 			if res.Scans != nil {
 				out["scans"] = res.Scans
 			}
@@ -891,26 +936,27 @@ type findingVEX struct {
 
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
-var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
-	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_assistant_findings", "get_finding",
+	"find_component", "explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 	"account_overview", "integrations_status", "notification_settings"}
 
 // readTitles are the read tools' short human titles (directories show them).
 // The account tools add theirs in account.go.
 var readTitles = map[string]string{
-	"search":                 "Search",
-	"list_assets":            "List assets",
-	"action_plan":            "What to fix first",
-	"asset_stack":            "An asset's stack",
-	"list_findings":          "List issues",
-	"list_leaks":             "List leaked keys",
-	"get_finding":            "Get an issue",
-	"find_component":         "Find a package",
-	"explain_finding":        "Explain an issue's priority",
-	"upgrade_recommendation": "Upgrade recommendation",
-	"remediation_plan":       "Remediation plan",
-	"verify_since":           "What changed since",
-	"updates_available":      "Updates available",
+	"search":                  "Search",
+	"list_assets":             "List assets",
+	"action_plan":             "What to fix first",
+	"asset_stack":             "An asset's stack",
+	"list_findings":           "List issues",
+	"list_leaks":              "List leaked keys",
+	"list_assistant_findings": "List risky AI assistant settings",
+	"get_finding":             "Get an issue",
+	"find_component":          "Find a package",
+	"explain_finding":         "Explain an issue's priority",
+	"upgrade_recommendation":  "Upgrade recommendation",
+	"remediation_plan":        "Remediation plan",
+	"verify_since":            "What changed since",
+	"updates_available":       "Updates available",
 }
 
 // toolList lists the tools with a title and every behaviour hint set

@@ -24,6 +24,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/collect/assistantcfg"
 	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/gitrepo"
@@ -173,6 +174,10 @@ type hostOptions struct {
 	// leaks scans application directories for keys and passwords
 	// written in their files (off with --no-leaks).
 	leaks bool
+	// assistantConfig scans application directories for risky settings
+	// in AI coding assistants' configuration files (off with
+	// --no-assistant-config).
+	assistantConfig bool
 }
 
 // dockerWorkDir is where images are unpacked while they are read: TMPDIR
@@ -242,7 +247,7 @@ func writeJSON(path string, v any) error {
 func agentCmd() *cobra.Command {
 	var c conn
 	var interval, actionInterval, checkInterval time.Duration
-	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker, noLeaks bool
+	var once, remediate, noRuntimes, discoverApps, noPacks, withDocker, noLeaks, noAssistant bool
 	var root, envName, output, allowFile, dockerSocket string
 	var dockerMaxMB int64
 	var appDirs []string
@@ -296,7 +301,8 @@ again only when its image ID changes or after 7 days. Images larger than
 must be able to use the Docker socket, which is equivalent to root on the
 host; see docs/install.md.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps, leaks: !noLeaks}
+			opts := &hostOptions{root: root, runtimes: !noRuntimes, appDirs: appDirs, discoverApps: discoverApps, leaks: !noLeaks,
+				assistantConfig: !noAssistant}
 			if withDocker {
 				if runtime.GOOS == "windows" {
 					return errors.New("--docker is only supported on Linux hosts")
@@ -372,11 +378,12 @@ host; see docs/install.md.`,
 			var assetIDs []int64
 			// Servers before 0.14 refuse a batch with an app list (unknown
 			// field); ask once what the server takes.
-			appList, hostImages, takesLeaks := false, false, false
+			appList, hostImages, takesLeaks, takesAssistant := false, false, false, false
 			if m, err := cl.Meta(ctx); err == nil {
 				appList = m.Has(client.FeatureAppList)
 				hostImages = m.Has(client.FeatureHostImages)
 				takesLeaks = m.Has(client.FeatureLeaks)
+				takesAssistant = m.Has(client.FeatureAssistantConfig)
 			}
 			if opts.docker != nil && !hostImages {
 				fmt.Fprintln(os.Stderr, "warning: the server does not take container images from the agent (Stackurity 0.14 or later is needed); --docker is ignored")
@@ -395,6 +402,11 @@ host; see docs/install.md.`,
 					// Older servers refuse the field.
 					for _, b := range bs {
 						b.Leaks = nil
+					}
+				}
+				if !takesAssistant {
+					for _, b := range bs {
+						b.AssistantConfig = nil
 					}
 				}
 				if !hostImages {
@@ -535,6 +547,8 @@ host; see docs/install.md.`,
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not use the server's stack packs on application directories")
 	cmd.Flags().BoolVar(&noLeaks, "no-leaks", os.Getenv("STACKURITY_NO_LEAKS") == "true",
 		"do not look for keys and passwords written in application files (env STACKURITY_NO_LEAKS=true)")
+	cmd.Flags().BoolVar(&noAssistant, "no-assistant-config", os.Getenv("STACKURITY_NO_ASSISTANT_CONFIG") == "true",
+		"do not check AI coding assistants' configuration files in application directories (env STACKURITY_NO_ASSISTANT_CONFIG=true)")
 	cmd.Flags().StringSliceVar(&appDirs, "app-dir", splitList(os.Getenv("STACKURITY_APP_DIRS")),
 		"directory of a deployed application to inventory (repeatable; env STACKURITY_APP_DIRS, comma-separated)")
 	cmd.Flags().BoolVar(&discoverApps, "discover-apps", os.Getenv("STACKURITY_DISCOVER_APPS") == "true",
@@ -587,8 +601,8 @@ func jitter(d time.Duration) time.Duration {
 func scanCmd() *cobra.Command {
 	c := conn{ci: true}
 	var g gate
-	var name, envName, output, gitURL, failOnLeak string
-	var noPacks, noLeaks bool
+	var name, envName, output, gitURL, failOnLeak, failOnAssistant string
+	var noPacks, noLeaks, noAssistant bool
 	cmd := &cobra.Command{
 		Use:   "scan DIR",
 		Short: "Scan a project directory's lockfiles and report them",
@@ -616,7 +630,13 @@ The scan also looks for keys, tokens and passwords written in the project's
 files (in a Git checkout, only the files Git tracks). They are printed here
 with their value masked and sent without the value. --fail-on-leak exits with
 status 3 when one has the given severity or higher; it needs no server. A line
-containing "stackurity:allow" is not reported.`,
+containing "stackurity:allow" is not reported.
+
+It also checks AI coding assistants' configuration files (.claude/settings.json,
+.mcp.json, .cursor/mcp.json, .vscode/tasks.json and others) for hooks, MCP
+servers and tasks that run on their own and download or run code.
+--fail-on-assistant exits with status 3 when one has the given severity or
+higher; it needs no server.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := g.validate(); err != nil {
@@ -624,6 +644,9 @@ containing "stackurity:allow" is not reported.`,
 			}
 			if failOnLeak != "" && (noLeaks || !leaks.ValidSeverity(failOnLeak)) {
 				return errors.New("--fail-on-leak takes low, medium, high or critical, and cannot be combined with --no-leaks")
+			}
+			if failOnAssistant != "" && (noAssistant || !leaks.ValidSeverity(failOnAssistant)) {
+				return errors.New("--fail-on-assistant takes low, medium, high or critical, and cannot be combined with --no-assistant-config")
 			}
 			if g.enabled() && output != "" {
 				return errors.New("--fail-on flags need the server's evaluation; they cannot be combined with --output")
@@ -694,6 +717,9 @@ containing "stackurity:allow" is not reported.`,
 			if !noLeaks {
 				b.Leaks = scanLeaks(cmd.Context(), dir)
 			}
+			if !noAssistant {
+				b.AssistantConfig = assistantcfg.Repo(cmd.Context(), dir).Scan()
+			}
 			if err := b.Validate(); err != nil {
 				return err
 			}
@@ -703,6 +729,9 @@ containing "stackurity:allow" is not reported.`,
 				}
 			}
 			leakErr := printLeaks(os.Stderr, b.Leaks, failOnLeak)
+			if err := printAssistant(os.Stderr, b.AssistantConfig, failOnAssistant); leakErr == nil {
+				leakErr = err
+			}
 			if output != "" {
 				if err := writeBatch(output, b); err != nil {
 					return err
@@ -713,6 +742,12 @@ containing "stackurity:allow" is not reported.`,
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureLeaks) {
 					fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
 					b.Leaks = nil
+				}
+			}
+			if b.AssistantConfig != nil {
+				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureAssistantConfig) {
+					fmt.Fprintln(os.Stderr, "warning: the server does not take AI assistant configuration findings (a newer Stackurity is needed); they are not sent")
+					b.AssistantConfig = nil
 				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)
@@ -737,6 +772,8 @@ containing "stackurity:allow" is not reported.`,
 	cmd.Flags().BoolVar(&noPacks, "no-packs", false, "do not download and run the stack packs installed on the server")
 	cmd.Flags().BoolVar(&noLeaks, "no-leaks", false, "do not look for keys and passwords written in the project's files")
 	cmd.Flags().StringVar(&failOnLeak, "fail-on-leak", "", "exit 3 when a leaked key or password has this severity or higher (low, medium, high, critical)")
+	cmd.Flags().BoolVar(&noAssistant, "no-assistant-config", false, "do not check AI coding assistants' configuration files")
+	cmd.Flags().StringVar(&failOnAssistant, "fail-on-assistant", "", "exit 3 when a risky AI assistant setting has this severity or higher (low, medium, high, critical)")
 	cmd.Flags().StringVar(&name, "name", "", "asset name (default: directory name)")
 	cmd.Flags().StringVar(&gitURL, "git-url", os.Getenv("STACKURITY_GIT_URL"), "repository URL; used as the asset identity so CI runs and server scans match")
 	cmd.Flags().StringVar(&envName, "environment", "", "environment label")

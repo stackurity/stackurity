@@ -33,6 +33,27 @@ export interface EmptyCopy {
   action?: EmptyActionCopy;
 }
 
+// --- AI assistant settings (components/AssistantConfig.tsx)
+
+/** An asset's AI assistant settings list, empty: never checked, or clean. */
+export function assistantEmpty(view: "open" | "resolved", checked: boolean): EmptyCopy {
+  if (!checked) {
+    return {
+      title: "Not checked yet",
+      why: "No scan has checked this asset's AI assistant configuration files yet, so an empty list does not mean there is nothing risky.",
+      after: "Agents, stackurity scan and repositories the server clones check them when they report, from this version on.",
+    };
+  }
+  if (view === "resolved") {
+    return { title: "No resolved settings", why: "No risky setting here has gone away or been dismissed." };
+  }
+  return {
+    title: "No risky AI assistant settings",
+    why: "The last check found no hook, MCP server or task that downloads or runs code on its own.",
+    after: "If a later check finds one, it appears here; critical and high ones open an incident.",
+  };
+}
+
 // --- leaked keys (components/Leaks.tsx)
 
 export type LeakViewName = "action" | "kept" | "resolved";

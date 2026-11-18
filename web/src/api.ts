@@ -2499,8 +2499,8 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["leak", "feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "assistant", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["leak", "assistant", "feed", "collection", "coverage", "platform"];
 
 /** A key, token or password found written in a file. The value is never stored. */
 export interface Leak {
@@ -2567,6 +2567,57 @@ export interface LeakScan {
 export interface LeakList extends List<Leak> {
   scans?: LeakScan[];
   /** GET /leaks only: assets whose files were scanned for keys at all. */
+  scanned_assets?: number;
+}
+
+/**
+ * A risky setting in an AI coding assistant's configuration file
+ * (.claude/settings.json, .mcp.json, .vscode/tasks.json...): a hook, MCP
+ * server or task that runs on its own and downloads or runs code.
+ */
+export interface AssistantFinding {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  collector_id: string;
+  fingerprint: string;
+  path: string;
+  line: number;
+  rule: string;
+  title: string;
+  /** The assistant that reads the file: claude-code, cursor, vscode, gemini-cli, mcp... */
+  tool: string;
+  /** Where in the file: hooks.SessionStart, mcpServers.github. */
+  setting: string;
+  /** What runs, credentials masked. */
+  command: string;
+  severity: "critical" | "high" | "medium" | "low";
+  status: "open" | "resolved";
+  resolution: "" | "gone" | "dismissed";
+  resolution_note: string;
+  resolved_by: number | null;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+  asset_owner_team: string;
+  /** One line: what it does and what to do. */
+  why: string;
+}
+
+/** The last assistant configuration check of an asset by one collector. */
+export interface AssistantScan {
+  collector_id: string;
+  complete: boolean;
+  reason: string;
+  files: number;
+  found: number;
+  scanned_at: string;
+}
+
+export interface AssistantFindingList extends List<AssistantFinding> {
+  scans?: AssistantScan[];
+  /** GET /assistant-findings only: assets checked at all. */
   scanned_assets?: number;
 }
 

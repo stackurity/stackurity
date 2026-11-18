@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/assistantcfg"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/collect/limits"
@@ -83,6 +84,9 @@ type Scanner struct {
 	CAFile string
 	// NoLeaks turns off the scan for keys and passwords in the clone.
 	NoLeaks bool
+	// NoAssistantConfig turns off the scan of AI coding assistants'
+	// configuration files in the clone.
+	NoAssistantConfig bool
 }
 
 // Scan clones the repository at depth 1, scans lockfiles and keys written
@@ -159,6 +163,11 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 			leaks.Grade(&l, "", false)
 			b.Leaks.Found = append(b.Leaks.Found, l)
 		}
+	}
+	if !s.NoAssistantConfig {
+		// Hooks, MCP servers and tasks committed for AI coding assistants:
+		// whoever can push decides what runs on developers' machines.
+		b.AssistantConfig = assistantcfg.Dir(ctx, src, nil).Scan()
 	}
 	return b, nil
 }

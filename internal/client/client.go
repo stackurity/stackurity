@@ -225,6 +225,11 @@ const FeatureHostImages = "host_images"
 // (keys and passwords found in files). Older servers refuse the field.
 const FeatureLeaks = "leaks"
 
+// FeatureAssistantConfig, in Meta.Features, means the server takes a
+// batch's assistant_config (risky settings in AI coding assistants'
+// configuration files). Older servers refuse the field.
+const FeatureAssistantConfig = "assistant_config"
+
 // Meta is the server's anonymous description of itself (GET /meta).
 type Meta struct {
 	Version       string   `json:"version"`

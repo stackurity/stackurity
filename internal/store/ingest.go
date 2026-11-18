@@ -37,6 +37,11 @@ type IngestResult struct {
 	// saw, now resolved.
 	LeaksFound int   `json:"leaks_found,omitempty"`
 	LeaksGone  int64 `json:"leaks_gone,omitempty"`
+	// AssistantFound is the number of risky AI assistant settings the
+	// batch reported, and AssistantGone the open ones its complete scan no
+	// longer saw, now resolved.
+	AssistantFound int   `json:"assistant_found,omitempty"`
+	AssistantGone  int64 `json:"assistant_gone,omitempty"`
 	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
 	// did (POST /sbom/import), and VEXNote why it was not imported.
 	VEX     *VEXImportResult `json:"vex,omitempty"`
@@ -175,6 +180,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if b.Leaks != nil {
 			if res.LeaksFound, res.LeaksGone, err = writeLeaks(ctx, tx, assetID, res.CollectionID, b); err != nil {
 				return fmt.Errorf("leaks: %w", err)
+			}
+		}
+		if b.AssistantConfig != nil {
+			if res.AssistantFound, res.AssistantGone, err = writeAssistant(ctx, tx, assetID, res.CollectionID, b); err != nil {
+				return fmt.Errorf("assistant configuration: %w", err)
 			}
 		}
 		status := "ok"

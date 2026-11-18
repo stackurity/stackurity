@@ -246,6 +246,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/assets/{id}/leaks":                                "scoped",
 	"GET /api/v1/leaks":                                            "scoped",
 	"GET /api/v1/leaks/summary":                                    "scoped",
+	"GET /api/v1/assets/{id}/assistant-findings":                   "scoped",
+	"GET /api/v1/assistant-findings":                               "scoped",
 	"GET /api/v1/assets/{id}/remediation":                          "scoped",
 	"GET /api/v1/components":                                       "scoped",
 	"GET /api/v1/components/{id}":                                  "scoped",
@@ -308,6 +310,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/findings/actions":                             "scoped-write",
 	"POST /api/v1/leaks/{id}/dismiss":                           "scoped-write",
 	"POST /api/v1/leaks/{id}/undismiss":                         "scoped-write",
+	"POST /api/v1/assistant-findings/{id}/dismiss":              "scoped-write",
+	"POST /api/v1/assistant-findings/{id}/undismiss":            "scoped-write",
 	"POST /api/v1/leaks/{id}/assign":                            "scoped-write",
 	"POST /api/v1/leaks/{id}/rotated":                           "scoped-write",
 	"POST /api/v1/leaks/{id}/check-again":                       "scoped-write",
@@ -1610,8 +1614,8 @@ func TestProjectMCP(t *testing.T) {
 		lines = append(lines, string(b))
 		n++
 	}
-	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
-		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
+	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_assistant_findings", "get_finding",
+		"find_component", "explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 		"account_overview", "integrations_status", "notification_settings"}
 	for _, name := range tools {
 		add(name, args)

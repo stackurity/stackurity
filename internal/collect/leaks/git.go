@@ -20,6 +20,12 @@ func Repo(ctx context.Context, dir string) Result {
 	return Dir(ctx, dir, Options{})
 }
 
+// TrackedFiles lists the files Git tracks under dir, relative to dir. ok is
+// false outside a Git checkout or when git cannot list them.
+func TrackedFiles(ctx context.Context, dir string) (files []string, ok bool) {
+	return trackedFiles(ctx, dir)
+}
+
 // trackedFiles lists the files Git tracks under dir, relative to dir.
 func trackedFiles(ctx context.Context, dir string) ([]string, bool) {
 	if _, err := os.Stat(filepath.Join(dir, ".git")); err != nil {

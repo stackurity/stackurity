@@ -144,6 +144,10 @@ type ObservationBatch struct {
 	// in the asset's files. Sent only to servers that list the "leaks"
 	// feature in GET /meta.
 	Leaks *LeakScan `json:"leaks,omitempty"`
+	// AssistantConfig is what the collector found in AI coding assistants'
+	// configuration files (.claude/settings.json, .mcp.json, ...). Sent
+	// only to servers that list the "assistant_config" feature in GET /meta.
+	AssistantConfig *AssistantScan `json:"assistant_config,omitempty"`
 }
 
 // ImageList is the set of container images a host's agent reports.

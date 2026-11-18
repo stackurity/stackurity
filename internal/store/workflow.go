@@ -787,14 +787,14 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak', 'assistant') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }
 
 // DetectSystemProblems finds stale or failing feeds, stale assets, failing
-// integrations, sharp drops in collected inventory (FR-08, FR-16) and
-// assets with leaked keys.
+// integrations, sharp drops in collected inventory (FR-08, FR-16), assets
+// with leaked keys and assets with risky AI assistant settings.
 func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, error) {
 	var out []SystemIncident
 	rows, err := s.Pool.Query(ctx, `SELECT name, kind, last_error, last_success,
@@ -893,7 +893,13 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 	if err != nil {
 		return nil, err
 	}
-	return append(out, leaks...), nil
+	out = append(out, leaks...)
+	// Risky AI assistant settings: the same, per asset.
+	assistant, err := s.assistantProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(out, assistant...), nil
 }
 
 type IncidentFilter struct {

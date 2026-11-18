@@ -138,13 +138,14 @@ func teamIn(ids []int64, team *int64) bool {
 // incidentInProjects: a route limited to projects (or an asset, or turned
 // off for some) hears about an issue (its findings are then counted per
 // asset, for the assets it covers only) and about collection and coverage
-// problems and leaked keys of the assets it covers. Other problems, about
+// problems, leaked keys and risky AI assistant settings of the assets it
+// covers. Other problems, about
 // no asset, go to the organisation's routes only.
 func incidentInProjects(r store.Route, in store.Incident) bool {
 	if isFindingKind(in.Kind) {
 		return true
 	}
-	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" {
+	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" && in.Kind != "assistant" {
 		return !r.Limited()
 	}
 	if rd, ok := readReporting(in); ok {
@@ -210,9 +211,9 @@ func urgentIncident(r store.Route, in store.Incident) bool {
 	if !inScope(r, in) {
 		return false
 	}
-	// A leaked key is a security issue, not a problem with Stackurity:
-	// it goes where new issues go right away.
-	if in.Kind == "leak" {
+	// A leaked key or a risky AI assistant setting is a security issue,
+	// not a problem with Stackurity: it goes where new issues go right away.
+	if in.Kind == "leak" || in.Kind == "assistant" {
 		t := newIssueThreshold(r)
 		return t != "" && risk.PriorityAtLeast(in.Priority, t)
 	}

@@ -646,7 +646,7 @@ var priorities = map[string]bool{"P1": true, "P2": true, "P3": true, "P4": true}
 // routeKinds are the incident kinds a rule can be limited to: every kind
 // an incident can have. The dashboard's list is INCIDENT_KINDS in
 // web/src/api.ts; TestRouteKindsMatchTheDashboard keeps the two the same.
-var routeKinds = []string{"vulnerability", "end_of_life", "leak", "feed", "collection", "coverage", "platform"}
+var routeKinds = []string{"vulnerability", "end_of_life", "leak", "assistant", "feed", "collection", "coverage", "platform"}
 
 func (s *Server) saveRoute(w http.ResponseWriter, r *http.Request, id int64) {
 	s.saveRouteAs(w, r, id, nil)
