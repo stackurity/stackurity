@@ -15537,6 +15537,81 @@
     }
    }
   },
+  "/assets/{id}/assistant-findings": {
+   "get": {
+    "operationId": "get_assets_id_assistant_findings",
+    "summary": "An asset's risky AI assistant settings and its last checks",
+    "description": "The asset's risky settings in AI coding assistants' configuration files, and scans: the last check by each collector, whether it was complete and why not. No scan means it was never checked\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium or low, or several comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page start",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/assets/{id}/link-suggestions": {
    "get": {
     "operationId": "get_assets_id_link_suggestions",
@@ -15710,6 +15785,180 @@
     "operationId": "post_leaks_id_undismiss",
     "summary": "Open a dismissed leaked key again",
     "description": "Open a dismissed leaked key again. One resolved as gone stays resolved until a scan sees it\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assistant-findings": {
+   "get": {
+    "operationId": "get_assistant_findings",
+    "summary": "Risky AI assistant settings, most severe first",
+    "description": "Hooks, MCP servers and tasks in AI coding assistants' configuration files that run on their own and download or run code: rule, assistant, file and line, setting, command (credentials masked), severity and why\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium or low, or several comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page start",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assistant-findings/{id}/dismiss": {
+   "post": {
+    "operationId": "post_assistant_findings_id_dismiss",
+    "summary": "Dismiss a risky AI assistant setting",
+    "description": "Dismiss a setting the team added on purpose, with an optional note. It stays dismissed whatever later scans see\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assistant-findings/{id}/undismiss": {
+   "post": {
+    "operationId": "post_assistant_findings_id_undismiss",
+    "summary": "Open a dismissed AI assistant setting again",
+    "description": "Open a dismissed AI assistant finding again. One resolved as gone stays resolved until a scan sees it\n\nRole: security",
     "tags": [
      "Findings and fixes"
     ],
