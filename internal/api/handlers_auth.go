@@ -5,6 +5,7 @@ import (
 	"errors"
 	"github.com/stackurity/stackurity/internal/license"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -265,13 +266,21 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	p := principal(r)
 	ed := s.Gate.Edition(r.Context())
 	features := append([]license.Feature{}, ed.Features()...)
-	if p.Workspace > 0 && ed != license.Community {
+	// Add-ons count on Community too: Stackurity Cloud sells the Compliance
+	// add-on on Starter (a Community plan). A self-hosted Community server
+	// never has one (license.Gate.Has).
+	if p.Workspace > 0 {
 		for _, a := range license.Addons() {
 			if ed.Includes(a) {
 				continue
 			}
 			if on, err := s.hasFeatureIn(r, p.Workspace, a); err == nil && on {
 				features = append(features, a)
+				for f, by := range broughtWith {
+					if by == a && !slices.Contains(features, f) {
+						features = append(features, f)
+					}
+				}
 			}
 		}
 	}
