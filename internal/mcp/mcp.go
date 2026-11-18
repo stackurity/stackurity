@@ -431,6 +431,8 @@ var tools = map[string]tool{
 			"known_exploited": map[string]any{"type": "boolean", "description": "Only findings on the CISA known exploited list"},
 			"epss_min": map[string]any{"type": "number", "minimum": 0, "maximum": 1,
 				"description": "Only findings whose CVE has an EPSS of at least this probability (0.1 is 10%)"},
+			"reachability": str("Comma-separated: reachable, not_imported, not_running, not_reached (both) or unknown. Paid plans only; " +
+				"elsewhere the server answers plan_required"),
 			"limit": num("At most this many (default 50, max 200)"),
 		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
@@ -449,6 +451,7 @@ var tools = map[string]tool{
 			if v, ok := a["epss_min"].(float64); ok && v > 0 {
 				q.Set("epss_min", strconv.FormatFloat(v, 'f', -1, 64))
 			}
+			set(q, "reachability", a["reachability"])
 			var res struct {
 				Items []finding `json:"items"`
 				Total int64     `json:"total"`

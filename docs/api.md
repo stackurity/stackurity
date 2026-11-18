@@ -1106,6 +1106,7 @@ Query:
 
 - `status` (`open`, `resolved`, `all`), `state` (`active`, `new`, `acknowledged`, `in_progress`, `suppressed`, `risk_accepted`, `regressed`), `kind`, `severity` and `priority` (comma-separated), `verification`, `known_exploited=true`, `sos=true`, `overdue=true` (or `false`: active and not past the fix-by date), `due_after` and `due_before` (RFC 3339: active findings due at or after, or before, that time)
 - `epss_min` (0 to 1; `0.1` is 10%): vulnerability findings one of whose CVEs has at least that EPSS
+- `reachability` (comma-separated `reachable`, `not_imported`, `not_running`, `unknown`; `not_reached` = both not_imported and not_running): findings whose package has that status ([reachability.md](reachability.md)). Paid plans only: elsewhere `402 plan_required`. `GET /findings/by-asset` takes it too
 - `asset_id`, `component_id`, `environment`, `key`, `q`, `fix_group` (a fix group id), `incident_id`
 - `assignee_user`, `assignee_team`, `assignee=none` (unassigned), `assignee=me` (the caller), `assignee=mine` (the caller or a team they are a member of)
 - `new_within=N` (first seen in the last N days), `resolved_within=N` (resolved in the last N days, with `status=resolved`), `resolution_kind` (comma-separated)

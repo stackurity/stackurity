@@ -219,4 +219,16 @@ func TestFindingReachabilityAndPolicySteps(t *testing.T) {
 	if f.Reachability != model.ReachNotRunning || len(f.ReachabilityEvidence) != 1 || f.PriorityPolicy != p.Version() {
 		t.Errorf("finding reachability = %q %v, policy %q (want %q)", f.Reachability, f.ReachabilityEvidence, f.PriorityPolicy, p.Version())
 	}
+	// The paid filter (GET /findings?reachability=…) by status.
+	for want, statuses := range map[int]map[string][]string{
+		1: {"not running": {model.ReachNotRunning}, "not reached": {model.ReachNotImported, model.ReachNotRunning}},
+		0: {"reachable": {model.ReachReachable}, "unknown": {model.ReachUnknown}},
+	} {
+		for name, st := range statuses {
+			got, total, err := s.ListFindings(ctx, store.FindingFilter{AssetID: r.AssetID, Reachability: st})
+			if err != nil || len(got) != want || total != int64(want) {
+				t.Errorf("filter %s: %d findings (total %d), %v; want %d", name, len(got), total, err, want)
+			}
+		}
+	}
 }
