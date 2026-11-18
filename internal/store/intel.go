@@ -1058,7 +1058,7 @@ type FindingFilter struct {
 	Exploited    bool
 	// EPSSMin keeps vulnerability findings whose EPSS (EPSSCVE's) is at
 	// least this probability (0 to 1); 0 means no filter.
-	EPSSMin      float64
+	EPSSMin float64
 	// Reachability keeps findings whose package has one of these statuses
 	// (model.ReachUnknown …); empty means no filter. A paid filter: the API
 	// checks the plan (license.Reachability).
