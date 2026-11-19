@@ -400,7 +400,7 @@ The redirect address registered with the provider. Uses the `state` once, in the
 
 **Who:** anyone, in the browser that signed in with the provider · Stackurity Cloud
 
-Finishes a sign-up through a provider: `token`, `name`, `organisation`, `accept_terms` and `email_notice_version`, checked as on the email form (no password, no challenge). Creates the account (without a password), the organisation on its trial and its cloud record exactly as `POST /signup/verify` does, connects the identity, and starts a session. Answers `workspace_id` and `next` (`/welcome/repositories` after a GitHub sign-up when the GitHub App is set up, otherwise `/`). The same per-address and service-wide limits as `POST /signup`.
+Finishes a sign-up through a provider: `token`, `name`, `organisation`, `accept_terms`, `email_notice_version` and optional `ref` (where the sign-up came from, as on the email form: a lower-case tag such as `blog-cve-2026-1234`, anything else is dropped), checked as on the email form (no password, no challenge). Creates the account (without a password), the organisation on its trial and its cloud record exactly as `POST /signup/verify` does, connects the identity, and starts a session. Answers `workspace_id` and `next` (`/welcome/repositories` after a GitHub sign-up when the GitHub App is set up, otherwise `/`). The same per-address and service-wide limits as `POST /signup`.
 
 ### `POST /auth/social/confirm`
 

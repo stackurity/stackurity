@@ -4373,7 +4373,7 @@ export const api = {
   /** Stackurity Cloud: issue the key for the signed-in person and get the address that takes it back. */
   confirmKeyLink: (b: KeyLinkRequest) => request<KeyLinkPreview & { redirect: string; key_id: string }>("POST", "/community-keys/link/confirm", b),
   socialSignupPreview: (token: string) => request<SocialSignupPreview>("POST", "/signup/social/preview", { token }, { quiet401: true }),
-  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
+  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string; ref?: string }) =>
     request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
   confirmSocialLink: (token: string) =>
     request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
