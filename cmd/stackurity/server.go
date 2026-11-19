@@ -1029,6 +1029,10 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
 			return err
 		}
+		// Evaluation and feed sync runs after 400 days (migration 0116).
+		if _, err := st.PruneEvaluationRuns(ctx, 0); err != nil {
+			return err
+		}
 		if _, err := st.PurgeRateLimits(ctx); err != nil {
 			return err
 		}
@@ -1450,7 +1454,7 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			return err
 		}
 		for _, ws := range wss {
-			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Now().Add(evalAfterSync)); err != nil {
+			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids, "feed": feed}, "", time.Now().Add(evalAfterSync)); err != nil {
 				return err
 			}
 		}
@@ -1474,52 +1478,14 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	})
 
 	w.Handle("evaluate", func(ctx context.Context, payload json.RawMessage) error {
-		var p struct {
-			AssetID      int64   `json:"asset_id"`
-			ComponentIDs []int64 `json:"component_ids"`
-			All          bool    `json:"all"`
-		}
-		if err := json.Unmarshal(payload, &p); err != nil {
-			return err
-		}
-		var comps []int64
-		if !p.All && p.AssetID == 0 {
-			comps = p.ComponentIDs
-			if comps == nil {
-				comps = []int64{}
-			}
-		}
-		start, err := st.DBNow(ctx)
-		if err != nil {
-			return err
-		}
-		// The evaluation, and the priorities of what it found, run under the
-		// workspace's evaluation lock: the dispatcher's upkeep of the same
-		// findings waits for it rather than lock them in another order.
-		release, err := lockForEvaluation(ctx, st, evaluationLockWait)
-		if err != nil {
-			return err
-		}
-		defer release()
-		stats, err := eval.EvaluateLocked(ctx, comps, p.AssetID)
-		if err != nil {
-			return err
-		}
-		log.Info("evaluated", "asset", p.AssetID, "components", len(p.ComponentIDs), "all", p.All,
-			"rows", stats.Rows, "opened", stats.Opened, "resolved", stats.Resolved, "gaps", stats.Gaps)
-		if comps != nil {
-			return nil // a partial run says nothing about whole assets
-		}
-		// Score the findings before the asset counts as evaluated: a CI
-		// gate reading the collection result must see real priorities.
-		policy, err := st.RiskPolicy(ctx)
-		if err != nil {
-			return err
-		}
-		if _, err := st.PrioritizeAsset(ctx, policy, time.Now(), p.AssetID); err != nil {
-			return fmt.Errorf("prioritize: %w", err)
-		}
-		return st.MarkEvaluated(ctx, p.AssetID, start)
+		return evaluateJob(ctx, st, eval, log, payload)
+	})
+	// The scheduled check (docs/evaluation-runs.md): every 30 minutes, so
+	// each clock hour has one, it confirms each workspace's vulnerability
+	// sources were read on schedule and no re-evaluation is waiting.
+	w.EveryCollectingWorkspace("evaluation-check", 30*time.Minute, func(ctx context.Context) error {
+		_, err := st.CheckEvaluation(ctx)
+		return err
 	})
 
 	if !feedsOn {
@@ -1719,4 +1685,86 @@ func registerInactivePause(w *worker.Worker, st *store.Store, mail notify.Mailer
 		}
 		return nil
 	})
+}
+
+// evaluateJob runs an "evaluate" job and records the run (migration 0116),
+// a failed one too.
+func evaluateJob(ctx context.Context, st *store.Store, eval *intel.Evaluator, log *slog.Logger, payload json.RawMessage) error {
+	var p struct {
+		AssetID      int64   `json:"asset_id"`
+		ComponentIDs []int64 `json:"component_ids"`
+		All          bool    `json:"all"`
+		Feed         string  `json:"feed"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	run := store.EvaluationRun{Trigger: store.RunFeedSync, StartedAt: time.Now()}
+	switch {
+	case p.All:
+		run.Trigger = store.RunDaily
+	case p.AssetID != 0:
+		run.Trigger = store.RunIngest
+	}
+	err := evaluate(ctx, st, eval, log, p.AssetID, p.ComponentIDs, p.All, &run)
+	run.OK, run.ErrorClass = err == nil, store.RunErrorClass(err)
+	// The sources it used: the one that changed, or those the evaluated
+	// software is checked against.
+	rctx := context.WithoutCancel(ctx)
+	if p.Feed != "" {
+		if f, ferr := st.GetFeed(rctx, p.Feed); ferr == nil {
+			run.Feeds = []store.RunFeed{{Name: f.Name, LastSuccess: f.LastSuccess}}
+		}
+	} else if feeds, ferr := st.RunFeeds(rctx, p.AssetID); ferr == nil {
+		run.Feeds = feeds
+	}
+	if rerr := st.RecordEvaluationRun(rctx, run); rerr != nil {
+		log.Warn("recording the evaluation run", "err", rerr)
+	}
+	return err
+}
+
+// evaluate runs one evaluation job: the components a feed sync changed, an
+// asset after it reported, or everything (daily), and fills run's counts.
+func evaluate(ctx context.Context, st *store.Store, eval *intel.Evaluator, log *slog.Logger, assetID int64, componentIDs []int64, all bool,
+	run *store.EvaluationRun) error {
+	var comps []int64
+	if !all && assetID == 0 {
+		comps = componentIDs
+		if comps == nil {
+			comps = []int64{}
+		}
+	}
+	start, err := st.DBNow(ctx)
+	if err != nil {
+		return err
+	}
+	// The evaluation, and the priorities of what it found, run under the
+	// workspace's evaluation lock: the dispatcher's upkeep of the same
+	// findings waits for it rather than lock them in another order.
+	release, err := lockForEvaluation(ctx, st, evaluationLockWait)
+	if err != nil {
+		return err
+	}
+	defer release()
+	stats, err := eval.EvaluateLocked(ctx, comps, assetID)
+	if err != nil {
+		return err
+	}
+	run.AssetsEvaluated, run.FindingsOpened, run.FindingsClosed = stats.Assets, stats.Opened, stats.Resolved
+	log.Info("evaluated", "asset", assetID, "components", len(componentIDs), "all", all,
+		"rows", stats.Rows, "opened", stats.Opened, "resolved", stats.Resolved, "gaps", stats.Gaps)
+	if comps != nil {
+		return nil // a partial run says nothing about whole assets
+	}
+	// Score the findings before the asset counts as evaluated: a CI
+	// gate reading the collection result must see real priorities.
+	policy, err := st.RiskPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := st.PrioritizeAsset(ctx, policy, time.Now(), assetID); err != nil {
+		return fmt.Errorf("prioritize: %w", err)
+	}
+	return st.MarkEvaluated(ctx, assetID, start)
 }

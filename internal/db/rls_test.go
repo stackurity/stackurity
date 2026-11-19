@@ -20,6 +20,7 @@ var globalTables = map[string]string{
 	"advisory_packages":   "public intelligence",
 	"pending_packages":    "public intelligence: packages a feed sync changed, before re-evaluation is queued",
 	"feeds":               "public intelligence; changed only by instance admins",
+	"feed_sync_runs":      "public intelligence: when each source was synced, with an error class only (migration 0116)",
 	"known_exploited":     "public intelligence",
 	"epss_scores":         "public intelligence",
 	"lifecycle_cycles":    "public intelligence",

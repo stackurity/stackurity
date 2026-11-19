@@ -163,6 +163,7 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	started := time.Now()
 	if err := s.Store.FeedAttempt(ctx, name); err != nil {
 		return nil, err
 	}
@@ -242,6 +243,12 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		if rerr := s.Store.UpdateFeedEcosystems(ctx, name, base, keys(res.Ecosystems), res.Full); rerr != nil {
 			err = rerr
 		}
+	}
+	// Every sync is recorded (migration 0116), so how often each source
+	// was read can be shown for a period, not only its latest outcome.
+	reeval := res != nil && (res.All || len(res.Packages) > 0)
+	if rerr := s.Store.RecordFeedSyncRun(ctx, name, started, changed, reeval, err); rerr != nil {
+		s.Log.Warn("recording the feed sync", "feed", name, "err", rerr)
 	}
 	if err == nil && canCarry {
 		// A row whose package the refresh did not change has, in effect,

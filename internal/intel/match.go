@@ -41,6 +41,8 @@ type EvalStats struct {
 	Opened   int64 `json:"opened_or_updated"`
 	Resolved int64 `json:"resolved"`
 	Gaps     int   `json:"gaps"`
+	// Assets is the number of distinct assets whose rows were evaluated.
+	Assets int `json:"assets"`
 }
 
 // versionedPackagesPattern and versionedDebProduct live in
@@ -161,6 +163,11 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	coverage := make([]store.RowCoverage, 0, len(rows))
 	invIDs := make([]int64, 0, len(rows))
 	stats := &EvalStats{Rows: len(rows)}
+	seenAssets := map[int64]bool{}
+	for _, r := range rows {
+		seenAssets[r.AssetID] = true
+	}
+	stats.Assets = len(seenAssets)
 
 	for ri, r := range rows {
 		invIDs = append(invIDs, r.InventoryID)
