@@ -52,9 +52,21 @@ type Price struct {
 
 // broughtBy lists paid features an add-on brings with it on a plan that
 // lacks them: the Compliance add-on adds frameworks to the audit evidence
-// pack, so it brings the pack (Starter + Compliance on Stackurity Cloud;
-// the API's requireFeature lets it through, broughtWith in handlers_license.go).
+// pack, so it brings the pack (Starter + Compliance on Stackurity Cloud).
+// The one copy of the rule: the API's requireFeature, GET /auth/me's
+// features and plan options all read it.
 var broughtBy = map[Feature]Feature{EvidenceReport: ComplianceAddon}
+
+// Brings lists the features add-on a brings with it (BroughtBy).
+func Brings(a Feature) []Feature {
+	var out []Feature
+	for _, f := range PaidFeatures() {
+		if broughtBy[f] == a {
+			out = append(out, f)
+		}
+	}
+	return out
+}
 
 // BroughtBy is the add-on that brings f with it, if any.
 func BroughtBy(f Feature) (Feature, bool) {

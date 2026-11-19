@@ -97,22 +97,17 @@ func (s *Server) requireFeature(f license.Feature) func(http.Handler) http.Handl
 	}
 }
 
-// broughtWith lists paid features an add-on brings with it on a plan that
-// lacks them. The Compliance add-on adds frameworks to the audit evidence
-// pack, so it brings the pack: Stackurity Cloud sells it on Starter, whose
-// Community edition has no pack of its own (owner, 18 Nov 2026).
-var broughtWith = map[license.Feature]license.Feature{license.EvidenceReport: license.ComplianceAddon}
-
 // broughtByAddon reports whether f is on for the request's workspace
-// because an add-on the workspace has brings it (broughtWith).
+// because an add-on the workspace has brings it (license.BroughtBy: the
+// Compliance add-on brings the audit evidence pack, which Stackurity Cloud
+// sells on Starter, a Community plan; owner, 18 Nov 2026). Plan options
+// use the same rule (broughtIn).
 func (s *Server) broughtByAddon(r *http.Request, f license.Feature) bool {
-	a, ok := broughtWith[f]
 	p := principal(r)
-	if !ok || p == nil || p.Workspace <= 0 {
+	if p == nil || p.Workspace <= 0 {
 		return false
 	}
-	on, err := s.hasFeatureIn(r, p.Workspace, a)
-	return err == nil && on
+	return s.broughtIn(r, p.Workspace, f)
 }
 
 // adminLicense shows the installation's licence and asset use.

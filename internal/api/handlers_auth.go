@@ -276,8 +276,8 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 			}
 			if on, err := s.hasFeatureIn(r, p.Workspace, a); err == nil && on {
 				features = append(features, a)
-				for f, by := range broughtWith {
-					if by == a && !slices.Contains(features, f) {
+				for _, f := range license.Brings(a) {
+					if !slices.Contains(features, f) {
 						features = append(features, f)
 					}
 				}

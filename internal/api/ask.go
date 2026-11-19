@@ -20,6 +20,7 @@ import (
 	"github.com/stackurity/stackurity/internal/ask"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/mcp"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -576,7 +577,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
 		_ = rc.Flush()
 	}
-	qctx, cancel := context.WithTimeout(ctx, askDeadline)
+	qctx, cancel := context.WithTimeout(mcp.WithLinks(ctx, s.baseURL(), p.Project), askDeadline)
 	defer cancel()
 	stop := make(chan struct{})
 	defer close(stop)
