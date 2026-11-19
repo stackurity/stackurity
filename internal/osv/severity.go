@@ -11,7 +11,7 @@ type Rating struct {
 	Level  string  `json:"level"` // critical, high, medium, low, none, unknown
 	Score  float64 `json:"score,omitempty"`
 	Vector string  `json:"vector,omitempty"`
-	Source string  `json:"source"` // cvss_v3, cvss_v4, database, distro_urgency, none
+	Source string  `json:"source"` // cvss_v3, cvss_v4, database, distro_urgency, malicious_package, none
 }
 
 func levelForScore(s float64) string {
@@ -40,7 +40,15 @@ func LevelRank(l string) int { return levelRank[l] }
 // next to a HIGH vendor rating, and the v3 and v4 scores of one flaw often
 // differ. A vector that does not parse is ignored, so the labels decide; when
 // a label wins, the first v4 vector is still kept for reference.
+//
+// A malicious-package record (OSV's MAL- ids, imported from the OpenSSF
+// malicious-packages data) is critical: the version was published to steal
+// from or take over whatever installs it, and such records carry no CVSS
+// vector or label, so they would otherwise be rated unknown.
 func Rate(v *Vulnerability) Rating {
+	if IsMalicious(v) {
+		return Rating{Level: "critical", Source: "malicious_package"}
+	}
 	all := append([]Severity{}, v.Severity...)
 	for _, a := range v.Affected {
 		all = append(all, a.Severity...)
@@ -95,6 +103,24 @@ func Rate(v *Vulnerability) Rating {
 		best.Vector = v4
 	}
 	return best
+}
+
+// IsMalicious reports whether v records a malicious package version rather
+// than a flaw: an OSV MAL- id, or the malicious-packages origins OSV adds to
+// the database_specific of the records it imports from OpenSSF.
+func IsMalicious(v *Vulnerability) bool {
+	if strings.HasPrefix(v.ID, "MAL-") {
+		return true
+	}
+	if len(v.DatabaseSpecific) == 0 {
+		return false
+	}
+	var db map[string]json.RawMessage
+	if json.Unmarshal(v.DatabaseSpecific, &db) != nil {
+		return false
+	}
+	origins, ok := db["malicious-packages-origins"]
+	return ok && len(origins) > 0 && string(origins) != "null" && string(origins) != "[]"
 }
 
 func normaliseLabel(s string) string {
