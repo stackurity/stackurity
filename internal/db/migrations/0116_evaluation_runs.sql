@@ -57,3 +57,13 @@ CREATE INDEX evaluation_runs_finished ON evaluation_runs (finished_at);
 ALTER TABLE evaluation_runs ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY;
 CREATE POLICY ws ON evaluation_runs USING (workspace_id = stackurity_ws()) WITH CHECK (workspace_id = stackurity_ws());
 CREATE POLICY sys ON evaluation_runs USING (stackurity_system()) WITH CHECK (stackurity_system());
+
+-- Runs are a record: the application inserts and reads them, and deletes
+-- them only when they are older than the retention period; it never
+-- changes one.
+DO $$
+BEGIN
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_app') THEN
+        REVOKE UPDATE, TRUNCATE ON evaluation_runs, feed_sync_runs FROM stackurity_app;
+    END IF;
+END $$;

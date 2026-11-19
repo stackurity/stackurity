@@ -31,6 +31,9 @@ const EvaluationRunsKeep = 400 * 24 * time.Hour
 const (
 	RunFeedGrace    = time.Hour
 	RunBacklogAfter = 15 * time.Minute
+	// RunFailedWindow: an evaluation job that failed for good (after its
+	// retries) within this window fails the check (evaluation_failed).
+	RunFailedWindow = 24 * time.Hour
 )
 
 // RunFeed is a source a run used, with its last successful sync then.
@@ -118,7 +121,10 @@ func (s *Store) RunFeeds(ctx context.Context, assetID int64) ([]RunFeed, error) 
 // and the rest stay valid against the new data), and no re-evaluation has
 // been waiting longer than RunBacklogAfter. It records the run and returns it.
 // ok is false with error_class feed_failed (a source's last sync failed and
-// it is overdue), feed_stale (overdue) or evaluation_backlog.
+// it is overdue), feed_stale (overdue), evaluation_failed (an evaluation
+// job failed for good in the last RunFailedWindow) or evaluation_backlog.
+// AssetsEvaluated is the number of assets with installed software; a check
+// with none is not counted by EvaluationCoverage.
 func (s *Store) CheckEvaluation(ctx context.Context) (EvaluationRun, error) {
 	r := EvaluationRun{Trigger: RunScheduled, Feeds: []RunFeed{}}
 	if err := s.Pool.QueryRow(ctx, `SELECT now()`).Scan(&r.StartedAt); err != nil {
@@ -152,12 +158,13 @@ func (s *Store) CheckEvaluation(ctx context.Context) (EvaluationRun, error) {
 	if err := rows.Err(); err != nil {
 		return r, err
 	}
-	var backlog bool
+	var backlog, evalFailed bool
 	if err := s.Pool.QueryRow(ctx, `SELECT
 		EXISTS (SELECT 1 FROM jobs WHERE kind = 'evaluate' AND workspace_id = stackurity_ws() AND done_at IS NULL AND failed_at IS NULL
 			AND run_at < now() - make_interval(secs => $1)),
+		EXISTS (SELECT 1 FROM jobs WHERE kind = 'evaluate' AND workspace_id = stackurity_ws() AND failed_at >= now() - make_interval(secs => $2)),
 		(SELECT count(DISTINCT i.asset_id) FROM inventory i JOIN assets a ON a.id = i.asset_id AND a.merged_into IS NULL WHERE i.removed_at IS NULL)`,
-		RunBacklogAfter.Seconds()).Scan(&backlog, &r.AssetsEvaluated); err != nil {
+		RunBacklogAfter.Seconds(), RunFailedWindow.Seconds()).Scan(&backlog, &evalFailed, &r.AssetsEvaluated); err != nil {
 		return r, err
 	}
 	switch {
@@ -165,6 +172,8 @@ func (s *Store) CheckEvaluation(ctx context.Context) (EvaluationRun, error) {
 		r.ErrorClass = "feed_failed"
 	case stale:
 		r.ErrorClass = "feed_stale"
+	case evalFailed:
+		r.ErrorClass = "evaluation_failed"
 	case backlog:
 		r.ErrorClass = "evaluation_backlog"
 	}
@@ -188,9 +197,16 @@ func (s *Store) EvaluationRuns(ctx context.Context, from, to time.Time, limit in
 }
 
 // EvaluationCoverage is how regularly a workspace's software was checked
-// against vulnerability data over a period.
+// against vulnerability data over a period, from its scheduled checks
+// (CheckEvaluation, every 30 minutes).
+//
+// A clock hour (UTC) passes when it had at least one passing scheduled
+// check and no failing one; successful evaluations of other kinds (after
+// a report, a source change, the daily run) never make up for a failing
+// check. Checks of a workspace with no installed software (0 assets) are
+// not counted: an hour with only such checks is left out of both numbers.
 type EvaluationCoverage struct {
-	// RecordedSince is the first recorded run of the workspace (nil: none).
+	// RecordedSince is the workspace's first scheduled check (nil: none).
 	// Hours before it are not counted: they are not known either way.
 	RecordedSince *time.Time `json:"recorded_since"`
 	// From and To bound the hours counted: whole clock hours from the later
@@ -198,26 +214,27 @@ type EvaluationCoverage struct {
 	// now.
 	From *time.Time `json:"from"`
 	To   *time.Time `json:"to"`
-	// HoursExpected whole clock hours in [From, To); HoursWithRun of them had
-	// a run that finished successfully.
+	// HoursExpected whole clock hours in [From, To), less those with only
+	// uncounted checks; HoursPassed of them passed.
 	HoursExpected int64 `json:"hours_expected"`
-	HoursWithRun  int64 `json:"hours_with_run"`
-	// LongestGapHours is the longest time without a successful run in
+	HoursPassed   int64 `json:"hours_passed"`
+	// LongestGapHours is the longest time between passing checks in
 	// [From, To), the edges included.
 	LongestGapHours float64 `json:"longest_gap_hours"`
-	// RunsOK and RunsFailed count the runs in [From, To); FailedByClass
-	// splits the failures.
-	RunsOK        int64            `json:"runs_ok"`
-	RunsFailed    int64            `json:"runs_failed"`
+	// ChecksPassed and ChecksFailed count the counted scheduled checks in
+	// [From, To); FailedByClass splits the failures.
+	ChecksPassed  int64            `json:"checks_passed"`
+	ChecksFailed  int64            `json:"checks_failed"`
 	FailedByClass map[string]int64 `json:"failed_by_class"`
 }
 
-// EvaluationCoverage measures the context's workspace's runs over
-// [from, to).
+// EvaluationCoverage measures the context's workspace's scheduled checks
+// over [from, to).
 func (s *Store) EvaluationCoverage(ctx context.Context, from, to time.Time) (EvaluationCoverage, error) {
 	c := EvaluationCoverage{FailedByClass: map[string]int64{}}
 	var now time.Time
-	if err := s.Pool.QueryRow(ctx, `SELECT now(), (SELECT min(finished_at) FROM evaluation_runs)`).Scan(&now, &c.RecordedSince); err != nil {
+	if err := s.Pool.QueryRow(ctx, `SELECT now(), (SELECT min(finished_at) FROM evaluation_runs WHERE trigger = 'scheduled')`).
+		Scan(&now, &c.RecordedSince); err != nil {
 		return c, err
 	}
 	if c.RecordedSince == nil {
@@ -238,18 +255,28 @@ func (s *Store) EvaluationCoverage(ctx context.Context, from, to time.Time) (Eva
 	if !stop.After(start) {
 		return c, nil
 	}
-	c.From, c.To = &start, &stop
-	c.HoursExpected = int64(stop.Sub(start) / time.Hour)
-	err := s.Pool.QueryRow(ctx, `WITH r AS (SELECT finished_at, ok, error_class FROM evaluation_runs WHERE finished_at >= $1 AND finished_at < $2),
-		pts AS (SELECT finished_at AS t FROM r WHERE ok UNION ALL SELECT $1::timestamptz UNION ALL SELECT $2::timestamptz)
-		SELECT (SELECT count(DISTINCT date_trunc('hour', finished_at, 'UTC')) FROM r WHERE ok),
+	var excluded int64
+	err := s.Pool.QueryRow(ctx, `WITH r AS (SELECT finished_at, ok, assets_evaluated > 0 AS counted, date_trunc('hour', finished_at, 'UTC') AS h
+			FROM evaluation_runs WHERE trigger = 'scheduled' AND finished_at >= $1 AND finished_at < $2),
+		hrs AS (SELECT h, bool_or(counted) AS counted, bool_or(counted AND ok) AS passed, bool_or(counted AND NOT ok) AS failed FROM r GROUP BY h),
+		pts AS (SELECT r.finished_at AS t FROM r JOIN hrs USING (h) WHERE r.counted AND r.ok AND NOT hrs.failed
+			UNION ALL SELECT $1::timestamptz UNION ALL SELECT $2::timestamptz)
+		SELECT (SELECT count(*) FROM hrs WHERE NOT counted),
+			(SELECT count(*) FROM hrs WHERE passed AND NOT failed),
 			COALESCE((SELECT max(extract(epoch FROM t - prev)) FROM (SELECT t, lag(t) OVER (ORDER BY t) AS prev FROM pts) x), 0) / 3600,
-			(SELECT count(*) FROM r WHERE ok), (SELECT count(*) FROM r WHERE NOT ok)`, start, stop).
-		Scan(&c.HoursWithRun, &c.LongestGapHours, &c.RunsOK, &c.RunsFailed)
+			(SELECT count(*) FROM r WHERE counted AND ok), (SELECT count(*) FROM r WHERE counted AND NOT ok)`, start, stop).
+		Scan(&excluded, &c.HoursPassed, &c.LongestGapHours, &c.ChecksPassed, &c.ChecksFailed)
 	if err != nil {
 		return c, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT error_class, count(*) FROM evaluation_runs WHERE finished_at >= $1 AND finished_at < $2 AND NOT ok GROUP BY 1`, start, stop)
+	c.HoursExpected = int64(stop.Sub(start)/time.Hour) - excluded
+	if c.HoursExpected <= 0 {
+		c.HoursExpected, c.HoursPassed, c.LongestGapHours = 0, 0, 0
+		return c, nil
+	}
+	c.From, c.To = &start, &stop
+	rows, err := s.Pool.Query(ctx, `SELECT error_class, count(*) FROM evaluation_runs
+		WHERE trigger = 'scheduled' AND assets_evaluated > 0 AND finished_at >= $1 AND finished_at < $2 AND NOT ok GROUP BY 1`, start, stop)
 	if err != nil {
 		return c, err
 	}

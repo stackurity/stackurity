@@ -1707,6 +1707,12 @@ func evaluateJob(ctx context.Context, st *store.Store, eval *intel.Evaluator, lo
 		run.Trigger = store.RunIngest
 	}
 	err := evaluate(ctx, st, eval, log, p.AssetID, p.ComponentIDs, p.All, &run)
+	// A deferral (another evaluation of the workspace holds the lock) is
+	// not a run: the job runs again shortly and is recorded then.
+	var deferred *worker.Deferred
+	if errors.As(err, &deferred) {
+		return err
+	}
 	run.OK, run.ErrorClass = err == nil, store.RunErrorClass(err)
 	// The sources it used: the one that changed, or those the evaluated
 	// software is checked against.

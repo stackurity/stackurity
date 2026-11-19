@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -14,6 +15,7 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/testdb"
+	"github.com/stackurity/stackurity/internal/worker"
 )
 
 // Every evaluation job is recorded with its trigger, counts and sources,
@@ -55,6 +57,18 @@ func TestEvaluateJobRecordsRuns(t *testing.T) {
 	if err := evaluateJob(cancelled, st, eval, log, payload(map[string]any{"all": true})); err == nil {
 		t.Fatal("a cancelled evaluation succeeded")
 	}
+
+	// Another evaluation holds the workspace's lock: the job is deferred,
+	// and a deferral is not a run.
+	release, err := st.LockEvaluationsWait(ctx, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var deferred *worker.Deferred
+	if err := evaluateJob(ctx, st, eval, log, payload(map[string]any{"asset_id": res.AssetID})); !errors.As(err, &deferred) {
+		t.Errorf("busy lock: %v, want a deferral", err)
+	}
+	release()
 
 	runs, err := st.EvaluationRuns(ctx, time.Now().Add(-time.Hour), time.Now().Add(time.Minute), 10)
 	if err != nil {
