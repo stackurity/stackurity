@@ -1082,6 +1082,12 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 		Client: mcp.ClientInfo{UserAgent: r.UserAgent()}}
 	if p.Assistant != nil {
 		srv.Client.OAuthClient, srv.Client.RedirectHost = p.Assistant.ClientName, p.Assistant.RedirectHost
+		if p.Assistant.ProjectID != nil {
+			srv.Project = *p.Assistant.ProjectID
+		}
+	}
+	if n, err := strconv.ParseInt(api.project, 10, 64); err == nil && n > 0 && srv.Project == 0 {
+		srv.Project = n
 	}
 	srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, nil)))
 }

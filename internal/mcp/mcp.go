@@ -78,7 +78,10 @@ type Server struct {
 	// plan offers without prices). /mcp sets it from the request; stdio
 	// learns the name from initialize.
 	Client ClientInfo
-	mu     sync.Mutex
+	// Project is the project the connection is limited to (0: none), for
+	// links such as evidence_pack's.
+	Project int64
+	mu      sync.Mutex
 }
 
 type request struct {
@@ -252,7 +255,7 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 		if name := requestClientName(req.Params); name != "" {
 			c.Name = name
 		}
-		ctx = withBase(withClient(ctx, c), s.BaseURL)
+		ctx = WithLinks(withClient(ctx, c), s.BaseURL, s.Project)
 		var out any
 		var err error
 		if t.write != nil {

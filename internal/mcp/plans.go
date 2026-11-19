@@ -21,6 +21,8 @@ import (
 
 type baseKey struct{}
 
+type projectKey struct{}
+
 func withBase(ctx context.Context, base string) context.Context {
 	return context.WithValue(ctx, baseKey{}, base)
 }
@@ -28,6 +30,20 @@ func withBase(ctx context.Context, base string) context.Context {
 func baseFrom(ctx context.Context) string {
 	b, _ := ctx.Value(baseKey{}).(string)
 	return strings.TrimRight(b, "/")
+}
+
+func projectFrom(ctx context.Context) int64 {
+	p, _ := ctx.Value(projectKey{}).(int64)
+	return p
+}
+
+// WithLinks gives the read tools called outside Serve (Ask Stackurity,
+// CallRead) what their links need: the server's public base URL
+// (STACKURITY_BASE_URL; "" when not set, and then no link is given) and
+// the project the person works in (0: none), which evidence_pack's link
+// is limited to by default.
+func WithLinks(ctx context.Context, base string, project int64) context.Context {
+	return context.WithValue(withBase(ctx, base), projectKey{}, project)
 }
 
 // planOptions is GET /plan/options.
@@ -252,8 +268,14 @@ func evidencePackTool(ctx context.Context, api API, a map[string]any) (any, erro
 	if len(wanted) > 0 {
 		q.Set("frameworks", strings.Join(wanted, ","))
 	}
+	// A connection limited to a project (or Ask in the project chosen)
+	// gets a pack for that project: the browser session that opens the
+	// link has no project of its own, and a member who sees only some
+	// projects must choose one.
 	if id, ok := intArg(a["project_id"]); ok && id > 0 {
 		q.Set("project_id", strconv.Itoa(id))
+	} else if p := projectFrom(ctx); p > 0 {
+		q.Set("project_id", strconv.FormatInt(p, 10))
 	}
 	frameworks := []map[string]any{}
 	for _, f := range evidenceFrameworks {
@@ -264,11 +286,18 @@ func evidencePackTool(ctx context.Context, api API, a map[string]any) (any, erro
 		frameworks = append(frameworks, map[string]any{"id": f.ID, "name": f.Name, "covered_by_plan": addon || !f.Addon, "in_pack": in})
 	}
 	out := map[string]any{
-		"frameworks":   frameworks,
-		"format":       format,
-		"download_url": baseFrom(ctx) + "/api/v1/reports/evidence-pack?" + q.Encode(),
+		"frameworks": frameworks,
+		"format":     format,
 		"note": "The link works in a browser signed in to Stackurity; each download builds the pack and counts towards the " +
 			"limit of 10 packs an hour per organisation. Without from and to the period is the last 90 days.",
+	}
+	// Only an absolute link: a relative one invites the model to invent a
+	// host. Without the server's public address, say where the pack is.
+	if base := baseFrom(ctx); strings.HasPrefix(base, "https://") || strings.HasPrefix(base, "http://") {
+		out["download_url"] = base + "/api/v1/reports/evidence-pack?" + q.Encode()
+	} else {
+		out["note"] = "This server has no public address set (STACKURITY_BASE_URL), so there is no link: download the pack in " +
+			"Stackurity under Reports → Evidence pack. Each download counts towards the limit of 10 packs an hour per organisation."
 	}
 	if format == "zip" && addon {
 		out["files"] = "The ZIP also holds a CycloneDX SBOM per monitored asset and an OpenVEX document, as they are now."

@@ -303,3 +303,29 @@ func TestEvidencePackTool(t *testing.T) {
 		t.Errorf("unknown framework: %s", got)
 	}
 }
+
+// evidence_pack's link is absolute or absent, and defaults to the project
+// the connection is limited to.
+func TestEvidencePackLinkBaseAndProject(t *testing.T) {
+	out := callTool(t, &Server{API: lapsedTrialAPI(), Version: "t"}, "evidence_pack", map[string]any{"frameworks": "soc2"})
+	if _, ok := out["download_url"]; ok || !strings.Contains(out["note"].(string), "Reports → Evidence pack") {
+		t.Errorf("no base URL: %v", out)
+	}
+	out = callTool(t, &Server{API: lapsedTrialAPI(), Version: "t", BaseURL: "https://s.example", Project: 4}, "evidence_pack", nil)
+	if u, _ := out["download_url"].(string); !strings.HasPrefix(u, "https://s.example/api/v1/reports/evidence-pack?") || !strings.Contains(u, "project_id=4") {
+		t.Errorf("project-limited connection: %v", out)
+	}
+	out = callTool(t, &Server{API: lapsedTrialAPI(), Version: "t", BaseURL: "https://s.example", Project: 4}, "evidence_pack", map[string]any{"project_id": 7})
+	if u, _ := out["download_url"].(string); !strings.Contains(u, "project_id=7") {
+		t.Errorf("an explicit project_id: %v", out)
+	}
+	// Ask Stackurity calls the tools through CallRead with WithLinks.
+	res, err := CallRead(WithLinks(context.Background(), "https://s.example", 9), lapsedTrialAPI(), "evidence_pack", nil)
+	if u, _ := res.(map[string]any)["download_url"].(string); err != nil || !strings.HasPrefix(u, "https://s.example/") || !strings.Contains(u, "project_id=9") {
+		t.Errorf("CallRead: %v %v", res, err)
+	}
+	res, _ = CallRead(context.Background(), lapsedTrialAPI(), "evidence_pack", nil)
+	if _, ok := res.(map[string]any)["download_url"]; ok {
+		t.Errorf("CallRead without a base gave a relative link: %v", res)
+	}
+}
