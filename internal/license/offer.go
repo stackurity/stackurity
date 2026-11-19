@@ -44,8 +44,22 @@ type Price struct {
 	Price    string `json:"price,omitempty"`
 	Currency string `json:"currency,omitempty"` // USD, EUR or INR
 	Interval string `json:"interval,omitempty"` // month or year
-	// On: for an add-on, the plans it can be added to.
-	On []string `json:"on,omitempty"`
+	// On: for an add-on, the plans it can be added to (from the plan
+	// configuration). AnyPlan: it can be added to every paid plan.
+	On      []string `json:"on,omitempty"`
+	AnyPlan bool     `json:"any_plan,omitempty"`
+}
+
+// broughtBy lists paid features an add-on brings with it on a plan that
+// lacks them: the Compliance add-on adds frameworks to the audit evidence
+// pack, so it brings the pack (Starter + Compliance on Stackurity Cloud;
+// the API's requireFeature lets it through, broughtWith in handlers_license.go).
+var broughtBy = map[Feature]Feature{EvidenceReport: ComplianceAddon}
+
+// BroughtBy is the add-on that brings f with it, if any.
+func BroughtBy(f Feature) (Feature, bool) {
+	a, ok := broughtBy[f]
+	return a, ok
 }
 
 // featureNames are the features' names in refusals and plan options.

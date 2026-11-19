@@ -121,6 +121,18 @@ func money(p *license.Price) string {
 	return amount
 }
 
+// addonPlans is where an add-on is sold: " on any paid plan", " on the
+// Starter or Team plan", or "" when the server does not say.
+func addonPlans(a *license.Price) string {
+	switch {
+	case a.AnyPlan:
+		return " on any paid plan"
+	case len(a.On) > 0:
+		return " on the " + orList(a.On) + " plan"
+	}
+	return ""
+}
+
 // orList is "Team", "Team or Business", "Team, Business or Enterprise".
 func orList(names []string) string {
 	switch len(names) {
@@ -178,9 +190,7 @@ func offerLine(o *license.Offer, restricted bool) string {
 		line += "It is part of the " + o.Addon.Name
 		if m := money(o.Addon); m != "" {
 			line += ": +" + m
-			if len(o.Addon.On) > 0 {
-				line += " on the " + orList(o.Addon.On) + " plan"
-			}
+			line += addonPlans(o.Addon)
 		}
 		if includes(o.IncludedIn, "Enterprise") {
 			line += ", included in Enterprise"

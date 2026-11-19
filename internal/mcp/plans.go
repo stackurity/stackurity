@@ -72,9 +72,7 @@ func howToGet(o *license.Offer, restricted bool) string {
 		s := o.Addon.Name
 		if m := money(o.Addon); m != "" {
 			s += ": +" + m
-			if len(o.Addon.On) > 0 {
-				s += " on the " + orList(o.Addon.On) + " plan"
-			}
+			s += addonPlans(o.Addon)
 		}
 		if includes(o.IncludedIn, "Enterprise") {
 			s += "; included in Enterprise"

@@ -58,7 +58,7 @@ func (s *Server) planOption(r *http.Request, f license.Feature) (*license.Offer,
 	if editionPlanOffer != nil {
 		on, err := editionPlanOffer(s, r, p.Workspace, f, o)
 		if err == nil {
-			return o, on
+			return o, on || s.broughtIn(r, p.Workspace, f)
 		}
 		// The answer still goes out, with the licence editions only.
 		s.Log.Warn("plan offer", "feature", f, "err", err)
@@ -68,7 +68,20 @@ func (s *Server) planOption(r *http.Request, f license.Feature) (*license.Offer,
 	if err != nil {
 		s.Log.Warn("plan offer", "feature", f, "err", err)
 	}
-	return o, on
+	return o, on || s.broughtIn(r, p.Workspace, f)
+}
+
+// broughtIn reports whether f is on in workspace ws because an add-on it
+// has brings f with it (license.BroughtBy: the Compliance add-on brings
+// the evidence pack), so plan options never tell a Starter + Compliance
+// organisation it lacks the pack.
+func (s *Server) broughtIn(r *http.Request, ws int64, f license.Feature) bool {
+	a, ok := license.BroughtBy(f)
+	if !ok {
+		return false
+	}
+	on, err := s.hasFeatureIn(r, ws, a)
+	return err == nil && on
 }
 
 // requireFeature gates a route on a paid feature.

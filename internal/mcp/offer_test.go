@@ -39,6 +39,8 @@ func TestOfferLines(t *testing.T) {
 	selfPCI.FeatureName = "PCI DSS 4.0 evidence"
 	eur := complianceOffer()
 	eur.Addon.Price, eur.Addon.Currency = "99", "EUR"
+	anyPlan := complianceOffer()
+	anyPlan.Addon.AnyPlan, anyPlan.Addon.On = true, []string{"Starter", "Team", "Business"}
 	inr := reachOffer(false)
 	inr.Plan.Price, inr.Plan.Currency = "2999", "INR"
 	cases := []struct {
@@ -53,6 +55,10 @@ func TestOfferLines(t *testing.T) {
 			"Reachability is not included in this organisation's plan. It is included in the Team plan ($35 a month) and higher plans. A 30-day free trial is available. Plans: https://stackurity.ai/pricing.html"},
 		{"claude, add-on (a trial flag is never shown for it)", complianceOffer(), false,
 			"PCI DSS 4.0 evidence is not included in this organisation's plan. It is part of the Compliance add-on: +$99 a month on the Team or Business plan, included in Enterprise. Plans: https://stackurity.ai/pricing.html"},
+		{"claude, add-on on every paid plan (from the plans config)", anyPlan, false,
+			"PCI DSS 4.0 evidence is not included in this organisation's plan. It is part of the Compliance add-on: +$99 a month on any paid plan, included in Enterprise. Plans: https://stackurity.ai/pricing.html"},
+		{"chatgpt, add-on on every paid plan", anyPlan, true,
+			"PCI DSS 4.0 evidence is not included in your current plan; it is part of the Compliance add-on. Plans: https://stackurity.ai/pricing.html"},
 		{"claude, add-on in EUR", eur, false,
 			"PCI DSS 4.0 evidence is not included in this organisation's plan. It is part of the Compliance add-on: +€99 a month on the Team or Business plan, included in Enterprise. Plans: https://stackurity.ai/pricing.html"},
 		{"claude, Pro feature in INR", inr, false,
