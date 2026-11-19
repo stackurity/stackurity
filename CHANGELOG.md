@@ -6,6 +6,38 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.13
+
+### Added
+
+- **A record of every vulnerability check.** Each evaluation run of an organisation is kept for 400 days: after a source changed, after a report, the daily run, and a scheduled check every 30 minutes that confirms every source was read on schedule and nothing is waiting for re-evaluation. Each feed sync is kept too. The licensed evidence pack uses these records to show how many hours of a period had a completed check, counting only from when recording started. See [Evaluation runs](docs/evaluation-runs.md).
+- **Leaked keys in the evidence pack.** Every pack (not only with the Compliance add-on) lists the leaked keys open during the period, with file, line, severity, state and dates, never the value, and maps them to SOC 2 CC7.1 and ISO 27001 A.5.17 (`leaked-keys.csv` in the ZIP).
+- **MCP: `plan_options` and `evidence_pack` tools.** `plan_options` lists the organisation's paid features, those its plan lacks with what each does, and the plan or add-on that includes each; it is meant for when someone asks about their plan. `evidence_pack` says which frameworks the plan covers and gives the link that downloads the compliance evidence pack (it builds nothing itself). `integrations_status` also shows the Vanta and Drata evidence connectors. See [AI assistants](docs/ai-assistants.md).
+- **`GET /api/v1/plan/options`**: the organisation's paid features and how to get the missing ones. See [API](docs/api.md#get-planoptions).
+
+### Changed
+
+- **The Compliance add-on brings the audit evidence pack with it.** A workspace with the add-on on a plan without the pack (Stackurity Cloud's Starter + Compliance) gets the whole pack (SOC 2 and ISO 27001 as well as PCI DSS 4.0 and the EU Cyber Resilience Act) and the evidence report, and nothing else of Pro. Self-hosted editions are unchanged: Community never has the add-on.
+- The evidence pack's `schema_version` is 2: `checks_*` and `check_ratio` are replaced by `intervals_expected`, `intervals_with_report` and `interval_ratio`, and `checks_in_period` by `reports_in_period`.
+- The rule that the Compliance add-on brings the evidence pack now lives in one place (`license.BroughtBy`), read by the route gate, `GET /auth/me` and `GET /plan/options`.
+- **`402 plan_required` says what includes the feature.** The error keeps its code and a fixed message, and adds `feature`, `feature_name`, `hosted`, `included_in`, `plan`, `addon`, `trial_available` and `plans_url` ([API conventions](docs/api.md#conventions)). On Stackurity Cloud the prices come from the plan configuration, in the organisation's currency. MCP tools turn it into one line: the smallest plan with its price, or the Compliance add-on's price on a plan (never a trial for the add-on); ChatGPT connections get the plan's name and the plans page only. Answers that worked never carry an offer.
+- **Dependency scans: removed two exceptions that no longer match anything.** [GO-2026-5932](https://osv.dev/vulnerability/GO-2026-5932) (`golang.org/x/crypto/openpgp`) now lists the `golang.org/x/crypto` commit Stackurity already uses (`v0.58.1-0.20261009181718-2f1f834330b2`) as fixed, and OSV-Scanner reported its entry in `osv-scanner.toml` as unused. [GHSA-fc5q-39xc-vjpf](https://osv.dev/vulnerability/GHSA-fc5q-39xc-vjpf) (picomatch <=4.0.7, web build tooling only) was withdrawn by GitHub on 18 Nov 2026, so its entries in `web/audit-allow.json` and `osv-scanner.toml` are removed. No version changes.
+
+### Fixed
+
+- **The evidence pack measures reports against each asset's own schedule, not "every hour".** Packs said assets were checked every hour while counting hours with an agent report, so a server reporting every 6 hours looked 17% monitored. Each asset is now measured against its expected interval (a daily or weekly setting, its integration's schedule, its learned cadence, or the agent's 6-hour default), and the control texts say what is measured. The vulnerability sources are shown with their refresh interval and last refresh as of generation; the hourly re-check claim now rests on the recorded evaluation runs (migration `0116`), counting only hours since recording started. See [Audit evidence pack](docs/api.md#audit-evidence-pack).
+- **Removed assets in the evidence pack.** An application or repository removed during the period is listed with its removal date, its window ends then, and it gets no empty SBOM; assets removed before the period are left out. Time to fix counts the fixes that were an asset being removed (`asset_removed`), and the PDF summary lists the deadline figures of each priority on their own instead of one share that many low-priority fixes could dominate.
+- **EU CRA I-II(1) names the SBOM format the pack has:** CycloneDX.
+- **MCP `evidence_pack` links are always absolute.** Ask Stackurity now passes the server's public address, and without one (`STACKURITY_BASE_URL` unset) the tool gives no link and says where the pack is in the dashboard (Reports → Evidence pack). The link defaults to the project an assistant connection is limited to, or the project chosen in Ask.
+- **The Compliance add-on's refusal no longer says it is part of Stackurity Pro**, and Enterprise-only features (phishing-resistant sign-in, enterprise stack packs) say Enterprise. Reachability and verified closure are named instead of showing their internal ids.
+- **Repositories full of images are scanned again.** The server's repository clone is now partial: it downloads the commit's trees, then only the files the scans read, leaving out images, fonts, audio, video, archives and other binaries (the files the leak scan already skips; stylesheets and Java archives are kept). A repository whose default branch held hundreds of MiB of PNG and SVG files failed every scan with "the clone used more than 1 GiB on disk". Every git step that fetches gets the same pinned address, HTTPS-only transport, no hooks, symlinks or LFS, and credential as the clone, and the remote is removed before anything else runs git in the clone. See [install.md](docs/install.md).
+- **A scan over the disk limit is not retried.** A repository or image scan stopped for using too much disk now fails at once instead of downloading the same data five more times; it runs again on its next schedule.
+- **A `build.gradle` without a lockfile no longer marks a repository's collection partial.** It is read in full but lists declared versions only, so its coverage is now `limited`: still listed with the asset's coverage and its reason, and counted as a coverage limit by the trust badge, but the collection's status follows the files that can be read completely (a Flutter app's `pubspec.lock`, for example). A package in a `limited` file is never marked removed (and its issues never resolved) just for being missing from a later scan, since moving it to a version catalog or a variable hides it from the file. Coverage items accept the new `limited` status; from a stack pack, only official packs may set it. See [packs.md](docs/packs.md) and [api.md](docs/api.md#post-ingest).
+
+### Upgrading
+
+- Migration `0116_evaluation_runs` adds the tables `evaluation_runs` (row-level security) and `feed_sync_runs`. Additive. Recording starts when the new version runs; earlier hours are reported as not recorded.
+
 ## 0.20.12
 
 ### Added
