@@ -1,3 +1,0 @@
-### Changed
-
-- **Dependency scans: removed two exceptions that no longer match anything.** [GO-2026-5932](https://osv.dev/vulnerability/GO-2026-5932) (`golang.org/x/crypto/openpgp`) now lists the `golang.org/x/crypto` commit Stackurity already uses (`v0.58.1-0.20261009181718-2f1f834330b2`) as fixed, and OSV-Scanner reported its entry in `osv-scanner.toml` as unused. [GHSA-fc5q-39xc-vjpf](https://osv.dev/vulnerability/GHSA-fc5q-39xc-vjpf) (picomatch <=4.0.7, web build tooling only) was withdrawn by GitHub on 18 Nov 2026, so its entries in `web/audit-allow.json` and `osv-scanner.toml` are removed. No version changes.
