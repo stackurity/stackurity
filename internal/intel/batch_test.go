@@ -181,4 +181,21 @@ func TestIncrementalFailureKeepsCursor(t *testing.T) {
 	if calls != testRecords {
 		t.Errorf("the retry queued %d packages for re-evaluation; want all %d, including those stored by the failed attempt", calls, testRecords)
 	}
+	// Every sync is recorded, the failed one with its class and not its text.
+	rows, err := st.Pool.Query(ctx, `SELECT ok, error_class, reevaluate FROM feed_sync_runs WHERE feed = 'osv:Debian' ORDER BY id`)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	for rows.Next() {
+		var ok, re bool
+		var class string
+		if err := rows.Scan(&ok, &class, &re); err != nil {
+			t.Fatal(err)
+		}
+		got = append(got, fmt.Sprintf("%v/%s/%v", ok, class, re))
+	}
+	if strings.Join(got, " ") != "true//true false/error/false true//true" {
+		t.Errorf("feed sync runs: %v", got)
+	}
 }

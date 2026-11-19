@@ -186,8 +186,26 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	if _, err := conn.Exec(ctx, ensureAppendOnly); err != nil {
 		return done, fmt.Errorf("ensure append-only grants: %w", err)
 	}
+	if _, err := conn.Exec(ctx, ensureRunRecords); err != nil {
+		return done, fmt.Errorf("ensure run record grants: %w", err)
+	}
 	return done, nil
 }
+
+// ensureRunRecords keeps evaluation and feed sync runs (migration 0116)
+// unchangeable by the application role after ensureAppRole's blanket
+// grants: it inserts and reads them, and deletes them only when they are
+// past retention. It does nothing before migration 0116 or where roles
+// cannot be managed.
+const ensureRunRecords = `DO $$
+BEGIN
+    IF to_regclass(format('%I.evaluation_runs', current_schema())) IS NULL THEN
+        RETURN;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_app') THEN
+        REVOKE UPDATE, TRUNCATE ON evaluation_runs, feed_sync_runs FROM stackurity_app;
+    END IF;
+END $$`
 
 // ensureAppendOnly keeps the trust badge's status history and purge log
 // append-only for the application role (migration 0103) after
