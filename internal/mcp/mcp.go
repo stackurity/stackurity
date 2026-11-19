@@ -304,7 +304,9 @@ var tools = map[string]tool{
 	"list_assets": {
 		description: "List inventoried assets: hosts, deployed applications, repositories, container images and managed services. " +
 			"Use it to find the asset_id of a project or server. Names can repeat (a host and a repository of the same name); " +
-			"label tells them apart. collection_status removed means an application is gone from its host. reporting one_off means " +
+			"label tells them apart. collection_status partial means the last scan could not read everything; a known format limit " +
+			"(a build.gradle without a lockfile: declared versions only) is coverage status limited and does not make it partial. " +
+			"collection_status removed means an application is gone from its host. reporting one_off means " +
 			"it was scanned once and its results are as of as_of; stale means a server or scheduled scan stopped reporting.",
 		schema: obj(map[string]any{
 			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},

@@ -91,6 +91,37 @@ func TestJavaPackInSandbox(t *testing.T) {
 	}
 }
 
+// A build.gradle without a lockfile is read in full but lists declared
+// versions only: from the official Java pack that is "limited" coverage,
+// which does not make the collection partial. An unofficial pack giving the
+// same reason stays "partial".
+func TestKnownLimitIsLimitedCoverage(t *testing.T) {
+	gradle := []pack.File{{Path: "android/app/build.gradle.kts", Content: []byte(`implementation("androidx.core:core-ktx:1.9.0")` + "\n")}}
+	for _, c := range []struct {
+		trust Trust
+		want  string
+	}{{TrustOfficial, "limited"}, {TrustVerified, "partial"}, {TrustUnsigned, "partial"}} {
+		l, err := Load(context.Background(), archive(t, "java", manifest("java")), c.trust)
+		if err != nil {
+			t.Fatal(err)
+		}
+		obs, cov, err := l.Scan(context.Background(), gradle)
+		l.Close(context.Background())
+		if err != nil || len(obs) != 1 || len(cov) != 1 {
+			t.Fatalf("%s: %+v %+v %v", c.trust, obs, cov, err)
+		}
+		if cov[0].Status != c.want || !strings.Contains(cov[0].Reason, "dependency locking") {
+			t.Errorf("%s: coverage %+v; want %s with the reason kept", c.trust, cov[0], c.want)
+		}
+	}
+	// A pack's own "limited" is kept; anything unknown is still partial.
+	l := load(t, "java")
+	_, cov, err := l.check(nil, &pack.Response{Coverage: []pack.CoverageItem{{Scope: "a", Status: "limited"}, {Scope: "b", Status: "fine"}}})
+	if err != nil || cov[0].Status != "limited" || cov[1].Status != "partial" {
+		t.Errorf("statuses: %+v %v", cov, err)
+	}
+}
+
 func TestSandboxContainsHostilePacks(t *testing.T) {
 	l := load(t, "evil")
 	if _, reason, err := scan(l, "escape.txt"); err != nil || !strings.Contains(reason, "file read failed; dial failed") {

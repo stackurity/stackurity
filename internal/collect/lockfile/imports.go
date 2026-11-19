@@ -64,6 +64,13 @@ var (
 	pyImport  = regexp.MustCompile(`(?m)^\s*(?:from\s+([A-Za-z_][A-Za-z0-9_]*)[\s.]|import\s+([A-Za-z_][A-Za-z0-9_]*(?:\s*,\s*[A-Za-z_][A-Za-z0-9_]*)*))`)
 )
 
+// ReadsExt reports whether the import walk reads files with extension ext
+// (lower case, with the dot): a repository clone must check them out even
+// when the leak scan skips them (stylesheets).
+func ReadsExt(ext string) bool {
+	return jsExts[ext] || configExts[ext] || textExts[ext] || styleExts[ext] || ext == ".go" || ext == ".php" || ext == ".py"
+}
+
 // importIndex is what the walk learnt about the tree's first-party source.
 type importIndex struct {
 	partial string // why the scan is incomplete; "" when every file was read

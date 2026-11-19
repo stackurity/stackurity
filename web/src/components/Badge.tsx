@@ -26,6 +26,7 @@ const TONES: Record<string, Tone> = {
   revoked: "bad",
   disabled: "muted",
   unsupported: "muted",
+  limited: "muted",
   skipped: "muted",
   low: "muted",
   expired: "muted",

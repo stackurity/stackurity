@@ -9,6 +9,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"sort"
 	"strings"
 )
 
@@ -50,6 +51,21 @@ var skipExt = map[string]bool{".png": true, ".jpg": true, ".jpeg": true, ".gif":
 	".gz": true, ".tgz": true, ".bz2": true, ".xz": true, ".7z": true, ".rar": true, ".jar": true, ".war": true,
 	".mp3": true, ".mp4": true, ".mov": true, ".webm": true, ".wasm": true, ".so": true, ".dll": true, ".exe": true,
 	".dylib": true, ".o": true, ".a": true, ".class": true, ".pyc": true, ".map": true, ".min.css": true, ".css": true}
+
+// SkippedExts returns the file extensions (lower case, with the dot) whose
+// files Dir never reads, sorted. A repository clone leaves files of these
+// types out of its checkout unless another scanner reads them.
+func SkippedExts() []string {
+	exts := make([]string, 0, len(skipExt))
+	for e := range skipExt {
+		// ".min.css" is matched by suffix; path.Ext never returns it.
+		if strings.Count(e, ".") == 1 {
+			exts = append(exts, e)
+		}
+	}
+	sort.Strings(exts)
+	return exts
+}
 
 // Result is one directory's scan.
 type Result struct {

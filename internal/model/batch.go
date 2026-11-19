@@ -89,8 +89,11 @@ type Observation struct {
 
 // CoverageItem records what a collector did and did not check (FR-16).
 type CoverageItem struct {
-	Scope  string `json:"scope"`  // e.g. "dpkg", "rpm", "npm:package-lock.json"
-	Status string `json:"status"` // checked, skipped, failed, unsupported, partial
+	Scope string `json:"scope"` // e.g. "dpkg", "rpm", "npm:package-lock.json"
+	// checked, skipped, failed, unsupported, partial, or limited: read in
+	// full, but the format itself has a known limitation (Reason says which,
+	// e.g. declared versions only). Limited does not make a batch incomplete.
+	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
 }
 

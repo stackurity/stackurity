@@ -388,6 +388,10 @@ func ScopeClass(scope, status string) (class, kind string) {
 		if kind, ok := limitScopes[k]; ok {
 			return ScopeLimit, kind
 		}
+	case "limited":
+		// Read in full, but the format says less than a lockfile (a
+		// build.gradle without dependency locking: declared versions only).
+		return ScopeLimit, "dependencies declared without a lockfile"
 	case "unsupported":
 		// A format or kind of system Stackurity does not read yet (an
 		// unparsed lockfile, a host without a package database).

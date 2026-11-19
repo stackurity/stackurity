@@ -271,6 +271,7 @@ func TestScopeClass(t *testing.T) {
 		{"lockfiles", "skipped", ScopeOK, ""},
 		{"web-assets:/var/www/chat", "checked", ScopeOK, ""},
 		{"something-new:/x", "partial", ScopeFailed, ""},
+		{"pack:java:maven:android/app/build.gradle.kts", "limited", ScopeLimit, "dependencies declared without a lockfile"},
 	}
 	for _, c := range cases {
 		class, kind := ScopeClass(c.scope, c.status)

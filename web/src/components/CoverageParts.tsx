@@ -460,6 +460,7 @@ export function AssetCoverageTable({ list, renderProblems }: {
 const SCOPE_STATUS: Record<string, string> = {
   failed: "Failed",
   partial: "Partly read",
+  limited: "Read, with a known limit",
   unsupported: "Not read",
   skipped: "Skipped",
 };

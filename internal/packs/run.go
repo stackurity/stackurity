@@ -191,9 +191,12 @@ func (l *Loaded) check(files []pack.File, resp *pack.Response) ([]model.Observat
 	cov := make([]model.CoverageItem, 0, len(resp.Coverage))
 	for _, c := range resp.Coverage {
 		switch c.Status {
-		case "checked", "partial", "failed", "skipped", "unsupported":
+		case "checked", "partial", "failed", "skipped", "unsupported", "limited":
 		default:
 			c.Status = "partial"
+		}
+		if c.Status == "partial" && l.knownLimit(c.Reason) {
+			c.Status = "limited"
 		}
 		if len(c.Reason) > 500 {
 			c.Reason = c.Reason[:500]
@@ -225,3 +228,28 @@ func (c *capped) Write(p []byte) (int, error) {
 
 func (c *capped) Bytes() []byte  { return c.buf.Bytes() }
 func (c *capped) String() string { return c.buf.String() }
+
+// knownLimits are reasons official packs give with "partial" that describe
+// what a file format can say, not a read that stopped short: a build.gradle
+// without dependency locking lists literal versions only, however often it
+// is read. Reported as "limited", they stay in the coverage details but do
+// not make the collection partial. Packs built before the "limited" status
+// existed report them as "partial"; this keeps the signed packs unchanged.
+var knownLimits = map[string][]string{
+	"java": {"declared dependencies with literal versions only"},
+}
+
+// knownLimit reports whether reason, from this pack, is a known limitation.
+// Only official packs are trusted with it: a downgrade from "partial" is
+// what the reason claims, and a third-party pack could claim anything.
+func (l *Loaded) knownLimit(reason string) bool {
+	if l.Trust != TrustOfficial {
+		return false
+	}
+	for _, prefix := range knownLimits[l.Manifest.ID] {
+		if strings.HasPrefix(reason, prefix) {
+			return true
+		}
+	}
+	return false
+}
