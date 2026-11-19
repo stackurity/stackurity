@@ -96,7 +96,7 @@ func main() {
 
 - `files` are base-name patterns of the files the pack reads; a bare `*` is not allowed.
 - `handles` names the coverage prefixes the core reports as unsupported without the pack, which drives suggestions.
-- Report every file in coverage: `Checked`, `Partial` with the reason, or `Failed`. A pack may also set a coverage status of `limited` (read in full, but the format has a known limit the reason names); the core accepts it from any pack, and maps some official packs' known `partial` reasons to it (`internal/packs/run.go`).
+- Report every file in coverage: `Checked`, `Partial` with the reason, or `Failed`. A pack may also set a coverage status of `limited` (read in full, but the format has a known limit the reason names); the core accepts it only from official packs (from any other pack it is `partial`), and maps some official packs' known `partial` reasons to it (`internal/packs/run.go`).
 - Use real package URLs so vulnerability and lifecycle data apply.
 
 ```sh

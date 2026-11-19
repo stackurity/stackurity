@@ -114,11 +114,18 @@ func TestKnownLimitIsLimitedCoverage(t *testing.T) {
 			t.Errorf("%s: coverage %+v; want %s with the reason kept", c.trust, cov[0], c.want)
 		}
 	}
-	// A pack's own "limited" is kept; anything unknown is still partial.
-	l := load(t, "java")
-	_, cov, err := l.check(nil, &pack.Response{Coverage: []pack.CoverageItem{{Scope: "a", Status: "limited"}, {Scope: "b", Status: "fine"}}})
-	if err != nil || cov[0].Status != "limited" || cov[1].Status != "partial" {
-		t.Errorf("statuses: %+v %v", cov, err)
+	// A pack's own "limited" is kept only from an official pack; anything
+	// unknown is still partial.
+	for trust, want := range map[Trust]string{TrustOfficial: "limited", TrustVerified: "partial", TrustUnsigned: "partial"} {
+		l, err := Load(context.Background(), archive(t, "java", manifest("java")), trust)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, cov, err := l.check(nil, &pack.Response{Coverage: []pack.CoverageItem{{Scope: "a", Status: "limited"}, {Scope: "b", Status: "fine"}}})
+		l.Close(context.Background())
+		if err != nil || cov[0].Status != want || cov[1].Status != "partial" {
+			t.Errorf("%s: statuses %+v %v; want %s, partial", trust, cov, err, want)
+		}
 	}
 }
 

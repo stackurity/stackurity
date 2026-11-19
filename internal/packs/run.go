@@ -191,7 +191,13 @@ func (l *Loaded) check(files []pack.File, resp *pack.Response) ([]model.Observat
 	cov := make([]model.CoverageItem, 0, len(resp.Coverage))
 	for _, c := range resp.Coverage {
 		switch c.Status {
-		case "checked", "partial", "failed", "skipped", "unsupported", "limited":
+		case "checked", "partial", "failed", "skipped", "unsupported":
+		case "limited":
+			// "limited" keeps rows from being removed and the collection
+			// from being partial: only official packs are trusted with it.
+			if l.Trust != TrustOfficial {
+				c.Status = "partial"
+			}
 		default:
 			c.Status = "partial"
 		}

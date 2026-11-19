@@ -288,3 +288,72 @@ func TestExistingAppCopiesGetDistinctNames(t *testing.T) {
 		t.Errorf("person's name changed to %q", got.Name)
 	}
 }
+
+// repoReport sends a repository scan's batch (complete: "limited" coverage
+// does not make it incomplete).
+func repoReport(t *testing.T, s *store.Store, ctx context.Context, cov []model.CoverageItem, pkgs ...pkg) *store.IngestResult {
+	t.Helper()
+	time.Sleep(5 * time.Millisecond)
+	b := model.NewBatch(model.Collector{ID: "lockfile", Version: "test", Method: "repository"}, model.AssetRef{
+		Kind: model.AssetRepository, Name: "acme/app",
+		Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://github.com/acme/app"}},
+	})
+	for _, p := range pkgs {
+		b.Observations = append(b.Observations, model.Observation{Purl: p.purl, Location: p.loc, Confidence: model.ConfidenceInferred})
+	}
+	b.Coverage = cov
+	b.Complete = true
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Ingest(store.AsServerCollection(ctx), b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// A build.gradle without a lockfile is "limited": the Java pack reads only
+// literal versions. When a team moves implementation("com.squareup.okhttp3:
+// okhttp:4.9.0") into a version catalog (libs.okhttp), the dependency
+// disappears from the batch but still ships: its row must stay and its
+// finding stay open, not resolve as removed or remediated. Rows in fully
+// read files are still removed when they go.
+func TestLimitedFileProvesNoRemoval(t *testing.T) {
+	ctx, s := loopStore(t)
+	const gradle = "android/app/build.gradle.kts"
+	cov := []model.CoverageItem{
+		{Scope: "pubspec:pubspec.lock", Status: "checked"},
+		{Scope: "pack:java:maven:" + gradle, Status: "limited", Reason: "declared dependencies with literal versions only"},
+	}
+	first := repoReport(t, s, ctx, cov,
+		pkg{"pkg:maven/com.squareup.okhttp3/okhttp@4.9.0", gradle},
+		pkg{"pkg:pub/http@0.13.0", "pubspec.lock"})
+	repo := first.AssetID
+	want := map[string]string{"CVE-OKHTTP": "okhttp", "CVE-HTTP": "http"}
+	syncFix(t, s, ctx, repo, want, nil)
+
+	// The catalog move: okhttp is no longer a literal; http was upgraded.
+	r := repoReport(t, s, ctx, cov, pkg{"pkg:pub/http@1.2.0", "pubspec.lock"})
+	if r.Removed != 1 {
+		t.Errorf("removed %d rows, want 1 (http@0.13.0 only)", r.Removed)
+	}
+	live := liveRows(t, s, ctx, repo)
+	if !live["okhttp@4.9.0"] || live["http@0.13.0"] {
+		t.Errorf("live rows %v; want okhttp kept and the old http gone", live)
+	}
+	syncFix(t, s, ctx, repo, map[string]string{"CVE-OKHTTP": "okhttp"}, nil)
+	if fs := findings(t, s, ctx, store.FindingFilter{AssetID: repo, Key: "CVE-OKHTTP"}); len(fs) != 1 || fs[0].Status == "resolved" {
+		t.Errorf("okhttp finding %+v; want it open", fs)
+	}
+	if fs := findings(t, s, ctx, store.FindingFilter{AssetID: repo, Key: "CVE-HTTP"}); len(fs) != 1 || fs[0].Status != "resolved" {
+		t.Errorf("http finding %+v; want resolved", fs)
+	}
+	a, err := s.GetAsset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.CollectionStatus != "ok" {
+		t.Errorf("collection status %q, want ok", a.CollectionStatus)
+	}
+}
