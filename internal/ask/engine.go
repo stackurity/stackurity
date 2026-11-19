@@ -586,7 +586,7 @@ func (e *Engine) runTool(ctx context.Context, api mcp.API, u ToolUse) map[string
 	}
 	res, err := mcp.CallRead(ctx, api, u.Name, args)
 	if err != nil {
-		return toolResult(u.ID, ErrorText(err), true)
+		return toolResult(u.ID, ErrorText(errors.New(mcp.ToolErrorText(ctx, err))), true)
 	}
 	return toolResult(u.ID, ToolResultText(u.Name, res), false)
 }
@@ -631,6 +631,10 @@ func toolLabel(u ToolUse) string {
 		return "Checking integrations"
 	case "notification_settings":
 		return "Reading notification rules"
+	case "evidence_pack":
+		return "Preparing the evidence pack link"
+	case "plan_options":
+		return "Reading your plan options"
 	}
 	if u.Name == ConnectTool {
 		return "Preparing a connection"

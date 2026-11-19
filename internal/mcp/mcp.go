@@ -74,7 +74,11 @@ type Server struct {
 	// AllowWrites offers the tools that change something; without it only
 	// the read-only tools are listed or callable.
 	AllowWrites bool
-	mu          sync.Mutex
+	// Client is what the client says about itself (offer.go: ChatGPT gets
+	// plan offers without prices). /mcp sets it from the request; stdio
+	// learns the name from initialize.
+	Client ClientInfo
+	mu     sync.Mutex
 }
 
 type request struct {
@@ -156,7 +160,9 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"list_leaks lists keys, tokens and passwords found written in files (never their values). For questions about the " +
 	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
 	"integrations and notification channels are connected and on, never their addresses or credentials) and " +
-	"notification_settings (the notification rules in effect)."
+	"notification_settings (the notification rules in effect). evidence_pack gives the link that downloads the compliance " +
+	"evidence pack for an audit period. plan_options lists the organisation's plan options; use it only when the person " +
+	"asks about their plan or upgrading."
 
 const readOnlyNote = " This connection is read-only: no tool changes anything."
 
@@ -192,6 +198,11 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		_ = json.Unmarshal(req.Params, &p)
+		if name := requestClientName(req.Params); name != "" {
+			s.mu.Lock()
+			s.Client.Name = name
+			s.mu.Unlock()
+		}
 		v := LegacyVersion
 		if legacyVersions[p.ProtocolVersion] {
 			v = p.ProtocolVersion
@@ -235,6 +246,13 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 				return toolError("arguments must be a JSON object"), nil
 			}
 		}
+		s.mu.Lock()
+		c := s.Client
+		s.mu.Unlock()
+		if name := requestClientName(req.Params); name != "" {
+			c.Name = name
+		}
+		ctx = withBase(withClient(ctx, c), s.BaseURL)
 		var out any
 		var err error
 		if t.write != nil {
@@ -243,7 +261,7 @@ func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *
 			out, err = t.run(ctx, s.API, args)
 		}
 		if err != nil {
-			return toolError(err.Error()), nil
+			return toolError(errorText(ctx, err)), nil
 		}
 		text, _ := json.MarshalIndent(out, "", " ")
 		return map[string]any{"content": []map[string]any{{"type": "text", "text": string(text)}}}, nil
@@ -900,7 +918,7 @@ type findingVEX struct {
 // clients cache the list).
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
-	"account_overview", "integrations_status", "notification_settings"}
+	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options"}
 
 // readTitles are the read tools' short human titles (directories show them).
 // The account tools add theirs in account.go.

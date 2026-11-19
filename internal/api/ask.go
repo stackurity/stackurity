@@ -729,7 +729,7 @@ var askPaths = []string{"/api/v1/search?", "/api/v1/assets?", "/api/v1/assets/",
 var askExactPaths = map[string]bool{"/api/v1/auth/me": true, "/api/v1/usage": true, "/api/v1/users": true, "/api/v1/ask/status": true,
 	"/api/v1/channels": true, "/api/v1/routes": true, "/api/v1/settings/notifications": true, "/api/v1/integrations": true,
 	"/api/v1/integrations/github": true, "/api/v1/integrations/gitlab": true, "/api/v1/integrations/jira/connections": true,
-	"/api/v1/integrations/digitalocean": true}
+	"/api/v1/integrations/digitalocean": true, "/api/v1/integrations/evidence": true, "/api/v1/plan/options": true}
 
 // askAPI is the API as Ask Stackurity's tools see it: each call goes
 // through the server's own router with the person's session, as if their
