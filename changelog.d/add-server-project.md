@@ -1,0 +1,3 @@
+### Changed
+
+- **Add server puts new servers in a project.** The one-server install command now has a **Project** choice (the fleet code already had one), and Add server, the fleet code and the DigitalOcean commands pre-select the project chosen in the project picker, or the workspace's only project. With several projects and none chosen, you pick one (or **No project**) before the code is made. The install command card, the pending codes list and the confirmation line say which project the server goes into. Before, servers added with a one-server code always landed in no project, so anyone viewing a project did not see them. The in-app help article Add a server describes it.
