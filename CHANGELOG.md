@@ -6,6 +6,16 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.14
+
+### Changed
+
+- **Add server puts new servers in a project.** The one-server install command now has a **Project** choice (the fleet code already had one), and Add server, the fleet code and the DigitalOcean commands pre-select the project chosen in the project picker, or the workspace's only project. With several projects and none chosen, you pick one (or **No project**) before the code is made. The install command card, the pending codes list and the confirmation line say which project the server goes into. Before, servers added with a one-server code always landed in no project, so anyone viewing a project did not see them. The in-app help article Add a server describes it.
+
+### Fixed
+
+- **Sign-ups with Google, Microsoft or GitHub record where they came from.** The sign-up page keeps its `?ref=` in the tab while the person is at the provider and sends it with the completion form (`POST /signup/social` takes `ref`), so the trial report's `ref` is no longer empty for them. Without a `ref`, a link tagged `utm_source` (and `utm_campaign`) counts as `<utm_source>-<utm_campaign>`, for the email form too.
+
 ## 0.20.13
 
 ### Added
