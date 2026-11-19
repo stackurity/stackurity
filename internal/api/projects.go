@@ -51,6 +51,8 @@ var projectRoutes = map[string]projectScope{
 	"PUT /api/v1/auth/default-project":   accountScope,
 	"POST /api/v1/feedback":              accountScope,
 	"GET /api/v1/feedback/mine":          accountScope,
+	// The organisation's paid features and plan options (plan_options.go).
+	"GET /api/v1/plan/options": accountScope,
 	// Usage counts from the dashboard: counted for the caller's workspace
 	// whatever their role or projects (usage_counts.go).
 	"POST /api/v1/usage-counts": accountScope,

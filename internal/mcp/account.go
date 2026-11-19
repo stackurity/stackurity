@@ -98,6 +98,8 @@ func init() {
 			"when it last worked and last delivered a message, whether its stored credential is missing, and its last error. " +
 			"sources (engineer and above): scanning integrations (repositories, images, registries, cloud accounts) with kind, name, " +
 			"enabled, schedule and last run. github, gitlab, jira and digitalocean: app installations and connections and their status. " +
+			"evidence_connectors (admins): the Vanta and Drata compliance evidence connections, each connected or not, its status, " +
+			"sync interval and last and next sync, and compliance_addon (false: connections are kept but nothing is sent). " +
 			"Never returns webhook URLs, addresses, tokens, passwords or other configuration. not_available lists what the person's role " +
 			"cannot read.",
 		schema: obj(map[string]any{}),
@@ -391,6 +393,16 @@ func integrationsStatus(ctx context.Context, api API, _ map[string]any) (any, er
 		out["digitalocean"] = do
 	}
 
+	var ev struct {
+		ComplianceAddon bool                  `json:"compliance_addon"`
+		Vanta           evidenceConnectorView `json:"vanta"`
+		Drata           evidenceConnectorView `json:"drata"`
+	}
+	if p.get(ctx, api, "evidence_connectors", "/api/v1/integrations/evidence", &ev) {
+		out["evidence_connectors"] = map[string]any{"compliance_addon": ev.ComplianceAddon, "vanta": ev.Vanta.public(),
+			"drata": ev.Drata.public()}
+	}
+
 	out["not_available"] = nonNil(p.missing)
 	out["note"] = "A channel sends only while enabled and while a notification rule uses it (notification_settings). " +
 		"Configuration, addresses and credentials are never shown."
@@ -564,4 +576,32 @@ func nonNil[T any](s []T) []T {
 		return []T{}
 	}
 	return s
+}
+
+// evidenceConnectorView is one vendor in GET /integrations/evidence.
+type evidenceConnectorView struct {
+	Available  bool `json:"available"`
+	Connection *struct {
+		Status         string     `json:"status"`
+		StatusReason   string     `json:"status_reason"`
+		IntervalHours  int        `json:"interval_hours"`
+		NextSyncAt     *time.Time `json:"next_sync_at"`
+		LastSyncAt     *time.Time `json:"last_sync_at"`
+		LastSyncStatus *string    `json:"last_sync_status"`
+		ConnectedAt    *time.Time `json:"connected_at"`
+	} `json:"connection"`
+}
+
+// public is the connector's status without its configuration or vendor
+// ids.
+func (v evidenceConnectorView) public() map[string]any {
+	m := map[string]any{"set_up_on_server": v.Available, "connected": v.Connection != nil}
+	if c := v.Connection; c != nil {
+		m["status"], m["interval_hours"], m["next_sync_at"] = c.Status, c.IntervalHours, c.NextSyncAt
+		m["last_sync_at"], m["last_sync_status"], m["connected_at"] = c.LastSyncAt, c.LastSyncStatus, c.ConnectedAt
+		if c.StatusReason != "" {
+			m["status_reason"] = withoutURLs(c.StatusReason)
+		}
+	}
+	return m
 }

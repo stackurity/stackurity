@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/license"
 	"github.com/stackurity/stackurity/internal/model"
 )
 
@@ -51,6 +52,9 @@ type APIError struct {
 	Details []string `json:"details"`
 	// RetryAfter is the server's Retry-After (seconds form), or 0.
 	RetryAfter time.Duration `json:"-"`
+	// Offer is plan_required's structured part (servers from 0.20.13):
+	// how the organisation could get the feature it asked for.
+	*license.Offer
 }
 
 func (e *APIError) Error() string {

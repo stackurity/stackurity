@@ -57,6 +57,13 @@ var (
 	// (Gate). The key a hosted plan lists is the feature's value, such as
 	// "phishing_resistant_mfa".
 	editionHasFeature func(s *Server, r *http.Request, ws int64, f license.Feature) (bool, error)
+	// editionPlanOffer fills in o, the offer for paid feature f in
+	// workspace ws, where the edition sells plans itself (a hosted
+	// edition's billing: plan names, prices in the organisation's
+	// currency, whether a trial is open), and reports whether f is on for
+	// ws; nil leaves the licence editions (license.SelfHostedOffer) and
+	// asks hasFeatureIn. Used by plan_required errors and GET /plan/options.
+	editionPlanOffer func(s *Server, r *http.Request, ws int64, f license.Feature, o *license.Offer) (bool, error)
 	// reportWatermark is the line every report and export carries while the
 	// organisation's report mode is trial (reportmode.go). An edition that
 	// sets trial mode may name itself here.

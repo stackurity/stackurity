@@ -1078,7 +1078,11 @@ func (s *Server) mcpEndpoint(w http.ResponseWriter, r *http.Request) {
 	// An assistant changes things only when the person allowed it; a
 	// personal token can do what its role allows, as on the API.
 	writes := p.Assistant == nil || p.Assistant.AllowWrites
-	srv := &mcp.Server{API: api, Version: s.Version, BaseURL: s.assistantBase(), AllowWrites: writes}
+	srv := &mcp.Server{API: api, Version: s.Version, BaseURL: s.assistantBase(), AllowWrites: writes,
+		Client: mcp.ClientInfo{UserAgent: r.UserAgent()}}
+	if p.Assistant != nil {
+		srv.Client.OAuthClient, srv.Client.RedirectHost = p.Assistant.ClientName, p.Assistant.RedirectHost
+	}
 	srv.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, nil)))
 }
 

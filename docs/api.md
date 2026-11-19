@@ -44,6 +44,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Lists** return `{"items": [...], "total": N, "limit": L, "offset": O}`. Routes that page take `?limit=` (default 100, at most 500) and `?offset=`.
 - **Limits and read-only organisations.** A request that would create an asset past the organisation's limit answers `402 asset_limit`, a new project past its limit `402 project_limit`, and a new rule, channel, team, API token, member or SBOM import past the plan's limits `402 plan_limit`; a Check again within the plan's cooldown answers `429 check_cooldown`, and requests past the plan's hourly cap `429 rate_limited` ([Plan limits](asset-limits.md#plan-limits)). While an organisation is read-only, uploads, enrollment, integrations, checks and notifications answer `402 read_only`. See [asset-limits.md](asset-limits.md).
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
+- **`402 plan_required`.** A paid feature the organisation's plan does not include answers `{"error": {"code": "plan_required", "message", "feature", "feature_name", "hosted", "included_in", "plan", "addon", "trial_available", "trial_days", "plans_url"}}`. `message` is a fixed sentence per feature. `feature` is the licence feature (such as `reachability` or `compliance_addon`) and `feature_name` what was asked for (such as `PCI DSS 4.0 evidence`). `included_in` names the plans (Stackurity Cloud, `hosted` true) or licence editions (self-hosted) that include it, smallest first. On Stackurity Cloud, `plan` is the smallest plan that includes an edition feature (`name`, `price` as a decimal in the main unit, `currency`, `interval`) and `addon` an add-on's price on top of the plans in `on`, both in the organisation's currency from the server's plan configuration; self-hosted servers give names only. `trial_available` is true only when the organisation can still start a free trial that includes the feature. `plans_url` is the informational plans page, never a checkout.
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
 - **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
@@ -2599,6 +2600,12 @@ The audit evidence pack for a period (`from`, `to`: dates, `to` inclusive; defau
 **Who:** viewer
 
 Audit events, paged. Query: `object_type`, `object_id`.
+
+### `GET /plan/options`
+
+**Who:** any member (the caller's own organisation)
+
+The organisation's paid features: `edition`, `included` and `not_included` (each `feature`, `name`, `description`; a feature not included has `offer`, the structured part of [`402 plan_required`](#conventions)), and `plans_url`. Reads only; MCP's `plan_options` tool shows it when someone asks about their plan.
 
 ### `GET /usage`
 

@@ -298,6 +298,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/feedback": {class: "skip"},
 	// The caller's own sent items (filtered by user); feedback_queue_test.go.
 	"GET /api/v1/feedback/mine": {class: "account"},
+	"GET /api/v1/plan/options":  {class: "account"},
 	// Usage counts: added to the caller's own workspace only, nothing
 	// comes back (usage_counts_test.go).
 	"POST /api/v1/usage-counts": {class: "account", body: func(*tenantFx) any {

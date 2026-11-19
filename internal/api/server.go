@@ -348,6 +348,9 @@ func (s *Server) Handler() http.Handler {
 			}
 			r.Post("/feedback", s.sendFeedback)
 			r.Get("/feedback/mine", s.myFeedback)
+			// The organisation's paid features and how to get the others
+			// (plan_options.go).
+			r.Get("/plan/options", s.planOptions)
 			// The caller's saved views on dashboard pages (saved_views.go).
 			r.Get("/saved-views", s.listSavedViews)
 			r.Post("/saved-views", s.saveView)
@@ -710,6 +713,9 @@ type apiError struct {
 	Code    string   `json:"code"`
 	Message string   `json:"message"`
 	Details []string `json:"details,omitempty"`
+	// Offer: plan_required's structured part (planRequired), its fields
+	// next to code and message.
+	*license.Offer
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

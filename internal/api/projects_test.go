@@ -198,6 +198,7 @@ var projectScopes = map[string]string{
 	"DELETE /api/v1/assistants/{id}":               "account",
 	"PATCH /api/v1/assistants/{id}":                "account",
 	"GET /api/v1/feedback/mine":                    "account",
+	"GET /api/v1/plan/options":                     "account",
 	"GET /api/v1/saved-views":                      "account",
 	"POST /api/v1/saved-views":                     "account",
 	"DELETE /api/v1/saved-views/{id}":              "account",

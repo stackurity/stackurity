@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 11 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 18 || len(writeTools) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -502,7 +502,8 @@ func (f *accountAPI) Do(_ context.Context, method, path string, _ io.Reader, _ m
 	rank := map[string]int{"viewer": 1, "engineer": 2, "security": 3, "admin": 4}[f.role]
 	need := map[string]int{"/api/v1/users": 4, "/api/v1/channels": 3, "/api/v1/routes": 3, "/api/v1/settings/notifications": 3,
 		"/api/v1/integrations": 2, "/api/v1/integrations/github": 2, "/api/v1/integrations/gitlab": 2,
-		"/api/v1/integrations/jira/connections": 4, "/api/v1/integrations/digitalocean": 4}[path]
+		"/api/v1/integrations/jira/connections": 4, "/api/v1/integrations/digitalocean": 4,
+		"/api/v1/integrations/evidence": 4}[path]
 	if rank < need {
 		return &client.APIError{Status: 403, Code: "forbidden", Message: "requires a higher role"}
 	}
@@ -557,6 +558,11 @@ func (f *accountAPI) Do(_ context.Context, method, path string, _ io.Reader, _ m
 			"connected_by":2,"connected_at":"2026-10-01T00:00:00Z"}],"total":1}`
 	case "/api/v1/integrations/digitalocean":
 		body = `{"connected":true,"connected_at":"2026-10-02T00:00:00Z","secrets_enabled":true}`
+	case "/api/v1/integrations/evidence":
+		body = `{"compliance_addon":false,"vanta":{"available":false,"connection":null},"drata":{"available":true,"connection":
+			{"id":3,"vendor":"drata","region":"us","config":{"workspace_id":"drata-ws-77"},"status":"reconnect_needed",
+			"status_reason":"Drata refused the key at ` + leakWebhook + `","interval_hours":24,"next_sync_at":"2026-11-20T00:00:00Z",
+			"last_sync_at":"2026-11-19T00:00:00Z","last_sync_status":"failed","connected_by":2,"connected_at":"2026-11-01T00:00:00Z"}}}`
 	default:
 		return &client.APIError{Status: 404, Code: "not_found", Message: "no route " + path}
 	}
@@ -659,6 +665,16 @@ func TestIntegrationsAndNotificationSettings(t *testing.T) {
 	}
 	if out["digitalocean"].(map[string]any)["connected"] != true || len(out["not_available"].([]any)) != 0 {
 		t.Errorf("digitalocean / not_available: %v", out)
+	}
+	// The evidence connectors: status without vendor ids or addresses.
+	ev := out["evidence_connectors"].(map[string]any)
+	drata, vanta := ev["drata"].(map[string]any), ev["vanta"].(map[string]any)
+	if ev["compliance_addon"] != false || drata["connected"] != true || drata["status"] != "reconnect_needed" ||
+		drata["last_sync_status"] != "failed" || vanta["connected"] != false || vanta["set_up_on_server"] != false {
+		t.Errorf("evidence_connectors: %v", ev)
+	}
+	if b, _ := json.Marshal(ev); strings.Contains(string(b), "drata-ws-77") || strings.Contains(string(b), leakWebhook) {
+		t.Errorf("evidence_connectors shows configuration or an address: %s", b)
 	}
 
 	out = callTool(t, s, "notification_settings", nil)
