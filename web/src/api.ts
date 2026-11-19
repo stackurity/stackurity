@@ -34,7 +34,7 @@ export const ASSET_STATUS_HELP: Record<string, string> = {
 };
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
-export const COVERAGE_STATUSES = ["checked", "partial", "skipped", "failed", "unsupported"] as const;
+export const COVERAGE_STATUSES = ["checked", "limited", "partial", "skipped", "failed", "unsupported"] as const;
 
 export interface List<T> {
   items: T[];

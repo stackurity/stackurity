@@ -53,7 +53,7 @@ func TestCloneRejectsFileTransport(t *testing.T) {
 
 	s := &Scanner{WorkDir: t.TempDir()}
 	dest := filepath.Join(t.TempDir(), "src")
-	err := s.clone(context.Background(), Config{URL: "file://" + src}, "", dest)
+	err := s.clone(context.Background(), Config{URL: "file://" + src}, "", dest, nil)
 	if err == nil {
 		t.Fatal("file:// clone must be blocked by protocol.allow")
 	}

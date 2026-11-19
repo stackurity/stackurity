@@ -151,13 +151,18 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		// A complete collection proves that whatever it left out is gone.
 		// An incomplete one proves it outside the paths it could not read
 		// (an unreadable cache directory must not keep an upgraded
-		// application's old libraries open forever).
+		// application's old libraries open forever). Rows in a file whose
+		// coverage is "limited" stay: its format cannot show everything, so
+		// a missing entry proves nothing (a scope ends with ":" and the
+		// file's location, as pack and lockfile scopes do).
 		if blind, ok := blindPaths(b); ok {
 			tag, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = $3
 				WHERE asset_id = $1 AND collector_id = $2 AND removed_at IS NULL AND last_collection_id <> $4
 				  AND (cardinality($5::text[]) = 0 OR (location LIKE '/%' AND NOT EXISTS (SELECT 1 FROM unnest($5::text[]) p
-				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))`,
-				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind)
+				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))
+				  AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) s
+				    WHERE location <> '' AND right(s, length(location) + 1) = ':' || location)`,
+				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind, limitedScopes(b))
 			if err != nil {
 				return err
 			}

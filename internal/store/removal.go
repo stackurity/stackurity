@@ -50,6 +50,22 @@ func blindPaths(b *model.ObservationBatch) ([]string, bool) {
 	return out, true
 }
 
+// limitedScopes are the scopes of the batch's "limited" coverage items:
+// files read in full whose format cannot list everything (a build.gradle
+// without a lockfile: a dependency moved to a version catalog or a variable
+// is not seen). What such a file no longer shows is not proven gone, so the
+// rows located in it are never removed for being missing, even by a
+// complete collection.
+func limitedScopes(b *model.ObservationBatch) []string {
+	out := []string{}
+	for _, c := range b.Coverage {
+		if c.Status == "limited" {
+			out = append(out, c.Scope)
+		}
+	}
+	return out
+}
+
 // coveragePath is the host path a coverage scope is about:
 // "path:/srv/app/tmp", "lockfile:/srv/app/yarn.lock", "pack:java:/srv/app/x.jar",
 // "npm-installed:/srv/app/node_modules". Composer's installed.json stands

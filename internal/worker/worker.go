@@ -26,6 +26,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -294,6 +295,12 @@ func (w *Worker) run(ctx context.Context, job *store.Job, owner string) {
 	}
 	if err != nil {
 		log.Warn("job failed", "err", err, "took", time.Since(start))
+		if errors.Is(err, limits.ErrTooLarge) {
+			// A repository or image over the disk limit is as large on
+			// the next attempt: retrying downloads it again for nothing.
+			// The job fails now; a scheduled scan still runs next time.
+			job.Attempts = job.MaxAttempts
+		}
 		if ferr := w.Store.FailJob(bg, job, err); ferr != nil {
 			log.Error("record job failure", "err", ferr)
 		}

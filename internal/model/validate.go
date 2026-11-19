@@ -187,7 +187,7 @@ func (b *ObservationBatch) Validate() error {
 	}
 	for i, c := range b.Coverage {
 		switch c.Status {
-		case "checked", "skipped", "failed", "unsupported", "partial":
+		case "checked", "skipped", "failed", "unsupported", "partial", "limited":
 		default:
 			add("coverage[%d].status %q is not valid", i, c.Status)
 		}
