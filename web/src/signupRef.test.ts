@@ -53,5 +53,8 @@ test("a social start URL keeps the server's own query and drops a bad ref", () =
   const u = new URL(socialStartURL("/auth/social/github/start?x=1", undefined, "Blog-X"), "https://example.test");
   assert.equal(u.searchParams.get("x"), "1");
   assert.equal(u.searchParams.get("ref"), "blog-x");
+  const two = new URL(socialStartURL("/s?x=1?y", undefined, "blog-x"), "https://example.test");
+  assert.equal(two.searchParams.get("x"), "1?y");
+  assert.equal(two.searchParams.get("ref"), "blog-x");
   for (const bad of ["a b", "<script>", "a".repeat(65), "-x", ""]) assert.equal(socialStartURL("/s", undefined, bad), "/s", bad);
 });

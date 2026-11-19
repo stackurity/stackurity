@@ -45,7 +45,9 @@ export function signupRef(search = typeof window === "undefined" ? "" : window.l
  * on the sign-up page, ?ref= (where the person came from, cleaned).
  */
 export function socialStartURL(startURL: string, returnTo?: string, ref?: string): string {
-  const [path, query = ""] = startURL.split("?", 2);
+  const cut = startURL.indexOf("?");
+  const path = cut < 0 ? startURL : startURL.slice(0, cut);
+  const query = cut < 0 ? "" : startURL.slice(cut + 1);
   const q = new URLSearchParams(query);
   if (returnTo && returnTo !== "/") q.set("return_to", returnTo);
   const r = cleanRef(ref);
