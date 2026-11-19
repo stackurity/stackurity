@@ -7,7 +7,7 @@ import { confirmAction } from "../components/ConfirmDialog";
 import { Card, ErrorBox, GoodToKnow, Loading, Notice, RelativeTime } from "../components/ui";
 import { MfaLoginStep } from "./TwoFactor";
 import { DEVICE_RESUME, deviceResumePath } from "../deviceLogin";
-import { SIGNUP_REF_KEY, keptRef, keptRefValue } from "../signupRef";
+import { socialStartURL } from "../signupRef";
 
 // Signing up and signing in with Google, Microsoft or GitHub (Stackurity
 // Cloud). The server offers only the providers it has configured
@@ -16,37 +16,20 @@ import { SIGNUP_REF_KEY, keptRef, keptRefValue } from "../signupRef";
 /**
  * "Continue with Google / Microsoft / GitHub": full-page navigations to the
  * provider. On the sign-in page, returnTo is where the sign-in continues.
- * On the sign-up page, signupRef (where the person came from) is kept in
- * this tab's sessionStorage until /signup/social sends it with the form.
+ * On the sign-up page, signupRef (where the person came from) goes in the
+ * start URL; the server keeps it until the sign-up is finished, so nothing
+ * is stored in the browser, and a middle-click into a new tab keeps it too.
  */
 export function SocialButtons({ social, returnTo, signupRef }: { social: SocialMeta; returnTo?: string; signupRef?: string }) {
-  const q = returnTo && returnTo !== "/" ? `?return_to=${encodeURIComponent(returnTo)}` : "";
-  const keepRef = () => {
-    try {
-      if (signupRef) sessionStorage.setItem(SIGNUP_REF_KEY, keptRefValue(signupRef, Date.now()));
-      else sessionStorage.removeItem(SIGNUP_REF_KEY);
-    } catch {
-      // storage off: the sign-up is counted without a ref
-    }
-  };
   return (
     <div className="social-buttons">
       {social.providers.map((p) => (
-        <a key={p.id} className="btn btn-block" href={p.start_url + q} onClick={keepRef}>
+        <a key={p.id} className="btn btn-block" href={socialStartURL(p.start_url, returnTo, signupRef)}>
           Continue with {p.label}
         </a>
       ))}
     </div>
   );
-}
-
-/** The ref the sign-up page kept before leaving for the provider (SocialButtons). */
-function storedSignupRef(): string | undefined {
-  try {
-    return keptRef(sessionStorage.getItem(SIGNUP_REF_KEY), Date.now());
-  } catch {
-    return undefined;
-  }
 }
 
 /** The fragment of the address, which browsers never send to a server. */
@@ -82,15 +65,9 @@ export function SocialSignupPage({ signup }: { signup: SignupMeta }) {
         organisation: organisation.trim(),
         accept_terms: true,
         email_notice_version: signup.email_notice ? signup.email_notice_version : undefined,
-        ref: storedSignupRef(),
       }),
     );
     if (r) {
-      try {
-        sessionStorage.removeItem(SIGNUP_REF_KEY);
-      } catch {
-        // none kept
-      }
       // Drop the token from the address and history, then open the new
       // organisation (a GitHub sign-up goes on to choose repositories), or
       // go back to a terminal's sign-in (/device) that sent the person here.

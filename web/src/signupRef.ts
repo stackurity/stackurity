@@ -3,20 +3,15 @@
  * sign-up page's ?ref= (badge-<slug> from a trust page, blog-<post> from the
  * blog), or, without one, <utm_source>-<utm_campaign> from a tagged link.
  *
- * A sign-up with Google, Microsoft or GitHub leaves for the provider and
- * comes back to /signup/social, so the ref is kept in sessionStorage for
- * that tab in between (SIGNUP_REF_KEY) and sent with the completion form.
+ * A sign-up with Google, Microsoft or GitHub sends the ref in the
+ * provider's start URL (socialStartURL); the server keeps it with the
+ * sign-in in progress until the account is created. The browser stores
+ * nothing for it (no cookie, localStorage or sessionStorage).
  *
  * Kept free of React and of value imports so `npm test` runs it with Node.
  */
 
 const REF_PATTERN = /^[a-z0-9][a-z0-9-]{0,63}$/;
-
-/** sessionStorage key for the ref during a sign-up through a provider. */
-export const SIGNUP_REF_KEY = "stackurity.signupRef";
-
-/** How long a kept ref counts: a provider sign-up takes minutes, not hours. */
-export const SIGNUP_REF_TTL_MS = 60 * 60 * 1000;
 
 /** A short slug-like tag (as the server's cleanSignupRef); undefined otherwise. */
 export function cleanRef(ref: string | null | undefined): string | undefined {
@@ -44,19 +39,17 @@ export function signupRef(search = typeof window === "undefined" ? "" : window.l
   return cleanRef(derived);
 }
 
-/** What to keep in sessionStorage for ref at now. */
-export function keptRefValue(ref: string, now: number): string {
-  return JSON.stringify({ ref, at: now });
-}
-
-/** The kept ref when it is valid and less than an hour old; undefined otherwise. */
-export function keptRef(value: string | null, now: number): string | undefined {
-  if (!value) return undefined;
-  try {
-    const v = JSON.parse(value) as { ref?: unknown; at?: unknown };
-    if (typeof v.ref !== "string" || typeof v.at !== "number" || now - v.at > SIGNUP_REF_TTL_MS || v.at > now + 60_000) return undefined;
-    return cleanRef(v.ref);
-  } catch {
-    return undefined;
-  }
+/**
+ * The address of a "Continue with <provider>" button: the provider's
+ * start_url with ?return_to= (where a sign-in continues; not for "/") and,
+ * on the sign-up page, ?ref= (where the person came from, cleaned).
+ */
+export function socialStartURL(startURL: string, returnTo?: string, ref?: string): string {
+  const [path, query = ""] = startURL.split("?", 2);
+  const q = new URLSearchParams(query);
+  if (returnTo && returnTo !== "/") q.set("return_to", returnTo);
+  const r = cleanRef(ref);
+  if (r) q.set("ref", r);
+  const qs = q.toString();
+  return qs ? `${path}?${qs}` : path;
 }
