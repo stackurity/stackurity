@@ -259,7 +259,7 @@ export const ARTICLES: Article[] = [
     section: "Adding servers and sources",
     summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server or Mac. Admins only.",
     where: ["Environment", "Assets", "Add server"],
-    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding",
+    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding project missing not showing",
     body: [
       {
         p: "The quickest way to add a Linux or Windows server is a one-time install command. It installs the same read-only `stackurity` agent as a manual install, without creating a token or setting up a service by hand.",
@@ -267,6 +267,7 @@ export const ARTICLES: Article[] = [
       {
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
+          "If you use projects, choose the **Project** the server goes into. The project you are looking at in the project picker, or your only project, is already chosen. The server and the apps found on it are added to it, so everyone working on the project sees them. A server in no project is seen only by people who see all projects.",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
           "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites, whose WordPress core version is read from `wp-includes/version.php` and checked for end of life and for missing security releases on its branch; its plugins and themes are listed with their latest release on wordpress.org, but their vulnerabilities are not matched yet), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are reported with inferred confidence, so their issues show as needs validation). In a compiled app (a webpack, Vite or Next.js build, or a Flutter web build) it reports the libraries whose licence banner, version constant or source map names their release, and the Flutter engine revision; the rest of a bundle cannot be identified, and the app says so under coverage instead of showing no components. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
@@ -330,7 +331,7 @@ sudo userdel stackurity`,
       { h: "Afterwards" },
       {
         list: [
-          "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
+          "The server appears under **Assets** within a minute, in the project you chose; applications appear as their own assets linked to it. A server already enrolled in no project: switch the project picker to **All projects**, open **Assets → Not in a project**, then add it to a project from the project's page.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
           "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
           "For a Mac, see [Add a Mac](help:macos-hosts). To install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
