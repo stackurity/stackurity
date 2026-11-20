@@ -209,3 +209,26 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 	}
 	return ids, nil
 }
+
+// webAssetSources are the evidence sources of front-end libraries found
+// outside a package manager (collect/apps: webassets.go, bundles.go).
+var webAssetSources = []string{"vendored", "cdn", "bundle", "source-map", "flutter-build"}
+
+// webAssetsUnchecked reports whether a repository batch did not look for
+// front-end libraries outside a package manager: it has no "web-assets:"
+// coverage item. A CI scan by a CLI older than the server's repository
+// scan (or pkg/engine) reports the same repository under the same
+// collector without looking, so it proves nothing about the copies the
+// server's scan found: their rows stay, rather than closing and reopening
+// their findings at every alternate scan.
+func webAssetsUnchecked(b *model.ObservationBatch) bool {
+	if b.Asset.Kind != model.AssetRepository {
+		return false
+	}
+	for _, c := range b.Coverage {
+		if strings.HasPrefix(c.Scope, "web-assets:") {
+			return false
+		}
+	}
+	return true
+}

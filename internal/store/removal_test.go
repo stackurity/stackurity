@@ -357,3 +357,54 @@ func TestLimitedFileProvesNoRemoval(t *testing.T) {
 		t.Errorf("collection status %q, want ok", a.CollectionStatus)
 	}
 }
+
+// A repository scanned both by the server (which reads copied front-end
+// libraries: a "web-assets:" coverage item) and by an older CLI in CI
+// (which does not): the CLI's complete batch must not remove the copied
+// jQuery the server found, or its finding would close and reopen at every
+// alternate scan. A scan that looked and no longer finds it removes it.
+func TestRepoScanWithoutWebAssetsKeepsCopies(t *testing.T) {
+	ctx, s := loopStore(t)
+	send := func(web bool, withJQuery bool) *store.IngestResult {
+		t.Helper()
+		time.Sleep(5 * time.Millisecond)
+		b := model.NewBatch(model.Collector{ID: "lockfile", Version: "test", Method: "repository"}, model.AssetRef{
+			Kind: model.AssetRepository, Name: "acme/site",
+			Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://github.com/acme/site"}},
+		})
+		b.Observations = append(b.Observations, model.Observation{Purl: "pkg:npm/lodash@4.17.21", Location: "package-lock.json", Confidence: model.ConfidenceConfirmed})
+		b.Coverage = []model.CoverageItem{{Scope: "lockfile:package-lock.json", Status: "checked"}}
+		if web {
+			b.Coverage = append(b.Coverage, model.CoverageItem{Scope: "web-assets:.", Status: "checked"})
+			if withJQuery {
+				b.Observations = append(b.Observations, model.Observation{Purl: "pkg:npm/jquery@3.6.0", Version: "3.6.0", Location: "js/jquery-3.6.0.min.js",
+					Confidence: model.ConfidenceConfirmed, Evidence: map[string]string{"source": "vendored"}})
+			}
+		}
+		b.Complete = true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		r, err := s.Ingest(store.AsServerCollection(ctx), b, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	repo := send(true, true).AssetID
+	if live := liveRows(t, s, ctx, repo); !live["jquery@3.6.0"] || !live["lodash@4.17.21"] {
+		t.Fatalf("after the server's scan: %v", live)
+	}
+	if r := send(false, false); r.Removed != 0 {
+		t.Errorf("an older CLI's scan removed %d rows, want 0", r.Removed)
+	}
+	if live := liveRows(t, s, ctx, repo); !live["jquery@3.6.0"] {
+		t.Errorf("the copied jQuery was removed by a scan that did not look: %v", live)
+	}
+	if r := send(true, false); r.Removed != 1 {
+		t.Errorf("a scan that looked removed %d rows, want 1 (jquery)", r.Removed)
+	}
+	if live := liveRows(t, s, ctx, repo); live["jquery@3.6.0"] || !live["lodash@4.17.21"] {
+		t.Errorf("after the copy was deleted: %v", live)
+	}
+}

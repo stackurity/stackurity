@@ -430,6 +430,10 @@ func regularFile(dir string) func(string) ([]byte, error) {
 	}
 }
 
+// GitIgnored is gitIgnored, for the other readers of a checkout (the
+// front-end libraries a repository keeps outside a package manager).
+func GitIgnored(ctx context.Context, dir string) map[string]bool { return gitIgnored(ctx, dir) }
+
 // gitIgnored returns the paths below dir that git ignores, relative to dir
 // (directories without their trailing slash), or nil when git is not
 // installed or dir is not in a work tree. It asks git itself, so nested

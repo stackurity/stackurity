@@ -66,7 +66,7 @@ The same rules apply to container images scanned through the bundled Syft and to
 | Conan (`conan.lock`, Conan 1 and 2) | C and C++ stack pack | No: OSV has no ConanCenter data. Inventory only | No |
 | vcpkg (`vcpkg.json`, installed ports' `vcpkg.spdx.json`) | C and C++ stack pack (`vcpkg.json` exact only for ports pinned under `overrides`) | No: no public advisory source covers vcpkg ports. Inventory only | No |
 
-On a deployed application the agent also reads front-end libraries that no package manager installed: CDN addresses in templates and the version banner of copied `.js` and `.css` files, for 28 widely used libraries (jQuery, Bootstrap, AngularJS, TinyMCE, CKEditor 4 and others). They are matched as npm packages; see [Applications deployed on the host](install.md#applications-deployed-on-the-host).
+On a deployed application the agent also reads front-end libraries that no package manager installed: CDN addresses in templates and the version banner of copied `.js` and `.css` files, for 28 widely used libraries (jQuery, Bootstrap, AngularJS, TinyMCE, CKEditor 4 and others). They are matched as npm packages; see [Applications deployed on the host](install.md#applications-deployed-on-the-host). Repository scans (server-side, GitHub App, GitLab and `stackurity scan` in CI) read the same libraries in the repository's files, so a PHP or static site with no manifest reports the `js/jquery-3.6.0.min.js` it ships. They skip `node_modules`, Composer's `vendor`, documentation, examples and tests, and in CI the files git ignores. A copy a lockfile also lists, at the same version, is reported once, from the lockfile.
 
 ## SBOM and VEX formats
 
