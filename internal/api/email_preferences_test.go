@@ -187,9 +187,23 @@ func TestEmailPreferenceLinks(t *testing.T) {
 			t.Errorf("%v: %d", body, code)
 		}
 	}
-	// Turning another category off (already off here) is allowed.
+	// It turns another category off: switch vulnerability news back on with
+	// the preference link, then off with the marketing unsubscribe link.
+	if code := anon.do("POST", "/api/v1/email/preferences/update", map[string]any{"token": centre, "vulnerability_news": true}, nil); code != 200 {
+		t.Fatalf("resubscribe: %d", code)
+	}
+	var before int
+	_ = e.st.Pool.QueryRow(tenant.System(ctx), `SELECT count(*) FROM audit_events WHERE action = 'email.unsubscribed_category' AND detail->>'category' = 'vulnerability_news' AND detail->>'source' = 'link'`).Scan(&before)
 	if code := anon.do("POST", "/api/v1/email/preferences/update", map[string]any{"token": tok, "vulnerability_news": false}, nil); code != 200 {
 		t.Fatalf("unsubscribe other category: %d", code)
+	}
+	if sub, src := prefs(me).subscribed(store.CategoryVulnerabilityNews); sub || src != "link" {
+		t.Errorf("after unsubscribe link, other category: %v %q", sub, src)
+	}
+	var after int
+	_ = e.st.Pool.QueryRow(tenant.System(ctx), `SELECT count(*) FROM audit_events WHERE action = 'email.unsubscribed_category' AND detail->>'category' = 'vulnerability_news' AND detail->>'source' = 'link'`).Scan(&after)
+	if after != before+1 {
+		t.Errorf("audit events for the other category: %d -> %d", before, after)
 	}
 	if code := anon.do("POST", "/api/v1/email/preferences/update", map[string]any{"token": tok, "marketing": false}, nil); code != 200 {
 		t.Fatalf("unsubscribe: %d", code)

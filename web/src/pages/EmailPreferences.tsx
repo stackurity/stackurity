@@ -161,8 +161,10 @@ function UnsubscribeChoices({
   return (
     <>
       <p>
-        Which emails should <strong className="break">{prefs.email}</strong> keep getting? You came from a {fromLabel} email, so that one is already
-        unticked.
+        Which emails should <strong className="break">{prefs.email}</strong> keep getting?{" "}
+        {prefs.categories.find((c) => c.category === from)?.subscribed
+          ? `You came from a ${fromLabel} email, so that one is already unticked.`
+          : `${fromLabel} emails are already off.`}
       </p>
       <ErrorBox error={error} title="Could not save" />
       <ul className="plain-list email-prefs">
