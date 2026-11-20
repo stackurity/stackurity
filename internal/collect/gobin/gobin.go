@@ -65,6 +65,10 @@ type Scanner struct {
 	// would report fixed issues as open. Nil reads every binary.
 	Owned  func(string) bool
 	Limits Limits // DefaultLimits when zero
+	// OnMain, when set, is told every Go binary's main package and main
+	// module path, also those built from a checkout with no version (which
+	// Observations leaves out): the attack tool check reads them.
+	OnMain func(binary, mainPackage, mainModule string)
 }
 
 // Scan walks Root and returns one observation per module, per binary. The
@@ -258,6 +262,9 @@ func (w *walk) read(full, inRoot string) ([]model.Observation, error) {
 			return nil, err
 		}
 		return nil, nil // not a Go binary, or one without build information
+	}
+	if w.s.OnMain != nil {
+		w.s.OnMain(inRoot, bi.Path, bi.Main.Path)
 	}
 	return Observations(bi, inRoot), nil
 }

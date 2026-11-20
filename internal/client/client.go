@@ -234,6 +234,12 @@ const FeatureLeaks = "leaks"
 // GitHub Actions workflows). Older servers refuse the field.
 const FeatureConfigFindings = "config_findings"
 
+// FeatureConfigAttackTools, in Meta.Features, means the server takes
+// config findings of category attack_tool. Older servers refuse the whole
+// batch over an unknown category, so collectors drop those findings
+// (model.ConfigScan.WithoutCategory) for a server that does not list it.
+const FeatureConfigAttackTools = "config_attack_tools"
+
 // FeatureReachability, in Meta.Features, means the server takes
 // observations' reachability. Older servers refuse the field.
 const FeatureReachability = "reachability"

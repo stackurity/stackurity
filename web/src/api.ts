@@ -2521,7 +2521,7 @@ export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config",
 export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "feed", "collection", "coverage", "platform"];
 
 /** Which part of a server or repository a risky setting is in. */
-export type ConfigCategory = "agent_hook" | "ssh" | "ci";
+export type ConfigCategory = "agent_hook" | "ssh" | "ci" | "attack_tool";
 
 /**
  * A risky setting found in a file (GET /config-findings): an AI coding-agent

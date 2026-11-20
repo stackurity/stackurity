@@ -27,7 +27,8 @@ import {
 /**
  * Risky settings (config findings): AI coding-agent hooks that download and
  * run code, SSH keys and settings that give root an unrestricted shell, and
- * GitHub Actions that run third-party code by a movable tag. Each row says
+ * GitHub Actions that run third-party code by a movable tag, and known
+ * attack tools (ARTEX) found on a server or image. Each row says
  * in one line why it is a risk and what to change in the file.
  */
 
@@ -35,6 +36,7 @@ export const CATEGORY_LABEL: Record<ConfigCategory, string> = {
   agent_hook: "AI agent hooks",
   ssh: "SSH access",
   ci: "GitHub Actions",
+  attack_tool: "Attack tools",
 };
 
 const VIEW_QUERY: Record<
