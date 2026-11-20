@@ -584,6 +584,9 @@ type webAssets struct {
 	// denied counts files and directories the agent's user may not read.
 	denied *denied
 	obs    []model.Observation
+	// repo: a repository checkout (RepoWebAssets), whose source maps and
+	// WebAssembly the server's clone does not hold.
+	repo bool
 }
 
 // skipWebDir: directories whose files are not what the application loads,
@@ -612,6 +615,9 @@ func (w *webAssets) consider(full string, d fs.DirEntry) {
 		isTemplate = isTemplate || strings.HasSuffix(name, e)
 	}
 	if !isAsset && !isTemplate && !compiledOutput(name) {
+		return
+	}
+	if w.repo && (strings.HasSuffix(name, ".map") || strings.HasSuffix(name, ".wasm")) {
 		return
 	}
 	host := w.s.hostPath(full)
