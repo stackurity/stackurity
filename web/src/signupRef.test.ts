@@ -1,7 +1,7 @@
 // Run with `npm test` (node --test, TypeScript types stripped).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanRef, signupRef, socialStartURL } from "./signupRef.ts";
+import { cleanRef, refFromReferrer, signupRef, socialStartURL } from "./signupRef.ts";
 
 test("?ref= is kept when it is a short tag", () => {
   assert.equal(signupRef("?ref=badge-acme"), "badge-acme");
@@ -29,6 +29,38 @@ test("without a ref, utm_source and utm_campaign make one", () => {
   // A derived tag must still be a valid ref (it cannot start with '-').
   assert.equal(signupRef("?utm_source=%C3%A9&utm_campaign=x"), undefined);
   assert.equal(signupRef("?utm_source=_blog&utm_campaign=x"), undefined);
+});
+
+test("without a ref or utm tags, the referring website counts as web-<host>", () => {
+  assert.equal(signupRef("", "https://www.google.com/"), "web-google-com");
+  assert.equal(signupRef("", "https://www.reddit.com/r/devops/comments/abc/x/"), "web-reddit-com");
+  assert.equal(signupRef("?utm_medium=cta", "https://news.ycombinator.com/item?id=1"), "web-news-ycombinator-com");
+  assert.equal(signupRef("", "http://WWW.Example.ORG."), "web-example-org");
+  // A tag on the link wins over the referrer.
+  assert.equal(signupRef("?ref=hn", "https://www.google.com/"), "hn");
+  assert.equal(signupRef("?utm_source=blog&utm_campaign=x", "https://www.google.com/"), "blog-x");
+  assert.equal(signupRef("?ref=a_b", "https://www.google.com/"), undefined);
+});
+
+test("our own sites, other schemes and no referrer give no ref", () => {
+  for (const r of [
+    "https://stackurity.ai/pricing.html",
+    "https://www.stackurity.ai/",
+    "https://app.stackurity.dev/login",
+    "https://stackurity.dev/",
+    "android-app://com.google.android.gm/",
+    "about:blank",
+    "not a url",
+    "",
+  ]) assert.equal(refFromReferrer(r), undefined, r);
+  assert.equal(refFromReferrer(null), undefined);
+  assert.equal(refFromReferrer("https://notstackurity.ai/"), "web-notstackurity-ai");
+  assert.equal(signupRef("", ""), undefined);
+});
+
+test("a long referrer host is cut to 64 characters", () => {
+  const host = "a".repeat(80) + ".com";
+  assert.equal(refFromReferrer("https://" + host + "/"), ("web-" + host.replace(/\./g, "-")).slice(0, 64));
 });
 
 test("cleanRef as the server's cleanSignupRef", () => {
