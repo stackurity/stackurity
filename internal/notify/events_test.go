@@ -80,11 +80,19 @@ func TestMigratedRoutesKeepTheirMode(t *testing.T) {
 			WHEN 'weekly' THEN '{weekly_summary}'::text[] END WHERE id = $1`, r.ID); err != nil {
 			t.Fatal(err)
 		}
+		// And 0118's, which gives right-away routes threat notices.
+		if _, err := f.st.Pool.Exec(ctx, `UPDATE routes SET events = events || '{threat_notices}'::text[]
+			WHERE id = $1 AND NOT ('threat_notices' = ANY (events)) AND (events && '{urgent,new_issues,problems}'::text[])`, r.ID); err != nil {
+			t.Fatal(err)
+		}
 		got, err := f.st.GetRoute(ctx, r.ID)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if !slices.Equal(got.Events, store.EventsForMode(m)) || store.ModeForEvents(got.Events) != m {
+		want := store.EventsForMode(m)
+		slices.Sort(want)
+		have := slices.Sorted(slices.Values(got.Events))
+		if !slices.Equal(have, want) || store.ModeForEvents(got.Events) != m {
 			t.Errorf("%s migrated to %v", m, got.Events)
 		}
 	}
