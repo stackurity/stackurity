@@ -11,6 +11,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -91,5 +92,18 @@ func TestConfigFindingsAPI(t *testing.T) {
 	}
 	if code := admin.do("POST", "/api/v1/config-findings/"+id+"/undismiss", nil, &got); code != 200 || got.Status != "open" {
 		t.Errorf("undismiss: %d %+v", code, got)
+	}
+
+	// Attack tools: a category of their own, with a doc link.
+	if !slices.Contains(meta.Features, api.FeatureConfigAttackTools) {
+		t.Errorf("meta features lack %s: %v", api.FeatureConfigAttackTools, meta.Features)
+	}
+	if r := send("ci-runner", confcheck.ImageAttackTools("tomicdd/artex:latest")...); r.ConfigFound != 1 {
+		t.Errorf("ingest attack tool: %+v", r)
+	}
+	var tools listed
+	if code := eng.do("GET", "/api/v1/config-findings?category=attack_tool", nil, &tools); code != 200 || len(tools.Items) != 1 ||
+		tools.Items[0].Rule != confcheck.RuleAttackToolArtexBackdoor || tools.Items[0].DocURL != confcheck.AttackToolsDoc {
+		t.Errorf("attack tools: %d %+v", code, tools)
 	}
 }

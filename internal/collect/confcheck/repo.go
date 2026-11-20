@@ -11,7 +11,8 @@ import (
 
 // Repo runs the repository checks on the checkout at dir: GitHub Actions
 // workflows (actions.go), and AI coding-agent hooks and MCP start commands
-// checked into it that download and run code. Paths are relative to dir.
+// checked into it that download and run code, and a copy of a known attack
+// tool's source or images of one (attacktools.go). Paths are relative to dir.
 func Repo(ctx context.Context, dir string) *model.ConfigScan {
 	found, problems := Workflows(dir)
 	exists := func(p string) bool { _, err := os.Stat(p); return err == nil }
@@ -61,6 +62,7 @@ func Repo(ctx context.Context, dir string) *model.ConfigScan {
 			}
 		}
 	}
+	found = append(found, repoAttackTools(dir)...)
 	out := &model.ConfigScan{Found: dedupe(found), Complete: ctx.Err() == nil && len(problems) == 0}
 	if len(problems) > 0 {
 		out.Reason = clip(strings.Join(problems, "; "), model.MaxFieldLen)
