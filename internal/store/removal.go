@@ -214,19 +214,20 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 // outside a package manager (collect/apps: webassets.go, bundles.go).
 var webAssetSources = []string{"vendored", "cdn", "bundle", "source-map", "flutter-build"}
 
-// webAssetsUnchecked reports whether a repository batch did not look for
-// front-end libraries outside a package manager: it has no "web-assets:"
-// coverage item. A CI scan by a CLI older than the server's repository
-// scan (or pkg/engine) reports the same repository under the same
-// collector without looking, so it proves nothing about the copies the
-// server's scan found: their rows stay, rather than closing and reopening
-// their findings at every alternate scan.
+// webAssetsUnchecked reports whether a repository batch does not prove the
+// front-end libraries found outside a package manager gone: it has no
+// "web-assets:" coverage item marked "checked". A CI scan by a CLI older
+// than the server's repository scan (or pkg/engine) reports the same
+// repository under the same collector without looking; a scan that hit a
+// read limit, an unreadable path or its time limit looked in part. Either
+// way the rows of copies found before stay (their findings neither close
+// nor reopen), while the batch still proves its lockfile rows gone.
 func webAssetsUnchecked(b *model.ObservationBatch) bool {
 	if b.Asset.Kind != model.AssetRepository {
 		return false
 	}
 	for _, c := range b.Coverage {
-		if strings.HasPrefix(c.Scope, "web-assets:") {
+		if strings.HasPrefix(c.Scope, "web-assets:") && c.Status == "checked" {
 			return false
 		}
 	}

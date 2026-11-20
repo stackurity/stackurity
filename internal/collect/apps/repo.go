@@ -2,12 +2,18 @@ package apps
 
 import (
 	"context"
+	"fmt"
 	"io/fs"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
 )
+
+// repoWebTimeout bounds the walk within a repository scan's own limit, so
+// the leak and configuration checks after it still have time.
+const repoWebTimeout = 3 * time.Minute
 
 // RepoWebAssets finds the front-end libraries a repository checkout at dir
 // keeps outside a package manager: a CDN address in a template, a copied
@@ -15,29 +21,38 @@ import (
 // into a committed bundle. It is the same detection a deployed application
 // gets (webassets.go, bundles.go), so a PHP or static site's repository
 // reports the jQuery or Bootstrap copy it ships, not zero components.
+// Source maps and WebAssembly are not read: the server's sparse clone
+// leaves them out (gitrepo.sparsePatterns), and a CI scan must read the
+// same files or its findings would differ from the server's.
 //
 // manifest is what the lockfile scan already found in dir: a package and
 // version it lists is not reported again. ignored holds the slash paths
 // git ignores (lockfile.GitIgnored; nil for a fresh clone): a build's
 // output in a local checkout is not what the repository holds. Locations
-// are relative to dir, as the lockfile scan's are. The "web-assets:."
-// coverage item is always returned: it tells the server this scan looked
-// for these libraries, so one it no longer finds is gone (an older CLI's
-// scan of the same repository does not look and proves nothing about
-// them; store/removal.go). complete is false when a read limit stopped
-// the walk, so a library past the limit is never taken for removed; the
-// notes on compiled code that cannot be identified do not make the scan
-// incomplete, since that code was never inventoried before either.
-func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation, ignored map[string]bool) (obs []model.Observation, cov []model.CoverageItem, complete bool) {
+// are relative to dir, as the lockfile scan's are.
+//
+// web is the "web-assets:." item, always returned: "checked" tells the
+// server this scan looked everywhere, so a library it no longer finds is
+// gone; anything else (a read limit, an unreadable path, the time limit)
+// keeps the libraries found before (store/removal.go), and never makes the
+// rest of the batch incomplete. more are the notes on compiled code.
+func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation, ignored map[string]bool) (obs []model.Observation, web model.CoverageItem, more []model.CoverageItem) {
+	ctx, cancel := context.WithTimeout(ctx, repoWebTimeout)
+	defer cancel()
+	if real, err := filepath.EvalSymlinks(dir); err == nil {
+		dir = real // a CI workspace reached through a link
+	}
 	s := &Scanner{Root: dir}
+	den := &denied{}
 	// dir "" makes paths under the checkout "/js/x.js" (host paths of a
 	// root at dir) and paths relative to the application "js/x.js".
-	web := &webAssets{s: s, dir: "", seen: map[string]bool{}}
+	w := &webAssets{s: s, dir: "", seen: map[string]bool{}, denied: den, repo: true}
 	walkErr := filepath.WalkDir(dir, func(full string, d fs.DirEntry, err error) error {
 		if cerr := ctx.Err(); cerr != nil {
 			return cerr
 		}
 		if err != nil {
+			den.note(s.hostPath(full), err)
 			return nil
 		}
 		if rel, rerr := filepath.Rel(dir, full); rerr == nil && ignored[filepath.ToSlash(rel)] {
@@ -47,7 +62,7 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 			return nil
 		}
 		if !d.IsDir() {
-			web.consider(full, d)
+			w.consider(full, d)
 			return nil
 		}
 		if full == dir {
@@ -63,8 +78,8 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 		return nil
 	})
 
-	bundleObs, bundleCov := web.bundleResults()
-	for _, o := range append(unlisted(web.obs, manifest), bundleObs...) {
+	bundleObs, bundleCov := w.bundleResults()
+	for _, o := range append(unlisted(w.obs, manifest), bundleObs...) {
 		if len(obs) >= MaxPackagesPerApp {
 			break
 		}
@@ -75,17 +90,16 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 		obs = append(obs, o)
 	}
 
-	complete = true
-	c := model.CoverageItem{Scope: webAssetsScopeID + ".", Status: "checked"}
+	web = model.CoverageItem{Scope: webAssetsScopeID + ".", Status: "checked"}
+	unread := len(den.paths) + den.more
 	switch {
 	case walkErr != nil:
-		c.Status, c.Reason = "failed", clipScope(walkErr.Error())
-		complete = false
-	case web.limit != "":
-		c.Status, c.Reason = "partial", web.limit
-		complete = false
+		web.Status, web.Reason = "partial", clipScope("stopped: "+walkErr.Error())
+	case w.limit != "":
+		web.Status, web.Reason = "partial", w.limit
+	case unread > 0:
+		web.Status, web.Reason = "partial", fmt.Sprintf("%d path(s) could not be read (permission denied)", unread)
 	}
-	cov = append(cov, c)
 	for _, c := range bundleCov {
 		scope, rest, _ := strings.Cut(c.Scope, ":")
 		rest = strings.TrimPrefix(rest, "/")
@@ -93,10 +107,11 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 			rest = "."
 		}
 		c.Scope = clipScope(scope + ":" + rest)
-		if scope+":" == "bundle-limits:" {
-			complete = false // a bundle past the limit may hold a reported library
+		if scope+":" == "bundle-limits:" && web.Status == "checked" {
+			// A bundle past the limit may hold a library found before.
+			web.Status, web.Reason = "partial", "compiled bundles read in part (see bundle-limits)"
 		}
-		cov = append(cov, c)
+		more = append(more, c)
 	}
-	return obs, cov, complete
+	return obs, web, more
 }

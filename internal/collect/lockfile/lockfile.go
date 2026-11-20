@@ -530,6 +530,31 @@ func capCoverage(cov []model.CoverageItem) []model.CoverageItem {
 	return out
 }
 
+// MergeCoverage adds another reader's coverage to a list capCoverage
+// capped (ScanDirWith's), keeping the batch within model.MaxCoverageItems.
+// front goes first, so among checked items it is the last left out (the
+// repository scan's "web-assets:." item, which tells the server the scan
+// looked); more goes after the list.
+func MergeCoverage(front, cov, more []model.CoverageItem) []model.CoverageItem {
+	left := 0
+	if n := len(cov); n > 0 && cov[n-1].Scope == "coverage-limit" {
+		if _, err := fmt.Sscanf(cov[n-1].Reason, "%d more", &left); err == nil {
+			cov = cov[:n-1]
+		} else {
+			left = 0
+		}
+	}
+	all := make([]model.CoverageItem, 0, len(front)+len(cov)+len(more))
+	all = append(append(append(all, front...), cov...), more...)
+	out := capCoverage(all)
+	if n := len(out); left > 0 && n > 0 && out[n-1].Scope == "coverage-limit" {
+		now := 0
+		_, _ = fmt.Sscanf(out[n-1].Reason, "%d more", &now)
+		out[n-1].Reason = fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", now+left, model.MaxCoverageItems)
+	}
+	return out
+}
+
 // addCoverage appends an item to a capped list. When the list is full, the
 // last kept entry before the coverage-limit summary makes room and the
 // summary counts it.

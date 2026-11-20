@@ -122,3 +122,33 @@ func TestCoverageIsCapped(t *testing.T) {
 		t.Errorf("observations: %d", len(b.Observations))
 	}
 }
+
+// Another reader's coverage merged into a capped list keeps the batch
+// within the limit, keeps its front item and counts what was left out.
+func TestMergeCoverageKeepsCap(t *testing.T) {
+	var cov []model.CoverageItem
+	for i := 0; i < model.MaxCoverageItems+50; i++ {
+		cov = append(cov, model.CoverageItem{Scope: fmt.Sprintf("lockfile:p%d/package-lock.json", i), Status: "checked"})
+	}
+	cov = capCoverage(cov) // 999 + summary of 51
+	web := model.CoverageItem{Scope: "web-assets:.", Status: "checked"}
+	more := []model.CoverageItem{{Scope: "bundles:.", Status: "unsupported", Reason: "x"}}
+	out := MergeCoverage([]model.CoverageItem{web}, cov, more)
+	if len(out) != model.MaxCoverageItems {
+		t.Fatalf("%d items, want %d", len(out), model.MaxCoverageItems)
+	}
+	found := map[string]bool{}
+	for _, c := range out {
+		found[c.Scope] = true
+	}
+	if !found["web-assets:."] || !found["bundles:."] {
+		t.Errorf("front or non-checked item dropped")
+	}
+	last := out[len(out)-1]
+	if last.Scope != "coverage-limit" || !strings.HasPrefix(last.Reason, "53 more") {
+		t.Errorf("summary %+v, want 53 more (51 before, 2 added)", last)
+	}
+	if small := MergeCoverage([]model.CoverageItem{web}, cov[:3], more); len(small) != 5 || small[0] != web {
+		t.Errorf("under the cap: %+v", small)
+	}
+}

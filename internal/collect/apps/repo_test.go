@@ -37,7 +37,7 @@ func TestRepoWebAssets(t *testing.T) {
 	writeRepoFile(t, dir, "docs/demo.html", `<script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/1.12.4/jquery.min.js"></script>`)
 	writeRepoFile(t, dir, ".git/x/jquery.min.js", "/*! jQuery v1.11.0 | (c) */")
 
-	obs, cov, complete := RepoWebAssets(context.Background(), dir, nil, nil)
+	obs, web, _ := RepoWebAssets(context.Background(), dir, nil, nil)
 	got := map[string]model.Observation{}
 	for _, o := range obs {
 		got[o.Purl] = o
@@ -65,11 +65,8 @@ func TestRepoWebAssets(t *testing.T) {
 			t.Errorf("%s comes from a directory the site does not serve", purl)
 		}
 	}
-	if !complete {
-		t.Error("complete = false with no limit reached")
-	}
-	if len(cov) == 0 || cov[0].Scope != "web-assets:." || cov[0].Status != "checked" {
-		t.Errorf("coverage %+v", cov)
+	if web.Scope != "web-assets:." || web.Status != "checked" {
+		t.Errorf("web-assets coverage %+v", web)
 	}
 }
 
@@ -85,20 +82,17 @@ func TestRepoWebAssetsYieldToManifest(t *testing.T) {
 	}
 }
 
-// A read limit makes the scan incomplete, so a library past it is never
-// taken for removed.
+// A read limit marks the web-assets item partial, so a library past it is
+// never taken for removed.
 func TestRepoWebAssetsLimit(t *testing.T) {
 	defer func(f, b int) { webFiles, webBytes = f, b }(webFiles, webBytes)
 	webFiles = 1
 	dir := t.TempDir()
 	writeRepoFile(t, dir, "a/jquery.min.js", "/*! jQuery v3.6.0 | (c) */")
 	writeRepoFile(t, dir, "b/jquery.min.js", "/*! jQuery v3.5.1 | (c) */")
-	_, cov, complete := RepoWebAssets(context.Background(), dir, nil, nil)
-	if complete {
-		t.Error("complete after the file limit stopped the walk")
-	}
-	if len(cov) == 0 || cov[0].Status != "partial" {
-		t.Errorf("coverage %+v", cov)
+	_, web, _ := RepoWebAssets(context.Background(), dir, nil, nil)
+	if web.Status != "partial" {
+		t.Errorf("web-assets coverage %+v", web)
 	}
 }
 
@@ -113,8 +107,44 @@ func TestRepoWebAssetsIgnoredAndEmpty(t *testing.T) {
 	if len(obs) != 0 {
 		t.Errorf("ignored paths reported: %+v", obs)
 	}
-	obs, cov, complete := RepoWebAssets(context.Background(), t.TempDir(), nil, nil)
-	if len(obs) != 0 || !complete || len(cov) != 1 || cov[0].Scope != "web-assets:." || cov[0].Status != "checked" {
-		t.Errorf("empty repository: obs %v cov %+v complete %v", obs, cov, complete)
+	obs, web, more := RepoWebAssets(context.Background(), t.TempDir(), nil, nil)
+	if len(obs) != 0 || len(more) != 0 || web.Scope != "web-assets:." || web.Status != "checked" {
+		t.Errorf("empty repository: obs %v web %+v more %+v", obs, web, more)
+	}
+}
+
+// A CI workspace reached through a symbolic link is read like the
+// directory itself; source maps are not read (the server's clone has none).
+func TestRepoWebAssetsLinkedRootAndMaps(t *testing.T) {
+	real := t.TempDir()
+	writeRepoFile(t, real, "js/jquery-3.6.0.min.js", "/*! jQuery v3.6.0 | (c) OpenJS Foundation */")
+	writeRepoFile(t, real, "dist/app.3f9a2c.js.map", `{"version":3,"sources":["webpack:///./node_modules/lodash/lodash.js"],"sourcesContent":["/** @license Lodash 4.17.20 */"]}`)
+	link := filepath.Join(t.TempDir(), "ws")
+	if err := os.Symlink(real, link); err != nil {
+		t.Skip(err)
+	}
+	obs, web, more := RepoWebAssets(context.Background(), link, nil, nil)
+	if len(obs) != 1 || obs[0].Purl != "pkg:npm/jquery@3.6.0" || web.Status != "checked" {
+		t.Errorf("obs %+v web %+v", obs, web)
+	}
+	if len(more) != 0 {
+		t.Errorf("a source map was read: %+v", more)
+	}
+}
+
+// A path the scan may not read leaves the web-assets item partial.
+func TestRepoWebAssetsUnreadable(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root reads everything")
+	}
+	dir := t.TempDir()
+	writeRepoFile(t, dir, "assets/js/jquery.min.js", "/*! jQuery v3.6.0 | (c) */")
+	if err := os.Chmod(filepath.Join(dir, "assets"), 0); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Chmod(filepath.Join(dir, "assets"), 0o755)
+	_, web, _ := RepoWebAssets(context.Background(), dir, nil, nil)
+	if web.Status != "partial" {
+		t.Errorf("web-assets coverage %+v, want partial", web)
 	}
 }

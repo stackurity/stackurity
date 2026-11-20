@@ -161,10 +161,9 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 	b.Collector.Method = "repository"
 	// Front-end libraries outside a package manager: copied files, CDN
 	// addresses in templates, committed bundles (apps.RepoWebAssets).
-	web, webCov, webComplete := apps.RepoWebAssets(ctx, src, b.Observations, nil) // a fresh clone ignores nothing
+	web, webCov, webMore := apps.RepoWebAssets(ctx, src, b.Observations, nil) // a fresh clone ignores nothing
 	b.Observations = append(b.Observations, web...)
-	b.Coverage = append(b.Coverage, webCov...)
-	b.Complete = b.Complete && webComplete
+	b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
 	if !s.NoLeaks {
 		// Keys and passwords committed to the default branch. A fresh
 		// clone holds only tracked files; each keeps its severity.
