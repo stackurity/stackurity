@@ -254,6 +254,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/ask/feedback":                    {class: "create", body: func(*tenantFx) any { return map[string]string{"scope": "ui", "category": "other"} }},
 	"GET /api/v1/admin/ask/feedback/":              {class: "instance"},
 	"GET /api/v1/admin/ask/feedback/{id}":          {class: "instance"},
+	"GET /api/v1/admin/ask/feedback/incomplete":    {class: "instance"},
 	"PATCH /api/v1/admin/ask/feedback/{id}":        {class: "instance"},
 	"GET /api/v1/admin/ask/review-tokens/":         {class: "instance"},
 	"POST /api/v1/admin/ask/review-tokens/":        {class: "instance"},
@@ -537,6 +538,7 @@ var routeRules = map[string]routeRule{
 	// Notifications of A's project or asset: B gets 404 for the project or
 	// asset before anything else is read.
 	"GET /api/v1/projects/{id}/notifications": {class: "object", obj: id("project")},
+	"GET /api/v1/projects/{id}/ask-notes":     {class: "object", obj: id("project")},
 	// Trust badges (trust_badge.go).
 	"GET /api/v1/trust-badges": {class: "list"},
 	"POST /api/v1/trust-badges": {class: "create", body: func(a *tenantFx) any {
@@ -572,6 +574,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/projects/{id}/notifications/slack/install":       {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{} }},
 	"POST /api/v1/projects/{id}/notifications/teams/install":       {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{} }},
 	"PATCH /api/v1/projects/{id}":                                  {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"PUT /api/v1/projects/{id}/ask-notes":                          {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{"notes": "hacked"} }},
 	"POST /api/v1/projects/{id}/assets":                            {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset2")}} }},
 	"DELETE /api/v1/projects/{id}/assets":                          {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset")}} }},
 	"PATCH /api/v1/access-grants/{id}":                             {class: "object", obj: id("grant"), body: func(*tenantFx) any { return map[string]any{"role": "admin"} }},

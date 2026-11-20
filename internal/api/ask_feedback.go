@@ -54,6 +54,7 @@ func (s *Server) askFeedbackReviewRoutes(r chi.Router) {
 	r.Route("/admin/ask/feedback", func(r chi.Router) {
 		r.Use(requireFeedbackReview)
 		r.Get("/", s.adminListAskFeedback)
+		r.Get("/incomplete", s.adminAskIncomplete)
 		r.Get("/{id}", s.adminGetAskFeedback)
 		r.Patch("/{id}", s.adminReviewAskFeedback)
 	})
@@ -346,6 +347,45 @@ func (s *Server) adminListAskFeedback(w http.ResponseWriter, r *http.Request) {
 		res["next_before"] = items[len(items)-1].ID
 	}
 	writeJSON(w, 200, res)
+}
+
+// GET /admin/ask/feedback/incomplete (operators and feedback review
+// tokens): how many answers were refused or left incomplete, per day and
+// model, and why, across this server's organisations (?workspace_id for
+// one). ?since: a date or RFC 3339 time (default 30 days ago, at most two
+// years). Counts only, from the call log: never questions or answers.
+func (s *Server) adminAskIncomplete(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	since := time.Now().AddDate(0, 0, -30)
+	if v := q.Get("since"); v != "" {
+		t, err := time.Parse(time.RFC3339, v)
+		if err != nil {
+			t, err = time.Parse("2006-01-02", v)
+		}
+		if err != nil {
+			s.fail(w, r, badRequest("since must be a date (2006-01-02) or an RFC 3339 time"))
+			return
+		}
+		since = t
+	}
+	if oldest := time.Now().Add(-store.AskCallDailyRetention); since.Before(oldest) {
+		since = oldest
+	}
+	var ws int64
+	if v := q.Get("workspace_id"); v != "" {
+		n, err := strconv.ParseInt(v, 10, 64)
+		if err != nil || n <= 0 {
+			s.fail(w, r, badRequest("invalid workspace_id"))
+			return
+		}
+		ws = n
+	}
+	sum, err := s.Store.AskIncompleteCounts(tenant.System(r.Context()), since, ws)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"since": since.UTC().Format("2006-01-02"), "summary": sum, "reasons": store.AskIncompleteReasons})
 }
 
 func (s *Server) adminGetAskFeedback(w http.ResponseWriter, r *http.Request) {

@@ -600,7 +600,8 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	if conv.Title == "" {
 		_ = s.Store.TitleAskConversation(ctx, p.User.ID, conv.ID, in.Text)
 	}
-	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project,
+	notes := s.askProjectNotes(ctx, p, page)
+	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project, ProjectNotes: notes,
 		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api, Propose: l.Propose, SecretRemoved: secretRemoved}, func(e ask.Event) {
 		switch e.Kind {
 		case "text":

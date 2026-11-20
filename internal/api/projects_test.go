@@ -183,6 +183,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/admin/ask":                        "org",
 	"GET /api/v1/admin/ask/feedback/":              "org",
 	"GET /api/v1/admin/ask/feedback/{id}":          "org",
+	"GET /api/v1/admin/ask/feedback/incomplete":    "org",
 	"PATCH /api/v1/admin/ask/feedback/{id}":        "org",
 	"GET /api/v1/admin/ask/review-tokens/":         "org",
 	"POST /api/v1/admin/ask/review-tokens/":        "org",
@@ -213,6 +214,8 @@ var projectScopes = map[string]string{
 
 	"GET /api/v1/projects":                                         "scoped",
 	"GET /api/v1/projects/{id}":                                    "scoped",
+	"GET /api/v1/projects/{id}/ask-notes":                          "scoped",
+	"PUT /api/v1/projects/{id}/ask-notes":                          "scoped-write",
 	"GET /api/v1/projects/{id}/notifications":                      "scoped",
 	"POST /api/v1/projects/{id}/notifications/routes":              "scoped-write",
 	"PUT /api/v1/projects/{id}/notifications/routes/{rid}":         "scoped-write",

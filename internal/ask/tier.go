@@ -23,9 +23,11 @@ import (
 //     list, then, for a short follow-up the list does not settle, one
 //     small Claude Haiku 5.5 call that answers yes or no);
 //   - a thumbs-down;
-//   - the answer says it could not understand or find something, or was
-//     refused (SaysNotFound), or a tool failed: that turn is tried again
-//     once on the next model, so the person does not have to ask again;
+//   - the answer was refused (stop reason refusal), says it could not
+//     understand or find something (SaysNotFound), or a tool failed: that
+//     turn is tried again once on the next model, so the person does not
+//     have to ask again (the refused or incomplete call is recorded with
+//     its incomplete_reason, the retry with the step-up reason);
 //   - the person stopped an answer.
 //
 // Clearly complex (a remediation or upgrade plan across many assets, a
@@ -38,6 +40,7 @@ const (
 	StepRephrased    = "rephrased"
 	StepDissatisfied = "dissatisfied"
 	StepNotFound     = "not_found"
+	StepRefusal      = "refusal"
 	StepToolError    = "tool_error"
 	StepThumbsDown   = "thumbs_down"
 	StepStopped      = "stopped"

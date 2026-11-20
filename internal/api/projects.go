@@ -109,6 +109,7 @@ var projectRoutes = map[string]projectScope{
 	// Narrowed by row-level security.
 	"GET /api/v1/projects":                     scopedRead,
 	"GET /api/v1/projects/{id}":                scopedRead,
+	"GET /api/v1/projects/{id}/ask-notes":      scopedRead,
 	"GET /api/v1/overview":                     scopedRead,
 	"GET /api/v1/facets":                       scopedRead,
 	"GET /api/v1/search":                       scopedRead,
@@ -221,6 +222,10 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/trust-badges/{id}/logo":  scopedWrite,
 	"GET /api/v1/trust-badges/{id}/preview":  scopedWrite,
 	"GET /api/v1/trust-badges/{id}/history":  scopedWrite,
+
+	// A project's notes for Ask Stackurity: the handler checks the caller
+	// is an admin of that project (project_ask_notes.go).
+	"PUT /api/v1/projects/{id}/ask-notes": scopedWrite,
 
 	// Notifications of a project or an asset: the handler checks the
 	// caller's role on it (security to read, admin to change).

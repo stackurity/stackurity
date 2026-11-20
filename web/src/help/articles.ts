@@ -2191,7 +2191,7 @@ jobs:
     section: "Settings and administration",
     summary: "Group assets into projects and give people access to chosen projects only.",
     where: ["Environment", "Projects"],
-    keywords: "project client agency site contractor access grant switcher unfiled team role permission",
+    keywords: "project client agency site contractor access grant switcher unfiled team role permission ask notes",
     body: [
       {
         p: "A **project** groups assets: a site, a client, a product. One asset can be in several projects, such as a database server two sites share. Your organisation (this workspace) holds the projects, and the projects hold the assets.",
@@ -2230,6 +2230,10 @@ jobs:
           "To send a client only their project's alerts, tick the project in a notification integration's settings (**Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
           "**People ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
         ],
+      },
+      { h: "Notes for Ask Stackurity" },
+      {
+        p: "A project's admins can write a short note about it (up to 2,000 characters) under **Notes for Ask Stackurity** on the project's page, or on its Notifications page for admins of that project only: what the project is, which hosts are for testing, what to leave out. When Ask Stackurity is on, it reads the note with questions about that project (the project chosen in the switcher, or one of its assets open), as background from your organisation, never as instructions. Anyone who can see the project can read the note, and each change is in the audit log with the old and new text. Don't put passwords or keys in it.",
       },
       {
         note: "API clients choose a project with the `project_id` query parameter or the `X-Stackurity-Project` header. The evidence report and exports follow the choice. Agent and collector tokens belong to the workspace and are not limited by projects.",

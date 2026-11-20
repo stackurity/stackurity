@@ -1455,6 +1455,18 @@ A project; for admins also its `grants`.
 
 `name`, `description`, `archived` (true archives: grants on it stop giving access and routes limited to it stop matching; false restores).
 
+### `GET /projects/{id}/ask-notes`
+
+**Who:** viewer on the project
+
+The project's notes for Ask Stackurity: a short text its admins write about it ("our payments API; web-3 is a staging box; ignore lab-*"). Ask sends them with a question about this project (the project chosen in the switcher, an open asset of the project, or, for a member with project access only, their projects; at most three), inside the question's context block and marked as written by an organisation administrator. Ask treats them as background, never as instructions. Answer: `project_id`, `notes`, `updated_at`, `max_chars` (2,000) and `can_edit`. 404 when the caller cannot see the project.
+
+### `PUT /projects/{id}/ask-notes`
+
+**Who:** admin on the project
+
+`{"notes"}`: up to 2,000 characters, trimmed; an empty string clears them. An organisation-wide admin or an admin grant on the project; in the dashboard or with an API token, never by an AI assistant. 400 for an archived project. Audited as `project.ask_notes_update`, with `notes` and `previous_notes`.
+
 ### `POST /projects/{id}/assets`
 
 **Who:** admin
@@ -3026,7 +3038,7 @@ Deletes every conversation in the organisation, whoever had it, and answers how 
 
 **Who:** admin
 
-This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`. Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind are kept two years.
+This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`, `step_up_reason`, `stepped_from`, `incomplete_reason` (an answer call that ended without a full answer: `refusal`, `cannot_answer` (the answer says it could not find or answer something), `tool_error` (a lookup failed earlier in the answer), `max_tokens`, `tool_budget` (the question used up its lookups), `too_long`; empty otherwise) and `refusal_category` (the provider's category for a refusal). Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind (with the number of refusals and of incomplete answers) are kept two years.
 
 ### `GET /api/v1/admin/ask`
 
@@ -3039,6 +3051,12 @@ This organisation's Ask Stackurity model calls, newest first: one row per call (
 **Who:** instance admin, or a feedback review token
 
 Feedback from every organisation, newest first: `items` and `next_before` (pass it as `before` for the next page). Filters: `status` (`new`, `triaged`, `fixed`, `wontfix`), `kind` (`explicit`, `implicit`), `rating`, `category` (a category or a signal), `workspace_id`, `since` (a date or an RFC 3339 time), `prompt_version` (to compare ratings before and after a prompt change), `limit` (1 to 200, default 50). Each row: `id`, `workspace_id`, `user_id`, `conversation_id`, `message_id`, `kind`, `rating`, `category`, `scope`, `text`, `consent`, `snapshot`, `prompt_version`, `model`, `usage_call_id` (the model call that produced the answer, while its call record is kept), `page_path`, `viewport`, `status`, `resolution_notes`, `created_at`, `updated_at`. An organisation's admins never see this.
+
+### `GET /api/v1/admin/ask/feedback/incomplete`
+
+**Who:** instance admin, or a feedback review token
+
+How many Ask Stackurity answers were refused or left incomplete, from the call log, never the text: `since`, `reasons`, and `summary` with `days` (per day (UTC) and model: `answer_calls`, `refusals`, `incomplete`, refusals included), the totals, `by_reason` and `by_refusal_category` (from the detailed rows, kept 90 days, from `detail_since`). Older days come from the daily totals. Query: `since` (a date or an RFC 3339 time; default 30 days ago, at most two years), `workspace_id`. A refused or incomplete answer on a conversation below its plan's model is answered again on the next model up (the retry's call has `step_up_reason` `refusal`, `not_found` or `tool_error`).
 
 ### `GET /api/v1/admin/ask/feedback/{id}`
 
@@ -3056,7 +3074,7 @@ One row, as in the list.
 
 **Who:** instance admin
 
-Makes a feedback review token, for an automated reviewer that reads and triages feedback without an operator's full rights. `{"name", "expires_in_days"}` (0: never; up to 366) answers 201 with `token` and `secret`. The secret starts `stkfr_` and is shown once; only its SHA-256 hash is kept. A review token is not tied to an organisation or a user. It works only on `GET /admin/ask/feedback`, `GET /admin/ask/feedback/{id}` and `PATCH /admin/ask/feedback/{id}`; any other request with it is 403, and `/mcp` refuses it. Audited as `ask.review_token_created`.
+Makes a feedback review token, for an automated reviewer that reads and triages feedback without an operator's full rights. `{"name", "expires_in_days"}` (0: never; up to 366) answers 201 with `token` and `secret`. The secret starts `stkfr_` and is shown once; only its SHA-256 hash is kept. A review token is not tied to an organisation or a user. It works only on `GET /admin/ask/feedback`, `GET /admin/ask/feedback/incomplete`, `GET /admin/ask/feedback/{id}` and `PATCH /admin/ask/feedback/{id}`; any other request with it is 403, and `/mcp` refuses it. Audited as `ask.review_token_created`.
 
 ### `GET /api/v1/admin/ask/review-tokens`
 
