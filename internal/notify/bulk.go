@@ -53,9 +53,10 @@ func BulkCategoryLabel(c string) string {
 // may do and until when, with an HMAC-SHA256 over all of it with the
 // installation's "email-preferences" key:
 //
-//   - unsubscribe (kind "u"): turn one category off, from the footer link
-//     or a mail client's one-click POST. It cannot turn anything on, or
-//     touch the other category.
+//   - unsubscribe (kind "u"): from the footer link, turn any category off
+//     (the page lists them all, the email's own one first unticked); from a
+//     mail client's one-click POST, only the token's own category. It can
+//     never turn anything on.
 //   - preferences (kind "p"): read and change both categories on the
 //     preference page, without signing in. It expires sooner.
 const (
