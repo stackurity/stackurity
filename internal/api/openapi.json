@@ -15937,6 +15937,15 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -16058,6 +16067,15 @@
       "in": "query",
       "required": false,
       "description": "Page start",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
       "schema": {
        "type": "string"
       }
@@ -16447,6 +16465,45 @@
     }
    }
   },
+  "/leaks/{id}/second-checks": {
+   "get": {
+    "operationId": "get_leaks_id_second_checks",
+    "summary": "Second check verdicts on a leaked key",
+    "description": "Every verdict the independent second check gave the leak (confirmed, likely_false_positive, fixed, could_not_check), newest first, with its reason, the rules' version and what it read; append-only\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/config-findings": {
    "get": {
     "operationId": "get_config_findings",
@@ -16507,6 +16564,15 @@
       "in": "query",
       "required": false,
       "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
       "schema": {
        "type": "string"
       }
@@ -16634,6 +16700,15 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -16734,6 +16809,45 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/config-findings/{id}/second-checks": {
+   "get": {
+    "operationId": "get_config_findings_id_second_checks",
+    "summary": "Second check verdicts on a risky setting",
+    "description": "Every verdict the independent second check gave the config finding, newest first, with its reason, the rules' version and what it read; append-only\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",

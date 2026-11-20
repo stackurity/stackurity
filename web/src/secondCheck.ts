@@ -14,7 +14,7 @@ export const SECOND_CHECK: Record<SecondCheckResult, { label: string; tone: Tone
   likely_false_positive: {
     label: "Second check: likely false positive",
     tone: "muted",
-    hint: "An independent check found it is probably not real (a placeholder, a sample, a test key, or a setting that never takes effect). Listed, but no alert.",
+    hint: "An independent check found it is probably not real (a placeholder, a sample, a test key, a test or docs file, or a setting that never takes effect). Listed; only those flagged for their value or setting raise no alert.",
   },
   fixed: {
     label: "Second check: fixed",

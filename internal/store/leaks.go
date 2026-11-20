@@ -516,17 +516,24 @@ func (s *Store) LeakAssets(ctx context.Context, ids ...int64) ([]int64, error) {
 	return pgx.CollectRows(rows, pgx.RowTo[int64])
 }
 
+// leakValueSignalsSQL are the value check's signals that say a key is not
+// real; a likely false positive with one of them raises no alert.
+const leakValueSignalsSQL = `ARRAY['known_sample', 'placeholder', 'low_entropy', 'test_mode_key', 'checksum_invalid']::text[]`
+
 // maxLeakDetail bounds the titles and files an incident's detail lists.
 const maxLeakDetail = 10
 
 // leakProblems is one incident per asset with open critical or high
 // leaks. Medium and low leaks are listed, never alerted on.
 //
-// A leak the second check found likely not a real key (a placeholder, a
-// test-mode key, a token whose checksum does not match) raises no alert
-// unless the web server may send its file: it stays listed. The check runs
-// right after the batch is stored (Store.AfterLeakScan), before the
-// dispatcher reads this.
+// A leak the second check found likely not a real key because of its value
+// (a published sample, a placeholder, a too-regular value, a test-mode key,
+// a token whose checksum does not match: leakValueSignalsSQL) raises no
+// alert unless the web server may send its file: it stays listed. One that
+// is likely a false positive only because of its file (a test or docs
+// file) still alerts: real keys end up there too. The check runs right
+// after the batch is stored (Store.AfterLeakScan), before the dispatcher
+// reads this.
 func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind, a.owner_team_id, a.environment,
 		  count(*), count(*) FILTER (WHERE l.severity = 'critical'), count(*) FILTER (WHERE l.exposure = 'served'),
@@ -536,7 +543,8 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 		  (array_agg(l.severity ORDER BY l.exposure = 'served' DESC, array_position(ARRAY['critical','high'], l.severity)))[1]
 		FROM leaks l JOIN assets a ON a.id = l.asset_id
 		WHERE l.status = 'open' AND l.severity IN ('critical', 'high') AND a.merged_into IS NULL
-		  AND (l.recheck_verdict <> 'likely_false_positive' OR l.exposure = 'served')
+		  AND (l.recheck_verdict <> 'likely_false_positive' OR l.exposure = 'served'
+		    OR NOT l.value_signals && `+leakValueSignalsSQL+`)
 		GROUP BY a.id ORDER BY a.id`, maxLeakDetail)
 	if err != nil {
 		return nil, err

@@ -410,7 +410,7 @@ const VIEW_HINT: Record<LeakView, string> = {
 
 /** What the second check is, under every view. */
 const SECOND_CHECK_HINT =
-  "Each key also gets a second, independent check, which says whether it looks real: not a placeholder, a published sample, a test-mode key or a token whose built-in checksum does not match. Likely false positives are collapsed at the bottom and never alert; look before dismissing one, as real keys do end up in tests.";
+  "Each key also gets a second, independent check, which says whether it looks real: not a placeholder, a published sample, a test-mode key or a token whose built-in checksum does not match. Likely false positives are collapsed at the bottom. Those flagged for their value never alert; those flagged only because they are in a test or docs file still alert, as real keys do end up there.";
 
 const STATE_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "Any state" },
@@ -541,7 +541,7 @@ export function LeaksView({ assetId }: { assetId?: number }) {
         <details className="false-positives">
           <summary>Likely false positives ({fp.data.total.toLocaleString()})</summary>
           <p className="hint">
-            {falsePositiveSummary(fp.data.total, "leak")}. They raise no alert, unless the web server may send the file. Each says why;
+            {falsePositiveSummary(fp.data.total, "leak")}. Those flagged for their value raise no alert, unless the web server may send the file; those flagged only for being in a test or docs file still alert. Each says why;
             dismiss one you have looked at, or mark it rotated if it was real after all.
             {fp.data.total > fp.data.items.length && ` The first ${fp.data.items.length} are shown.`}
           </p>

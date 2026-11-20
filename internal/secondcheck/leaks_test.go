@@ -31,10 +31,10 @@ func TestCheckLeak(t *testing.T) {
 		{"published sample", leakIn("app.py", "known_sample", "placeholder"), store.VerdictLikelyFalsePositive, "documentation"},
 		{"test-mode key", leakIn("app.py", "test_mode_key"), store.VerdictLikelyFalsePositive, "test-mode"},
 		{"too regular", leakIn("app.py", "low_entropy"), store.VerdictLikelyFalsePositive, "too regular"},
-		{"in docs", leakIn("docs/setup.md"), store.VerdictLikelyFalsePositive, "documentation (setup.md)"},
-		{"in an examples directory", leakIn("examples/client/main.go"), store.VerdictLikelyFalsePositive, "examples/"},
-		{"in a test", leakIn("pkg/auth_test.go"), store.VerdictLikelyFalsePositive, "a test (auth_test.go)"},
-		{"in host docs", leakIn("/usr/share/doc/app/README"), store.VerdictLikelyFalsePositive, "doc/"},
+		{"in docs", leakIn("docs/setup.md"), store.VerdictLikelyFalsePositive, "in a test or docs file (docs/setup.md) — check whether the key is real"},
+		{"in an examples directory", leakIn("examples/client/main.go"), store.VerdictLikelyFalsePositive, "test or docs file (examples/client/main.go)"},
+		{"in a test", leakIn("pkg/auth_test.go"), store.VerdictLikelyFalsePositive, "check whether the key is real"},
+		{"in host docs", leakIn("/usr/share/doc/app/README"), store.VerdictLikelyFalsePositive, "test or docs file"},
 		// A token whose checksum matches was issued: in a test file too.
 		{"issued token in a test", leakIn("tests/conftest.py", "checksum_valid"), store.VerdictConfirmed, "checksum matches"},
 		{"gone", func() store.LeakRecheckInput {

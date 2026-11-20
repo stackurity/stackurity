@@ -138,7 +138,7 @@ func TestLeakStoresNoValue(t *testing.T) {
 		"resolution_note resolved_by first_seen last_seen resolved_at last_collection_id " +
 		// 0101: the rotation workflow. Its only text is a person's note.
 		"assignee_user_id assignee_team_id due_at rotated_at rotated_by rotation_note " +
-		// 0119: the second check. Signals and the checker are a fixed
+		// 0120: the second check. Signals and the checker are a fixed
 		// vocabulary the database enforces; verdicts are the server's own
 		// text.
 		"value_checker value_signals recheck_verdict recheck_reason recheck_checker recheck_at"

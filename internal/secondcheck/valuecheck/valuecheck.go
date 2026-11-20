@@ -7,7 +7,7 @@
 // and returns only signals from a fixed list (Signals). Nothing derived from
 // the value's characters leaves it, so the server still never holds the
 // key, and the database refuses any other text in the column that keeps
-// them (migration 0119). The server's second check (internal/secondcheck)
+// them (migration 0120). The server's second check (internal/secondcheck)
 // turns the signals, the file and the scan history into a verdict.
 //
 // It is deliberately separate from the detector (internal/collect/leaks),

@@ -20,7 +20,7 @@
 -- and config_findings tables are small (at most 1,000 per asset and
 -- collector), so the checks are validated in place.
 --
--- Release owner: renumber this file if another migration takes 0119 first.
+-- Release owner: renumber this file if another migration takes 0120 first.
 
 SET LOCAL lock_timeout = '10s';
 SELECT set_config('stackurity.scope', 'system', true);

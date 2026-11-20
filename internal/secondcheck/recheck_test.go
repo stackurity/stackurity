@@ -167,3 +167,41 @@ func TestValueSignalsAreAFixedList(t *testing.T) {
 		t.Errorf("a batch with an unknown signal: %v", err)
 	}
 }
+
+// Only a value signal keeps a likely false positive from alerting. A leak
+// that is likely a false positive only because of its file (a test or
+// docs file) keeps its verdict and reason, and still alerts: real keys end
+// up there too. Each value signal suppresses the alert on its own.
+func TestPathOnlyFalsePositivesStillAlert(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	r := &Runner{Store: s}
+	s.AfterLeakScan = func(ctx context.Context, assetID int64) {
+		if _, err := r.Recheck(ctx, assetID); err != nil {
+			t.Error(err)
+		}
+	}
+	pathOnly := hostLeak("d", "/srv/app/tests/fixture.sh")
+	if _, err := s.Ingest(ctx, hostBatch([]model.Leak{pathOnly}, nil), 0); err != nil {
+		t.Fatal(err)
+	}
+	ls, _, err := s.ListLeaks(ctx, store.LeakFilter{})
+	if err != nil || len(ls) != 1 || ls[0].SecondCheck == nil || ls[0].SecondCheck.Verdict != store.VerdictLikelyFalsePositive ||
+		!strings.Contains(ls[0].SecondCheck.Reason, "in a test or docs file") ||
+		!strings.Contains(ls[0].SecondCheck.Reason, "check whether the key is real") {
+		t.Fatalf("path-only leak: %+v %v", ls, err)
+	}
+	if incs := leakIncidents(t, s, ctx); len(incs) != 1 || incs[0].Kind != "leak" {
+		t.Errorf("a path-only likely false positive did not alert: %+v", incs)
+	}
+	for _, sig := range []string{"known_sample", "placeholder", "low_entropy", "test_mode_key", "checksum_invalid"} {
+		// The same file, now with a value signal: no alert.
+		withSignal := hostLeak("d", "/srv/app/tests/fixture.sh", sig)
+		if _, err := s.Ingest(ctx, hostBatch([]model.Leak{withSignal}, nil), 0); err != nil {
+			t.Fatal(err)
+		}
+		if incs := leakIncidents(t, s, ctx); len(incs) != 0 {
+			t.Errorf("%s: a value-signal likely false positive alerted: %+v", sig, incs)
+		}
+	}
+}

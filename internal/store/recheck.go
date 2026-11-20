@@ -1,7 +1,7 @@
 package store
 
 // The second check of leaked keys and risky settings (internal/secondcheck,
-// migration 0119): each leak and config finding gets a verdict with a
+// migration 0120): each leak and config finding gets a verdict with a
 // one-line reason and the version of the rules that gave it. The latest is
 // kept on the row (recheck_*); every verdict ever given is kept, append
 // only, in second_check_verdicts. See docs/verification.md, "Second check".

@@ -58,7 +58,7 @@ func (s *LeakScan) StripLeakValueChecks() {
 var valueCheckerRe = regexp.MustCompile(`^[a-z]+/[0-9]{1,4}$`)
 
 // leakSignals is the fixed list a value check's signals come from; the
-// database refuses others too (migration 0119).
+// database refuses others too (migration 0120).
 var leakSignals = map[string]bool{"placeholder": true, "low_entropy": true, "test_mode_key": true, "known_sample": true,
 	"checksum_valid": true, "checksum_invalid": true}
 

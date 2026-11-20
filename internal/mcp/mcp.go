@@ -503,7 +503,7 @@ var tools = map[string]tool{
 			"due_at and overdue. " +
 			"second_check is the independent second check's verdict: confirmed (looks like a real key, still found), " +
 			"likely_false_positive (a placeholder, a documented sample, a test-mode key, a token whose checksum does not match, " +
-			"or a file that is documentation, a template or a test; listed but raises no alert), fixed (no longer found) or " +
+			"or a file that is documentation, a template or a test; listed, and raises no alert unless flagged only for its file), fixed (no longer found) or " +
 			"could_not_check, with a one-sentence reason and the rules' version; null before it ran. " +
 			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
 		schema: obj(map[string]any{

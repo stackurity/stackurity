@@ -140,8 +140,9 @@ func checkLeak(in store.LeakRecheckInput, file string) Verdict {
 	case has(valuecheck.LowEntropy):
 		return lfp("The value is far too regular to be a generated key of this kind.")
 	}
-	if why := exampleFile(in.Path); why != "" && !has(valuecheck.ChecksumValid) {
-		return lfp("It is in " + why + ", where keys are usually made up; look at it before dismissing, as real keys do end up there.")
+	if exampleFile(in.Path) != "" && !has(valuecheck.ChecksumValid) {
+		// Only the file says so: the leak keeps alerting (store.leakProblems).
+		return lfp("It is in a test or docs file (" + in.Path + ") — check whether the key is real; it still alerts until you dismiss it.")
 	}
 	if in.ValueChecker == "" {
 		return Verdict{Verdict: store.VerdictCouldNotCheck, Reason: "The collector that found it is older than the value check, " +
