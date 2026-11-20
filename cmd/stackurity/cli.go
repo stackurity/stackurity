@@ -218,7 +218,7 @@ func remotePacks(cl *client.Client) func(ctx context.Context) ([]lockfile.Extens
 }
 
 // serverTakes is what GET /meta says the server accepts from the agent.
-type serverTakes struct{ appList, hostImages, leaks, configFindings, reachability bool }
+type serverTakes struct{ appList, hostImages, leaks, configFindings, attackTools, reachability bool }
 
 // forServer drops from the agent's batches what the server does not take:
 // older servers refuse unknown fields, and the whole batch would fail.
@@ -232,6 +232,9 @@ func forServer(bs []*model.ObservationBatch, t serverTakes) []*model.Observation
 		}
 		if !t.configFindings {
 			b.ConfigFindings = nil
+		}
+		if !t.attackTools {
+			b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
 		}
 		if !t.reachability {
 			b.StripReachability()
@@ -414,7 +417,7 @@ host; see docs/install.md.`,
 			var takes serverTakes
 			if m, err := cl.Meta(ctx); err == nil {
 				takes = serverTakes{appList: m.Has(client.FeatureAppList), hostImages: m.Has(client.FeatureHostImages),
-					leaks: m.Has(client.FeatureLeaks), configFindings: m.Has(client.FeatureConfigFindings),
+					leaks: m.Has(client.FeatureLeaks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools),
 					reachability: m.Has(client.FeatureReachability)}
 			}
 			if opts.docker != nil && !takes.hostImages {
@@ -760,6 +763,8 @@ config findings; --no-config-checks turns them off.`,
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureConfigFindings) {
 					fmt.Fprintln(os.Stderr, "warning: the server does not take config findings (Stackurity 0.21 or later is needed); they are not sent")
 					b.ConfigFindings = nil
+				} else if !m.Has(client.FeatureConfigAttackTools) {
+					b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
 				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)
