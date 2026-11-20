@@ -160,7 +160,9 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"and target versions), asset_stack for every layer an application relies on, and list_findings or get_finding " +
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
-	"list_leaks lists keys, tokens and passwords found written in files (never their values). For questions about the " +
+	"list_leaks lists keys, tokens and passwords found written in files (never their values), list_risky_settings risky " +
+	"settings (agent hooks, SSH access, GitHub Actions, attacker tools found), and threat_check whether a named attacker tool " +
+	"or campaign (such as ARTEX) was found, which internet-facing assets it could exploit, and what is not connected to check it. For questions about the " +
 	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
 	"integrations and notification channels are connected and on, never their addresses or credentials) and " +
 	"notification_settings (the notification rules in effect). evidence_pack gives the link that downloads the compliance " +
@@ -921,7 +923,7 @@ type findingVEX struct {
 
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
-var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "threat_check", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options"}
 
@@ -934,6 +936,8 @@ var readTitles = map[string]string{
 	"asset_stack":            "An asset's stack",
 	"list_findings":          "List issues",
 	"list_leaks":             "List leaked keys",
+	"list_risky_settings":    "List risky settings",
+	"threat_check":           "Check a named threat",
 	"get_finding":            "Get an issue",
 	"find_component":         "Find a package",
 	"explain_finding":        "Explain an issue's priority",
