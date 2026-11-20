@@ -109,11 +109,102 @@ export function MyEmailPreferences() {
 
 const LABEL: Record<EmailCategory, string> = { marketing: "Marketing", vulnerability_news: "Vulnerability news" };
 
+/**
+ * An Unsubscribe link's page: every category, the one the email came from
+ * already unticked, so the person stops only what they don't want. The link
+ * can turn categories off, never on, so a category already off is shown
+ * off and fixed.
+ */
+function UnsubscribeChoices({
+  prefs,
+  pending,
+  error,
+  saved,
+  onSave,
+}: {
+  prefs: EmailPreferences;
+  pending: boolean;
+  error: ApiError | null;
+  saved: boolean;
+  onSave: (c: EmailPreferencesChange) => void;
+}) {
+  const from = prefs.category as EmailCategory;
+  const fromLabel = prefs.categories.find((c) => c.category === from)?.label ?? LABEL[from];
+  const [keep, setKeep] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(prefs.categories.map((c) => [c.category, c.subscribed && c.category !== from])),
+  );
+  const stopping = prefs.categories.filter((c) => c.subscribed && !keep[c.category]);
+  const allOff = prefs.categories.every((c) => !c.subscribed);
+  const save = (all?: boolean) => {
+    const change: EmailPreferencesChange = {};
+    for (const c of prefs.categories) {
+      if (c.subscribed && (all || !keep[c.category])) change[c.category] = false;
+    }
+    onSave(change);
+  };
+  if (saved || allOff) {
+    const off = prefs.categories.filter((c) => !c.subscribed).map((c) => c.label);
+    const on = prefs.categories.filter((c) => c.subscribed).map((c) => c.label);
+    return (
+      <>
+        <Notice kind="success">
+          Done: {prefs.email} gets no more {off.join(" or ")} emails from Stackurity.
+          {on.length > 0 && <> You still get {on.join(" and ")}.</>}
+        </Notice>
+        <p className="small muted">
+          Emails about your account and your organisation still arrive. To turn anything back on, use the Email preferences link in an email, or{" "}
+          <a href="/account#email">sign in</a>.
+        </p>
+      </>
+    );
+  }
+  return (
+    <>
+      <p>
+        Which emails should <strong className="break">{prefs.email}</strong> keep getting? You came from a {fromLabel} email, so that one is already
+        unticked.
+      </p>
+      <ErrorBox error={error} title="Could not save" />
+      <ul className="plain-list email-prefs">
+        {prefs.categories.map((c) => (
+          <li key={c.category}>
+            <label className="check-row">
+              <input
+                type="checkbox"
+                checked={c.subscribed && keep[c.category]}
+                disabled={pending || !c.subscribed}
+                onChange={(e) => setKeep({ ...keep, [c.category]: e.target.checked })}
+                aria-describedby={`email-unsub-${c.category}`}
+              />
+              <span>
+                <strong>{c.label}</strong>
+                <span className="hint" id={`email-unsub-${c.category}`}>
+                  {c.subscribed ? c.description : "Already off."}
+                </span>
+              </span>
+            </label>
+          </li>
+        ))}
+      </ul>
+      <div className="form-actions">
+        <button type="button" className="btn btn-primary" disabled={pending || stopping.length === 0} onClick={() => save()}>
+          {stopping.length === 0 ? "Untick what you want to stop" : `Stop ${stopping.map((c) => c.label).join(" and ")}`}
+        </button>
+        <button type="button" className="btn" disabled={pending} onClick={() => save(true)}>
+          Unsubscribe from all
+        </button>
+      </div>
+      <LockedCategories prefs={prefs} />
+    </>
+  );
+}
+
 /*
  * /email/preferences#<token>: the links in product update and
- * vulnerability news emails, signed in or not. An unsubscribe link (one
- * category) shows one button; an Email preferences link shows both
- * toggles. The token stays in the fragment, which browsers never send to a
+ * vulnerability news emails, signed in or not. Both show every category: an
+ * Email preferences link as toggles, an Unsubscribe link as a choice of what
+ * to stop (the email's own category already unticked), so nobody has to
+ * make one all-or-nothing decision. The token stays in the fragment, which browsers never send to a
  * server, and goes to the API in a request body only. Nothing changes until
  * the person presses something, so mail scanners that open links change
  * nothing.
@@ -159,38 +250,7 @@ export function EmailPreferencesPage() {
   } else if (!prefs) {
     body = error ? <ErrorBox error={error} title="Could not load your preferences" /> : <Loading label="Loading…" />;
   } else if (prefs.kind === "unsubscribe" && prefs.category) {
-    const cat = prefs.categories[0];
-    body = (
-      <>
-        <ErrorBox error={error} title="Could not do that" />
-        {cat && !cat.subscribed ? (
-          <Notice kind="success">
-            Done: {prefs.email} gets no more {LABEL[prefs.category]} emails from Stackurity. Emails about your account and your organisation still
-            arrive.
-          </Notice>
-        ) : (
-          <>
-            <p>
-              Stop {LABEL[prefs.category]} emails to <strong className="break">{prefs.email}</strong>? Emails about your account and your organisation
-              are not affected.
-            </p>
-            <div className="form-actions">
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={pending}
-                onClick={() => change({ [prefs.category as EmailCategory]: false })}
-              >
-                Unsubscribe from {LABEL[prefs.category]}
-              </button>
-            </div>
-          </>
-        )}
-        <p className="small muted">
-          To change anything else, use the Email preferences link in the email, or <a href="/account#email">sign in</a>.
-        </p>
-      </>
-    );
+    body = <UnsubscribeChoices prefs={prefs} pending={pending} error={error} saved={saved} onSave={change} />;
   } else {
     body = (
       <>

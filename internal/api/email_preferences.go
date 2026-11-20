@@ -182,9 +182,10 @@ type prefsTokenRequest struct {
 	prefsChange
 }
 
-// linkEmailPreferences opens the preference page from an email's link:
-// for a preference link, both categories; for an unsubscribe link, its
-// category. Nothing changes.
+// linkEmailPreferences opens the preference page from an email's link. Both
+// kinds show every category, so a person can choose what to stop instead of
+// making one all-or-nothing decision; an unsubscribe link also names the
+// category of the email it came from. Nothing changes.
 func (s *Server) linkEmailPreferences(w http.ResponseWriter, r *http.Request) {
 	if s.emailPrefsOff(w) {
 		return
@@ -209,14 +210,6 @@ func (s *Server) answerLinkPrefs(w http.ResponseWriter, r *http.Request, c notif
 		s.fail(w, r, err)
 		return
 	}
-	if c.Kind == notify.PrefsKindUnsubscribe {
-		for _, p := range prefs {
-			if p.Category == c.Category {
-				prefs = []store.EmailPreference{p}
-				break
-			}
-		}
-	}
 	out := prefsAnswer(prefs)
 	out["kind"], out["email"] = map[string]string{notify.PrefsKindUnsubscribe: "unsubscribe", notify.PrefsKindCentre: "preferences"}[c.Kind], maskEmail(u.Email)
 	if c.Kind == notify.PrefsKindUnsubscribe {
@@ -226,8 +219,8 @@ func (s *Server) answerLinkPrefs(w http.ResponseWriter, r *http.Request, c notif
 }
 
 // updateLinkEmailPreferences changes preferences from an email's link. An
-// unsubscribe link can only turn its own category off; a preference link
-// can change both.
+// unsubscribe link can turn any category off but none on; a preference link
+// can change both ways.
 func (s *Server) updateLinkEmailPreferences(w http.ResponseWriter, r *http.Request) {
 	if s.emailPrefsOff(w) {
 		return
@@ -242,14 +235,16 @@ func (s *Server) updateLinkEmailPreferences(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	if c.Kind == notify.PrefsKindUnsubscribe {
+		// An unsubscribe link lives for years and may be forwarded, so it
+		// can only ever turn categories off (any of them), never on.
 		allowed := true
 		_ = req.prefsChange.each(func(category string, subscribed bool) error {
-			allowed = allowed && category == c.Category && !subscribed
+			allowed = allowed && !subscribed
 			return nil
 		})
 		if !allowed {
-			writeError(w, 403, "forbidden", "this link can only unsubscribe you from "+notify.BulkCategoryLabel(c.Category)+
-				"; open Email preferences from the email, or sign in, to change anything else")
+			writeError(w, 403, "forbidden", "this link can only unsubscribe you; open Email preferences from the email, "+
+				"or sign in, to turn emails back on")
 			return
 		}
 	}
