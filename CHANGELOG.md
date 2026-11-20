@@ -6,6 +6,23 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.17
+
+### Added
+
+- **Attack tools: ARTEX.** Risky settings has a new category, **Attack tools**, for attacker tools found on your assets. The first one is ARTEX, the AI-driven attack framework the FBI warned about on 13 November 2026. It covers renamed forks such as ScopeWeaver. The agent finds it on servers as a Go executable built from it (the build record is read; nothing is run) or a copy of its source. It finds it in container images by image name or by the image's Go executables, and in repositories by `go.mod`, `Dockerfile` and Compose files. The prebuilt images `tomicdd/artex` and `congdonglinux/artex`, reported to carry a backdoor, have a rule of their own. These matches are high and raise a Risky setting incident. A module or image only named like the tool is reported as medium, which does not alert. See [Risky settings](docs/config-checks.md#attack-tools).
+- **Sign-ups from untagged links record the website they came from.** When the sign-up page has no `?ref=` and no `utm_source`, the referring website counts as `web-<host>` (for example `web-reddit-com`), so the trial report and the admin Customers page say where more sign-ups came from. Only the host is kept, and stackurity.ai and stackurity.dev pages are ignored; tagged links still win. The browser stores nothing for it.
+- **Ask Stackurity and AI assistants answer "are we affected by ARTEX?".** The new MCP tool `threat_check` takes a named attacker tool or campaign (ARTEX first) and returns what it is and its sources, `checked` (whether its checks ran at all), whether it was found on an asset, the internet-facing (or possibly internet-facing) assets with active known-exploited or critical findings, how many servers ran the checks and which connections are missing (with the Help page for each), and a verdict: `found`, `exposed`, `not_checked`, `partial` or `covered`. On a server without the attack-tool checks, `checked` is false and the answer says to upgrade to the latest version; `covered` needs every connected server checked and everything read. The new tool `list_risky_settings` lists [risky settings](docs/config-checks.md) (agent hooks, SSH access, GitHub Actions and attacker tools), which had no MCP tool before. Both are read-only and offered to Ask Stackurity. See [AI assistants](docs/ai-assistants.md).
+
+### Changed
+
+- **Unsubscribe links let people choose what to stop.** The Unsubscribe link in product update and vulnerability news emails now opens a page that lists every email category, with the one the email came from already unticked, plus an "Unsubscribe from all" button. It used to offer a single yes/no for that one category. The link can still only turn emails off, never back on; the Email preferences link and Your account still do both. Mail clients' one-click unsubscribe is unchanged and stops only that email's category.
+
+### Upgrading
+
+- Migration `0117_config_attack_tools` widens the `config_findings` category check to allow `attack_tool`. Additive. Agents send attack tool findings only to servers that list `config_attack_tools` in `GET /meta`, so older servers keep taking their batches. After this migration an older image refuses to start against the database (newer schema), so a rollback restores the pre-upgrade database dump, as for earlier migration releases.
+- `pkg/engine.ConfigForServer` drops the config findings a server does not take; the standalone scanner should call it before every upload.
+
 ## 0.20.16
 
 ### Added
