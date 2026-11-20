@@ -12,10 +12,14 @@ Each organisation gets one of four verdicts per threat:
 |---|---|---|
 | `found` | The threat's checks found it on the organisation's assets: open findings of its [risky-settings](config-checks.md) rules or of its vulnerabilities. | **See findings** |
 | `covered` | It is being used against systems on the public internet; the organisation's connected assets are checked and nothing was found; there is nothing to do. The notice may name another connection that would widen the check. | none |
-| `needs_connection` | Stackurity can check for it but needs something the organisation has not connected: the agent on its servers (`host_agent`), container images from the agent's `--docker` or a registry (`docker`), repositories (`repository`), a cloud account (`cloud_account`) or a Kubernetes cluster (`kubernetes`). Each missing connection comes with the Help page that sets it up. | **Connect** |
+| `needs_connection` | Stackurity can check for it but needs something the organisation has not connected: the agent on its servers (`host_agent`), container images from the agent's `--docker` or a registry (`docker`), repositories (`repository`), a cloud account (`cloud_account`) or a Kubernetes cluster (`kubernetes`). Each missing connection comes with the Help page that sets it up. A connection whose assets were last checked by an agent or scanner older than the check counts as missing too, and the notice says to update them. | **Connect** (or **Update**) |
 | `upgrade` | Self-hosted only: the server runs a release older than the threat's `min_version`, the first one with the check. Stackurity Cloud always runs the latest release and never gives this verdict; it waits until the release with the check is deployed. | **Upgrade** |
 
 `found` wins over every other verdict, also on an older server (a known-exploited CVE is found by the normal vulnerability checks, which need no new release). Otherwise a server without the check says `upgrade`; then a missing required connection, or no connection at all, says `needs_connection`; else `covered`.
+
+**A connection counts only once it was checked.** An asset counts for a connection when its latest complete collection came from a collector (the agent, `stackurity scan`, or the server's own repository and image scans) of version `min_version` or later: that is the version recorded on each collection. A server whose agent is older, or that never recorded a version, was not checked for the threat, so it never makes the threat `covered`; until it updates it is counted under `outdated` and the notice says "update Stackurity on ...". A development build's version counts as having every check.
+
+**Signals.** Some rules are weaker evidence: for ARTEX, `attack-tool-artex-name` (a Go module or image only *named* like it, medium severity, from the attack-tools check). The catalogue lists them as `signal_rules`. They never make a threat `found`; the notice counts them (`signals`) and asks to look at them under Risky settings.
 
 Notices never name assets: they give counts and links to the dashboard, so the same text is safe for every channel.
 
@@ -23,11 +27,13 @@ Notices never name assets: they give counts and links to the dashboard, so the s
 
 Each organisation is told **once per threat**, on every channel at the same time:
 
-1. **A banner** in the dashboard for members with an organisation-wide security or admin role: the verdict and one button. Each person can **Dismiss** it for themselves.
-2. **One email** to the organisation's administrators and security team, in the standard notification layout, through the server's account mail (email sent by Stackurity on Stackurity Cloud; `STACKURITY_SMTP_*` on a self-hosted server). Without a mail server nothing is sent, and the notice records `no_mailer`.
-3. **The organisation's notification routes** that have the `threat_notices` event (Slack, Teams, email channels, webhooks), scoped like other alerts: an organisation's routes get every notice; a project's or an asset's route gets only a `found` notice with a finding on one of its assets, counting only those. Tracker channels (Jira, PagerDuty, ServiceNow) get none. Every route that sends messages as they happen (urgent, new issues or problems) was given the event by migration `0118_threat_notices`; it can be turned off per route like any other trigger.
+1. **A banner** in the dashboard for members with an organisation-wide security or admin role: the verdict and one button. Each person can **Dismiss** it for themselves; it stays hidden until they are told something new.
+2. **One email** to the organisation's administrators and security team, in the standard notification layout, through the server's account mail (email sent by Stackurity on Stackurity Cloud; `STACKURITY_SMTP_*` on a self-hosted server). Without a mail server nothing is sent, and the notice records `no_mailer`. A failed send is tried again on each run (every 30 minutes), up to 5 times. If a server stops between sending and recording it, the email is sent again: a rare duplicate rather than a lost notice.
+3. **The organisation's notification routes** that have the `threat_notices` event (Slack, Teams, email channels, webhooks), scoped like other alerts: an organisation's routes get every notice; a project's or an asset's route gets only a `found` notice with a finding on one of its assets, counting only those. Tracker channels (Jira, PagerDuty, ServiceNow) get none. Migration `0118_threat_notices` gave the event to every existing route that sends messages as they happen (urgent, new issues or problems) **except webhook routes**: a webhook receiver may not expect a new kind of message (`"event": "threat_notice"`, [api.md](api.md#notification-messages)), so existing webhooks opt in by ticking **Threat notices** on the route. Routes created since have it by default; it can be turned off per route like any other trigger.
 
-The verdict is worked out again every 30 minutes for every organisation that is not read-only. When it **worsens to `found`** (for example `covered` → `found` after an agent reports the tool), the organisation is told again on every channel, and the banner shows again for people who had hidden it. Every other change (a connection added, a finding fixed) updates the notice quietly. An organisation that has no notice for a threat more than 30 days after it was added does not get one: the threat stays in `threat_check` and the catalogue.
+The verdict is worked out again every 30 minutes for every organisation that is not read-only. When it **worsens to `found`** (for example `covered` → `found` after an agent reports the tool), the organisation is told again on every channel, and the banner shows again for people who had hidden it. When a found threat is **fixed**, the notice follows quietly, so if it is **found again later** that is news again: told on every channel as a new message. Every other change (a connection added or updated) updates the notice quietly and keeps a hidden banner hidden. An organisation that has no notice for a threat more than 30 days after it was added does not get one: the threat stays in `threat_check` and the catalogue.
+
+**Rolling upgrades.** An `upgrade` notice waits until the server has known the threat for 24 hours. During a rolling upgrade to the release that has the check, a replica still on the older release would otherwise tell every organisation to upgrade minutes before the upgrade finishes.
 
 Each notice is recorded in the activity log (`threat_notice.sent`, by the system), with the verdict and counts.
 
@@ -41,35 +47,36 @@ The threats are a versioned JSON catalogue, [`internal/threats/catalogue.json`](
 | `kind` | `attack_tool`, `exploited_vuln`, `campaign` or `practice` |
 | `severity` | `critical`, `high`, `medium` or `low` |
 | `summary`, `first_seen`, `published_at`, `sources` | What it is, when it was first seen in the wild, when Stackurity added it, and https sources |
-| `detects` | `config_rules` (risky-settings rule ids) and `cves` (CVE or GHSA ids: exploited vulnerabilities reuse the normal findings) |
+| `detects` | `config_rules` (risky-settings rule ids), `cves` (CVE or GHSA ids: exploited vulnerabilities reuse the normal findings) and `signal_rules` (weaker rules, shown but never `found`) |
 | `needs` | The connections the check reads: `connection`, `required`, `checks` (what it looks for there) and `help` (a `/help/...` page or an `https://stackurity.ai` page) |
 | `min_version` | The first Stackurity release with the check |
 | `revision` | Grows when the entry changes |
 
-The catalogue has a `schema` (1), a `serial` that grows with every publication, and `generated_at`. `GET /api/v1/threats` serves the catalogue the server uses, with `has_check` per threat; the MCP tool `threat_check` reads it, so an assistant knows threats added after its own release.
+The catalogue has a `schema` (1), a `serial` that grows with every publication, `generated_at`, and in a published feed `expires_at`. `GET /api/v1/threats` serves the catalogue the server uses, with `has_check` per threat; the MCP tool `threat_check` reads it, so an assistant knows threats added after its own release.
 
 ## The feed
 
-Servers fetch `https://stackurity.ai/threats/feed.json` and its detached signature `feed.json.sig` every 6 hours (one replica, leased like other periodic tasks), through the server's outbound guard. The signature is Ed25519 over the exact bytes of `feed.json`:
+Servers fetch `https://stackurity.ai/threats/feed.signed.json` every 6 hours (one replica, leased like other periodic tasks). It holds the catalogue and its signature in **one file**, so a cache can never pair a new catalogue with an old signature:
 
 ```json
-{"algorithm": "ed25519", "key_id": "8ad39b477427659c", "signature": "<base64>"}
+{"format": "stackurity-threat-feed/1", "algorithm": "ed25519", "key_id": "8ad39b477427659c",
+ "signature": "<base64 Ed25519 over the exact catalogue bytes>", "feed": "<base64 of the catalogue>"}
 ```
 
-`key_id` is the first 16 hex characters of the SHA-256 of the public key. The server checks it against the public keys built into the release ([`internal/threats/keys`](../internal/threats/keys)), then parses the catalogue, and merges it with the embedded one: per threat, the higher `revision` wins. A feed that is unsigned, signed by another key, changed after signing, malformed, of a newer `schema`, or with a lower `serial` than one already accepted is **ignored** and shown as a problem under **Admin → Platform health** (`threats` / `threat-feed`); the last good feed (or the embedded catalogue) is kept. A fetch that fails for the network (offline, air-gapped) is logged and is not a problem.
+`key_id` is the first 16 hex characters of the SHA-256 of the public key. The server checks the signature against the public keys built into the release ([`internal/threats/keys`](../internal/threats/keys)), then parses the catalogue and merges it with the embedded one: per threat, the higher `revision` wins. A feed is **ignored** and shown as a problem under **Admin → Platform health** (`threats` / `threat-feed`) when it is unsigned, signed by another key, changed after signing, malformed, of a newer `schema`, has a lower `serial` than one already used or than the release's own catalogue (a replay), or has no `expires_at` or is past it; the last good feed (or the embedded catalogue) is kept. A fetch that fails for the network (offline, air-gapped) is logged and is not a problem by itself, and it clears an earlier refusal; Platform health warns once **no usable feed was read for 7 days**, and when the feed in use has expired (it is still used: it is the newest authentic list). Blocking or replaying the feed therefore cannot hide new threats silently.
 
-The request is an anonymous GET of two public files and sends nothing about the installation ([network.md](network.md#threat-feed)). It is off with `STACKURITY_UPDATE_CHECK=off`; `STACKURITY_THREAT_FEED_URL` points it at a mirror (copy both files unchanged). **A self-hosted server never sends anything to Stackurity**: verdicts and notices are worked out and delivered on the server.
+The default address is fetched through the private-network guard with private, loopback and link-local addresses refused, and may not redirect to another host or from HTTPS to HTTP. The request is an anonymous GET of a public file and sends nothing about the installation ([network.md](network.md#threat-feed)). It is off with `STACKURITY_UPDATE_CHECK=off`; `STACKURITY_THREAT_FEED_URL` points it at a mirror (copy `feed.signed.json` unchanged), which may be on your own network. **A self-hosted server never sends anything to Stackurity**: verdicts and notices are worked out and delivered on the server.
 
 ### Signing the feed
 
 The private key stays on the signer's machine (`~/.config/stackurity/threat-feed-signing.key`, mode 0600) and is never printed or committed. The public key is `internal/threats/keys/threat-feed.pub`.
 
 ```sh
-go run ./tools/threatfeed sign --key ~/.config/stackurity/threat-feed-signing.key --feed path/to/threats/feed.json
-go run ./tools/threatfeed verify --feed path/to/threats/feed.json
+go run ./tools/threatfeed sign --key ~/.config/stackurity/threat-feed-signing.key --feed path/to/threats/feed.json --valid-for 90d
+go run ./tools/threatfeed verify --signed path/to/threats/feed.signed.json
 ```
 
-`sign` checks that the feed parses as a catalogue this build reads and that the signature verifies against the embedded keys before it writes `feed.json.sig`. To publish a threat: add it to the feed with the next `serial` and a `revision`, and its check's `min_version`; add it to `catalogue.json` in the release that ships the check. To rotate the key, embed the new public key in a release (`genkey` refuses to overwrite a key file), wait until servers run it, then sign with the new key; remove the old public key in a later release.
+`sign` checks that the feed parses as a catalogue this build reads, sets its `generated_at` and `expires_at` (`--valid-for`, 90 days by default), rewrites `feed.json` (the readable copy) and writes `feed.signed.json` next to it, after checking the signature against the embedded keys. Re-sign before the expiry even when nothing changed. To publish a threat: add it to the feed with the next `serial` and a `revision`, and its check's `min_version`; add it to `catalogue.json` in the release that ships the check. To rotate the key, embed the new public key in a release (`genkey` refuses to overwrite a key file), wait until servers run it, then sign with the new key; remove the old public key in a later release.
 
 ## The operator's copy
 

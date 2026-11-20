@@ -36,7 +36,11 @@ type NoticeFacts struct {
 	Findings  int
 	Assets    int
 	Connected map[string]int
-	Missing   []threats.Need
+	// Outdated: assets per connection whose collector is older than the
+	// check; Signals: findings only named like the threat.
+	Outdated map[string]int
+	Signals  int
+	Missing  []threats.Need
 	// Running is this server's release, for an upgrade notice.
 	Running string
 }
@@ -101,7 +105,7 @@ func connectedText(conn map[string]int) string {
 // dashboard's address (links are left out without one).
 func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.Time) Message {
 	m := Message{Event: EventThreatNotice, Kind: "threat", Key: "threat:" + t.ID, At: at,
-		Detail: map[string]any{"threat": t.ID, "verdict": f.Verdict, "findings": f.Findings, "assets": f.Assets}}
+		Detail: map[string]any{"threat": t.ID, "verdict": f.Verdict, "findings": f.Findings, "assets": f.Assets, "signals": f.Signals}}
 	inTheWild := t.Name + " is being used against systems on the public internet."
 	if t.Kind == threats.KindExploitedVuln {
 		inTheWild = t.Name + " is being exploited against systems on the public internet."
@@ -136,6 +140,10 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		m.Summary = []string{inTheWild, "We can check for it, but need this from you:"}
 		for _, n := range f.Missing {
 			line := "Connect " + threats.ConnectionLabel(n.Connection) + ". What it checks: " + n.Checks + "."
+			if o := f.Outdated[n.Connection]; o > 0 {
+				line = fmt.Sprintf("Update %s: %s connected but last checked by a release older than %s, the first with this check. What it checks: %s.",
+					threats.ConnectionLabel(n.Connection), plainCount(o, "asset is", "assets are"), t.MinVersion, n.Checks)
+			}
 			if l := absURL(base, n.Help); l != "" {
 				line += " How to connect: " + l
 			}
@@ -146,6 +154,12 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		}
 		if len(f.Missing) > 0 {
 			m.Link, m.LinkLabel = absURL(base, f.Missing[0].Help), "Connect"
+			if first := firstMissing(f.Missing); f.Outdated[first] > 0 {
+				m.Title = fmt.Sprintf("%s: Stackurity can check for it, once %s is updated", t.Name, threats.ConnectionLabel(first))
+				if f.Outdated[f.Missing[0].Connection] > 0 {
+					m.LinkLabel = "Update"
+				}
+			}
 		}
 	case threats.Upgrade:
 		m.Title = fmt.Sprintf("%s: upgrade Stackurity to check for it", t.Name)
@@ -156,6 +170,10 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		m.Summary = []string{inTheWild,
 			fmt.Sprintf("This Stackurity server runs %s. The check for %s is in Stackurity %s and later: upgrade to the latest version to check your assets for it.", running, t.Name, t.MinVersion)}
 		m.Link, m.LinkLabel = absURL(base, "/help/backups-upgrades"), "How to upgrade"
+	}
+	if f.Signals > 0 && f.Verdict != threats.Found {
+		m.Summary = append(m.Summary, fmt.Sprintf("%s only named like %s (a weaker sign, not counted as found): look at it under Risky settings to rule it out.",
+			plainCount(f.Signals, "finding is", "findings are"), t.Name))
 	}
 	m.Summary = append(m.Summary, "About "+t.Name+": "+t.Summary)
 	// Sources are linked only on hosts every email may link to
@@ -234,8 +252,10 @@ func verdictLabel(v string) string {
 // counting those assets only. Tracker channels (Jira, PagerDuty,
 // ServiceNow) keep one record per incident and get none. build makes the
 // message for a count of assets (-1: the organisation's totals). It
-// returns how many routes were given it.
-func (d *Dispatcher) QueueThreatNotice(ctx context.Context, noticeID int64, verdict string, foundAssets []int64, build func(assets int) Message) (int, error) {
+// returns how many routes were given it. A route that does not have the
+// event gets nothing; migration 0118 gave it to every right-away route
+// except webhooks, which opt in.
+func (d *Dispatcher) QueueThreatNotice(ctx context.Context, noticeID int64, verdict string, toldAt time.Time, foundAssets []int64, build func(assets int) Message) (int, error) {
 	ctx = withSentOnce(ctx)
 	routes, err := d.routes(ctx)
 	if err != nil {
@@ -245,7 +265,9 @@ func (d *Dispatcher) QueueThreatNotice(ctx context.Context, noticeID int64, verd
 	if err != nil {
 		return 0, err
 	}
-	key := fmt.Sprintf("threat:%d:%s", noticeID, verdict)
+	// Keyed by when people were told, so a threat found again after a fix
+	// is a new message.
+	key := fmt.Sprintf("threat:%d:%s:%d", noticeID, verdict, toldAt.UnixNano())
 	queued := 0
 	for _, r := range routes {
 		if !r.Enabled || r.Escalation || tracker[r.ChannelID] || !r.HasEvent(store.EventThreatNotices) {

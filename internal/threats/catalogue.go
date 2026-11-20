@@ -72,14 +72,20 @@ func ConnectionLabel(c string) string {
 }
 
 // Catalogue is the whole list, as embedded and as served at
-// https://stackurity.ai/threats/feed.json.
+// https://stackurity.ai/threats/feed.signed.json (inside a signed Envelope).
 type Catalogue struct {
 	Schema int `json:"schema"`
 	// Serial grows with every published catalogue. A server refuses a feed
 	// with a lower serial than one it already accepted (a replay).
 	Serial      int64     `json:"serial"`
 	GeneratedAt time.Time `json:"generated_at"`
-	Threats     []Threat  `json:"threats"`
+	// ExpiresAt, in a published feed, is when servers stop accepting it
+	// (tools/threatfeed sign --valid-for sets both times). A feed that is
+	// never re-signed is refused after it, so an attacker who blocks or
+	// replays the feed cannot hide new threats for longer. The embedded
+	// catalogue has none.
+	ExpiresAt *time.Time `json:"expires_at,omitempty"`
+	Threats   []Threat   `json:"threats"`
 }
 
 // Threat is one named threat.
@@ -112,6 +118,10 @@ type Threat struct {
 type Detects struct {
 	ConfigRules []string `json:"config_rules,omitempty"`
 	CVEs        []string `json:"cves,omitempty"`
+	// SignalRules are weaker config rules (something only named like the
+	// tool): counted and shown as signals to look at, never "found" on
+	// their own.
+	SignalRules []string `json:"signal_rules,omitempty"`
 }
 
 // Need is a connection the threat's checks read.
@@ -181,6 +191,9 @@ func (c *Catalogue) Validate() error {
 	if c.Serial < 1 {
 		return errors.New("threat catalogue: serial must be 1 or more")
 	}
+	if c.ExpiresAt != nil && !c.ExpiresAt.After(c.GeneratedAt) {
+		return errors.New("threat catalogue: expires_at must be after generated_at")
+	}
 	if len(c.Threats) > maxThreats {
 		return fmt.Errorf("threat catalogue: more than %d threats", maxThreats)
 	}
@@ -220,7 +233,7 @@ func (t *Threat) validate() error {
 		return errors.New("too many aliases, sources or needs")
 	case len(t.Detects.ConfigRules)+len(t.Detects.CVEs) == 0:
 		return errors.New("detects names no rule and no vulnerability")
-	case len(t.Detects.ConfigRules) > maxList || len(t.Detects.CVEs) > maxList:
+	case len(t.Detects.ConfigRules) > maxList || len(t.Detects.CVEs) > maxList || len(t.Detects.SignalRules) > maxList:
 		return errors.New("detects lists too many rules or vulnerabilities")
 	case len(t.Needs) == 0:
 		return errors.New("needs is empty: every check reads some connection")
@@ -243,7 +256,7 @@ func (t *Threat) validate() error {
 			return fmt.Errorf("source %q must be an https URL", s)
 		}
 	}
-	for _, r := range t.Detects.ConfigRules {
+	for _, r := range append(append([]string(nil), t.Detects.ConfigRules...), t.Detects.SignalRules...) {
 		if !ruleRE.MatchString(r) {
 			return fmt.Errorf("config rule %q is not a rule id", r)
 		}

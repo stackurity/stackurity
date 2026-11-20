@@ -799,7 +799,7 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 	if err := e.st.RecordThreatsSeen(tenant.System(ctx), []store.ThreatSeen{{ID: "artex", Name: "ARTEX", Revision: 1, Source: "embedded"}}); err != nil {
 		t.Fatal(err)
 	}
-	notice, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered", Connected: map[string]int{"host_agent": 1}}, true)
+	notice, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered", Connected: map[string]int{"host_agent": 1}}, store.NoticeTell)
 	if err != nil {
 		t.Fatalf("%s threat notice: %v", tag, err)
 	}

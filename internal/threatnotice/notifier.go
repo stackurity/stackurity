@@ -13,6 +13,7 @@ import (
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/threats"
+	"github.com/stackurity/stackurity/internal/updates"
 )
 
 // Every is how often each organisation's verdicts are worked out again.
@@ -70,13 +71,17 @@ func (n *Notifier) Run(ctx context.Context) error {
 	if err := n.recordSeen(ctx, cat); err != nil {
 		return err
 	}
-	conns, err := n.Store.ThreatConnections(ctx)
+	versions, err := n.Store.ThreatConnectionVersions(ctx)
+	if err != nil {
+		return err
+	}
+	firstSeen, err := n.Store.ThreatsFirstSeen(ctx)
 	if err != nil {
 		return err
 	}
 	var errs []error
 	for _, t := range cat.Threats {
-		if err := n.one(ctx, t, conns); err != nil {
+		if err := n.one(ctx, t, versions, firstSeen[t.ID]); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
@@ -101,15 +106,30 @@ func (n *Notifier) recordSeen(ctx context.Context, cat *threats.Catalogue) error
 	return nil
 }
 
-func (n *Notifier) one(ctx context.Context, t threats.Threat, conns map[string]int) error {
-	findings, assets, assetIDs, err := n.Store.ThreatEvidence(ctx, t.Detects.ConfigRules, t.Detects.CVEs)
-	if err != nil {
-		return err
+// UpgradeHold is how long after this installation first knew a threat an
+// "upgrade" notice waits. During a rolling upgrade to the release that has
+// the check, a replica still on the older release would otherwise tell
+// every organisation to upgrade minutes before it is done.
+const UpgradeHold = 24 * time.Hour
+
+// connectionCounts splits the assets of each connection by whether their
+// latest complete collection came from a collector with the threat's
+// check: a server whose agent is older than min_version was not checked,
+// so it does not make the threat "covered". A collection that recorded no
+// version counts as older.
+func connectionCounts(t threats.Threat, versions []store.ConnectionVersion) (conns, outdated map[string]int) {
+	conns, outdated = map[string]int{}, map[string]int{}
+	for _, v := range versions {
+		if v.Version != "" && t.CollectorHasCheck(updates.Running(v.Version)) {
+			conns[v.Connection] += v.Assets
+		} else {
+			outdated[v.Connection] += v.Assets
+		}
 	}
-	a, ok := threats.Assess(t, threats.Evidence{Findings: findings, Assets: assets}, conns, n.Running, n.Cloud)
-	if !ok {
-		return nil
-	}
+	return conns, outdated
+}
+
+func (n *Notifier) one(ctx context.Context, t threats.Threat, versions []store.ConnectionVersion, firstSeen time.Time) error {
 	prev, err := n.Store.GetThreatNotice(ctx, t.ID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return err
@@ -117,22 +137,41 @@ func (n *Notifier) one(ctx context.Context, t threats.Threat, conns map[string]i
 	if prev == nil && n.now().Sub(t.Published()) > Window {
 		return nil
 	}
-	tell := prev == nil || threats.Worsened(prev.NotifiedVerdict, a.Verdict)
+	findings, assets, signals, assetIDs, err := n.Store.ThreatEvidence(ctx, t.Detects.ConfigRules, t.Detects.CVEs, t.Detects.SignalRules)
+	if err != nil {
+		return err
+	}
+	conns, outdated := connectionCounts(t, versions)
+	a, ok := threats.Assess(t, threats.Evidence{Findings: findings, Assets: assets, Signals: signals}, conns, outdated, n.Running, n.Cloud)
+	if !ok {
+		return nil
+	}
+	if prev == nil && a.Verdict == threats.Upgrade && (firstSeen.IsZero() || n.now().Sub(firstSeen) < UpgradeHold) {
+		return nil // a rolling upgrade may be under way
+	}
+	mode := store.NoticeQuiet
+	switch {
+	case prev == nil || threats.Worsened(prev.NotifiedVerdict, a.Verdict):
+		mode = store.NoticeTell
+	case prev.NotifiedVerdict == threats.Found && a.Verdict != threats.Found:
+		// Fixed: a later "found" is news again.
+		mode = store.NoticeReset
+	}
 	missing := make([]string, 0, len(a.Missing))
 	for _, m := range a.Missing {
 		missing = append(missing, m.Connection)
 	}
 	saved, err := n.Store.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: t.ID, Verdict: a.Verdict, Findings: findings,
-		Assets: assets, Connected: a.Connected, Missing: missing}, tell)
+		Assets: assets, Connected: a.Connected, Outdated: a.Outdated, Signals: signals, Missing: missing}, mode)
 	if err != nil {
 		return err
 	}
-	// Deliver a notice just told, or one whose delivery a crash or a
-	// restart cut short, while its verdict is still the one told.
-	if saved.Verdict != saved.NotifiedVerdict || (saved.EmailAt != nil && saved.ChannelsAt != nil) {
+	// Deliver a notice just told, or one whose delivery a crash, a restart
+	// or a failed email cut short, while its verdict is still the one told.
+	if mode == store.NoticeReset || saved.Verdict != saved.NotifiedVerdict || (saved.EmailAt != nil && saved.ChannelsAt != nil) {
 		return nil
 	}
-	if tell {
+	if mode == store.NoticeTell {
 		_ = n.Store.Audit(ctx, store.Actor{Type: "system", Name: "Threat notices"}, "threat_notice.sent", "threat", t.ID,
 			map[string]any{"verdict": a.Verdict, "findings": findings, "assets": assets, "missing": missing})
 		if n.Log != nil {
@@ -140,8 +179,8 @@ func (n *Notifier) one(ctx context.Context, t threats.Threat, conns map[string]i
 			n.Log.Info("threat notice", "workspace", ws, "threat", t.ID, "verdict", a.Verdict)
 		}
 	}
-	facts := notify.NoticeFacts{Verdict: a.Verdict, Findings: findings, Assets: assets, Connected: a.Connected,
-		Missing: a.Missing, Running: n.Running}
+	facts := notify.NoticeFacts{Verdict: a.Verdict, Findings: findings, Assets: assets, Signals: signals, Connected: a.Connected,
+		Outdated: a.Outdated, Missing: a.Missing, Running: n.Running}
 	return n.deliver(ctx, t, saved, facts, assetIDs)
 }
 
@@ -157,7 +196,7 @@ func (n *Notifier) deliver(ctx context.Context, t threats.Threat, saved *store.T
 		queued := 0
 		if n.Dispatcher != nil {
 			var err error
-			queued, err = n.Dispatcher.QueueThreatNotice(ctx, saved.ID, facts.Verdict, assetIDs, func(assets int) notify.Message {
+			queued, err = n.Dispatcher.QueueThreatNotice(ctx, saved.ID, facts.Verdict, saved.BannerAt, assetIDs, func(assets int) notify.Message {
 				f := facts
 				if assets >= 0 {
 					// A project's or an asset's route hears about its own
@@ -238,7 +277,8 @@ func (n *Notifier) SendCopies(ctx context.Context) error {
 			continue
 		}
 		ex := d.Example
-		facts := notify.NoticeFacts{Verdict: ex.Verdict, Findings: ex.Findings, Assets: ex.Assets, Connected: ex.Connected, Running: n.Running}
+		facts := notify.NoticeFacts{Verdict: ex.Verdict, Findings: ex.Findings, Assets: ex.Assets, Signals: ex.Signals, Connected: ex.Connected,
+			Outdated: ex.Outdated, Running: n.Running}
 		for _, need := range t.Needs {
 			for _, m := range ex.Missing {
 				if m == need.Connection {

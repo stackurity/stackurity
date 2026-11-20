@@ -30,7 +30,7 @@ func TestThreatEvidenceAndConnections(t *testing.T) {
 	}
 	ctx := tenant.WithWorkspace(bg, w1.ID)
 
-	if f, a, ids, err := s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}); err != nil || f != 0 || a != 0 || len(ids) != 0 {
+	if f, a, _, ids, err := s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}, nil); err != nil || f != 0 || a != 0 || len(ids) != 0 {
 		t.Fatalf("empty: %d %d %v %v", f, a, ids, err)
 	}
 
@@ -64,24 +64,38 @@ func TestThreatEvidenceAndConnections(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	f, a, ids, err := s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, nil)
+	f, a, _, ids, err := s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, nil, nil)
 	if err != nil || f != 1 || a != 1 || len(ids) != 1 || ids[0] != r.AssetID {
 		t.Errorf("rules: %d %d %v %v", f, a, ids, err)
 	}
-	if f, a, _, err = s.ThreatEvidence(ctx, nil, []string{"CVE-2024-0099"}); err != nil || f != 1 || a != 1 {
+	if f, a, _, _, err = s.ThreatEvidence(ctx, nil, []string{"CVE-2024-0099"}, nil); err != nil || f != 1 || a != 1 {
 		t.Errorf("CVE through an alias: %d %d %v", f, a, err)
 	}
-	if f, a, _, err = s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}); err != nil || f != 2 || a != 2 {
+	if f, a, _, _, err = s.ThreatEvidence(ctx, []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}, nil); err != nil || f != 2 || a != 2 {
 		t.Errorf("both: %d %d %v", f, a, err)
 	}
 	// Another organisation sees none of it.
-	if f, _, _, err = s.ThreatEvidence(tenant.WithWorkspace(bg, w2.ID), []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}); err != nil || f != 0 {
+	if f, _, _, _, err = s.ThreatEvidence(tenant.WithWorkspace(bg, w2.ID), []string{"attack-tool-artex"}, []string{"CVE-2024-0099"}, nil); err != nil || f != 0 {
 		t.Errorf("other workspace: %d %v", f, err)
 	}
 
-	conns, err := s.ThreatConnections(ctx)
-	if err != nil || conns["host_agent"] != 2 || conns["docker"] != 0 || conns["repository"] != 0 {
-		t.Errorf("connections: %v %v", conns, err)
+	// A signal rule counts as a signal only.
+	if _, _, sig, _, err := s.ThreatEvidence(ctx, nil, nil, []string{"attack-tool-artex"}); err != nil || sig != 1 {
+		t.Errorf("signals: %d %v", sig, err)
+	}
+
+	// Connections by the collector version of each asset's latest complete
+	// collection.
+	if _, err := s.Pool.Exec(sys, `UPDATE collections SET collector_version = CASE WHEN asset_id = $1 THEN 'v0.20.17' ELSE '' END`, r.AssetID); err != nil {
+		t.Fatal(err)
+	}
+	vs, err := s.ThreatConnectionVersions(ctx)
+	got := map[string]int{}
+	for _, v := range vs {
+		got[v.Connection+"@"+v.Version] += v.Assets
+	}
+	if err != nil || got["host_agent@v0.20.17"] != 1 || got["host_agent@"] != 1 || len(got) != 2 {
+		t.Errorf("connection versions: %v %v", got, err)
 	}
 }
 
@@ -108,7 +122,7 @@ func TestThreatNotices(t *testing.T) {
 		t.Fatalf("no notice yet: %v", err)
 	}
 	n, err := s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered", Connected: map[string]int{"host_agent": 2},
-		Missing: []string{"repository"}}, true)
+		Missing: []string{"repository"}}, store.NoticeTell)
 	if err != nil || n.Verdict != "covered" || n.NotifiedVerdict != "covered" || n.EmailAt != nil || n.Connected["host_agent"] != 2 {
 		t.Fatalf("first: %+v %v", n, err)
 	}
@@ -127,17 +141,33 @@ func TestThreatNotices(t *testing.T) {
 	}
 
 	// A quiet change keeps the delivery and the dismissal.
-	n, err = s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "needs_connection"}, false)
+	n, err = s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "needs_connection"}, store.NoticeQuiet)
 	if err != nil || n.Verdict != "needs_connection" || n.NotifiedVerdict != "covered" || n.EmailAt == nil {
 		t.Fatalf("quiet: %+v %v", n, err)
 	}
 	// Told again: every channel starts over, the banner shows again.
-	n, err = s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "found", Findings: 1, Assets: 1}, true)
+	n, err = s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "found", Findings: 1, Assets: 1}, store.NoticeTell)
 	if err != nil || n.NotifiedVerdict != "found" || n.EmailAt != nil || n.ChannelsAt != nil || n.EmailResult != "" {
 		t.Fatalf("worsened: %+v %v", n, err)
 	}
 	if list, _ := s.ListThreatNotices(ctx, alice.ID); len(list) != 1 || list[0].Dismissed {
 		t.Errorf("a found notice shows again: %+v", list)
+	}
+
+	// A failed email is tried again until ThreatEmailAttempts.
+	for i := 1; i <= store.ThreatEmailAttempts; i++ {
+		if err := s.ThreatNoticeEmailed(ctx, n.ID, "failed", 2); err != nil {
+			t.Fatal(err)
+		}
+		got, _ := s.GetThreatNotice(ctx, "artex")
+		if (got.EmailAt == nil) != (i < store.ThreatEmailAttempts) || got.EmailAttempts != i {
+			t.Fatalf("attempt %d: email_at %v, attempts %d", i, got.EmailAt, got.EmailAttempts)
+		}
+	}
+	// Fixed: the told verdict follows quietly, so "found" is news again.
+	r, err := s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered"}, store.NoticeReset)
+	if err != nil || r.NotifiedVerdict != "covered" || !r.BannerAt.Equal(n.BannerAt) || r.EmailAt == nil {
+		t.Fatalf("reset: %+v %v", r, err)
 	}
 
 	// Other organisations neither see nor hide it.
@@ -153,14 +183,14 @@ func TestThreatNotices(t *testing.T) {
 	}
 
 	// The operator's copy: due once no notice is new, claimed once.
-	if _, err := s.SaveThreatNotice(ctx2, store.ThreatNotice{ThreatID: "artex", Verdict: "covered"}, true); err != nil {
+	if _, err := s.SaveThreatNotice(ctx2, store.ThreatNotice{ThreatID: "artex", Verdict: "covered"}, store.NoticeTell); err != nil {
 		t.Fatal(err)
 	}
 	if due, err := s.ThreatCopiesDue(sys, time.Hour); err != nil || len(due) != 0 {
 		t.Fatalf("not settled: %+v %v", due, err)
 	}
 	due, err := s.ThreatCopiesDue(sys, 0)
-	if err != nil || len(due) != 1 || due[0].Counts["found"] != 1 || due[0].Counts["covered"] != 1 || due[0].Example.Verdict == "" {
+	if err != nil || len(due) != 1 || due[0].Counts["covered"] != 2 || due[0].Example.Verdict == "" {
 		t.Fatalf("due: %+v %v", due, err)
 	}
 	if ok, err := s.ClaimThreatCopy(sys, "artex", due[0].Counts); err != nil || !ok {

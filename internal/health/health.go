@@ -651,23 +651,45 @@ func askSpendProblem(spent, capMicros int64) (Problem, bool) {
 	return p, true
 }
 
+// ThreatFeedStale is how long without a usable threat feed Platform
+// health warns: someone may be blocking it to hide new threats, or the
+// server cannot reach stackurity.ai.
+const ThreatFeedStale = 7 * 24 * time.Hour
+
 // threatFeedProblem reports a threat feed that was refused at its last
-// fetch (docs/threat-notices.md#the-feed): the server keeps the last good
-// catalogue, so notices about threats added since are not sent. A fetch
-// that failed for the network is not a problem (as for the release check).
+// fetch, that has not been read for ThreatFeedStale, or whose last good
+// copy expired (docs/threat-notices.md#the-feed): the server keeps the
+// last good catalogue, so notices about threats added since are not sent.
 // A result older than a day is not shown: the feed may have been turned
 // off since.
 func threatFeedProblem(s threats.FeedStatus, now time.Time) (Problem, bool) {
-	if s.Problem == "" || now.Sub(s.CheckedAt) > 24*time.Hour {
+	if now.Sub(s.CheckedAt) > 24*time.Hour {
 		return Problem{}, false
 	}
 	p := Problem{Severity: Warning, Kind: "threats", Key: "threat-feed", LastSuccess: s.LastSuccess, LastError: s.Detail,
 		Title:    "The threat feed was refused",
-		Detail:   "The last copy of the threat feed (stackurity.ai/threats/feed.json, or STACKURITY_THREAT_FEED_URL) was not used: " + s.Detail + ". The server keeps the threats it already knows; notices about threats added since are not sent.",
+		Detail:   "The last copy of the threat feed (stackurity.ai/threats/feed.signed.json, or STACKURITY_THREAT_FEED_URL) was not used: " + s.Detail + ". The server keeps the threats it already knows; notices about threats added since are not sent.",
 		Scope:    Scope{Summary: "threat notices, in every workspace"},
-		NextStep: "Check that STACKURITY_THREAT_FEED_URL, if set, points at an unmodified copy of the feed and its feed.json.sig. If it is the default address, tell the Stackurity team.",
+		NextStep: "Check that STACKURITY_THREAT_FEED_URL, if set, points at an unmodified copy of feed.signed.json. If it is the default address, tell the Stackurity team.",
 		Docs:     "docs/threat-notices.md#the-feed"}
 	switch s.Problem {
+	case "":
+		last := s.LastSuccess
+		if last == nil {
+			last = s.Since
+		}
+		switch {
+		case last != nil && now.Sub(*last) > ThreatFeedStale:
+			p.Title = "The threat feed has not been read for over 7 days"
+			p.Detail = "No usable copy of the threat feed was read since " + last.UTC().Format(time.DateOnly) + ". Notices about threats added since are not sent."
+			p.NextStep = "Check that the server can reach stackurity.ai over HTTPS (or your STACKURITY_THREAT_FEED_URL mirror), or set STACKURITY_UPDATE_CHECK=off to turn the feed off."
+		case s.ExpiresAt != nil && now.After(*s.ExpiresAt):
+			p.Title = "The threat feed in use has expired"
+			p.Detail = "The last good threat feed expired on " + s.ExpiresAt.UTC().Format(time.DateOnly) + " and no newer one was read. It is still used."
+			p.NextStep = "Check that the server can reach stackurity.ai, or that your mirror has the current feed.signed.json."
+		default:
+			return Problem{}, false
+		}
 	case "bad_signature":
 		p.Title = "The threat feed's signature is not valid"
 	case "newer_schema":
@@ -675,6 +697,8 @@ func threatFeedProblem(s threats.FeedStatus, now time.Time) (Problem, bool) {
 		p.NextStep = "Upgrade Stackurity to the latest version to get notices about the newest threats."
 	case "replay":
 		p.Title = "The threat feed is older than one already used"
+	case "expired":
+		p.Title = "The threat feed offered has expired"
 	}
 	return p, true
 }

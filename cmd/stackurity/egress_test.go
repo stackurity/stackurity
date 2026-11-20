@@ -74,8 +74,9 @@ var defaultEgress = []attempt{
 	{"http", "api.github.com:443"},
 	// The threat feed (internal/threatnotice), turned off by the same
 	// switch, STACKURITY_UPDATE_CHECK=off (or STACKURITY_THREAT_FEED_URL for
-	// a mirror): an anonymous GET of https://stackurity.ai/threats/feed.json
-	// and its .sig, up to 30 s after start, then every 6 hours. It dials
+	// a mirror): an anonymous GET of
+	// https://stackurity.ai/threats/feed.signed.json, up to 30 s after
+	// start, then every 6 hours. It dials
 	// through netguard, which resolves the name first, so the attempt is
 	// the name lookup.
 	{"dns", "stackurity.ai"},

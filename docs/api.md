@@ -1849,13 +1849,13 @@ Starts Add to Teams for a channel of the project, like `POST /integrations/teams
 
 **Who:** security (organisation-wide)
 
-The organisation's [threat notices](threat-notices.md), newest first: one per threat, with `threat_id`, the threat's `name`, `kind`, `severity`, `summary`, `sources` and `min_version`, the `verdict` now and the `notified_verdict` people were last told (`found`, `covered`, `needs_connection` or `upgrade`), the evidence as counts (`findings`, `assets`, `connected` per connection), `missing` and `missing_connections` (each with `label`, `required`, `checks` and its `help` page), the notice in words (`title`, `lines`: the same text as the email), the banner's `action` (`label` and `link`, or null when nothing needs doing), when each channel had it (`banner_at`, `email_at` with `email_result` `sent`, `no_mailer`, `no_recipients` or `failed`, `channels_at` with `channels_queued`), and `dismissed`: whether the caller hid the banner for the current verdict. Members with access to some projects only get 403: a notice speaks about every asset.
+The organisation's [threat notices](threat-notices.md), newest first: one per threat, with `threat_id`, the threat's `name`, `kind`, `severity`, `summary`, `sources` and `min_version`, the `verdict` now and the `notified_verdict` people were last told (`found`, `covered`, `needs_connection` or `upgrade`), the evidence as counts (`findings`, `assets`, `signals`: findings only named like the threat, which never make it found; `connected` per connection, counting only assets last checked by a collector with the check; `outdated` per connection, those checked by an older one), `missing` and `missing_connections` (each with `label`, `required`, `checks`, `outdated` and its `help` page), the notice in words (`title`, `lines`: the same text as the email), the banner's `action` (`label` and `link`, or null when nothing needs doing), when each channel had it (`banner_at`, `email_at` with `email_result` `sent`, `no_mailer`, `no_recipients` or `failed`, `channels_at` with `channels_queued`), and `dismissed`: whether the caller hid the banner for the current verdict. Members with access to some projects only get 403: a notice speaks about every asset.
 
 ### `POST /threat-notices/{id}/dismiss`
 
 **Who:** security (organisation-wide)
 
-Hides the notice's banner for the caller, for its current verdict: it shows again if the threat is later found. Returns 204. Recorded in the activity log.
+Hides the notice's banner for the caller until people are told something new (the threat is found, or found again after a fix); quiet changes of the verdict keep it hidden. Returns 204. Recorded in the activity log.
 
 ### `GET /deliveries`
 
@@ -2561,7 +2561,7 @@ The advisories in a group, by group key or CVE id.
 
 **Who:** viewer
 
-The [threat catalogue](threat-notices.md#the-catalogue) this server checks for: the one embedded in its release, merged with the signed threat feed (per threat, the higher `revision` wins). `schema`, `serial`, `generated_at` and `threats`, each with `id`, `revision`, `name`, `aliases`, `kind` (`attack_tool`, `exploited_vuln`, `campaign` or `practice`), `severity`, `summary`, `first_seen`, `published_at`, `sources`, `detects` (`config_rules` and `cves`), `needs` (each `connection`, `required`, `checks` and `help`), `min_version`, `source` (`embedded` or `feed`) and `has_check`: whether this server runs a release with the check. The same in every workspace.
+The [threat catalogue](threat-notices.md#the-catalogue) this server checks for: the one embedded in its release, merged with the signed threat feed (per threat, the higher `revision` wins). `schema`, `serial`, `generated_at`, `expires_at` (a feed's; null for the release's own) and `threats`, each with `id`, `revision`, `name`, `aliases`, `kind` (`attack_tool`, `exploited_vuln`, `campaign` or `practice`), `severity`, `summary`, `first_seen`, `published_at`, `sources`, `detects` (`config_rules`, `cves` and `signal_rules`: weaker rules that are shown but never make it found), `needs` (each `connection`, `required`, `checks` and `help`), `min_version`, `source` (`embedded` or `feed`) and `has_check`: whether this server runs a release with the check. The same in every workspace.
 
 ### `GET /feeds`
 
@@ -3528,7 +3528,7 @@ Routes send to channels and filter by SOS only, kinds, environments, owner teams
 | `overdue` | with `escalation` (licensed), at most one message a day when urgent issues pass their fix deadline |
 | `connected` | a new asset's first scan, once |
 | `problems` | collection, feed, coverage and platform problems at `min_priority` or SOS, right away |
-| `threat_notices` | a [threat notice](threat-notices.md), once per threat and again only when it is found (event `threat_notice` in the payload). A route limited to projects or an asset gets only a `found` notice with a finding on its assets. Every older mode with right-away events includes it, and it does not change a route's `mode` |
+| `threat_notices` | a [threat notice](threat-notices.md), once per threat and again only when it is found (event `threat_notice` in the payload). A route limited to projects or an asset gets only a `found` notice with a finding on its assets. Every older mode with right-away events includes it, and it does not change a route's `mode`. Migration 0118 added it to existing right-away routes except webhook routes, which opt in |
 | `daily_summary` | a daily summary at `summary_time` |
 | `weekly_summary` | a weekly summary on `summary_day` at `summary_time` |
 
@@ -3638,6 +3638,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 - A route limited to projects (`project_ids`) opens every link in its project (`?project=N`): its only project, or for a route on several the first of them the item's asset is in.
 - Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes with the `regressed` event lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
+- A [threat notice](threat-notices.md) has `"event": "threat_notice"`, `"kind": "threat"`, `"key": "threat:<id>"`, `title`, `summary` (lines), `recommended_action` (when found), `link` and `link_label`, and `detail` with `threat`, `verdict` (`found`, `covered`, `needs_connection` or `upgrade`), `findings`, `assets` and `signals`. Routes get it with the `threat_notices` event. Migration 0118 gave that event to existing right-away routes except webhook routes, so an existing webhook receiver gets nothing new until the event is ticked on its route; webhook routes created since have it by default, like other routes.
 
 ### Acting from Slack
 

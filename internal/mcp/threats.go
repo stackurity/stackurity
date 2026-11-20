@@ -151,7 +151,7 @@ func init() {
 			"what the threat is and its sources; findings that it is installed, running or in an image or repository; the " +
 			"internet-facing (or possibly internet-facing) assets with open known-exploited or critical findings, which such " +
 			"attacks try first; coverage: which connections its checks need, which are connected and which are missing, with " +
-			"the Help page that sets each up; and a verdict: found (the tool was found), exposed (not found, but internet-facing " +
+			"the Help page that sets each up; possible: findings only named like the tool, which never count as found; and a verdict: found (the tool was found), exposed (not found, but internet-facing " +
 			"assets have known-exploited or critical findings), not_checked (a connection the check needs is missing, or this " +
 			"server has no checks for it yet) or covered (checked, nothing found, no such exposure). An unknown name returns " +
 			"the threats it knows.",
@@ -241,7 +241,8 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		gaps = append(gaps, fmt.Sprintf("this Stackurity server is older than %s, the first release that checks for %s: a self-hosted server must be upgraded to the latest version", t.MinVersion, t.Name))
 	}
 	found := []map[string]any{}
-	if len(t.Detects.ConfigRules) > 0 {
+	possible := []map[string]any{}
+	if len(t.Detects.ConfigRules)+len(t.Detects.SignalRules) > 0 {
 		var cf struct {
 			Items []map[string]any `json:"items"`
 			Total int64            `json:"total"`
@@ -265,9 +266,16 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		for _, r := range t.Detects.ConfigRules {
 			rules[r] = true
 		}
+		signal := map[string]bool{}
+		for _, r := range t.Detects.SignalRules {
+			signal[r] = true
+		}
 		for _, f := range cf.Items {
-			if r, _ := f["rule"].(string); rules[r] {
+			switch r, _ := f["rule"].(string); {
+			case rules[r]:
 				found = append(found, f)
+			case signal[r]:
+				possible = append(possible, f) // only named like it: not found
 			}
 		}
 		if cf.Total > int64(len(cf.Items)) {
@@ -301,6 +309,7 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		}
 	}
 	out["found"] = found
+	out["possible"] = possible
 
 	// (c) coverage, from the assets the person can see.
 	var as struct {

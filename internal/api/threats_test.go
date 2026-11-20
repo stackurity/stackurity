@@ -37,7 +37,7 @@ func TestThreatNoticesAPI(t *testing.T) {
 		t.Fatal(err)
 	}
 	n, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "needs_connection", Missing: []string{"host_agent", "repository"},
-		Connected: map[string]int{"docker": 2}}, true)
+		Connected: map[string]int{"docker": 2}}, store.NoticeTell)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestThreatNoticesAPI(t *testing.T) {
 		t.Error("dismissed for the admin too")
 	}
 	// Found: the banner shows again, with its findings.
-	if _, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "found", Findings: 1, Assets: 1}, true); err != nil {
+	if _, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "found", Findings: 1, Assets: 1}, store.NoticeTell); err != nil {
 		t.Fatal(err)
 	}
 	sec.do("GET", "/api/v1/threat-notices", nil, &list)

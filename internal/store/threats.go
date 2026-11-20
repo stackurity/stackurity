@@ -34,16 +34,40 @@ func (s *Store) RecordThreatsSeen(ctx context.Context, list []ThreatSeen) error 
 	return nil
 }
 
+// ThreatsFirstSeen returns when this installation first knew each threat
+// (threats_seen.first_seen_at).
+func (s *Store) ThreatsFirstSeen(ctx context.Context) (map[string]time.Time, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, first_seen_at FROM threats_seen`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]time.Time{}
+	for rows.Next() {
+		var id string
+		var at time.Time
+		if err := rows.Scan(&id, &at); err != nil {
+			return nil, err
+		}
+		out[id] = at
+	}
+	return out, rows.Err()
+}
+
 // ThreatEvidence counts the workspace's open findings of these config rules
 // and vulnerability ids (a CVE matches an advisory that has it as id, alias
 // or group), and the assets they are on. assetIDs lists those assets, at
-// most 1,000, for scoping notifications.
-func (s *Store) ThreatEvidence(ctx context.Context, rules, vulns []string) (findings, assets int, assetIDs []int64, err error) {
+// most 1,000, for scoping notifications. signals counts open findings of
+// the signal rules (weaker evidence, never counted as findings).
+func (s *Store) ThreatEvidence(ctx context.Context, rules, vulns, signalRules []string) (findings, assets, signals int, assetIDs []int64, err error) {
 	if rules == nil {
 		rules = []string{}
 	}
 	if vulns == nil {
 		vulns = []string{}
+	}
+	if signalRules == nil {
+		signalRules = []string{}
 	}
 	rows, err := s.Pool.Query(ctx, `WITH keys AS (
 			SELECT unnest($2::text[]) AS key
@@ -58,14 +82,14 @@ func (s *Store) ThreatEvidence(ctx context.Context, rules, vulns []string) (find
 			  AND f.key IN (SELECT key FROM keys))
 		SELECT asset_id, count(*) FROM hits GROUP BY asset_id ORDER BY asset_id`, rules, vulns)
 	if err != nil {
-		return 0, 0, nil, err
+		return 0, 0, 0, nil, err
 	}
 	defer rows.Close()
 	for rows.Next() {
 		var id int64
 		var n int
 		if err := rows.Scan(&id, &n); err != nil {
-			return 0, 0, nil, err
+			return 0, 0, 0, nil, err
 		}
 		findings += n
 		assets++
@@ -73,25 +97,46 @@ func (s *Store) ThreatEvidence(ctx context.Context, rules, vulns []string) (find
 			assetIDs = append(assetIDs, id)
 		}
 	}
-	return findings, assets, assetIDs, rows.Err()
+	if err := rows.Err(); err != nil {
+		return 0, 0, 0, nil, err
+	}
+	if len(signalRules) > 0 {
+		err = s.Pool.QueryRow(ctx, `SELECT count(*) FROM config_findings c JOIN assets x ON x.id = c.asset_id AND x.merged_into IS NULL
+			WHERE c.status = 'open' AND c.rule = ANY($1)`, signalRules).Scan(&signals)
+	}
+	return findings, assets, signals, assetIDs, err
 }
 
-// ThreatConnections counts the workspace's live assets per connection a
-// threat's check can read (threats.Connections): servers reporting through
-// the agent, container images, repositories, cloud services and Kubernetes
-// clusters.
-func (s *Store) ThreatConnections(ctx context.Context) (map[string]int, error) {
-	out := map[string]int{"host_agent": 0, "docker": 0, "repository": 0, "cloud_account": 0, "kubernetes": 0}
-	var host, img, repo, cloud, kube int
-	err := s.Pool.QueryRow(ctx, `SELECT
-			count(*) FILTER (WHERE kind = 'host' AND report_source = 'agent'),
-			count(*) FILTER (WHERE kind = 'image'),
-			count(*) FILTER (WHERE kind = 'repository'),
-			count(*) FILTER (WHERE kind = 'managed_service'),
-			count(*) FILTER (WHERE kind = 'cluster')
-		FROM assets WHERE merged_into IS NULL AND collection_status <> 'removed'`).Scan(&host, &img, &repo, &cloud, &kube)
-	out["host_agent"], out["docker"], out["repository"], out["cloud_account"], out["kubernetes"] = host, img, repo, cloud, kube
-	return out, err
+// ConnectionVersion counts a workspace's live assets of one connection a
+// threat's check can read (threats.Connections) by the collector version
+// of their latest complete collection ("" when it recorded none, or the
+// asset has no complete collection).
+type ConnectionVersion struct {
+	Connection string
+	Version    string
+	Assets     int
+}
+
+// ThreatConnectionVersions counts the workspace's live assets per
+// connection and collector version: servers reporting through the agent,
+// container images, repositories, cloud services and Kubernetes clusters.
+// A check only ran on an asset whose collector had it, so the caller
+// compares the version with the threat's min_version.
+func (s *Store) ThreatConnectionVersions(ctx context.Context) ([]ConnectionVersion, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT conn, COALESCE(v, ''), count(*) FROM (
+			SELECT CASE WHEN a.kind = 'host' AND a.report_source = 'agent' THEN 'host_agent'
+			            WHEN a.kind = 'image' THEN 'docker'
+			            WHEN a.kind = 'repository' THEN 'repository'
+			            WHEN a.kind = 'managed_service' THEN 'cloud_account'
+			            WHEN a.kind = 'cluster' THEN 'kubernetes' END AS conn,
+			       (SELECT c.collector_version FROM collections c WHERE c.asset_id = a.id AND c.complete
+			        ORDER BY c.received_at DESC, c.id DESC LIMIT 1) AS v
+			FROM assets a WHERE a.merged_into IS NULL AND a.collection_status <> 'removed') x
+		WHERE conn IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2`)
+	if err != nil {
+		return nil, err
+	}
+	return pgx.CollectRows(rows, pgx.RowToStructByPos[ConnectionVersion])
 }
 
 // ThreatNotice is an organisation's notice about one threat.
@@ -103,6 +148,8 @@ type ThreatNotice struct {
 	Findings        int            `json:"findings"`
 	Assets          int            `json:"assets"`
 	Connected       map[string]int `json:"connected"`
+	Outdated        map[string]int `json:"outdated"`
+	Signals         int            `json:"signals"`
 	Missing         []string       `json:"missing"`
 	CreatedAt       time.Time      `json:"created_at"`
 	UpdatedAt       time.Time      `json:"updated_at"`
@@ -110,6 +157,7 @@ type ThreatNotice struct {
 	EmailAt         *time.Time     `json:"email_at"`
 	EmailResult     string         `json:"email_result"`
 	EmailRecipients int            `json:"email_recipients"`
+	EmailAttempts   int            `json:"email_attempts"`
 	ChannelsAt      *time.Time     `json:"channels_at"`
 	ChannelsQueued  int            `json:"channels_queued"`
 	// Dismissed: the caller hid the banner for the current verdict
@@ -117,18 +165,23 @@ type ThreatNotice struct {
 	Dismissed bool `json:"dismissed"`
 }
 
-const threatNoticeCols = `n.id, n.threat_id, n.verdict, n.notified_verdict, n.findings, n.assets, n.connected, n.missing, n.created_at,
-	n.updated_at, n.banner_at, n.email_at, n.email_result, n.email_recipients, n.channels_at, n.channels_queued`
+const threatNoticeCols = `n.id, n.threat_id, n.verdict, n.notified_verdict, n.findings, n.assets, n.connected, n.outdated, n.signals,
+	n.missing, n.created_at, n.updated_at, n.banner_at, n.email_at, n.email_result, n.email_recipients, n.email_attempts, n.channels_at,
+	n.channels_queued`
 
 func scanThreatNotice(row pgx.Row, extra ...any) (*ThreatNotice, error) {
 	var n ThreatNotice
-	var conn []byte
-	dest := []any{&n.ID, &n.ThreatID, &n.Verdict, &n.NotifiedVerdict, &n.Findings, &n.Assets, &conn, &n.Missing, &n.CreatedAt,
-		&n.UpdatedAt, &n.BannerAt, &n.EmailAt, &n.EmailResult, &n.EmailRecipients, &n.ChannelsAt, &n.ChannelsQueued}
+	var conn, old []byte
+	dest := []any{&n.ID, &n.ThreatID, &n.Verdict, &n.NotifiedVerdict, &n.Findings, &n.Assets, &conn, &old, &n.Signals, &n.Missing,
+		&n.CreatedAt, &n.UpdatedAt, &n.BannerAt, &n.EmailAt, &n.EmailResult, &n.EmailRecipients, &n.EmailAttempts, &n.ChannelsAt,
+		&n.ChannelsQueued}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
 	}
 	if err := json.Unmarshal(conn, &n.Connected); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(old, &n.Outdated); err != nil {
 		return nil, err
 	}
 	if n.Missing == nil {
@@ -147,13 +200,30 @@ func (s *Store) GetThreatNotice(ctx context.Context, threatID string) (*ThreatNo
 	return n, err
 }
 
-// SaveThreatNotice records the verdict and its evidence. With notify, the
-// verdict is also the one people are told now: notified_verdict is set and
-// the delivery of every channel starts again (a new banner, email and
-// route messages). It returns the notice as stored.
-func (s *Store) SaveThreatNotice(ctx context.Context, n ThreatNotice, notify bool) (*ThreatNotice, error) {
+// How SaveThreatNotice treats the verdict people were last told.
+type NoticeSave int
+
+const (
+	// NoticeQuiet records the verdict; people are not told.
+	NoticeQuiet NoticeSave = iota
+	// NoticeTell: the verdict is what people are told now. notified_verdict
+	// is set, the banner moves (showing again for those who hid it) and
+	// every channel's delivery starts over.
+	NoticeTell
+	// NoticeReset: the verdict improved from what people were told (a found
+	// threat was fixed); notified_verdict follows it quietly, so a later
+	// "found" is news again. Delivery and the banner are not touched.
+	NoticeReset
+)
+
+// SaveThreatNotice records the verdict and its evidence (see NoticeSave),
+// and returns the notice as stored.
+func (s *Store) SaveThreatNotice(ctx context.Context, n ThreatNotice, mode NoticeSave) (*ThreatNotice, error) {
 	if n.Connected == nil {
 		n.Connected = map[string]int{}
+	}
+	if n.Outdated == nil {
+		n.Outdated = map[string]int{}
 	}
 	if n.Missing == nil {
 		n.Missing = []string{}
@@ -162,24 +232,39 @@ func (s *Store) SaveThreatNotice(ctx context.Context, n ThreatNotice, notify boo
 	if err != nil {
 		return nil, err
 	}
-	return scanThreatNotice(s.Pool.QueryRow(ctx, `INSERT INTO threat_notices AS n (threat_id, verdict, notified_verdict, findings, assets, connected, missing)
-		VALUES ($1, $2, $2, $3, $4, $5, $6)
+	old, err := json.Marshal(n.Outdated)
+	if err != nil {
+		return nil, err
+	}
+	tell := mode == NoticeTell
+	return scanThreatNotice(s.Pool.QueryRow(ctx, `INSERT INTO threat_notices AS n (threat_id, verdict, notified_verdict, findings, assets,
+		  connected, outdated, signals, missing)
+		VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8)
 		ON CONFLICT (workspace_id, threat_id) DO UPDATE SET verdict = EXCLUDED.verdict, findings = EXCLUDED.findings,
-		  assets = EXCLUDED.assets, connected = EXCLUDED.connected, missing = EXCLUDED.missing, updated_at = now(),
-		  notified_verdict = CASE WHEN $7 THEN EXCLUDED.verdict ELSE n.notified_verdict END,
-		  banner_at = CASE WHEN $7 THEN now() ELSE n.banner_at END,
-		  email_at = CASE WHEN $7 THEN NULL ELSE n.email_at END,
-		  email_result = CASE WHEN $7 THEN '' ELSE n.email_result END,
-		  email_recipients = CASE WHEN $7 THEN 0 ELSE n.email_recipients END,
-		  channels_at = CASE WHEN $7 THEN NULL ELSE n.channels_at END,
-		  channels_queued = CASE WHEN $7 THEN 0 ELSE n.channels_queued END
-		RETURNING `+threatNoticeCols, n.ThreatID, n.Verdict, n.Findings, n.Assets, conn, n.Missing, notify))
+		  assets = EXCLUDED.assets, connected = EXCLUDED.connected, outdated = EXCLUDED.outdated, signals = EXCLUDED.signals,
+		  missing = EXCLUDED.missing, updated_at = now(),
+		  notified_verdict = CASE WHEN $9 OR $10 THEN EXCLUDED.verdict ELSE n.notified_verdict END,
+		  banner_at = CASE WHEN $9 THEN clock_timestamp() ELSE n.banner_at END,
+		  email_at = CASE WHEN $9 THEN NULL ELSE n.email_at END,
+		  email_result = CASE WHEN $9 THEN '' ELSE n.email_result END,
+		  email_recipients = CASE WHEN $9 THEN 0 ELSE n.email_recipients END,
+		  email_attempts = CASE WHEN $9 THEN 0 ELSE n.email_attempts END,
+		  channels_at = CASE WHEN $9 THEN NULL ELSE n.channels_at END,
+		  channels_queued = CASE WHEN $9 THEN 0 ELSE n.channels_queued END
+		RETURNING `+threatNoticeCols, n.ThreatID, n.Verdict, n.Findings, n.Assets, conn, old, n.Signals, n.Missing, tell, mode == NoticeReset))
 }
 
-// ThreatNoticeEmailed records what happened to the notice's email.
+// ThreatEmailAttempts is how often a failed notice email is tried before
+// it is given up (recorded as failed with email_at set).
+const ThreatEmailAttempts = 5
+
+// ThreatNoticeEmailed records what happened to the notice's email. A
+// failure leaves email_at empty, so the next run tries again, until
+// ThreatEmailAttempts.
 func (s *Store) ThreatNoticeEmailed(ctx context.Context, id int64, result string, recipients int) error {
-	_, err := s.Pool.Exec(ctx, `UPDATE threat_notices SET email_at = now(), email_result = $2, email_recipients = $3 WHERE id = $1`,
-		id, result, recipients)
+	_, err := s.Pool.Exec(ctx, `UPDATE threat_notices SET email_attempts = email_attempts + 1, email_result = $2, email_recipients = $3,
+		email_at = CASE WHEN $2 = 'failed' AND email_attempts + 1 < $4 THEN NULL ELSE now() END WHERE id = $1`,
+		id, result, recipients, ThreatEmailAttempts)
 	return err
 }
 
@@ -191,10 +276,11 @@ func (s *Store) ThreatNoticeQueued(ctx context.Context, id int64, n int) error {
 }
 
 // ListThreatNotices lists the workspace's notices, newest first, each with
-// whether userID hid it for its current verdict.
+// whether userID hid it since people were last told (a quiet change of the
+// verdict keeps it hidden; a new "found" shows it again).
 func (s *Store) ListThreatNotices(ctx context.Context, userID int64) ([]ThreatNotice, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+threatNoticeCols+`,
-		EXISTS (SELECT 1 FROM threat_notice_dismissals d WHERE d.notice_id = n.id AND d.user_id = $1 AND d.verdict = n.verdict)
+		EXISTS (SELECT 1 FROM threat_notice_dismissals d WHERE d.notice_id = n.id AND d.user_id = $1 AND d.dismissed_at >= n.banner_at)
 		FROM threat_notices n ORDER BY n.banner_at DESC, n.id DESC LIMIT 200`, userID)
 	if err != nil {
 		return nil, err
@@ -213,12 +299,12 @@ func (s *Store) ListThreatNotices(ctx context.Context, userID int64) ([]ThreatNo
 	return out, rows.Err()
 }
 
-// DismissThreatNotice hides a notice's banner for userID, for its current
-// verdict. ErrNotFound when the workspace has no such notice.
+// DismissThreatNotice hides a notice's banner for userID until people are
+// told something new. ErrNotFound when the workspace has no such notice.
 func (s *Store) DismissThreatNotice(ctx context.Context, id, userID int64) error {
-	tag, err := s.Pool.Exec(ctx, `INSERT INTO threat_notice_dismissals (notice_id, user_id, verdict)
-		SELECT n.id, $2, n.verdict FROM threat_notices n WHERE n.id = $1
-		ON CONFLICT (notice_id, user_id) DO UPDATE SET verdict = EXCLUDED.verdict, dismissed_at = now()`, id, userID)
+	tag, err := s.Pool.Exec(ctx, `INSERT INTO threat_notice_dismissals (notice_id, user_id, verdict, dismissed_at)
+		SELECT n.id, $2, n.verdict, clock_timestamp() FROM threat_notices n WHERE n.id = $1
+		ON CONFLICT (notice_id, user_id) DO UPDATE SET verdict = EXCLUDED.verdict, dismissed_at = clock_timestamp()`, id, userID)
 	if err != nil {
 		return err
 	}

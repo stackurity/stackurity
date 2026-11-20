@@ -3,6 +3,7 @@ package threats
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -25,8 +26,12 @@ func TestEmbedded(t *testing.T) {
 		t.Error("Find(nothing) matched")
 	}
 	want := []string{"attack-tool-artex", "attack-tool-artex-backdoored-image"}
-	if strings.Join(a.Detects.ConfigRules, ",") != strings.Join(want, ",") {
-		t.Errorf("ARTEX rules = %v, want %v (the rules of internal/collect/confcheck/attacktools.go)", a.Detects.ConfigRules, want)
+	if strings.Join(a.Detects.ConfigRules, ",") != strings.Join(want, ",") || strings.Join(a.Detects.SignalRules, ",") != "attack-tool-artex-name" {
+		t.Errorf("ARTEX rules = %v / %v, want %v and the name rule as a signal (internal/collect/confcheck/attacktools.go)",
+			a.Detects.ConfigRules, a.Detects.SignalRules, want)
+	}
+	if c.ExpiresAt != nil {
+		t.Error("the embedded catalogue never expires")
 	}
 	if len(TrustedKeyIDs()) == 0 {
 		t.Error("no embedded feed key")
@@ -132,6 +137,21 @@ func TestSignVerify(t *testing.T) {
 			t.Errorf("%s: %v", name, err)
 		}
 	}
+	// The envelope carries both; a changed feed inside it fails.
+	env := SignEnvelope(feed, priv)
+	if got, err := openWith(keys, env); err != nil || string(got) != string(feed) {
+		t.Fatalf("envelope: %q %v", got, err)
+	}
+	var e Envelope
+	_ = json.Unmarshal(env, &e)
+	e.Feed = base64.StdEncoding.EncodeToString([]byte(`{"schema":2}`))
+	bad, _ := json.Marshal(e)
+	if _, err := openWith(keys, bad); !errors.Is(err, ErrBadSignature) {
+		t.Errorf("changed envelope: %v", err)
+	}
+	if _, err := openWith(keys, []byte(`{"schema":1}`)); !errors.Is(err, ErrBadSignature) {
+		t.Errorf("a bare catalogue: %v", err)
+	}
 	// The embedded keys do not trust a key made up here.
 	if err := Verify(feed, sig); !errors.Is(err, ErrBadSignature) {
 		t.Errorf("Verify with an untrusted key: %v", err)
@@ -163,10 +183,23 @@ func TestAssess(t *testing.T) {
 		{"cloud never upgrade", Evidence{}, nil, "0.20.17", true, NeedsConnection, true, 3},
 	}
 	for _, c := range cases {
-		a, ok := Assess(artex, c.ev, c.conns, c.running, c.cloud)
+		a, ok := Assess(artex, c.ev, c.conns, nil, c.running, c.cloud)
 		if ok != c.ok || (ok && (a.Verdict != c.want || len(a.Missing) != c.missing)) {
 			t.Errorf("%s: %s ok=%v missing=%d, want %s ok=%v missing=%d", c.name, a.Verdict, ok, len(a.Missing), c.want, c.ok, c.missing)
 		}
+	}
+	// Servers whose agent predates the check are not connected: the
+	// threat is not covered, the notice says to update them.
+	a, _ := Assess(artex, Evidence{Signals: 2}, nil, map[string]int{ConnHostAgent: 3}, "0.20.17", true)
+	if a.Verdict != NeedsConnection || a.Outdated[ConnHostAgent] != 3 || a.Evidence.Signals != 2 {
+		t.Errorf("outdated agents: %+v", a)
+	}
+	// A signal rule alone is never found.
+	if a, _ := Assess(artex, Evidence{Signals: 1}, all, nil, "0.20.17", true); a.Verdict != Covered {
+		t.Errorf("signals only: %s", a.Verdict)
+	}
+	if !artex.CollectorHasCheck("0.20.17") || artex.CollectorHasCheck("0.20.16") {
+		t.Error("CollectorHasCheck")
 	}
 	if !Worsened(Covered, Found) || !Worsened(NeedsConnection, Found) || Worsened(Found, Covered) || Worsened(Covered, NeedsConnection) || Worsened(Found, Found) {
 		t.Error("Worsened")

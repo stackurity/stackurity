@@ -45,12 +45,12 @@ So that every organisation hears about new attacks, attacker tools and actively 
 
 | Destination | When | What is sent |
 |---|---|---|
-| `stackurity.ai` (`STACKURITY_THREAT_FEED_URL`) | Within 30 seconds of the first start, then every 6 hours | An anonymous `GET /threats/feed.json` and `GET /threats/feed.json.sig` with `User-Agent: stackurity` and `Accept: application/json`. Nothing else: no version, installation id, licence, hostname, organisation, inventory or cookie |
+| `stackurity.ai` (`STACKURITY_THREAT_FEED_URL`) | Within 30 seconds of the first start, then every 6 hours | An anonymous `GET /threats/feed.signed.json` (the catalogue and its signature in one file) with `User-Agent: stackurity` and `Accept: application/json`. Nothing else: no version, installation id, licence, hostname, organisation, inventory or cookie |
 
-The feed is verified against the Ed25519 public keys built into the release before anything in it is used; a feed that is unsigned, signed by another key, changed after signing, malformed or older than one already used is ignored and shown under **Admin → Platform health** (the server keeps the threats it knows). The comparison with your assets, the verdict for each organisation and every notice happen on your server: nothing about the result is sent anywhere. A failed fetch (offline, air-gapped) is logged at info level and keeps the last good feed; without any, the server uses the threats built into its release. The request goes through the same private-network guard as other server requests (system scope, so a mirror on your network works).
+The feed is verified against the Ed25519 public keys built into the release before anything in it is used; a feed that is unsigned, signed by another key, changed after signing, malformed, expired (each feed carries a signed expiry) or older than one already used is ignored and shown under **Admin → Platform health** (the server keeps the threats it knows). Platform health also warns when no usable feed was read for 7 days. The comparison with your assets, the verdict for each organisation and every notice happen on your server: nothing about the result is sent anywhere. A failed fetch (offline, air-gapped) is logged at info level and keeps the last good feed; without any, the server uses the threats built into its release. The default address is fetched through the private-network guard with private, loopback and link-local addresses refused, and may not redirect to another host or from HTTPS to HTTP. A mirror set with `STACKURITY_THREAT_FEED_URL` may be on your own network and may redirect to another host, never from HTTPS to HTTP.
 
 - `STACKURITY_UPDATE_CHECK=off` turns it off too: no request is made at all.
-- `STACKURITY_THREAT_FEED_URL` points it at a mirror: copy `feed.json` and `feed.json.sig` unchanged (the signature is checked against the built-in key, so a mirror cannot change the content).
+- `STACKURITY_THREAT_FEED_URL` points it at a mirror: copy `feed.signed.json` unchanged (the signature is checked against the built-in key, so a mirror cannot change the content).
 
 ### Breached-password check
 

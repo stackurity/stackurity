@@ -58,6 +58,9 @@ type noticeNeed struct {
 	Required   bool   `json:"required"`
 	Checks     string `json:"checks"`
 	Help       string `json:"help"`
+	// Outdated: assets connected this way whose collector is older than
+	// the check, so they are not checked yet.
+	Outdated int `json:"outdated"`
 }
 
 // noticeAction is the banner's one button.
@@ -101,13 +104,14 @@ func (s *Server) listThreatNotices(w http.ResponseWriter, r *http.Request) {
 		}
 		o := noticeOut{ThreatNotice: n, Name: t.Name, Kind: t.Kind, Severity: t.Severity, Summary: t.Summary, Sources: t.Sources,
 			MinVersion: t.MinVersion, Needs: []noticeNeed{}}
-		facts := notify.NoticeFacts{Verdict: n.Verdict, Findings: n.Findings, Assets: n.Assets, Connected: n.Connected, Running: running}
+		facts := notify.NoticeFacts{Verdict: n.Verdict, Findings: n.Findings, Assets: n.Assets, Signals: n.Signals, Connected: n.Connected,
+			Outdated: n.Outdated, Running: running}
 		for _, need := range t.Needs {
 			for _, m := range n.Missing {
 				if m == need.Connection {
 					facts.Missing = append(facts.Missing, need)
 					o.Needs = append(o.Needs, noticeNeed{Connection: need.Connection, Label: threats.ConnectionLabel(need.Connection),
-						Required: need.Required, Checks: need.Checks, Help: need.Help})
+						Required: need.Required, Checks: need.Checks, Help: need.Help, Outdated: n.Outdated[need.Connection]})
 				}
 			}
 		}
@@ -120,6 +124,9 @@ func (s *Server) listThreatNotices(w http.ResponseWriter, r *http.Request) {
 		case threats.NeedsConnection:
 			if len(o.Needs) > 0 {
 				o.Action = &noticeAction{Label: "Connect", Link: o.Needs[0].Help}
+				if o.Needs[0].Outdated > 0 {
+					o.Action.Label = "Update"
+				}
 			}
 		case threats.Upgrade:
 			o.Action = &noticeAction{Label: "Upgrade", Link: "/help/backups-upgrades"}

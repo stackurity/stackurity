@@ -9,11 +9,16 @@ const FeedStatusKey = "threat_feed_status"
 
 // FeedStatus is the outcome of the last fetch of the threat feed.
 type FeedStatus struct {
-	CheckedAt   time.Time  `json:"checked_at"`
+	CheckedAt time.Time `json:"checked_at"`
+	// Since is the first fetch; LastSuccess the last feed that was used;
+	// ExpiresAt that feed's expiry.
+	Since       *time.Time `json:"since,omitempty"`
 	LastSuccess *time.Time `json:"last_success,omitempty"`
+	ExpiresAt   *time.Time `json:"expires_at,omitempty"`
 	// Problem is "" after a good fetch or a network failure (kept quiet,
-	// like the release check), else bad_signature, invalid, newer_schema
-	// or replay: the feed was refused and the last good one is kept.
+	// like the release check; a long outage shows as stale), else
+	// bad_signature, invalid, newer_schema, replay or expired: the feed was
+	// refused and the last good one is kept.
 	Problem string `json:"problem,omitempty"`
 	Detail  string `json:"detail,omitempty"`
 	Serial  int64  `json:"serial,omitempty"`
@@ -43,6 +48,9 @@ type Evidence struct {
 	// on Assets distinct assets.
 	Findings int `json:"findings"`
 	Assets   int `json:"assets"`
+	// Signals are open findings of the threat's signal rules (something
+	// only named like it): shown, never a verdict of their own.
+	Signals int `json:"signals"`
 }
 
 // Assessment is the verdict and what it rests on.
@@ -52,22 +60,31 @@ type Assessment struct {
 	// Connected counts, per connection the threat needs, the assets
 	// connected that way (0 for a missing one).
 	Connected map[string]int `json:"connected"`
+	// Outdated counts, per connection, assets connected that way whose
+	// collector is older than the check (min_version): they are not
+	// checked yet, so they do not count as connected.
+	Outdated map[string]int `json:"outdated,omitempty"`
 	// Missing are the needs with nothing connected: for needs_connection
 	// at least one is required; for covered they would widen the check.
 	Missing []Need `json:"missing"`
 }
 
 // Assess gives the verdict for one organisation. conns counts the
-// organisation's assets per connection; running is the server's comparable
+// organisation's assets per connection whose latest complete collection
+// came from a collector with the check (CollectorHasCheck); outdated
+// counts those whose collector is older, which are not checked; running is the server's comparable
 // release ("" for a development build); cloud is true on Stackurity Cloud.
 // ok is false when nothing should be said yet: Stackurity Cloud has not
 // deployed the release with the check.
-func Assess(t Threat, ev Evidence, conns map[string]int, running string, cloud bool) (a Assessment, ok bool) {
-	a = Assessment{Evidence: ev, Connected: map[string]int{}, Missing: []Need{}}
+func Assess(t Threat, ev Evidence, conns, outdated map[string]int, running string, cloud bool) (a Assessment, ok bool) {
+	a = Assessment{Evidence: ev, Connected: map[string]int{}, Outdated: map[string]int{}, Missing: []Need{}}
 	anyConnected, requiredMissing := false, false
 	for _, n := range t.Needs {
 		c := conns[n.Connection]
 		a.Connected[n.Connection] = c
+		if o := outdated[n.Connection]; o > 0 {
+			a.Outdated[n.Connection] = o
+		}
 		if c > 0 {
 			anyConnected = true
 			continue
@@ -99,3 +116,8 @@ func Assess(t Threat, ev Evidence, conns map[string]int, running string, cloud b
 func Worsened(old, now string) bool {
 	return now == Found && old != Found
 }
+
+// CollectorHasCheck reports whether a collection made by a collector of
+// version v (as recorded, normalised to "0.20.17"; "" for a development
+// build) can have found the threat: v is min_version or later.
+func (t Threat) CollectorHasCheck(v string) bool { return t.HasCheck(v) }

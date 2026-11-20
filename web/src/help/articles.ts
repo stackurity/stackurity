@@ -1529,6 +1529,7 @@ jobs:
         list: [
           "**Dismiss** hides the banner for you only. It comes back if the threat is later found on your assets: that is the one change you are told about again, by banner, email and your rules.",
           "A project's or an asset's notification rule gets a notice only when the threat is found on one of its assets, and counts only those. Organisation rules get every notice.",
+          "A server counts as checked once its agent is a release that has the check. Servers with an older agent are listed as needing an update, never as checked and clean.",
           "Notices give counts and links, never asset names, so the same message is safe for every channel.",
           "Ask Stackurity and AI assistants answer \"are we affected by ARTEX?\" with the same checks (`threat_check`), and list the notices you were sent (`list_threat_notices`).",
         ],

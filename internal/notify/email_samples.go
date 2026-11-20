@@ -143,7 +143,7 @@ func EmailSamples(base string) []EmailSample {
 		{Name: "account-threat-notice-covered", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Covered,
 			Connected: map[string]int{threats.ConnHostAgent: 12, threats.ConnDocker: 30}, Missing: artex.Needs[2:]}, at)},
 		{Name: "account-threat-notice-needs-connection", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.NeedsConnection,
-			Connected: map[string]int{threats.ConnRepository: 4}, Missing: artex.Needs[:2]}, at)},
+			Connected: map[string]int{threats.ConnRepository: 4}, Outdated: map[string]int{threats.ConnHostAgent: 3}, Signals: 1, Missing: artex.Needs[:2]}, at)},
 		{Name: "account-threat-notice-upgrade", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Upgrade, Running: "0.20.15"}, at)},
 		{Name: "account-threat-notice-copy", Message: ThreatNoticeCopyMessage(artex, map[string]int{threats.Covered: 41, threats.NeedsConnection: 17, threats.Found: 1},
 			ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Covered, Connected: map[string]int{threats.ConnHostAgent: 3}}, at), at)},

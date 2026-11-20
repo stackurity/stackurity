@@ -21,13 +21,15 @@ func threatNoticeCopyTo(cloud bool, getenv func(string) string, log *slog.Logger
 	if v == "" {
 		return "", nil
 	}
+	if !cloud {
+		// Checked first: a self-hosted server ignores the variable, so a
+		// mistake in it must not stop the server from starting.
+		log.Warn("STACKURITY_THREAT_NOTICE_COPY_TO is set but ignored: only Stackurity Cloud sends the operator's copy of threat notices")
+		return "", nil
+	}
 	a, err := mail.ParseAddress(v)
 	if err != nil || a.Name != "" || a.Address != v {
 		return "", fmt.Errorf("STACKURITY_THREAT_NOTICE_COPY_TO must be one email address, not %q", v)
-	}
-	if !cloud {
-		log.Warn("STACKURITY_THREAT_NOTICE_COPY_TO is set but ignored: only Stackurity Cloud sends the operator's copy of threat notices")
-		return "", nil
 	}
 	return v, nil
 }

@@ -20,7 +20,7 @@
       ],
       "detects": {
         "config_rules": ["attack-tool-artex", "attack-tool-artex-backdoored-image"],
-        "cves": []
+        "signal_rules": ["attack-tool-artex-name"]
       },
       "needs": [
         {

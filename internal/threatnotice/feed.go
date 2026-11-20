@@ -34,17 +34,17 @@ import (
 	"github.com/stackurity/stackurity/internal/updates"
 )
 
-// DefaultFeedURL is the public threat feed; its signature is at the same
-// address plus ".sig".
-const DefaultFeedURL = "https://stackurity.ai/threats/feed.json"
+// DefaultFeedURL is the public threat feed: the catalogue and its signature
+// in one file (threats.Envelope), so a cache can never serve a new
+// catalogue with an old signature.
+const DefaultFeedURL = "https://stackurity.ai/threats/feed.signed.json"
 
 // FeedEvery is how often the feed is fetched.
 const FeedEvery = 6 * time.Hour
 
 const (
-	feedKey     = "threat_feed" // the last verified feed and its signature
-	maxFeed     = 2 << 20
-	maxSig      = 4 << 10
+	feedKey     = "threat_feed" // the last verified feed (its envelope)
+	maxFeed     = 4 << 20
 	feedTimeout = 30 * time.Second
 )
 
@@ -52,6 +52,9 @@ const (
 type FeedConfig struct {
 	Enabled bool
 	URL     string
+	// Mirror: the operator set STACKURITY_THREAT_FEED_URL. Only a mirror
+	// may be on a private network or redirect to another host.
+	Mirror bool
 }
 
 // FeedConfigFromEnv reads STACKURITY_UPDATE_CHECK (the feed is fetched only
@@ -67,18 +70,17 @@ func FeedConfigFromEnv() (FeedConfig, error) {
 		if err != nil || (p.Scheme != "https" && p.Scheme != "http") || p.Host == "" {
 			return c, fmt.Errorf("STACKURITY_THREAT_FEED_URL must be an http(s) URL, not %q", v)
 		}
-		c.URL = v
+		c.URL, c.Mirror = v, true
 	}
 	return c, nil
 }
 
-// storedFeed is the last feed that verified, kept with its signature so
-// that it is verified again whenever it is read.
+// storedFeed is the last feed that verified, kept as its signed envelope
+// so that it is verified again whenever it is read.
 type storedFeed struct {
 	FetchedAt time.Time `json:"fetched_at"`
 	Serial    int64     `json:"serial"`
-	Feed      string    `json:"feed"`
-	Signature string    `json:"signature"`
+	Envelope  string    `json:"envelope"`
 }
 
 // FeedStatus is the outcome of the last fetch (threats.FeedStatus).
@@ -105,22 +107,48 @@ type Fetcher struct {
 	HTTP   *http.Client
 	Jitter time.Duration
 	Base   context.Context
-	// verify checks a feed's signature (tests replace it).
-	verify  func(feed, sig []byte) error
+	// open checks a feed's signature (tests replace it).
+	open    func(envelope []byte) ([]byte, error)
+	now     func() time.Time
 	running atomic.Bool
 	done    chan error
 }
 
-// NewFetcher returns a fetcher whose requests go through netguard (in
-// system scope, so an operator's mirror on a private network works).
+// NewFetcher returns a fetcher. The default feed is fetched through
+// netguard with private networks blocked, and may not redirect to another
+// host or to plain HTTP; an operator's mirror may be on a private network
+// and redirect within HTTPS.
 func NewFetcher(st *store.Store, log *slog.Logger, cfg FeedConfig) *Fetcher {
 	u := cfg.URL
 	if u == "" {
 		u = DefaultFeedURL
 	}
-	return &Fetcher{Store: st, Log: log, URL: u, Jitter: 30 * time.Second, verify: threats.Verify,
-		HTTP: &http.Client{Timeout: feedTimeout, Transport: &http.Transport{DialContext: netguard.DialContext,
-			TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, Proxy: http.ProxyFromEnvironment}}}
+	dial := netguard.Policy{}.DialContext // public addresses only
+	if cfg.Mirror {
+		dial = netguard.DialContext // system scope: private networks too
+	}
+	origin, _ := url.Parse(u)
+	hc := &http.Client{Timeout: feedTimeout,
+		Transport: &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, Proxy: http.ProxyFromEnvironment},
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return checkRedirect(origin, cfg.Mirror, req, via)
+		}}
+	return &Fetcher{Store: st, Log: log, URL: u, Jitter: 30 * time.Second, open: threats.OpenEnvelope, HTTP: hc}
+}
+
+// checkRedirect refuses a redirect to plain HTTP from HTTPS, more than 3,
+// and, for the default feed, any other host.
+func checkRedirect(origin *url.URL, mirror bool, req *http.Request, via []*http.Request) error {
+	if len(via) >= 3 {
+		return errors.New("threat feed: too many redirects")
+	}
+	if via[len(via)-1].URL.Scheme == "https" && req.URL.Scheme != "https" {
+		return errors.New("threat feed: redirect from HTTPS to HTTP refused")
+	}
+	if !mirror && origin != nil && !strings.EqualFold(req.URL.Host, origin.Host) {
+		return fmt.Errorf("threat feed: redirect to another host (%s) refused", req.URL.Hostname())
+	}
+	return nil
 }
 
 // Scheduler is the part of the worker that runs periodic platform tasks.
@@ -157,7 +185,7 @@ func (f *Fetcher) Start(ctx context.Context) error {
 	}
 	go func() {
 		defer f.running.Store(false)
-		bctx, cancel := context.WithTimeout(base, wait+2*feedTimeout+10*time.Second)
+		bctx, cancel := context.WithTimeout(base, wait+feedTimeout+10*time.Second)
 		defer cancel()
 		var err error
 		select {
@@ -176,34 +204,42 @@ func (f *Fetcher) Start(ctx context.Context) error {
 	return nil
 }
 
+func (f *Fetcher) clock() time.Time {
+	if f.now != nil {
+		return f.now()
+	}
+	return time.Now().UTC()
+}
+
 // Run fetches once. A network failure is logged and keeps the last good
-// feed; a feed that does not verify or parse is refused and recorded as a
+// feed (Platform health warns once no feed was read for 7 days); a feed
+// that does not verify, parse, is older than one already used (or than
+// this release's catalogue) or has expired is refused and recorded as a
 // problem for Platform health. Only a database failure is returned.
 func (f *Fetcher) Run(ctx context.Context) error {
 	ctx = tenant.System(ctx)
-	now := time.Now().UTC()
+	now := f.clock()
 	prev, _, err := ReadFeedStatus(ctx, f.Store)
 	if err != nil {
 		return err
 	}
-	status := FeedStatus{CheckedAt: now, LastSuccess: prev.LastSuccess, Serial: prev.Serial}
-	feed, err := f.get(ctx, f.URL, maxFeed)
-	var sig []byte
-	if err == nil {
-		sig, err = f.get(ctx, f.URL+".sig", maxSig)
-		if se := (*statusError)(nil); errors.As(err, &se) && se.status == 404 {
-			sig, err = nil, nil // unsigned: refused below, as a problem
-		}
+	status := FeedStatus{CheckedAt: now, Since: prev.Since, LastSuccess: prev.LastSuccess, Serial: prev.Serial, ExpiresAt: prev.ExpiresAt}
+	if status.Since == nil {
+		status.Since = &now
 	}
+	env, err := f.get(ctx, f.URL)
 	if err != nil {
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
+		// Not a problem of its own: an earlier refusal is not carried
+		// forward with a fresh time, and a long outage shows as a stale
+		// feed instead.
 		f.Log.Info("threat feed could not be fetched; keeping the last one", "err", err)
-		status.Problem, status.Detail = prev.Problem, prev.Detail
 		return f.saveStatus(ctx, status)
 	}
-	if err := f.verify(feed, sig); err != nil {
+	feed, err := f.open(env)
+	if err != nil {
 		f.Log.Warn("threat feed refused: its signature is not valid", "err", err)
 		status.Problem, status.Detail = "bad_signature", err.Error()
 		return f.saveStatus(ctx, status)
@@ -218,19 +254,27 @@ func (f *Fetcher) Run(ctx context.Context) error {
 		status.Problem, status.Detail = "invalid", err.Error()
 		return f.saveStatus(ctx, status)
 	}
-	if c.Serial < prev.Serial {
+	if floor := max(prev.Serial, threats.Embedded().Serial); c.Serial < floor {
 		status.Problem = "replay"
-		status.Detail = fmt.Sprintf("the feed has serial %d, older than serial %d already accepted", c.Serial, prev.Serial)
+		status.Detail = fmt.Sprintf("the feed has serial %d, older than serial %d already used", c.Serial, floor)
 		return f.saveStatus(ctx, status)
 	}
-	b, err := json.Marshal(storedFeed{FetchedAt: now, Serial: c.Serial, Feed: string(feed), Signature: string(sig)})
+	if c.ExpiresAt == nil || !now.Before(*c.ExpiresAt) {
+		status.Problem = "expired"
+		status.Detail = "the feed has no expiry date or expired"
+		if c.ExpiresAt != nil {
+			status.Detail = "the feed expired on " + c.ExpiresAt.UTC().Format(time.DateOnly)
+		}
+		return f.saveStatus(ctx, status)
+	}
+	b, err := json.Marshal(storedFeed{FetchedAt: now, Serial: c.Serial, Envelope: string(env)})
 	if err != nil {
 		return err
 	}
 	if err := f.Store.SetInstanceValue(ctx, feedKey, string(b)); err != nil {
 		return err
 	}
-	status.LastSuccess, status.Serial = &now, c.Serial
+	status.LastSuccess, status.Serial, status.ExpiresAt = &now, c.Serial, c.ExpiresAt
 	if err := f.saveStatus(ctx, status); err != nil {
 		return err
 	}
@@ -253,9 +297,9 @@ type statusError struct{ status int }
 
 func (e *statusError) Error() string { return fmt.Sprintf("HTTP %d", e.status) }
 
-// get requests one public file. Nothing about this installation is sent:
+// get requests the public feed. Nothing about this installation is sent:
 // a generic User-Agent, no cookie, no query.
-func (f *Fetcher) get(ctx context.Context, u string, limit int64) ([]byte, error) {
+func (f *Fetcher) get(ctx context.Context, u string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", u, nil)
 	if err != nil {
 		return nil, err
@@ -271,12 +315,12 @@ func (f *Fetcher) get(ctx context.Context, u string, limit int64) ([]byte, error
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 64<<10))
 		return nil, &statusError{resp.StatusCode}
 	}
-	b, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
+	b, err := io.ReadAll(io.LimitReader(resp.Body, maxFeed+1))
 	if err != nil {
 		return nil, err
 	}
-	if int64(len(b)) > limit {
-		return nil, fmt.Errorf("%s is larger than %d bytes", u, limit)
+	if len(b) > maxFeed {
+		return nil, fmt.Errorf("the threat feed is larger than %d bytes", maxFeed)
 	}
 	return b, nil
 }
@@ -292,19 +336,20 @@ func recordSeen(ctx context.Context, st *store.Store, c *threats.Catalogue) erro
 
 // Catalogues gives the current catalogue: the embedded one merged with the
 // last stored feed, verified again as it is read. It caches the result
-// for a minute.
+// for a minute. A stored feed past its expiry is still used (it is the
+// newest authentic list); Platform health warns about it.
 type Catalogues struct {
 	Store *store.Store
-	// verify checks the stored feed (tests replace it).
-	verify func(feed, sig []byte) error
-	mu     sync.Mutex
-	at     time.Time
-	cur    *threats.Catalogue
+	// open checks the stored feed (tests replace it).
+	open func(envelope []byte) ([]byte, error)
+	mu   sync.Mutex
+	at   time.Time
+	cur  *threats.Catalogue
 }
 
 // NewCatalogues returns a loader that verifies with the embedded keys.
 func NewCatalogues(st *store.Store) *Catalogues {
-	return &Catalogues{Store: st, verify: threats.Verify}
+	return &Catalogues{Store: st, open: threats.OpenEnvelope}
 }
 
 // Current returns the merged catalogue. A stored feed that no longer
@@ -315,22 +360,21 @@ func (c *Catalogues) Current(ctx context.Context) (*threats.Catalogue, error) {
 	if c.cur != nil && time.Since(c.at) < time.Minute {
 		return c.cur, nil
 	}
-	cur := threats.Embedded()
+	var feed *threats.Catalogue
 	raw, ok, err := c.Store.InstanceValue(tenant.System(ctx), feedKey)
 	if err != nil {
 		return nil, err
 	}
 	if ok {
 		var s storedFeed
-		if json.Unmarshal([]byte(raw), &s) == nil && c.verify([]byte(s.Feed), []byte(s.Signature)) == nil {
-			if feed, err := threats.Parse([]byte(s.Feed)); err == nil {
-				cur = threats.Merge(cur, feed)
+		if json.Unmarshal([]byte(raw), &s) == nil {
+			if b, err := c.open([]byte(s.Envelope)); err == nil {
+				if parsed, err := threats.Parse(b); err == nil {
+					feed = parsed
+				}
 			}
 		}
 	}
-	if cur == threats.Embedded() {
-		cur = threats.Merge(cur, nil)
-	}
-	c.cur, c.at = cur, time.Now()
-	return cur, nil
+	c.cur, c.at = threats.Merge(threats.Embedded(), feed), time.Now()
+	return c.cur, nil
 }

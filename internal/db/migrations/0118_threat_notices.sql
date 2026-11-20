@@ -14,12 +14,15 @@
 --                             what it rests on (counts only), the verdict
 --                             people were last told and when each channel
 --                             (banner, email, notification routes) had it.
---   threat_notice_dismissals  who hid the banner, and for which verdict: a
---                             notice that becomes "found" shows again.
+--   threat_notice_dismissals  who hid the banner and when: it stays hidden
+--                             until people are told something new
+--                             (banner_at moves past dismissed_at).
 --
 -- Routes get a new event, threat_notices, which every route that sends
--- messages as they happen (urgent or problems) is given, so existing
--- Slack, Teams and email routes receive notices without a change.
+-- messages as they happen (urgent, new issues or problems) is given, so
+-- existing Slack, Teams and email routes receive notices without a change.
+-- Webhook routes are left out: a receiver may not expect the new event
+-- (threat_notice), so they opt in.
 --
 -- Additive: three new tables, a widened CHECK and an UPDATE of routes.
 --
@@ -57,17 +60,24 @@ CREATE TABLE threat_notices (
     findings         integer NOT NULL DEFAULT 0 CHECK (findings >= 0),
     assets           integer NOT NULL DEFAULT 0 CHECK (assets >= 0),
     connected        jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(connected) = 'object'),
+    -- Assets per connection whose collector is older than the check (not
+    -- checked yet), and open findings of the threat's signal rules
+    -- (something only named like it).
+    outdated         jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(outdated) = 'object'),
+    signals          integer NOT NULL DEFAULT 0 CHECK (signals >= 0),
     missing          text[] NOT NULL DEFAULT '{}',
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),
     -- Delivery per channel for notified_verdict. The banner shows from
-    -- banner_at. email_result says what happened to the email to the
-    -- administrators and security team; channels_queued is how many
-    -- notification routes were given it.
+    -- banner_at (moved only when people are told). email_result says what
+    -- happened to the email to the administrators and security team; a
+    -- failed send is tried again (email_at stays empty) up to 5 attempts;
+    -- channels_queued is how many notification routes were given it.
     banner_at        timestamptz NOT NULL DEFAULT now(),
     email_at         timestamptz,
     email_result     text NOT NULL DEFAULT '' CHECK (email_result IN ('', 'sent', 'no_mailer', 'no_recipients', 'failed')),
     email_recipients integer NOT NULL DEFAULT 0,
+    email_attempts   integer NOT NULL DEFAULT 0,
     channels_at      timestamptz,
     channels_queued  integer NOT NULL DEFAULT 0,
     UNIQUE (workspace_id, threat_id)
@@ -85,7 +95,7 @@ CREATE TABLE threat_notice_dismissals (
     workspace_id bigint NOT NULL DEFAULT stackurity_ws() REFERENCES workspaces(id) ON DELETE CASCADE,
     notice_id    bigint NOT NULL REFERENCES threat_notices(id) ON DELETE CASCADE,
     user_id      bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    -- The verdict the banner showed when it was hidden.
+    -- The verdict the banner showed when it was hidden (a record only).
     verdict      text NOT NULL CHECK (verdict IN ('found', 'covered', 'needs_connection', 'upgrade')),
     dismissed_at timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (notice_id, user_id)
@@ -108,5 +118,6 @@ ALTER TABLE routes ADD CONSTRAINT routes_events_check
     CHECK (events <@ ARRAY['urgent', 'new_issues', 'regressed', 'overdue', 'connected', 'problems', 'daily_summary',
                            'weekly_summary', 'threat_notices']);
 UPDATE routes SET events = events || '{threat_notices}'::text[]
-    WHERE NOT ('threat_notices' = ANY (events)) AND (events && '{urgent,new_issues,problems}'::text[]);
+    WHERE NOT ('threat_notices' = ANY (events)) AND (events && '{urgent,new_issues,problems}'::text[])
+      AND NOT EXISTS (SELECT 1 FROM channels c WHERE c.id = routes.channel_id AND c.kind = 'webhook');
 ALTER TABLE routes ALTER COLUMN events SET DEFAULT '{urgent,regressed,overdue,connected,problems,daily_summary,threat_notices}';

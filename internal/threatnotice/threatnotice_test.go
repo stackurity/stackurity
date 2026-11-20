@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
 	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -25,26 +27,36 @@ import (
 
 var quiet = slog.New(slog.NewTextHandler(io.Discard, nil))
 
-// testKey signs feeds in these tests; verifyTest trusts only it.
+// testKey signs feeds in these tests; openTest trusts only it.
 var testPub, testPriv, _ = ed25519.GenerateKey(rand.Reader)
 
-func verifyTest(feed, sig []byte) error {
-	var s threats.Signature
-	if json.Unmarshal(sig, &s) != nil || s.KeyID != threats.KeyID(testPub) {
-		return threats.ErrBadSignature
+func openTest(env []byte) ([]byte, error) {
+	var e threats.Envelope
+	if json.Unmarshal(env, &e) != nil || e.KeyID != threats.KeyID(testPub) {
+		return nil, threats.ErrBadSignature
 	}
-	// Re-sign and compare: Ed25519 signatures are deterministic.
-	if string(threats.Sign(feed, testPriv)) != string(sig) {
-		return threats.ErrBadSignature
+	feed, err := base64.StdEncoding.DecodeString(e.Feed)
+	if err != nil {
+		return nil, threats.ErrBadSignature
 	}
-	return nil
+	// Ed25519 signatures are deterministic: sign again and compare.
+	if string(threats.SignEnvelope(feed, testPriv)) != string(env) {
+		return nil, threats.ErrBadSignature
+	}
+	return feed, nil
 }
 
-// feedJSON is the embedded catalogue with serial and an extra threat.
+var feedNow = time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
+
+// feedJSON is the embedded catalogue with serial, valid for 90 days from
+// feedNow, and extra threats.
 func feedJSON(t *testing.T, serial int64, extra ...threats.Threat) []byte {
 	t.Helper()
 	c := *threats.Embedded()
 	c.Serial = serial
+	c.GeneratedAt = feedNow.Add(-time.Hour)
+	exp := feedNow.Add(90 * 24 * time.Hour)
+	c.ExpiresAt = &exp
 	c.Threats = nil
 	for _, x := range threats.Embedded().Threats {
 		x.Source = ""
@@ -64,10 +76,10 @@ var fooShell = threats.Threat{ID: "fooshell", Revision: 1, Name: "FooShell", Kin
 	Needs:   []threats.Need{{Connection: threats.ConnHostAgent, Required: true, Checks: "installed packages", Help: "/help/add-server"}}}
 
 type feedServer struct {
-	mu        sync.Mutex
-	feed, sig []byte
-	down      bool
-	requests  []*http.Request
+	mu       sync.Mutex
+	env      []byte
+	down     bool
+	requests []*http.Request
 }
 
 func (f *feedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -77,10 +89,8 @@ func (f *feedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case f.down:
 		http.Error(w, "down", 503)
-	case r.URL.Path == "/threats/feed.json":
-		_, _ = w.Write(f.feed)
-	case r.URL.Path == "/threats/feed.json.sig" && f.sig != nil:
-		_, _ = w.Write(f.sig)
+	case r.URL.Path == "/threats/feed.signed.json":
+		_, _ = w.Write(f.env)
 	default:
 		http.NotFound(w, r)
 	}
@@ -92,9 +102,12 @@ func TestFeed(t *testing.T) {
 	fs := &feedServer{}
 	srv := httptest.NewServer(fs)
 	defer srv.Close()
-	f := NewFetcher(st, quiet, FeedConfig{Enabled: true, URL: srv.URL + "/threats/feed.json"})
-	f.verify = verifyTest
-	cats := &Catalogues{Store: st, verify: verifyTest}
+	// A mirror: the test server is on loopback.
+	f := NewFetcher(st, quiet, FeedConfig{Enabled: true, URL: srv.URL + "/threats/feed.signed.json", Mirror: true})
+	f.open = openTest
+	now := feedNow
+	f.now = func() time.Time { return now }
+	cats := &Catalogues{Store: st, open: openTest}
 	current := func() *threats.Catalogue {
 		cats.cur = nil // no cache between steps
 		c, err := cats.Current(ctx)
@@ -123,10 +136,9 @@ func TestFeed(t *testing.T) {
 	}
 
 	// A signed feed is used, merged with the embedded catalogue.
-	fs.feed = feedJSON(t, 5, fooShell)
-	fs.sig = threats.Sign(fs.feed, testPriv)
+	fs.env = threats.SignEnvelope(feedJSON(t, 5, fooShell), testPriv)
 	run()
-	if s := status(); s.Problem != "" || s.Serial != 5 || s.LastSuccess == nil {
+	if s := status(); s.Problem != "" || s.Serial != 5 || s.LastSuccess == nil || s.ExpiresAt == nil {
 		t.Fatalf("status after a good feed: %+v", s)
 	}
 	if x, ok := current().Get("fooshell"); !ok || x.Source != "feed" {
@@ -146,13 +158,16 @@ func TestFeed(t *testing.T) {
 	// Changed after signing, unsigned, signed by another key: refused, the
 	// last good feed kept, a problem for Platform health.
 	_, other, _ := ed25519.GenerateKey(rand.Reader)
-	good := fs.feed
-	for name, c := range map[string]struct{ feed, sig []byte }{
-		"changed":   {[]byte(strings.Replace(string(good), "FooShell", "BarShell", 1)), fs.sig},
-		"unsigned":  {feedJSON(t, 6), nil},
-		"other key": {feedJSON(t, 6), threats.Sign(feedJSON(t, 6), other)},
+	var tampered threats.Envelope
+	_ = json.Unmarshal(fs.env, &tampered)
+	tampered.Feed = base64.StdEncoding.EncodeToString([]byte(strings.Replace(string(feedJSON(t, 6, fooShell)), "FooShell", "BarShell", 1)))
+	changed, _ := json.Marshal(tampered)
+	for name, env := range map[string][]byte{
+		"changed":   changed,
+		"unsigned":  feedJSON(t, 6),
+		"other key": threats.SignEnvelope(feedJSON(t, 6), other),
 	} {
-		fs.feed, fs.sig = c.feed, c.sig
+		fs.env = env
 		run()
 		if s := status(); s.Problem != "bad_signature" || s.Serial != 5 {
 			t.Errorf("%s: status %+v", name, s)
@@ -161,39 +176,91 @@ func TestFeed(t *testing.T) {
 			t.Errorf("%s: the last good feed was replaced: %+v", name, x)
 		}
 	}
+	// A network failure clears an earlier refusal (it is not carried with
+	// a fresh time); the last good feed stays.
+	fs.down = true
+	run()
+	if s := status(); s.Problem != "" || s.Serial != 5 {
+		t.Errorf("network failure: %+v", s)
+	}
+	fs.down = false
 	// An older serial (a replay of an old feed) is refused.
-	fs.feed = feedJSON(t, 4)
-	fs.sig = threats.Sign(fs.feed, testPriv)
+	fs.env = threats.SignEnvelope(feedJSON(t, 4), testPriv)
 	run()
 	if s := status(); s.Problem != "replay" {
 		t.Errorf("replay: %+v", s)
 	}
 	// Signed but not a valid catalogue.
-	fs.feed = []byte(`{"schema":1,"serial":9,"threats":[{"id":"x"}]}`)
-	fs.sig = threats.Sign(fs.feed, testPriv)
+	fs.env = threats.SignEnvelope([]byte(`{"schema":1,"serial":9,"threats":[{"id":"x"}]}`), testPriv)
 	run()
 	if s := status(); s.Problem != "invalid" {
 		t.Errorf("invalid: %+v", s)
 	}
-	// A network failure is not a problem of its own and keeps the last
-	// outcome.
-	fs.down = true
+	// Expired, or without an expiry: refused.
+	noExp := feedJSON(t, 8)
+	var c threats.Catalogue
+	_ = json.Unmarshal(noExp, &c)
+	c.ExpiresAt = nil
+	noExp, _ = json.Marshal(c)
+	fs.env = threats.SignEnvelope(noExp, testPriv)
 	run()
-	if s := status(); s.Problem != "invalid" {
-		t.Errorf("network failure changed the status: %+v", s)
+	if s := status(); s.Problem != "expired" {
+		t.Errorf("no expiry: %+v", s)
 	}
-	fs.down = false
-	fs.feed = feedJSON(t, 7, fooShell)
-	fs.sig = threats.Sign(fs.feed, testPriv)
+	now = feedNow.Add(100 * 24 * time.Hour)
+	fs.env = threats.SignEnvelope(feedJSON(t, 8), testPriv)
+	run()
+	if s := status(); s.Problem != "expired" {
+		t.Errorf("expired: %+v", s)
+	}
+	now = feedNow
+	fs.env = threats.SignEnvelope(feedJSON(t, 7, fooShell), testPriv)
 	run()
 	if s := status(); s.Problem != "" || s.Serial != 7 {
 		t.Errorf("recovered: %+v", s)
 	}
 
 	// A stored feed that no longer verifies (a key retired) is ignored.
-	cats.verify = threats.Verify
+	cats.open = threats.OpenEnvelope
 	if _, ok := current().Get("fooshell"); ok {
 		t.Error("a stored feed is used without verifying it again")
+	}
+}
+
+// The default feed may not reach private networks, redirect to another
+// host or downgrade to HTTP; a mirror may be private and move hosts, but
+// never downgrade.
+func TestFeedRedirectsAndPrivateNetworks(t *testing.T) {
+	ctx := tenant.System(context.Background())
+	st := store.New(testdb.New(t))
+	fs := &feedServer{env: threats.SignEnvelope(feedJSON(t, 3), testPriv)}
+	srv := httptest.NewServer(fs)
+	defer srv.Close()
+	def := NewFetcher(st, quiet, FeedConfig{Enabled: true, URL: srv.URL + "/threats/feed.signed.json"})
+	if _, err := def.get(ctx, def.URL); err == nil || !strings.Contains(err.Error(), "internal address") {
+		t.Errorf("default feed on loopback: %v", err)
+	}
+	origin, _ := url.Parse(DefaultFeedURL)
+	req := func(u string) *http.Request { r, _ := http.NewRequest("GET", u, nil); return r }
+	via := []*http.Request{req(DefaultFeedURL)}
+	if checkRedirect(origin, false, req("https://evil.example/feed"), via) == nil {
+		t.Error("default feed redirected to another host")
+	}
+	if checkRedirect(origin, false, req("http://stackurity.ai/threats/feed.signed.json"), via) == nil {
+		t.Error("default feed downgraded to HTTP")
+	}
+	if checkRedirect(origin, false, req("https://stackurity.ai/threats/v2.json"), via) != nil {
+		t.Error("same-host redirect refused")
+	}
+	if checkRedirect(origin, true, req("https://mirror.internal/feed"), via) != nil {
+		t.Error("a mirror may redirect to another host")
+	}
+	if checkRedirect(origin, true, req("http://mirror.internal/feed"), via) == nil {
+		t.Error("a mirror downgraded to HTTP")
+	}
+	mirror := NewFetcher(st, quiet, FeedConfig{Enabled: true, URL: srv.URL + "/threats/feed.signed.json", Mirror: true})
+	if _, err := mirror.get(ctx, mirror.URL); err != nil {
+		t.Errorf("a mirror on a private network: %v", err)
 	}
 }
 
@@ -274,7 +341,7 @@ func TestNotifier(t *testing.T) {
 
 	m := &mailer{}
 	now := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
-	n := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, verify: verifyTest}, Mail: m, BaseURL: "https://stk.test",
+	n := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Mail: m, BaseURL: "https://stk.test",
 		Running: "0.20.17", Log: quiet, Now: func() time.Time { return now },
 		Dispatcher: &notify.Dispatcher{Store: st, Sender: notify.NewSender(true), Log: quiet, BaseURL: "https://stk.test"}}
 	deliveries := func() []store.Delivery {
@@ -310,9 +377,26 @@ func TestNotifier(t *testing.T) {
 		t.Fatalf("told twice: %d emails, %d deliveries", len(m.sent), len(deliveries()))
 	}
 
-	// An agent reports: covered, which is not news.
-	r, err := st.Ingest(ctx, hostBatch("web-1", "m1"), 0)
+	// The security member hides the banner.
+	sec := memberID(t, st, ctx, "sec@acme.test")
+	if err := st.DismissThreatNotice(ctx, notice.ID, sec); err != nil {
+		t.Fatal(err)
+	}
+
+	// An agent older than the check reports: not checked yet, still
+	// needs_connection, now saying to update it.
+	r, err := st.Ingest(ctx, hostBatch("web-1", "m1", "0.20.15"), 0)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := n.Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.Verdict != threats.NeedsConnection || notice.Outdated["host_agent"] != 1 || len(m.sent) != 1 {
+		t.Fatalf("outdated agent: %+v, %d emails", notice, len(m.sent))
+	}
+	// It updates: covered, which is not news; the hidden banner stays hidden.
+	if _, err := st.Ingest(ctx, hostBatch("web-1", "m1", "v0.20.17-ee"), 0); err != nil {
 		t.Fatal(err)
 	}
 	if err := n.Run(ctx); err != nil {
@@ -321,22 +405,37 @@ func TestNotifier(t *testing.T) {
 	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.Verdict != threats.Covered || notice.NotifiedVerdict != threats.NeedsConnection || len(m.sent) != 1 {
 		t.Fatalf("covered quietly: %+v, %d emails", notice, len(m.sent))
 	}
+	if l, _ := st.ListThreatNotices(ctx, sec); len(l) != 1 || !l[0].Dismissed {
+		t.Errorf("a quiet change showed a hidden banner again: %+v", l)
+	}
 
 	// ARTEX is found on the server: told again, on every channel; the
 	// project's route has no asset with it and hears nothing.
-	b := hostBatch("web-1", "m1")
-	b.ConfigFindings = &model.ConfigScan{Complete: true, Found: []model.ConfigFinding{{Rule: "attack-tool-artex", Category: model.ConfigCI,
-		Title: "ARTEX attack console found", Severity: "high", Path: "/opt/artex/artex", Subject: "artex", Why: "w", Fix: "f",
-		Fingerprint: strings.Repeat("a", 32)}}}
-	if err := b.Validate(); err != nil {
-		t.Fatal(err)
+	withTool := func(rules ...string) {
+		t.Helper()
+		b := hostBatch("web-1", "m1", "0.20.17")
+		b.ConfigFindings = &model.ConfigScan{Complete: true, Found: []model.ConfigFinding{}}
+		for i, rule := range rules {
+			b.ConfigFindings.Found = append(b.ConfigFindings.Found, model.ConfigFinding{Rule: rule, Category: model.ConfigCI,
+				Title: "ARTEX", Severity: "high", Path: "/opt/artex/artex", Subject: rule, Why: "w", Fix: "f",
+				Fingerprint: strings.Repeat(string(rune('a'+i)), 32)})
+		}
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.Ingest(ctx, b, 0); err != nil {
+			t.Fatal(err)
+		}
+		if err := n.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
 	}
-	if _, err := st.Ingest(ctx, b, 0); err != nil {
-		t.Fatal(err)
+	// Something only named like it: a signal, not found.
+	withTool("attack-tool-artex-name")
+	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.Verdict != threats.Covered || notice.Signals != 1 || len(m.sent) != 1 {
+		t.Fatalf("name only: %+v, %d emails", notice, len(m.sent))
 	}
-	if err := n.Run(ctx); err != nil {
-		t.Fatal(err)
-	}
+	withTool("attack-tool-artex")
 	notice, _ = st.GetThreatNotice(ctx, "artex")
 	if notice.Verdict != threats.Found || notice.NotifiedVerdict != threats.Found || notice.Assets != 1 || len(m.sent) != 2 {
 		t.Fatalf("found: %+v, %d emails", notice, len(m.sent))
@@ -346,6 +445,19 @@ func TestNotifier(t *testing.T) {
 	}
 	if d := deliveries(); len(d) != 2 {
 		t.Errorf("deliveries after found: %d", len(d))
+	}
+	if l, _ := st.ListThreatNotices(ctx, sec); len(l) != 1 || l[0].Dismissed {
+		t.Errorf("found did not show the hidden banner again: %+v", l)
+	}
+
+	// Removed, then found again: told again, with a new message.
+	withTool()
+	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.Verdict != threats.Covered || notice.NotifiedVerdict != threats.Covered || len(m.sent) != 2 {
+		t.Fatalf("fixed: %+v, %d emails", notice, len(m.sent))
+	}
+	withTool("attack-tool-artex")
+	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.NotifiedVerdict != threats.Found || len(m.sent) != 3 || len(deliveries()) != 3 {
+		t.Fatalf("found again: %+v, %d emails, %d deliveries", notice, len(m.sent), len(deliveries()))
 	}
 	// Notices never name an asset or the organisation.
 	for _, s := range m.sent {
@@ -359,13 +471,13 @@ func TestNotifier(t *testing.T) {
 	if _, err := st.AddProjectAssets(ctx, p.ID, []int64{r.AssetID}); err != nil {
 		t.Fatal(err)
 	}
-	queued, err := n.Dispatcher.QueueThreatNotice(ctx, notice.ID+1000, threats.Found, []int64{r.AssetID}, func(assets int) notify.Message {
+	queued, err := n.Dispatcher.QueueThreatNotice(ctx, notice.ID+1000, threats.Found, time.Now(), []int64{r.AssetID}, func(assets int) notify.Message {
 		return notify.Message{Event: notify.EventThreatNotice, Title: "x", Assets: assets}
 	})
 	if err != nil || queued != 2 {
 		t.Errorf("org and project routes for a found notice on the project's asset: %d %v", queued, err)
 	}
-	queued, _ = n.Dispatcher.QueueThreatNotice(ctx, notice.ID+2000, threats.Covered, nil, func(int) notify.Message {
+	queued, _ = n.Dispatcher.QueueThreatNotice(ctx, notice.ID+2000, threats.Covered, time.Now(), nil, func(int) notify.Message {
 		return notify.Message{Event: notify.EventThreatNotice, Title: "y"}
 	})
 	if queued != 1 {
@@ -373,8 +485,23 @@ func TestNotifier(t *testing.T) {
 	}
 }
 
-func hostBatch(name, machine string) *model.ObservationBatch {
-	b := model.NewBatch(model.Collector{ID: "test", Version: "1", Method: "agent"},
+func memberID(t *testing.T, st *store.Store, ctx context.Context, email string) int64 {
+	t.Helper()
+	users, err := st.ListUsers(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, u := range users {
+		if u.Email == email {
+			return u.ID
+		}
+	}
+	t.Fatalf("no member %s", email)
+	return 0
+}
+
+func hostBatch(name, machine, version string) *model.ObservationBatch {
+	b := model.NewBatch(model.Collector{ID: "test", Version: version, Method: "agent"},
 		model.AssetRef{Kind: model.AssetHost, Name: name, Identifiers: []model.Identifier{{Scheme: "machine-id", Value: machine}},
 			Attributes: map[string]string{"os": "debian"}})
 	b.Observations = append(b.Observations, model.Observation{Purl: "pkg:deb/debian/bash@5.2", Location: "/var/lib/dpkg/status"})
@@ -396,7 +523,7 @@ func TestNotifierVersionsAndWindow(t *testing.T) {
 	ctx := tenant.WithWorkspace(bg, w1.ID)
 	now := time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC)
 	mk := func(running string, cloud bool, at time.Time) *Notifier {
-		return &Notifier{Store: st, Catalogues: &Catalogues{Store: st, verify: verifyTest}, Running: running, Cloud: cloud, Log: quiet,
+		return &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Running: running, Cloud: cloud, Log: quiet,
 			Now: func() time.Time { return at }}
 	}
 	if err := mk("0.20.15", true, now).Run(ctx); err != nil {
@@ -411,6 +538,21 @@ func TestNotifierVersionsAndWindow(t *testing.T) {
 	if _, err := st.GetThreatNotice(ctx, "artex"); err == nil {
 		t.Fatal("a notice three months after the threat was added")
 	}
+	// Held during the first day: a rolling upgrade may be under way.
+	setSeen := func(at time.Time) {
+		t.Helper()
+		if _, err := st.Pool.Exec(tenant.System(bg), `UPDATE threats_seen SET first_seen_at = $1`, at); err != nil {
+			t.Fatal(err)
+		}
+	}
+	setSeen(now.Add(-time.Hour))
+	if err := mk("0.20.15", false, now).Run(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetThreatNotice(ctx, "artex"); err == nil {
+		t.Fatal("upgrade told while a rolling upgrade may be under way")
+	}
+	setSeen(now.Add(-48 * time.Hour))
 	if err := mk("0.20.15", false, now).Run(ctx); err != nil {
 		t.Fatal(err)
 	}
@@ -430,7 +572,7 @@ func TestOperatorCopy(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		n := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, verify: verifyTest}, Running: "0.20.17", Cloud: true, Log: quiet,
+		n := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Running: "0.20.17", Cloud: true, Log: quiet,
 			Now: func() time.Time { return time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC) }}
 		if err := n.Run(tenant.WithWorkspace(bg, w.ID)); err != nil {
 			t.Fatal(err)
@@ -440,11 +582,11 @@ func TestOperatorCopy(t *testing.T) {
 		t.Fatal(err)
 	}
 	m := &mailer{}
-	self := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, verify: verifyTest}, Mail: m, CopyTo: "owner@stackurity.test", Log: quiet}
+	self := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Mail: m, CopyTo: "owner@stackurity.test", Log: quiet}
 	if err := self.SendCopies(bg); err != nil || len(m.sent) != 0 {
 		t.Fatalf("a self-hosted server sent a copy: %v %d", err, len(m.sent))
 	}
-	cloud := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, verify: verifyTest}, Mail: m, CopyTo: "owner@stackurity.test", Cloud: true,
+	cloud := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Mail: m, CopyTo: "owner@stackurity.test", Cloud: true,
 		BaseURL: "https://app.stackurity.test", Log: quiet}
 	for range 2 {
 		if err := cloud.SendCopies(bg); err != nil {
