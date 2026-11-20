@@ -67,7 +67,15 @@ func linuxHostCollector(o *hostOptions) (func(context.Context) ([]*model.Observa
 			// each image has a limit of its own.
 			dctx, dcancel := context.WithTimeout(parent, dockerCollectTimeout)
 			defer dcancel()
-			batches = append(batches, o.docker.Collect(dctx, osBatch.Asset)...)
+			images := o.docker.Collect(dctx, osBatch.Asset)
+			if !o.configChecks {
+				// --no-config-checks turns off every risky-settings check,
+				// the images' attack-tool check included.
+				for _, b := range images {
+					b.ConfigFindings = nil
+				}
+			}
+			batches = append(batches, images...)
 		}
 		return batches, nil
 	}, nil

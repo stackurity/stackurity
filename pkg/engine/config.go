@@ -118,6 +118,23 @@ const FeatureConfigAttackTools = client.FeatureConfigAttackTools
 // ConfigAttackTool is the category of attack tool findings.
 const ConfigAttackTool = model.ConfigAttackTool
 
+// ConfigForServer drops from s what a server does not take, given its GET
+// /meta features (has reports whether one is listed): every config finding
+// without FeatureConfigFindings, attack tool findings without
+// FeatureConfigAttackTools. Batches from image, archive and repository
+// scans carry attack tool findings, and an older server refuses the whole
+// batch over an unknown category, so call this before every upload. It
+// returns the scan to send, nil for none.
+func ConfigForServer(s *ConfigScan, has func(feature string) bool) *ConfigScan {
+	if s == nil || !has(FeatureConfigFindings) {
+		return nil
+	}
+	if !has(FeatureConfigAttackTools) {
+		s.WithoutCategory(ConfigAttackTool)
+	}
+	return s
+}
+
 // ServerHas reports whether a Stackurity server lists a feature in GET /meta.
 func ServerHas(ctx context.Context, server, token, toolVersion, feature string) (bool, error) {
 	cl, err := client.New(server, token, toolVersion)

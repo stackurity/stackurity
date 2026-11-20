@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
+	"github.com/stackurity/stackurity/internal/collect/gobin"
 	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -269,6 +270,10 @@ func infoAttributes(attrs map[string]string, info *Image) {
 			break
 		}
 	}
+	if len(info.RepoDigests) > 0 {
+		// tomicdd/artex@sha256:…: an image pulled by digest has no tags.
+		attrs["repo_digests"] = clip(strings.Join(info.RepoDigests, ", "))
+	}
 	if info.Os != "" && info.Architecture != "" {
 		attrs["platform"] = info.Os + "/" + info.Architecture
 		if info.Variant != "" {
@@ -289,13 +294,21 @@ func fill(b *model.ObservationBatch, scope string, r Reading, ok bool) {
 		b.Asset.Attributes[k] = v
 	}
 	b.Observations = append(b.Observations, r.Observations...)
-	// Attack tools: the image's name and tags, and its Go binaries. The
-	// image was read in full, so a tool no longer in it is gone.
+	b.Coverage = append([]model.CoverageItem{{Scope: scope, Status: "checked"}}, r.Coverage...)
+	// Attack tools: the image's name, tags and digest references, and its
+	// Go binaries. Complete only when every executable was read: a scan cut
+	// short by its limits must not resolve a tool found before as gone.
 	refs := []string{b.Asset.Attributes["image"]}
 	refs = append(refs, strings.Split(b.Asset.Attributes["tags"], ", ")...)
+	refs = append(refs, strings.Split(b.Asset.Attributes["repo_digests"], ", ")...)
 	found := append(confcheck.ImageAttackTools(refs...), r.AttackTools...)
-	b.ConfigFindings = &model.ConfigScan{Found: confcheck.Dedupe(found), Complete: true}
-	b.Coverage = append([]model.CoverageItem{{Scope: scope, Status: "checked"}}, r.Coverage...)
+	cs := &model.ConfigScan{Found: confcheck.Dedupe(found), Complete: true}
+	for _, c := range r.Coverage {
+		if c.Scope == gobin.Scope && c.Status != "checked" {
+			cs.Complete, cs.Reason = false, "the image's executables were not all read: "+c.Reason
+		}
+	}
+	b.ConfigFindings = cs
 	b.KeepUsable()
 	b.Complete = true
 	for _, c := range b.Coverage {

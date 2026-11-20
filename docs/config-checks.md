@@ -64,18 +64,34 @@ The fix for unpinned actions links to [How to harden GitHub Actions: pin actions
 
 ### Attack tools
 
-Some tools built for penetration testing are now run by attackers. When one turns up on a server or in an image you did not put it on, the server is being used for an attack or someone installed it without the security team knowing. Every match is **high**. Most tools have nothing to patch, so there is no CVE to match.
+Some tools built for penetration testing are now run by attackers. When one turns up on a server or in an image you did not put it on, the server is being used for an attack or someone installed it without the security team knowing. Most tools have nothing to patch, so there is no CVE to match.
 
 The first tool covered is **ARTEX**, an AI-driven attack framework. Its source appeared on GitHub as `Autumn-27/ARTEX` in July 2026 and was removed on 8 October. The FBI warned about it in FLASH 261113 on 13 November 2026, and more than 1,600 of its consoles are reachable on the internet. Renamed forks, such as ScopeWeaver, are covered too.
 
-Each check uses something that can't come from an unrelated program. A file that is only named like the tool is not reported.
+A **high** finding rests on evidence that only the tool leaves: the Go module its executable was built from, a `go.mod` that declares that module, or the name of a backdoored image. A file that is only *named* `artex` is not reported. A module or image that is only *named* like the tool is reported as **medium**, because forks rename the module. "Artex" is also an ordinary name, and medium findings never alert.
 
 | Severity | Rule | When |
 |---|---|---|
-| high | `attack-tool-artex` | A Go executable whose build record names an ARTEX module (`github.com/Autumn-27/ARTEX` or a known fork). The record is read; the binary is never run. Also: a `go.mod` that declares that module, which means a copy of its source, or a container image named `artex` or `scopeweaver`. |
-| high | `attack-tool-artex-backdoored-image` | The image `tomicdd/artex` or `congdonglinux/artex`, either present on the host or named in a `Dockerfile` or Compose file. BadByte reported in November 2026 that these prebuilt images carry a backdoored login handler, which runs any command sent to it before checking the password. Docker Hub removed them on 5 November, but copies already pulled are still backdoored. |
+| high | `attack-tool-artex` | A Go executable whose build record names an ARTEX module (`github.com/Autumn-27/ARTEX` or a known fork). The record is read; the binary is never run. Also a `go.mod` declaring that module, meaning a copy of its source. |
+| high | `attack-tool-artex-backdoored-image` | The image `tomicdd/artex` or `congdonglinux/artex`, either on the host (by tag, or by digest when it was pulled by digest) or in a `Dockerfile` `FROM` or Compose `image:`. BadByte reported in November 2026 that these prebuilt images carry a backdoored login handler, which runs any command sent to it before checking the password. Docker Hub removed them on 5 November, but copies already pulled are still backdoored. |
+| medium | `attack-tool-artex-name` | A Go module or a container image only named `artex` or `scopeweaver` (for example `github.com/someone/artex` or `acme/artex`). |
 
-Where the agent looks on a server: `/app`, `/opt`, `/srv`, `/usr/local`, `/usr/local/bin`, each login account's home directory, the application directories it reports, and the folders directly under each of these. It opens at most 400 executables, none larger than 512 MiB. In a container image every Go executable is read, as for vulnerability matching. In a repository it reads `go.mod`, `Dockerfile` and the Compose files at the root.
+**On a server**, the agent looks in:
+
+- `/app`, `/srv` and `/root`, plus the folders directly under each;
+- `/opt`, two levels down (for example `/opt/<tool>/bin`);
+- `/usr/local/bin` and `/usr/local/sbin`;
+- `/tmp`, `/var/tmp` and `/dev/shm`;
+- each login account's home folder and the folders directly under it, plus its `go/bin` and `.local/bin`;
+- the application directories it reports.
+
+It skips other folders whose names start with `.`, and it never walks deeper. It opens at most 1,000 executables, none larger than 512 MiB, reading at most 256 MiB in total. If it reaches a limit, the check is reported as incomplete, so nothing found before is taken as gone.
+
+**In a container image**, every Go executable that no OS package installed is read, as for vulnerability matching. If that read stops at its limits, the check is incomplete.
+
+**In a repository**, Stackurity reads `go.mod`, `Dockerfile` and the Compose files at the root. Only `FROM` instructions count, not lines inside a heredoc or a `RUN` script.
+
+`--no-config-checks` turns these checks off along with the others, for images too.
 
 If you run the tool yourself for authorised testing, dismiss the finding with a note. Keep its console off the internet; its default port is 8787.
 

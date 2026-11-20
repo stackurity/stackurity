@@ -3,7 +3,10 @@ package confcheck
 import (
 	"bytes"
 	"debug/buildinfo"
+	"errors"
+	"io"
 	"path"
+	"regexp"
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/model"
@@ -32,6 +35,11 @@ const (
 	// reported to carry a backdoored login handler that runs any command
 	// sent to it before checking the password.
 	RuleAttackToolArtexBackdoor = "attack-tool-artex-backdoored-image"
+	// RuleAttackToolArtexName: a Go module or container image only named
+	// like ARTEX (github.com/someone/artex, an image "acme/artex"). Forks
+	// rename the module, so this is reported, but at medium: "artex" is
+	// also an ordinary name, and a name alone proves nothing.
+	RuleAttackToolArtexName = "attack-tool-artex-name"
 )
 
 // AttackToolsDoc is the how-to every attack tool finding links to.
@@ -39,8 +47,9 @@ const AttackToolsDoc = "https://stackurity.ai/docs/config-checks#attack-tools"
 
 // attackTool is one tool and how to recognise it.
 type attackTool struct {
-	name string
-	rule string
+	name     string
+	rule     string
+	nameRule string
 	// modules are Go module paths, lower case, that only the tool and its
 	// forks use; names are last path elements that identify it on their
 	// own (a module "artex" or "example.com/x/scopeweaver").
@@ -55,8 +64,9 @@ type attackTool struct {
 }
 
 var attackTools = []attackTool{{
-	name: "ARTEX",
-	rule: RuleAttackToolArtex,
+	name:     "ARTEX",
+	rule:     RuleAttackToolArtex,
+	nameRule: RuleAttackToolArtexName,
 	// Autumn-27/ARTEX is the original (taken down 8 Oct 2026); the others
 	// are public forks, ScopeWeaver a renamed one.
 	modules:    []string{"github.com/autumn-27/artex", "github.com/ruoji6/artex", "github.com/jaykwok/artex", "github.com/cskwork/scopeweaver"},
@@ -68,8 +78,8 @@ var attackTools = []attackTool{{
 }}
 
 // toolForModule returns the attack tool a Go main module or main package
-// path belongs to.
-func toolForModule(paths ...string) (attackTool, string, bool) {
+// path belongs to. strong is false for a match by name only.
+func toolForModule(paths ...string) (t attackTool, matched string, strong, ok bool) {
 	for _, p := range paths {
 		lp := strings.ToLower(strings.TrimSpace(p))
 		if lp == "" {
@@ -78,7 +88,7 @@ func toolForModule(paths ...string) (attackTool, string, bool) {
 		for _, t := range attackTools {
 			for _, m := range t.modules {
 				if lp == m || strings.HasPrefix(lp, m+"/") {
-					return t, p, true
+					return t, p, true, true
 				}
 			}
 			// The module's own last element (github.com/x/artex, or a
@@ -86,21 +96,32 @@ func toolForModule(paths ...string) (attackTool, string, bool) {
 			// project: github.com/acme/tools/artex is not it.
 			for _, n := range t.names {
 				if lp == n || path.Base(lp) == n && strings.Count(lp, "/") <= 2 {
-					return t, p, true
+					return t, p, false, true
 				}
 			}
 		}
 	}
-	return attackTool{}, "", false
+	return attackTool{}, "", false, false
+}
+
+// nameOnly is the finding for a module or image only named like the tool.
+func nameOnly(t attackTool, where string, line int, subject, what string) model.ConfigFinding {
+	return finding(t.nameRule, model.ConfigAttackTool, "Named like the "+t.name+" attack tool", "medium", where, line, subject,
+		t.about+" "+what+" Only the name matches, which other projects can share, so check what it is.",
+		"Look at where it came from. If it is "+t.name+" and nobody on your team installed it, treat this machine as "+
+			"compromised; if it is something else, dismiss this finding with a note.")
 }
 
 // GoBinaryAttackTool grades one Go executable's build record: a finding
 // when its main module is a known attack tool. where is how the binary is
 // named in the finding (its path on the host or in the image).
 func GoBinaryAttackTool(where, mainPackage, mainModule string) (model.ConfigFinding, bool) {
-	t, mod, ok := toolForModule(mainModule, mainPackage)
+	t, mod, strong, ok := toolForModule(mainModule, mainPackage)
 	if !ok {
 		return model.ConfigFinding{}, false
+	}
+	if !strong {
+		return nameOnly(t, where, 0, "Go module "+mod, "This executable was built from a Go module named "+mod+"."), true
 	}
 	return finding(t.rule, model.ConfigAttackTool, t.name+" attack tool found", "high", where, 0,
 		"Go module "+mod,
@@ -113,7 +134,7 @@ func GoBinaryAttackTool(where, mainPackage, mainModule string) (model.ConfigFind
 // and tags as Docker shows them): the backdoored ARTEX builds, and images
 // named after the tool.
 func ImageAttackTools(refs ...string) []model.ConfigFinding {
-	var out []model.ConfigFinding
+	var out, named []model.ConfigFinding
 	seen := map[string]bool{}
 	for _, ref := range refs {
 		repo := imageRepo(ref)
@@ -132,13 +153,15 @@ func ImageAttackTools(refs ...string) []model.ConfigFinding {
 						"since it was pulled: new accounts, SSH keys, cron jobs and services."))
 				continue
 			}
-			if contains(t.images, path.Base(repo)) {
-				out = append(out, finding(t.rule, model.ConfigAttackTool, t.name+" attack tool found", "high", ref, 0,
-					"image "+repo, t.about+" This container image is named "+repo+".",
-					"Find out who pulled it and why. If nobody on your team did, treat the host as compromised. If it is "+
-						"your own test tool, keep its console off the internet and dismiss this finding with a note."))
+			if contains(t.images, path.Base(repo)) && len(named) == 0 {
+				named = append(named, nameOnly(t, ref, 0, "image "+repo, "This container image is named "+repo+"."))
 			}
 		}
+	}
+	// The refs are one image's: a reported backdoored build says all there
+	// is to say; another tag of it named like the tool adds nothing.
+	if len(out) == 0 {
+		out = named
 	}
 	return out
 }
@@ -188,9 +211,12 @@ func goModModule(data []byte) string {
 // tool's source. display is how the file is named in the finding.
 func sourceAttackTool(display string, goMod []byte) (model.ConfigFinding, bool) {
 	mod := goModModule(goMod)
-	t, _, ok := toolForModule(mod)
+	t, _, strong, ok := toolForModule(mod)
 	if !ok {
 		return model.ConfigFinding{}, false
+	}
+	if !strong {
+		return nameOnly(t, display, LineOf(goMod, mod), "module "+mod, "This go.mod declares a module named "+mod+"."), true
 	}
 	return finding(t.rule, model.ConfigAttackTool, t.name+" source code found", "high", display, LineOf(goMod, mod),
 		"module "+mod, t.about+" This is a copy of its source ("+mod+"): it can be built and run from here.",
@@ -223,7 +249,7 @@ func repoAttackTools(dir string) []model.ConfigFinding {
 		if data == nil {
 			continue
 		}
-		for _, ref := range imageRefs(data) {
+		for _, ref := range imageRefs(data, rel == "Dockerfile") {
 			for _, f := range ImageAttackTools(ref) {
 				// Named by the file that pulls it, not the image.
 				g := finding(f.Rule, f.Category, f.Title, f.Severity, rel, LineOf(data, ref), f.Subject, f.Why,
@@ -235,17 +261,34 @@ func repoAttackTools(dir string) []model.ConfigFinding {
 	return out
 }
 
+// heredocStart is a Dockerfile heredoc (RUN <<EOF, <<-"EOF", <<'EOF').
+var heredocStart = regexp.MustCompile(`<<-?["']?([A-Za-z_][A-Za-z0-9_]*)["']?`)
+
 // imageRefs are the images a Dockerfile (FROM) or Compose file (image:)
 // names.
-func imageRefs(data []byte) []string {
+func imageRefs(data []byte, dockerfile bool) []string {
 	var out []string
+	heredoc := ""
 	for _, line := range strings.Split(string(data), "\n") {
+		if heredoc != "" { // inside a RUN <<EOF body: not instructions
+			if strings.TrimSpace(line) == heredoc {
+				heredoc = ""
+			}
+			continue
+		}
+		if m := heredocStart.FindStringSubmatch(line); dockerfile && m != nil {
+			heredoc = m[1]
+		}
 		f := strings.Fields(line)
 		if len(f) < 2 {
 			continue
 		}
+		indented := line[0] == ' ' || line[0] == '\t'
 		switch strings.ToLower(f[0]) {
 		case "from":
+			if indented { // a continuation or a script line, not an instruction
+				continue
+			}
 			ref := f[1]
 			if strings.HasPrefix(ref, "--") && len(f) > 2 { // FROM --platform=x image
 				ref = f[2]
@@ -258,35 +301,49 @@ func imageRefs(data []byte) []string {
 	return out
 }
 
-// hostAttackToolDirs are where a tool's binary or source is looked for on a
-// host, besides each login account's home and the projects directly under
-// it, and the applications' directories. Only the directory itself is
-// listed; nothing below it is walked.
-var hostAttackToolDirs = []string{"/app", "/opt", "/srv", "/usr/local/bin", "/usr/local", "/root"}
+// hostAttackToolPlaces are where a tool's binary or source is looked for
+// on a host, with how many directory levels below each are listed. Each
+// login account's home is added at depth 1, plus its go/bin and
+// .local/bin, and the applications' directories at depth 1. Directories
+// whose names start with "." are not entered (other than those named).
+// place is a directory to look in and how many levels below it.
+type place struct {
+	dir   string
+	depth int
+}
 
-// maxAttackToolExec bounds the executables opened for build information on
-// one host, and maxAttackToolExecSize their size.
+var hostAttackToolPlaces = []place{
+	{"/app", 1}, {"/opt", 2}, {"/srv", 1}, {"/usr/local/bin", 0}, {"/usr/local/sbin", 0}, {"/root", 1},
+	// Where an intruder drops a tool.
+	{"/tmp", 1}, {"/var/tmp", 1}, {"/dev/shm", 1},
+}
+
+// Bounds of one host's walk: executables opened for their build
+// information, their size, and the bytes read from them in total.
 const (
-	maxAttackToolExec     = 400
+	maxAttackToolExec     = 1000
 	maxAttackToolExecSize = 512 << 20
+	maxAttackToolBytes    = 256 << 20
 )
 
 // attackTools looks for known attack tools on the host: Go executables
 // built from one (opened for their build record only, never run) and
-// checkouts of one's source, in a few fixed directories, each account's
-// home, the directories directly under those, and the applications'
-// directories.
+// checkouts of one's source. A walk cut short by its bounds is noted as a
+// problem, so the scan is not complete and nothing found before is taken as
+// gone.
 func (h *hostFS) attackTools(accounts []account, appDirs []string) []model.ConfigFinding {
 	var out []model.ConfigFinding
-	dirs := append([]string{}, hostAttackToolDirs...)
+	places := append([]place{}, hostAttackToolPlaces...)
 	for _, a := range accounts {
-		dirs = append(dirs, a.Home)
+		places = append(places, place{a.Home, 1}, place{path.Join(a.Home, "go", "bin"), 0},
+			place{path.Join(a.Home, ".local", "bin"), 0})
 	}
 	for _, d := range appDirs {
-		dirs = append(dirs, path.Clean("/"+d))
+		places = append(places, place{path.Clean("/" + d), 1})
 	}
 	seen := map[string]bool{}
-	opened := 0
+	opened, budget := 0, int64(maxAttackToolBytes)
+	capped := false
 	var look func(dir string, depth int)
 	look = func(dir string, depth int) {
 		if seen[dir] {
@@ -298,12 +355,12 @@ func (h *hostFS) attackTools(accounts []account, appDirs []string) []model.Confi
 				out = append(out, f)
 			}
 		}
-		n := 0
-		for _, e := range h.readDir(dir) {
-			if n >= maxProjectDirs {
-				break
-			}
-			n++
+		entries := h.readDir(dir)
+		if len(entries) > maxProjectDirs*10 {
+			h.problem(dir, "has more than 2000 entries; attack tools were looked for in the first")
+			entries = entries[:maxProjectDirs*10]
+		}
+		for _, e := range entries {
 			p := path.Join(dir, e.Name())
 			if e.IsDir() {
 				if depth > 0 && !strings.HasPrefix(e.Name(), ".") {
@@ -311,24 +368,52 @@ func (h *hostFS) attackTools(accounts []account, appDirs []string) []model.Confi
 				}
 				continue
 			}
-			if opened >= maxAttackToolExec || !e.Type().IsRegular() {
+			if !e.Type().IsRegular() {
 				continue
 			}
 			st, err := e.Info()
 			if err != nil || st.Mode().Perm()&0o111 == 0 || st.Size() < 4 || st.Size() > maxAttackToolExecSize {
 				continue
 			}
+			if opened >= maxAttackToolExec || budget <= 0 {
+				if !capped {
+					capped = true
+					h.problem(dir, "was not fully checked for attack tools (executable limit reached)")
+				}
+				continue
+			}
 			opened++
-			if f, ok := h.goBinaryAttackTool(p); ok {
+			if f, ok := h.goBinaryAttackTool(p, &budget); ok {
 				out = append(out, f)
 			}
 		}
 	}
-	for _, d := range dirs {
-		look(d, 1)
+	for _, pl := range places {
+		look(pl.dir, pl.depth)
 	}
 	return out
 }
+
+// budgetAt is a file as buildinfo reads it, counting the bytes read
+// against the walk's budget.
+type budgetAt struct {
+	f      io.ReaderAt
+	budget *int64
+}
+
+func (b budgetAt) ReadAt(p []byte, off int64) (int, error) {
+	if *b.budget <= 0 {
+		return 0, errBudget
+	}
+	if int64(len(p)) > *b.budget {
+		p = p[:*b.budget]
+	}
+	n, err := b.f.ReadAt(p, off)
+	*b.budget -= int64(n)
+	return n, err
+}
+
+var errBudget = errors.New("attack tool read budget used up")
 
 // machO reports a Mach-O executable's magic number (a Mac running the CLI).
 func machO(head []byte) bool {
@@ -339,18 +424,26 @@ func machO(head []byte) bool {
 	return false
 }
 
-// goBinaryAttackTool reads one host executable's Go build record.
-func (h *hostFS) goBinaryAttackTool(p string) (model.ConfigFinding, bool) {
-	f, err := h.open(p)
+// goBinaryAttackTool reads one host executable's Go build record. A
+// malformed file cannot stop the agent: a panic in the reader is
+// recovered and the file skipped.
+func (h *hostFS) goBinaryAttackTool(p string, budget *int64) (f model.ConfigFinding, ok bool) {
+	defer func() {
+		if recover() != nil {
+			f, ok = model.ConfigFinding{}, false
+		}
+	}()
+	file, err := h.open(p)
 	if err != nil {
 		return model.ConfigFinding{}, false
 	}
-	defer f.Close()
+	defer file.Close()
+	r := budgetAt{f: file, budget: budget}
 	head := make([]byte, 4)
-	if _, err := f.ReadAt(head, 0); err != nil || !bytes.Equal(head, []byte("\x7fELF")) && !machO(head) {
+	if _, err := r.ReadAt(head, 0); err != nil || !bytes.Equal(head, []byte("\x7fELF")) && !machO(head) {
 		return model.ConfigFinding{}, false
 	}
-	bi, err := buildinfo.Read(f)
+	bi, err := buildinfo.Read(r)
 	if err != nil {
 		return model.ConfigFinding{}, false
 	}
