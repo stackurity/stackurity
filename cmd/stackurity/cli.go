@@ -24,6 +24,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
@@ -721,6 +722,12 @@ config findings; --no-config-checks turns them off.`,
 			if err != nil {
 				return err
 			}
+			// Front-end libraries kept outside a package manager, as the
+			// server's own scan of the repository reports them; files git
+			// ignores (a build's output) are not the repository's.
+			web, webCov, webMore := apps.RepoWebAssets(cmd.Context(), dir, b.Observations, lockfile.GitIgnored(cmd.Context(), dir))
+			b.Observations = append(b.Observations, web...)
+			b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
 			if !noLeaks {
 				b.Leaks = scanLeaks(cmd.Context(), dir)
 			}
