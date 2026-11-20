@@ -220,11 +220,11 @@ export interface EmailPreferences {
   categories: EmailPreference[];
   /** Email that cannot be turned off here, and why. */
   locked: { label: string; description: string }[];
-  /** From a link in an email: "unsubscribe" (one category) or "preferences" (both). */
+  /** From a link in an email: "unsubscribe" (turns categories off only) or "preferences" (both ways). Both list every category. */
   kind?: "unsubscribe" | "preferences";
   /** From a link: the address, partly hidden. */
   email?: string;
-  /** From an unsubscribe link: its category. */
+  /** From an unsubscribe link: the category of the email it came from. */
   category?: EmailCategory;
 }
 
