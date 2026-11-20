@@ -81,6 +81,8 @@ const EVENT_HINT: Record<RouteEvent, string> = {
   overdue: "Urgent issues past their fix deadline, at most once a day.",
   connected: "One message when a new server, repository or other asset sends its first results, instead of an alert for every old issue.",
   problems: "A server stopped reporting, a scan is late, an integration keeps failing or a vulnerability feed is out of date.",
+  threat_notices:
+    "Once per new attack, attacker tool or exploited vulnerability: whether it was found on your assets, whether they are checked, or what to connect so they can be. A project's rule gets it only when the threat is found on its assets.",
   daily_summary: "What is new, what was fixed and the top fixes still open, once a day.",
   weekly_summary: "The same summary, once a week.",
 };
@@ -122,7 +124,7 @@ function newRule(channelId: number, name: string): Route {
     timezone: browserTimeZone(),
     max_per_hour: 20,
     mode: "custom",
-    events: ["urgent", "problems", "daily_summary"],
+    events: ["urgent", "problems", "threat_notices", "daily_summary"],
     event_channels: {},
     summary_time: "09:00",
     summary_day: "monday",

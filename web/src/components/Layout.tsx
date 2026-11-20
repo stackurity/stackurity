@@ -10,6 +10,7 @@ import { FeedbackNudge } from "./FeedbackNudge";
 import { updateNudge } from "../feedbackNudge";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
+import { ThreatNoticeBanner } from "./ThreatNotices";
 import {
   IconActionPlan,
   IconActivity,
@@ -340,6 +341,7 @@ function Shell() {
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
           {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
+          {me?.workspace && !projectOnly && !pathname.startsWith("/help") && <ThreatNoticeBanner workspaceId={me.workspace.id} />}
           {me?.workspace && <SectionTabsFor path={pathname} />}
           {me && !me.workspace && me.sso_required && !pathname.startsWith("/admin") ? (
             <SSORequiredNotice req={me.sso_required} others={(me.workspaces ?? []).filter((w) => w.workspace_id !== me.sso_required?.workspace_id)} />

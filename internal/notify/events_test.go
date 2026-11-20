@@ -26,8 +26,13 @@ func TestModesAndEvents(t *testing.T) {
 			t.Errorf("%s -> %v -> %s", m, store.EventsForMode(m), got)
 		}
 	}
-	if got := store.EventsForMode(store.ModeUrgentSummary); !slices.Equal(got, []string{"urgent", "regressed", "overdue", "connected", "problems", "daily_summary"}) {
+	if got := store.EventsForMode(store.ModeUrgentSummary); !slices.Equal(got, []string{"urgent", "regressed", "overdue", "connected", "problems", "threat_notices", "daily_summary"}) {
 		t.Errorf("urgent_summary = %v", got)
+	}
+	// Threat notices are not part of a mode: a route without them (saved
+	// before migration 0118, or turned off) keeps its mode.
+	if got := store.ModeForEvents([]string{"urgent", "regressed", "overdue", "connected", "problems", "daily_summary"}); got != store.ModeUrgentSummary {
+		t.Errorf("urgent_summary without threat notices = %s", got)
 	}
 	if got := store.ModeForEvents([]string{"new_issues", "daily_summary"}); got != store.ModeCustom {
 		t.Errorf("custom = %s", got)

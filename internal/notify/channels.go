@@ -139,6 +139,8 @@ var accountEvents = map[string]bool{
 	// A hosted service's billing and plan emails to an organisation's
 	// administrators, and its sales alerts to the operator.
 	"billing": true, "sales_alert": true,
+	// The operator's copy of a threat's notices (threat_notice.go).
+	EventThreatNoticeCopy: true,
 }
 
 // Subject is the message's subject line: the title, with a tag in front

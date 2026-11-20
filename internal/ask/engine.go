@@ -619,6 +619,8 @@ func toolLabel(u ToolUse) string {
 		return "Listing risky settings"
 	case "threat_check":
 		return "Checking for a named threat"
+	case "list_threat_notices":
+		return "Reading threat notices"
 	case "get_finding", "explain_finding":
 		return "Reading issue" + id("finding_id")
 	case "find_component":

@@ -45,6 +45,7 @@ import (
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/threatnotice"
 	"github.com/stackurity/stackurity/internal/updates"
 	"github.com/stackurity/stackurity/internal/worker"
 	"github.com/stackurity/stackurity/web"
@@ -161,6 +162,15 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			threatFeedCfg, err := threatnotice.FeedConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			threatCopyTo, err := threatNoticeCopyTo(trustBadgeCloud, os.Getenv, log)
+			if err != nil {
+				return err
+			}
+			threatCatalogues := threatnotice.NewCatalogues(st)
 			feedbackURL, err := api.FeedbackURLFromEnv()
 			if err != nil {
 				return err
@@ -368,7 +378,7 @@ func serverCmd() *cobra.Command {
 				SecretBox:          box,
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
-				Health: checker, UpdateCheck: updateCfg.Enabled,
+				Health: checker, UpdateCheck: updateCfg.Enabled, Threats: threatCatalogues,
 				TrustBadge: trustBadge.On, TrustBadgePurge: trustBadge.Purge, TrustPageBase: trustBadge.PageBase,
 				// Error reports stay in this database (docs/install.md#error-reports).
 				ClientErrors:  clientErrorsOn(),
@@ -443,6 +453,12 @@ func serverCmd() *cobra.Command {
 			// The release check sends nothing about this install (see
 			// internal/updates); when it is off no request is made at all.
 			updates.Register(ctx, w, st, log, updateCfg)
+			// Threat notices (docs/threat-notices.md): the signed feed, off
+			// with the release check, and each organisation's notices.
+			threatnotice.RegisterFeed(ctx, w, st, log, threatFeedCfg)
+			registerThreatNotices(w, &threatnotice.Notifier{Store: st, Catalogues: threatCatalogues, Dispatcher: dispatcher,
+				Mail: srv.AccountMail, BaseURL: srv.BaseURL, Running: updates.Running(version), Cloud: trustBadgeCloud,
+				CopyTo: threatCopyTo, Log: log})
 			// The worker stops when a newer version migrates the database
 			// under this server (watchSchema); the API keeps answering, but
 			// /readyz fails so traffic moves to the new replicas.

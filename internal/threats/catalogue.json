@@ -1,0 +1,46 @@
+{
+  "schema": 1,
+  "serial": 1,
+  "generated_at": "2026-11-20T00:00:00Z",
+  "threats": [
+    {
+      "id": "artex",
+      "revision": 1,
+      "name": "ARTEX",
+      "aliases": ["artex pro", "artex mx", "artex v2", "scopeweaver", "antifox"],
+      "kind": "attack_tool",
+      "severity": "high",
+      "summary": "ARTEX is an open-source, AI-driven penetration-testing framework (a Go server with a Next.js web console, default port 8787) published on GitHub in July 2026 and taken down on 8 October 2026; copies and forks still circulate. Criminal and state-aligned groups use it to automate intrusions against internet-facing systems, and the FBI warned about it on 13 November 2026. It is not a vulnerability: there is nothing to patch. Two prebuilt Docker Hub images (tomicdd/artex and congdonglinux/artex) were reported to carry a backdoored login handler.",
+      "first_seen": "2026-07-26",
+      "published_at": "2026-11-20",
+      "sources": [
+        "https://www.ic3.gov/CSA/2026/261113.pdf",
+        "https://threatdefence.com/article/artex-agentic-attack-framework-detection-hunting",
+        "https://socprime.com/blog/artex-detection-hunting-the-ai-pentest-framework-turned-attack-platform/"
+      ],
+      "detects": {
+        "config_rules": ["attack-tool-artex", "attack-tool-artex-backdoored-image"],
+        "cves": []
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server looks for an ARTEX console or binary installed or running there",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for ARTEX and for the backdoored tomicdd/artex and congdonglinux/artex images",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a copy of ARTEX or a file that runs its images",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.17"
+    }
+  ]
+}

@@ -1,12 +1,15 @@
 package mcp
 
-// Named threats (attacker tools, campaigns) and the tools that answer
-// "are we exposed to it?": list_risky_settings lists config findings
-// (risky settings, attack tools among them), threat_check puts a threat's
-// own findings, the internet-facing assets with known-exploited or
-// critical findings, and the coverage its checks need into one verdict.
-// Everything is composed from the existing API; nothing here changes
-// anything.
+// Named threats (attacker tools, campaigns, exploited vulnerabilities) and
+// the tools that answer "are we exposed to it?": list_risky_settings lists
+// config findings (risky settings, attack tools among them), threat_check
+// puts a threat's own findings, the internet-facing assets with
+// known-exploited or critical findings, and the coverage its checks need
+// into one verdict, and list_threat_notices lists the notices the
+// organisation was sent (docs/threat-notices.md). The threats come from the
+// server's catalogue (GET /api/v1/threats: internal/threats, embedded in the
+// release and merged with the signed feed). Everything is composed from the
+// existing API; nothing here changes anything.
 
 import (
 	"context"
@@ -18,84 +21,70 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
-// threatNeed is one kind of connection a threat's checks read.
-type threatNeed struct {
-	// Kind is the asset kind that must exist (host, image, repository);
-	// Mode, when set, the reporting mode those assets must have (agent).
-	Kind, Mode string
-	// Required: without it the threat is not checked at all. The others
-	// widen the check.
-	Required bool
-	// Checks says what the check looks for there; Connect is the Help
-	// page that sets the connection up.
-	Checks, Connect string
+// connectionAssets is the asset kind (and reporting mode) that gives a
+// threat's check a connection (threats.Connections).
+var connectionAssets = map[string]struct{ Kind, Mode string }{
+	threats.ConnHostAgent:    {"host", "agent"},
+	threats.ConnDocker:       {"image", ""},
+	threats.ConnRepository:   {"repository", ""},
+	threats.ConnCloudAccount: {"managed_service", ""},
+	threats.ConnKubernetes:   {"cluster", ""},
 }
 
-// threat is a named attacker tool or campaign Stackurity has checks for.
-type threat struct {
-	ID, Name  string
-	Aliases   []string
-	Summary   string
-	FirstSeen string // YYYY-MM-DD
-	Sources   []string
-	// Rules are the config-finding rules (category attack_tool) that
-	// detect it.
-	Rules []string
-	Needs []threatNeed
+// serverThreat is a catalogue entry as GET /api/v1/threats gives it.
+type serverThreat struct {
+	threats.Threat
+	HasCheck bool `json:"has_check"`
 }
 
-// threats is the list threat_check knows; add new entries at the end.
-var threats = []threat{{
-	ID:      "artex",
-	Name:    "ARTEX",
-	Aliases: []string{"artex pro", "artex mx", "artex v2", "scopeweaver", "antifox"},
-	Summary: "ARTEX is an open-source, AI-driven penetration-testing framework (a Go server with a Next.js web console, " +
-		"default port 8787) published on GitHub in July 2026 and taken down on 8 October 2026; copies and forks still " +
-		"circulate. Criminal and state-aligned groups use it to automate intrusions against internet-facing systems, and " +
-		"the FBI warned about it on 13 November 2026. It is not a vulnerability: there is nothing to patch. Two prebuilt " +
-		"Docker Hub images (tomicdd/artex and congdonglinux/artex) were reported to carry a backdoored login handler.",
-	FirstSeen: "2026-07-26",
-	Sources: []string{
-		"https://www.ic3.gov/CSA/2026/261113.pdf",
-		"https://threatdefence.com/article/artex-agentic-attack-framework-detection-hunting",
-		"https://socprime.com/blog/artex-detection-hunting-the-ai-pentest-framework-turned-attack-platform/",
-	},
-	Rules: []string{"attack-tool-artex", "attack-tool-artex-backdoored-image"},
-	Needs: []threatNeed{
-		{Kind: "host", Mode: "agent", Required: true,
-			Checks:  "the Stackurity agent on each server looks for an ARTEX console or binary installed or running there",
-			Connect: "/help/add-server"},
-		{Kind: "image",
-			Checks:  "container images (from the agent's Docker access or a connected registry) are checked for ARTEX and for the backdoored tomicdd/artex and congdonglinux/artex images",
-			Connect: "/help/container-images"},
-		{Kind: "repository",
-			Checks:  "connected repositories are checked for a copy of ARTEX or a file that runs its images",
-			Connect: "/help/repositories"},
-	},
-}}
+// loadThreats reads the server's threat catalogue (embedded in its release
+// and merged with the signed feed, so it may know threats added since this
+// build). A server older than GET /threats gets this build's embedded
+// catalogue; its has_check is then unknown (true).
+func loadThreats(ctx context.Context, api API) ([]serverThreat, error) {
+	var res struct {
+		Threats []serverThreat `json:"threats"`
+	}
+	err := api.Do(ctx, "GET", "/api/v1/threats", nil, nil, &res)
+	var ae *client.APIError
+	switch {
+	case err == nil:
+		return res.Threats, nil
+	case errors.As(err, &ae) && ae.Status == 404:
+		var out []serverThreat
+		for _, t := range threats.Embedded().Threats {
+			out = append(out, serverThreat{Threat: t, HasCheck: true})
+		}
+		return out, nil
+	}
+	return nil, err
+}
 
 // findThreat matches a name, id or alias, ignoring case and spacing.
-func findThreat(name string) (threat, bool) {
-	n := strings.Join(strings.Fields(strings.ToLower(name)), " ")
-	for _, t := range threats {
-		if n == t.ID || n == strings.ToLower(t.Name) {
-			return t, true
-		}
-		for _, a := range t.Aliases {
-			if n == a {
-				return t, true
-			}
+func findThreat(list []serverThreat, name string) (serverThreat, bool) {
+	c := &threats.Catalogue{}
+	for _, t := range list {
+		c.Threats = append(c.Threats, t.Threat)
+	}
+	t, ok := c.Find(name)
+	if !ok {
+		return serverThreat{}, false
+	}
+	for _, x := range list {
+		if x.ID == t.ID {
+			return x, true
 		}
 	}
-	return threat{}, false
+	return serverThreat{}, false
 }
 
-func knownThreats() []map[string]string {
-	out := make([]map[string]string, 0, len(threats))
-	for _, t := range threats {
-		out = append(out, map[string]string{"threat": t.ID, "name": t.Name, "summary": t.Summary})
+func knownThreats(list []serverThreat) []map[string]string {
+	out := make([]map[string]string, 0, len(list))
+	for _, t := range list {
+		out = append(out, map[string]string{"threat": t.ID, "name": t.Name, "kind": t.Kind, "summary": t.Summary})
 	}
 	return out
 }
@@ -171,6 +160,36 @@ func init() {
 		}, "threat"),
 		run: runThreatCheck,
 	}
+	tools["list_threat_notices"] = tool{
+		description: "The threat notices Stackurity sent this organisation (docs/threat-notices.md): one per new attack, attacker " +
+			"tool or actively exploited vulnerability, newest first. Each has the threat (id, name, kind, severity, summary, " +
+			"sources), the verdict (found: its checks found it on assets; covered: connected assets are checked and nothing was " +
+			"found; needs_connection: a connection the check needs is missing, listed in missing_connections with the Help page " +
+			"that sets it up; upgrade: this self-hosted server is older than the release with the check), the evidence as " +
+			"counts (findings, assets, connected assets per connection), when it was sent by banner, email and notification " +
+			"routes, and whether the caller hid the banner. Needs an organisation-wide security or admin role.",
+		schema: obj(map[string]any{}),
+		run: func(ctx context.Context, api API, _ map[string]any) (any, error) {
+			var res struct {
+				Items []map[string]any `json:"items"`
+			}
+			if err := api.Do(ctx, "GET", "/api/v1/threat-notices", nil, nil, &res); err != nil {
+				var ae *client.APIError
+				if errors.As(err, &ae) && (ae.Status == 403 || ae.Status == 404) {
+					msg := "Threat notices are shown to people with an organisation-wide security or admin role; this person's role cannot read them."
+					if ae.Status == 404 {
+						msg = "This Stackurity server has no threat notices yet: a self-hosted server must be upgraded to the latest version."
+					}
+					return map[string]any{"message": msg}, nil
+				}
+				return nil, err
+			}
+			if res.Items == nil {
+				res.Items = []map[string]any{}
+			}
+			return map[string]any{"notices": res.Items, "total": len(res.Items)}, nil
+		},
+	}
 }
 
 type threatAsset struct {
@@ -194,50 +213,92 @@ type exposedAsset struct {
 
 const (
 	threatPage       = 200
+	threatVulnsMax   = 10
 	exposedPerAsset  = 5
 	exposedAssetsMax = 20
 )
 
 func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error) {
 	name, _ := a["threat"].(string)
-	t, ok := findThreat(name)
+	known, err := loadThreats(ctx, api)
+	if err != nil {
+		return nil, err
+	}
+	t, ok := findThreat(known, name)
 	if !ok {
 		return map[string]any{"threat": strings.TrimSpace(name), "known": false,
 			"message":       "Stackurity has no checks for a threat by this name. These are the threats it checks for.",
-			"known_threats": knownThreats()}, nil
+			"known_threats": knownThreats(known)}, nil
 	}
-	out := map[string]any{"threat": t.ID, "name": t.Name, "summary": t.Summary, "first_seen": t.FirstSeen,
-		"sources": t.Sources, "note": dataNote}
+	out := map[string]any{"threat": t.ID, "name": t.Name, "kind": t.Kind, "severity": t.Severity, "summary": t.Summary,
+		"first_seen": t.FirstSeen, "sources": t.Sources, "min_version": t.MinVersion, "note": dataNote}
 	var gaps []string
 
-	// (a) the threat's own findings.
-	checks := true
-	found := []map[string]any{}
-	var cf struct {
-		Items []map[string]any `json:"items"`
-		Total int64            `json:"total"`
+	// (a) the threat's own findings: its risky-settings rules and its
+	// vulnerabilities.
+	checks := t.HasCheck
+	if !checks {
+		gaps = append(gaps, fmt.Sprintf("this Stackurity server is older than %s, the first release that checks for %s: a self-hosted server must be upgraded to the latest version", t.MinVersion, t.Name))
 	}
-	q := url.Values{"category": {"attack_tool"}, "status": {"open"}, "limit": {strconv.Itoa(threatPage)}}
-	if err := api.Do(ctx, "GET", "/api/v1/config-findings?"+q.Encode(), nil, nil, &cf); err != nil {
-		var ae *client.APIError
-		if errors.As(err, &ae) && ae.Status == 400 {
-			checks = false
-			gaps = append(gaps, "this Stackurity server has no attack-tool checks yet: a self-hosted server must be upgraded to the latest version to check for "+t.Name)
-		} else {
+	found := []map[string]any{}
+	if len(t.Detects.ConfigRules) > 0 {
+		var cf struct {
+			Items []map[string]any `json:"items"`
+			Total int64            `json:"total"`
+		}
+		q := url.Values{"status": {"open"}, "limit": {strconv.Itoa(threatPage)}}
+		if t.Kind == threats.KindAttackTool {
+			q.Set("category", "attack_tool")
+		}
+		if err := api.Do(ctx, "GET", "/api/v1/config-findings?"+q.Encode(), nil, nil, &cf); err != nil {
+			var ae *client.APIError
+			if errors.As(err, &ae) && ae.Status == 400 {
+				if checks {
+					gaps = append(gaps, "this Stackurity server has no attack-tool checks yet: a self-hosted server must be upgraded to the latest version to check for "+t.Name)
+				}
+				checks = false
+			} else {
+				return nil, err
+			}
+		}
+		rules := map[string]bool{}
+		for _, r := range t.Detects.ConfigRules {
+			rules[r] = true
+		}
+		for _, f := range cf.Items {
+			if r, _ := f["rule"].(string); rules[r] {
+				found = append(found, f)
+			}
+		}
+		if cf.Total > int64(len(cf.Items)) {
+			gaps = append(gaps, fmt.Sprintf("only the first %d of %d risky-settings findings were read", len(cf.Items), cf.Total))
+		}
+	}
+	for i, v := range t.Detects.CVEs {
+		if i == threatVulnsMax {
+			gaps = append(gaps, fmt.Sprintf("only the first %d of the threat's %d vulnerabilities were looked up", threatVulnsMax, len(t.Detects.CVEs)))
+			break
+		}
+		var sr struct {
+			Vulnerabilities []struct {
+				Key            string           `json:"key"`
+				Title          string           `json:"title"`
+				Severity       string           `json:"severity"`
+				KnownExploited bool             `json:"known_exploited"`
+				OpenFindings   int64            `json:"open_findings"`
+				AffectedAssets int64            `json:"affected_assets"`
+				Assets         []map[string]any `json:"assets"`
+			} `json:"vulnerabilities"`
+		}
+		if err := api.Do(ctx, "GET", "/api/v1/search?"+url.Values{"q": {v}}.Encode(), nil, nil, &sr); err != nil {
 			return nil, err
 		}
-	}
-	rules := map[string]bool{}
-	for _, r := range t.Rules {
-		rules[r] = true
-	}
-	for _, f := range cf.Items {
-		if r, _ := f["rule"].(string); rules[r] {
-			found = append(found, f)
+		for _, x := range sr.Vulnerabilities {
+			if x.OpenFindings > 0 {
+				found = append(found, map[string]any{"vulnerability": x.Key, "searched": v, "title": x.Title, "severity": x.Severity,
+					"known_exploited": x.KnownExploited, "open_findings": x.OpenFindings, "affected_assets": x.AffectedAssets, "assets": x.Assets})
+			}
 		}
-	}
-	if cf.Total > int64(len(cf.Items)) {
-		gaps = append(gaps, fmt.Sprintf("only the first %d of %d attack-tool findings were read", len(cf.Items), cf.Total))
 	}
 	out["found"] = found
 
@@ -259,22 +320,23 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 	var connected, missing []map[string]any
 	requiredMissing := false
 	for _, n := range t.Needs {
+		ka := connectionAssets[n.Connection]
 		count := 0
 		for _, x := range as.Items {
-			if x.Kind == n.Kind && (n.Mode == "" || x.Reporting.Mode == n.Mode) {
+			if x.Kind == ka.Kind && (ka.Mode == "" || x.Reporting.Mode == ka.Mode) {
 				count++
 			}
 		}
-		e := map[string]any{"kind": n.Kind, "required": n.Required, "checks": n.Checks}
-		if n.Mode != "" {
-			e["reporting"] = n.Mode
+		e := map[string]any{"connection": n.Connection, "kind": ka.Kind, "required": n.Required, "checks": n.Checks}
+		if ka.Mode != "" {
+			e["reporting"] = ka.Mode
 		}
 		if count > 0 {
 			e["assets"] = count
 			connected = append(connected, e)
 			continue
 		}
-		e["connect"] = n.Connect
+		e["connect"] = n.Help
 		missing = append(missing, e)
 		if n.Required {
 			requiredMissing = true

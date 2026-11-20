@@ -1,8 +1,8 @@
 # Outbound network access
 
-Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check), which sends nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All three can be turned off. Checking the server's [free key](install.md#the-free-key) or licence makes no request at all. [Ask Stackurity](#ask-stackurity), when you turn it on, sends questions and the data they need to the model provider. [Error reports](install.md#error-reports) (errors people hit in the dashboard, and the server's own failures) are kept in this installation's database and never sent anywhere: the dashboard reports them to its own server, which makes no outbound connection for them.
+Stackurity has no telemetry. Every outbound connection is listed below. The only requests that are not for your own data or integrations are the [update check](#update-check) and the [threat feed](#threat-feed), which send nothing about you, the [breached-password check](#breached-password-check), which sends five characters of a hash, and [feedback](#feedback), which a user sends on purpose. All of them can be turned off. Checking the server's [free key](install.md#the-free-key) or licence makes no request at all. [Ask Stackurity](#ask-stackurity), when you turn it on, sends questions and the data they need to the model provider. [Error reports](install.md#error-reports) (errors people hit in the dashboard, and the server's own failures) are kept in this installation's database and never sent anywhere: the dashboard reports them to its own server, which makes no outbound connection for them.
 
-Started with nothing configured but its database, an empty install connects on its own to four hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory) and `api.github.com` (the [update check](#update-check), within 30 seconds of starting). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here. The same tests run in the licensed and Stackurity Cloud builds; Cloud is started with the least configuration it accepts (billing off: no Razorpay keys), and connects to the same four hosts and, with both switches off, to nothing.
+Started with nothing configured but its database, an empty install connects on its own to five hosts: `www.cisa.gov`, `endoflife.date` and `epss.empiricalsecurity.com` (the [feeds](#intelligence-feeds) every install has; the others come with inventory), `api.github.com` (the [update check](#update-check), within 30 seconds of starting) and `stackurity.ai` (the [threat feed](#threat-feed), also within 30 seconds, turned off with the update check). With `STACKURITY_FEEDS=off` and `STACKURITY_UPDATE_CHECK=off` it connects to nothing but its database, and an agent reporting to it to nothing but the server. Every pull request checks both by starting the real server and refusing and recording every connection it tries ([`cmd/stackurity/egress_test.go`](../cmd/stackurity/egress_test.go)), so a new default destination fails CI until it is listed there and here. The same tests run in the licensed and Stackurity Cloud builds; Cloud is started with the least configuration it accepts (billing off: no Razorpay keys), and connects to the same five hosts and, with both switches off, to nothing.
 
 | Component | Destination | When | Data sent |
 |---|---|---|---|
@@ -38,6 +38,19 @@ The response is compared with the running version on your server, and the result
 
 - `STACKURITY_UPDATE_CHECK=off` turns it off: no request is made at all.
 - `STACKURITY_UPDATE_URL` points it at a mirror that serves the same JSON (for example a copy of the GitHub response on an internal web server).
+
+### Threat feed
+
+So that every organisation hears about new attacks, attacker tools and actively exploited vulnerabilities ([threat notices](threat-notices.md)), including on self-hosted servers released before the threat appeared, one server replica reads Stackurity's public, signed list of threats.
+
+| Destination | When | What is sent |
+|---|---|---|
+| `stackurity.ai` (`STACKURITY_THREAT_FEED_URL`) | Within 30 seconds of the first start, then every 6 hours | An anonymous `GET /threats/feed.json` and `GET /threats/feed.json.sig` with `User-Agent: stackurity` and `Accept: application/json`. Nothing else: no version, installation id, licence, hostname, organisation, inventory or cookie |
+
+The feed is verified against the Ed25519 public keys built into the release before anything in it is used; a feed that is unsigned, signed by another key, changed after signing, malformed or older than one already used is ignored and shown under **Admin → Platform health** (the server keeps the threats it knows). The comparison with your assets, the verdict for each organisation and every notice happen on your server: nothing about the result is sent anywhere. A failed fetch (offline, air-gapped) is logged at info level and keeps the last good feed; without any, the server uses the threats built into its release. The request goes through the same private-network guard as other server requests (system scope, so a mirror on your network works).
+
+- `STACKURITY_UPDATE_CHECK=off` turns it off too: no request is made at all.
+- `STACKURITY_THREAT_FEED_URL` points it at a mirror: copy `feed.json` and `feed.json.sig` unchanged (the signature is checked against the built-in key, so a mirror cannot change the content).
 
 ### Breached-password check
 
@@ -207,4 +220,4 @@ With [Connect GitLab](gitlab.md), a connected group's webhook (created by Stacku
 
 ## Restricting egress
 
-In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts, the feeds above and, unless you turned the update check off, `api.github.com`.
+In `deploy/docker-compose.yml` the database sits on an internal network with no internet route. To restrict the server further, put it behind an egress proxy and allow only your Git hosts, the feeds above and, unless you turned the update check off, `api.github.com` and `stackurity.ai`.

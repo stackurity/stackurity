@@ -6,6 +6,7 @@ package health
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sort"
@@ -16,6 +17,7 @@ import (
 	"github.com/stackurity/stackurity/internal/db"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
 type Severity string
@@ -31,7 +33,7 @@ type Problem struct {
 	Severity Severity `json:"severity"`
 	// Kind is feed, intelligence, task, jobs, platform, integration,
 	// notification, notifications (delivery backlog), collector, coverage,
-	// schema or config.
+	// schema, config or threats (the threat feed).
 	Kind   string `json:"kind"`
 	Key    string `json:"key"` // feed name, task name, job kind, ...
 	Title  string `json:"title"`
@@ -282,6 +284,16 @@ func (c *Checker) CheckFor(ctx context.Context, viewerWS int64) (*Report, error)
 			Scope:    Scope{Summary: "every browser session on this installation"},
 			NextStep: "Serve Stackurity over HTTPS through a reverse proxy and remove STACKURITY_COOKIE_SECURE=false.",
 			Docs:     "docs/install.md#tls"})
+	}
+	if raw, ok, err := c.Store.InstanceValue(ctx, threats.FeedStatusKey); err != nil {
+		return nil, err
+	} else if ok {
+		var fs threats.FeedStatus
+		if json.Unmarshal([]byte(raw), &fs) == nil {
+			if p, show := threatFeedProblem(fs, now); show {
+				r.Problems = append(r.Problems, p)
+			}
+		}
 	}
 	if r.Deliveries, r.OldestDueDeliverySeconds, r.FailingChannels, err = c.Store.DeliveryStats(ctx); err != nil {
 		return nil, err
@@ -635,6 +647,34 @@ func askSpendProblem(spent, capMicros int64) (Problem, bool) {
 	if spent >= capMicros {
 		p.Severity = Critical
 		p.Title = "Ask Stackurity has reached this month's spend cap"
+	}
+	return p, true
+}
+
+// threatFeedProblem reports a threat feed that was refused at its last
+// fetch (docs/threat-notices.md#the-feed): the server keeps the last good
+// catalogue, so notices about threats added since are not sent. A fetch
+// that failed for the network is not a problem (as for the release check).
+// A result older than a day is not shown: the feed may have been turned
+// off since.
+func threatFeedProblem(s threats.FeedStatus, now time.Time) (Problem, bool) {
+	if s.Problem == "" || now.Sub(s.CheckedAt) > 24*time.Hour {
+		return Problem{}, false
+	}
+	p := Problem{Severity: Warning, Kind: "threats", Key: "threat-feed", LastSuccess: s.LastSuccess, LastError: s.Detail,
+		Title:    "The threat feed was refused",
+		Detail:   "The last copy of the threat feed (stackurity.ai/threats/feed.json, or STACKURITY_THREAT_FEED_URL) was not used: " + s.Detail + ". The server keeps the threats it already knows; notices about threats added since are not sent.",
+		Scope:    Scope{Summary: "threat notices, in every workspace"},
+		NextStep: "Check that STACKURITY_THREAT_FEED_URL, if set, points at an unmodified copy of the feed and its feed.json.sig. If it is the default address, tell the Stackurity team.",
+		Docs:     "docs/threat-notices.md#the-feed"}
+	switch s.Problem {
+	case "bad_signature":
+		p.Title = "The threat feed's signature is not valid"
+	case "newer_schema":
+		p.Title = "The threat feed needs a newer Stackurity"
+		p.NextStep = "Upgrade Stackurity to the latest version to get notices about the newest threats."
+	case "replay":
+		p.Title = "The threat feed is older than one already used"
 	}
 	return p, true
 }

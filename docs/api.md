@@ -1845,6 +1845,18 @@ Starts Add to Slack for a channel of the project, like `POST /integrations/slack
 
 Starts Add to Teams for a channel of the project, like `POST /integrations/teams/install`, with the same condition.
 
+### `GET /threat-notices`
+
+**Who:** security (organisation-wide)
+
+The organisation's [threat notices](threat-notices.md), newest first: one per threat, with `threat_id`, the threat's `name`, `kind`, `severity`, `summary`, `sources` and `min_version`, the `verdict` now and the `notified_verdict` people were last told (`found`, `covered`, `needs_connection` or `upgrade`), the evidence as counts (`findings`, `assets`, `connected` per connection), `missing` and `missing_connections` (each with `label`, `required`, `checks` and its `help` page), the notice in words (`title`, `lines`: the same text as the email), the banner's `action` (`label` and `link`, or null when nothing needs doing), when each channel had it (`banner_at`, `email_at` with `email_result` `sent`, `no_mailer`, `no_recipients` or `failed`, `channels_at` with `channels_queued`), and `dismissed`: whether the caller hid the banner for the current verdict. Members with access to some projects only get 403: a notice speaks about every asset.
+
+### `POST /threat-notices/{id}/dismiss`
+
+**Who:** security (organisation-wide)
+
+Hides the notice's banner for the caller, for its current verdict: it shows again if the threat is later found. Returns 204. Recorded in the activity log.
+
 ### `GET /deliveries`
 
 **Who:** security
@@ -2544,6 +2556,12 @@ What the log records for the CVEs in `id` (repeat it, or separate IDs with comma
 **Who:** viewer
 
 The advisories in a group, by group key or CVE id.
+
+### `GET /threats`
+
+**Who:** viewer
+
+The [threat catalogue](threat-notices.md#the-catalogue) this server checks for: the one embedded in its release, merged with the signed threat feed (per threat, the higher `revision` wins). `schema`, `serial`, `generated_at` and `threats`, each with `id`, `revision`, `name`, `aliases`, `kind` (`attack_tool`, `exploited_vuln`, `campaign` or `practice`), `severity`, `summary`, `first_seen`, `published_at`, `sources`, `detects` (`config_rules` and `cves`), `needs` (each `connection`, `required`, `checks` and `help`), `min_version`, `source` (`embedded` or `feed`) and `has_check`: whether this server runs a release with the check. The same in every workspace.
 
 ### `GET /feeds`
 
@@ -3510,6 +3528,7 @@ Routes send to channels and filter by SOS only, kinds, environments, owner teams
 | `overdue` | with `escalation` (licensed), at most one message a day when urgent issues pass their fix deadline |
 | `connected` | a new asset's first scan, once |
 | `problems` | collection, feed, coverage and platform problems at `min_priority` or SOS, right away |
+| `threat_notices` | a [threat notice](threat-notices.md), once per threat and again only when it is found (event `threat_notice` in the payload). A route limited to projects or an asset gets only a `found` notice with a finding on its assets. Every older mode with right-away events includes it, and it does not change a route's `mode` |
 | `daily_summary` | a daily summary at `summary_time` |
 | `weekly_summary` | a weekly summary on `summary_day` at `summary_time` |
 
@@ -3521,9 +3540,9 @@ Everything sent right away in one evaluation cycle goes in one `urgent` message 
 
 | `mode` | `events` |
 |---|---|
-| `urgent_summary` (default) | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary` |
+| `urgent_summary` (default) | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `threat_notices`, `daily_summary` |
 | `urgent_weekly` | the same with `weekly_summary` instead of `daily_summary` |
-| `urgent_only` | `urgent`, `regressed`, `overdue`, `connected`, `problems` |
+| `urgent_only` | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `threat_notices` |
 | `daily` | `daily_summary` |
 | `weekly` | `weekly_summary` |
 

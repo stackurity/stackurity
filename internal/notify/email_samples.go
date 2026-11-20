@@ -9,6 +9,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/feedback"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
 // EmailSample is one kind of email the server sends, with realistic data:
@@ -109,6 +110,10 @@ func EmailSamples(base string) []EmailSample {
 		Summary: []string{"[P1] CVE-2026-31337 in openssl 3.0.13 (remote code execution)", "web-1: 3 new urgent issues", "billing-api: 2 new urgent issues"},
 		Link:    d.url("/integrations/deliveries", nil)}
 
+	artex, _ := threats.Embedded().Get("artex")
+	threatRouted := ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Found, Findings: 1, Assets: 1}, at)
+	threatRouted.Route, threatRouted.SettingsLink = route.Name, d.settingsURL()
+
 	released, _ := feedback.RenderEmail("released", feedback.EmailData{Ref: "FB-123", Version: "0.19.1",
 		Resolution: "The filter is now kept when you go back."})
 	wontFix, _ := feedback.RenderEmail("wont_fix", feedback.EmailData{Ref: "FB-124",
@@ -133,6 +138,15 @@ func EmailSamples(base string) []EmailSample {
 		{Name: "account-feedback-wont-fix", Message: FeedbackUpdateEmail(wontFix.Subject, wontFix.Body, at), Team: true},
 		{Name: "account-inactive-pause-first", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(15*24*time.Hour), false, at)},
 		{Name: "account-inactive-pause-last", Message: InactivePauseEmail(base, "Northwind Traders", at.Add(5*24*time.Hour), true, at)},
+		{Name: "account-threat-notice-found", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Found, Findings: 2, Assets: 1,
+			Connected: map[string]int{threats.ConnHostAgent: 12, threats.ConnDocker: 30}}, at)},
+		{Name: "account-threat-notice-covered", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Covered,
+			Connected: map[string]int{threats.ConnHostAgent: 12, threats.ConnDocker: 30}, Missing: artex.Needs[2:]}, at)},
+		{Name: "account-threat-notice-needs-connection", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.NeedsConnection,
+			Connected: map[string]int{threats.ConnRepository: 4}, Missing: artex.Needs[:2]}, at)},
+		{Name: "account-threat-notice-upgrade", Message: ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Upgrade, Running: "0.20.15"}, at)},
+		{Name: "account-threat-notice-copy", Message: ThreatNoticeCopyMessage(artex, map[string]int{threats.Covered: 41, threats.NeedsConnection: 17, threats.Found: 1},
+			ThreatNoticeMessage(base, artex, NoticeFacts{Verdict: threats.Covered, Connected: map[string]int{threats.ConnHostAgent: 3}}, at), at)},
 		{Name: "alerts-confirm-address", Message: alertConfirmEmail("Northwind Traders", d.url("/email/confirm", nil)+"#"+confTok,
 			d.url("/email/block", nil)+"#"+confTok, d.url("/email/block/one-click", url.Values{"t": {confTok}}), at),
 			Notification: true, Secrets: []string{confTok}},
@@ -146,6 +160,7 @@ func EmailSamples(base string) []EmailSample {
 		notification("notification-overdue", overdue),
 		notification("notification-connected", connected),
 		notification("notification-digest", digest),
+		notification("notification-threat-notice", threatRouted),
 		bulkSample(base, "bulk-release", store.CategoryMarketing, Message{Title: "Stackurity 0.17.0: what changed",
 			Summary:  []string{"Email now looks like the rest of Stackurity, and every kind of email is checked before a release."},
 			Sections: []Section{{Title: "Added", Items: []Item{{Text: "A button for the main action of every email"}, {Text: "Dark mode in mail clients that support it"}}}},
