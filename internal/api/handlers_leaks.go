@@ -26,6 +26,10 @@ const FeatureLeaks = "leaks"
 // stores a batch's config_findings (store/config_findings.go).
 const FeatureConfigFindings = "config_findings"
 
+// FeatureConfigAttackTools, in GET /meta's features, says that POST
+// /ingest takes config findings of category attack_tool.
+const FeatureConfigAttackTools = "config_attack_tools"
+
 // FeatureReachability, in GET /meta's features, says that POST /ingest
 // accepts and stores observations' reachability (model.Reachability).
 // Collectors send it only to servers that list it: older servers reject
