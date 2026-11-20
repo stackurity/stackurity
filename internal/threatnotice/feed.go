@@ -19,7 +19,9 @@ import (
 	"io"
 	"log/slog"
 	"math/rand/v2"
+	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"os"
 	"strings"
@@ -123,17 +125,68 @@ func NewFetcher(st *store.Store, log *slog.Logger, cfg FeedConfig) *Fetcher {
 	if u == "" {
 		u = DefaultFeedURL
 	}
-	dial := netguard.Policy{}.DialContext // public addresses only
-	if cfg.Mirror {
-		dial = netguard.DialContext // system scope: private networks too
-	}
 	origin, _ := url.Parse(u)
+	// The operator's proxy (HTTPS_PROXY) may be on a private network: the
+	// address it names is dialled as it is. Everything else keeps the rule
+	// for the feed.
+	var proxies sync.Map
+	proxy := func(req *http.Request) (*url.URL, error) {
+		p, err := proxyFromEnvironment(req)
+		if p != nil {
+			proxies.Store(proxyAddr(p), true)
+		}
+		return p, err
+	}
+	dial := func(ctx context.Context, network, addr string) (net.Conn, error) {
+		switch _, isProxy := proxies.Load(addr); {
+		case isProxy:
+			return netguard.Policy{AllowPrivate: true}.DialContext(ctx, network, addr)
+		case cfg.Mirror:
+			return netguard.DialContext(ctx, network, addr) // system scope: private networks too
+		}
+		// Public addresses only, and the name as fully qualified: a lookup
+		// must never try the resolver's search domains.
+		return netguard.Policy{}.DialContext(ctx, network, fullyQualified(addr))
+	}
 	hc := &http.Client{Timeout: feedTimeout,
-		Transport: &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, Proxy: http.ProxyFromEnvironment},
+		Transport: &http.Transport{DialContext: dial, TLSHandshakeTimeout: 10 * time.Second, DisableKeepAlives: true, Proxy: proxy},
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			return checkRedirect(origin, cfg.Mirror, req, via)
 		}}
 	return &Fetcher{Store: st, Log: log, URL: u, Jitter: 30 * time.Second, open: threats.OpenEnvelope, HTTP: hc}
+}
+
+// proxyFromEnvironment is the operator's proxy (tests replace it: the
+// standard library reads the environment once per process).
+var proxyFromEnvironment = http.ProxyFromEnvironment
+
+// proxyAddr is the host:port a proxy URL is dialled at.
+func proxyAddr(p *url.URL) string {
+	if p.Port() != "" {
+		return p.Host
+	}
+	port := "80"
+	switch p.Scheme {
+	case "https":
+		port = "443"
+	case "socks5", "socks5h":
+		port = "1080"
+	}
+	return net.JoinHostPort(p.Hostname(), port)
+}
+
+// fullyQualified ends a host name with a dot ("stackurity.ai."), so the
+// resolver looks up that name only, never name + a search domain. An IP
+// address is left as it is.
+func fullyQualified(addr string) string {
+	host, port, err := net.SplitHostPort(addr)
+	if err != nil || host == "" || strings.HasSuffix(host, ".") {
+		return addr
+	}
+	if _, err := netip.ParseAddr(host); err == nil {
+		return addr
+	}
+	return net.JoinHostPort(host+".", port)
 }
 
 // checkRedirect refuses a redirect to plain HTTP from HTTPS, more than 3,

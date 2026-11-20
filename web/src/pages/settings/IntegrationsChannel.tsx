@@ -104,7 +104,8 @@ const cardSection =
     </Card>
   );
 
-function newRule(channelId: number, name: string): Route {
+/** A new rule; webhooks opt in to threat notices (a receiver may not expect them). */
+function newRule(channelId: number, name: string, kind = ""): Route {
   return {
     id: 0,
     name,
@@ -124,7 +125,7 @@ function newRule(channelId: number, name: string): Route {
     timezone: browserTimeZone(),
     max_per_hour: 20,
     mode: "custom",
-    events: ["urgent", "problems", "threat_notices", "daily_summary"],
+    events: kind === "webhook" ? ["urgent", "problems", "daily_summary"] : ["urgent", "problems", "threat_notices", "daily_summary"],
     event_channels: {},
     summary_time: "09:00",
     summary_day: "monday",
@@ -512,7 +513,7 @@ function RuleEditor({
   onCancel?: () => void;
   canDelete?: boolean;
 }) {
-  const [r, setR] = useState<Route>(() => (route ? draftOf(route) : newRule(channel.id, channel.name)));
+  const [r, setR] = useState<Route>(() => (route ? draftOf(route) : newRule(channel.id, channel.name, channel.kind)));
   const [localErr, setLocalErr] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
   const act = useAction();
@@ -711,9 +712,9 @@ function ChannelEditor({
   onDiscard: () => void;
 }) {
   const jira = isTracker(channel.kind);
-  const [base, setBase] = useState(() => JSON.stringify(rule ? draftOf(rule) : newRule(channel.id, channel.name)));
+  const [base, setBase] = useState(() => JSON.stringify(rule ? draftOf(rule) : newRule(channel.id, channel.name, channel.kind)));
   const [r, setR] = useState<Route>(() => {
-    const d = rule ? draftOf(rule) : newRule(channel.id, channel.name);
+    const d = rule ? draftOf(rule) : newRule(channel.id, channel.name, channel.kind);
     if (!preset) return d;
     const events = d.events?.includes(preset.event) ? d.events : ROUTE_EVENTS.filter((x) => x === preset.event || d.events?.includes(x));
     return { ...d, events, event_channels: { ...(d.event_channels ?? {}), [preset.event]: preset.channel.id } };

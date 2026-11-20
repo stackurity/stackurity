@@ -92,9 +92,9 @@ func TestThreatEvidenceAndConnections(t *testing.T) {
 	vs, err := s.ThreatConnectionVersions(ctx)
 	got := map[string]int{}
 	for _, v := range vs {
-		got[v.Connection+"@"+v.Version] += v.Assets
+		got[v.Connection+"/"+v.Collector+"@"+v.Version] += v.Assets
 	}
-	if err != nil || got["host_agent@v0.20.17"] != 1 || got["host_agent@"] != 1 || len(got) != 2 {
+	if err != nil || got["host_agent/test@v0.20.17"] != 1 || got["host_agent/test@"] != 1 || len(got) != 2 {
 		t.Errorf("connection versions: %v %v", got, err)
 	}
 }
@@ -163,6 +163,15 @@ func TestThreatNotices(t *testing.T) {
 		if (got.EmailAt == nil) != (i < store.ThreatEmailAttempts) || got.EmailAttempts != i {
 			t.Fatalf("attempt %d: email_at %v, attempts %d", i, got.EmailAt, got.EmailAttempts)
 		}
+	}
+	// Told again, the email fails once, then fixed: the pending retry
+	// (about "found") is given up.
+	n, err = s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "found", Findings: 1, Assets: 1}, store.NoticeTell)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.ThreatNoticeEmailed(ctx, n.ID, "failed", 2); err != nil {
+		t.Fatal(err)
 	}
 	// Fixed: the told verdict follows quietly, so "found" is news again.
 	r, err := s.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered"}, store.NoticeReset)

@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/auth"
@@ -92,5 +93,44 @@ func TestThreatNoticesAPI(t *testing.T) {
 	sec.do("GET", "/api/v1/threat-notices", nil, &list)
 	if list.Items[0].Dismissed || list.Items[0].Action == nil || list.Items[0].Action.Label != "See findings" {
 		t.Errorf("found: %+v", list.Items[0])
+	}
+}
+
+// Webhook routes opt in to threat notices: defaults and mode changes never
+// add them; naming them in events does, and keeping events keeps them.
+func TestWebhookThreatNoticesOptIn(t *testing.T) {
+	e := newEnv(t)
+	e.user("admin@x.io", auth.RoleAdmin)
+	admin := e.login("admin@x.io")
+	var ch struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "h", "config": map[string]string{"url": "https://h.example/x"}}, &ch); code != 201 {
+		t.Fatalf("channel: %d", code)
+	}
+	type route struct {
+		ID     int64
+		Events []string
+	}
+	has := func(r route) bool { return slices.Contains(r.Events, "threat_notices") }
+	var r route
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "default", "channel_id": ch.ID}, &r); code != 201 || has(r) {
+		t.Fatalf("default webhook route: %d %v", code, r.Events)
+	}
+	if code := admin.do("PUT", fmt.Sprint("/api/v1/routes/", r.ID), map[string]any{"name": "default", "channel_id": ch.ID, "mode": "urgent_only"}, &r); code != 200 || has(r) {
+		t.Fatalf("mode change: %d %v", code, r.Events)
+	}
+	if code := admin.do("PUT", fmt.Sprint("/api/v1/routes/", r.ID), map[string]any{"name": "default", "channel_id": ch.ID,
+		"events": []string{"urgent", "threat_notices"}}, &r); code != 200 || !has(r) {
+		t.Fatalf("opted in: %d %v", code, r.Events)
+	}
+	if code := admin.do("PUT", fmt.Sprint("/api/v1/routes/", r.ID), map[string]any{"name": "renamed", "channel_id": ch.ID}, &r); code != 200 || !has(r) {
+		t.Fatalf("kept: %d %v", code, r.Events)
+	}
+	// Other channels get it by default.
+	var sl struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/channels", map[string]any{"kind": "email", "name": "e", "config": map[string]any{"host": "smtp.example.org", "port": 587, "from": "a@example.org", "to": []string{"b@example.org"}}}, &sl); code != 201 {
+		t.Skipf("email channel: %d", code)
+	}
+	if code := admin.do("POST", "/api/v1/routes", map[string]any{"name": "mail", "channel_id": sl.ID}, &r); code != 201 || !has(r) {
+		t.Errorf("default email route: %d %v", code, r.Events)
 	}
 }

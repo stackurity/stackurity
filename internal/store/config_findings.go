@@ -308,13 +308,18 @@ type ConfigScan struct {
 	Reason      string    `json:"reason"`
 	Found       int       `json:"found"`
 	ScannedAt   time.Time `json:"scanned_at"`
+	// CollectorVersion is the version that collector recorded on the
+	// asset's latest complete collection ("" when none).
+	CollectorVersion string `json:"collector_version"`
 }
 
 // ConfigScans returns the last config check of an asset by each collector.
 // None means it was never checked, which is not the same as clean.
 func (s *Store) ConfigScans(ctx context.Context, assetID int64) ([]ConfigScan, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT collector_id, complete, reason, found, scanned_at FROM config_scans
-		WHERE asset_id = $1 ORDER BY collector_id`, assetID)
+	rows, err := s.Pool.Query(ctx, `SELECT s.collector_id, s.complete, s.reason, s.found, s.scanned_at,
+		  COALESCE((SELECT c.collector_version FROM collections c WHERE c.asset_id = s.asset_id AND c.collector_id = s.collector_id
+		    AND c.complete ORDER BY c.received_at DESC, c.id DESC LIMIT 1), '')
+		FROM config_scans s WHERE s.asset_id = $1 ORDER BY s.collector_id`, assetID)
 	if err != nil {
 		return nil, err
 	}

@@ -113,6 +113,7 @@ func (s *Store) ThreatEvidence(ctx context.Context, rules, vulns, signalRules []
 // asset has no complete collection).
 type ConnectionVersion struct {
 	Connection string
+	Collector  string // the collector id of that collection
 	Version    string
 	Assets     int
 }
@@ -123,20 +124,31 @@ type ConnectionVersion struct {
 // A check only ran on an asset whose collector had it, so the caller
 // compares the version with the threat's min_version.
 func (s *Store) ThreatConnectionVersions(ctx context.Context) ([]ConnectionVersion, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT conn, COALESCE(v, ''), count(*) FROM (
-			SELECT CASE WHEN a.kind = 'host' AND a.report_source = 'agent' THEN 'host_agent'
+	rows, err := s.Pool.Query(ctx, `SELECT x.conn, COALESCE(l.collector_id, ''), COALESCE(l.collector_version, ''), count(*) FROM (
+			SELECT a.id, CASE WHEN a.kind = 'host' AND a.report_source = 'agent' THEN 'host_agent'
 			            WHEN a.kind = 'image' THEN 'docker'
 			            WHEN a.kind = 'repository' THEN 'repository'
 			            WHEN a.kind = 'managed_service' THEN 'cloud_account'
-			            WHEN a.kind = 'cluster' THEN 'kubernetes' END AS conn,
-			       (SELECT c.collector_version FROM collections c WHERE c.asset_id = a.id AND c.complete
-			        ORDER BY c.received_at DESC, c.id DESC LIMIT 1) AS v
+			            WHEN a.kind = 'cluster' THEN 'kubernetes' END AS conn
 			FROM assets a WHERE a.merged_into IS NULL AND a.collection_status <> 'removed') x
-		WHERE conn IS NOT NULL GROUP BY 1, 2 ORDER BY 1, 2`)
+		LEFT JOIN LATERAL (SELECT c.collector_id, c.collector_version FROM collections c WHERE c.asset_id = x.id AND c.complete
+			ORDER BY c.received_at DESC, c.id DESC LIMIT 1) l ON true
+		WHERE x.conn IS NOT NULL GROUP BY 1, 2, 3 ORDER BY 1, 2, 3`)
 	if err != nil {
 		return nil, err
 	}
 	return pgx.CollectRows(rows, pgx.RowToStructByPos[ConnectionVersion])
+}
+
+// ToldFacts are a notice's facts as they were told.
+type ToldFacts struct {
+	Findings  int            `json:"findings"`
+	Assets    int            `json:"assets"`
+	Signals   int            `json:"signals"`
+	Connected map[string]int `json:"connected"`
+	Outdated  map[string]int `json:"outdated"`
+	Missing   []string       `json:"missing"`
+	AssetIDs  []int64        `json:"asset_ids"`
 }
 
 // ThreatNotice is an organisation's notice about one threat.
@@ -151,29 +163,32 @@ type ThreatNotice struct {
 	Outdated        map[string]int `json:"outdated"`
 	Signals         int            `json:"signals"`
 	Missing         []string       `json:"missing"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
-	BannerAt        time.Time      `json:"banner_at"`
-	EmailAt         *time.Time     `json:"email_at"`
-	EmailResult     string         `json:"email_result"`
-	EmailRecipients int            `json:"email_recipients"`
-	EmailAttempts   int            `json:"email_attempts"`
-	ChannelsAt      *time.Time     `json:"channels_at"`
-	ChannelsQueued  int            `json:"channels_queued"`
+	// Told is what people were told with NotifiedVerdict (SaveThreatNotice
+	// with NoticeTell records the notice as it is then).
+	Told            ToldFacts  `json:"-"`
+	CreatedAt       time.Time  `json:"created_at"`
+	UpdatedAt       time.Time  `json:"updated_at"`
+	BannerAt        time.Time  `json:"banner_at"`
+	EmailAt         *time.Time `json:"email_at"`
+	EmailResult     string     `json:"email_result"`
+	EmailRecipients int        `json:"email_recipients"`
+	EmailAttempts   int        `json:"email_attempts"`
+	ChannelsAt      *time.Time `json:"channels_at"`
+	ChannelsQueued  int        `json:"channels_queued"`
 	// Dismissed: the caller hid the banner for the current verdict
 	// (ListThreatNotices only).
 	Dismissed bool `json:"dismissed"`
 }
 
 const threatNoticeCols = `n.id, n.threat_id, n.verdict, n.notified_verdict, n.findings, n.assets, n.connected, n.outdated, n.signals,
-	n.missing, n.created_at, n.updated_at, n.banner_at, n.email_at, n.email_result, n.email_recipients, n.email_attempts, n.channels_at,
+	n.missing, n.told, n.created_at, n.updated_at, n.banner_at, n.email_at, n.email_result, n.email_recipients, n.email_attempts, n.channels_at,
 	n.channels_queued`
 
 func scanThreatNotice(row pgx.Row, extra ...any) (*ThreatNotice, error) {
 	var n ThreatNotice
-	var conn, old []byte
+	var conn, old, told []byte
 	dest := []any{&n.ID, &n.ThreatID, &n.Verdict, &n.NotifiedVerdict, &n.Findings, &n.Assets, &conn, &old, &n.Signals, &n.Missing,
-		&n.CreatedAt, &n.UpdatedAt, &n.BannerAt, &n.EmailAt, &n.EmailResult, &n.EmailRecipients, &n.EmailAttempts, &n.ChannelsAt,
+		&told, &n.CreatedAt, &n.UpdatedAt, &n.BannerAt, &n.EmailAt, &n.EmailResult, &n.EmailRecipients, &n.EmailAttempts, &n.ChannelsAt,
 		&n.ChannelsQueued}
 	if err := row.Scan(append(dest, extra...)...); err != nil {
 		return nil, err
@@ -182,6 +197,9 @@ func scanThreatNotice(row pgx.Row, extra ...any) (*ThreatNotice, error) {
 		return nil, err
 	}
 	if err := json.Unmarshal(old, &n.Outdated); err != nil {
+		return nil, err
+	}
+	if err := json.Unmarshal(told, &n.Told); err != nil {
 		return nil, err
 	}
 	if n.Missing == nil {
@@ -217,7 +235,9 @@ const (
 )
 
 // SaveThreatNotice records the verdict and its evidence (see NoticeSave),
-// and returns the notice as stored.
+// and returns the notice as stored. With NoticeTell, n.Told is recorded as
+// what people are told (assetIDs: the assets with findings); NoticeReset
+// gives up an email still being retried, which spoke of the old verdict.
 func (s *Store) SaveThreatNotice(ctx context.Context, n ThreatNotice, mode NoticeSave) (*ThreatNotice, error) {
 	if n.Connected == nil {
 		n.Connected = map[string]int{}
@@ -237,21 +257,28 @@ func (s *Store) SaveThreatNotice(ctx context.Context, n ThreatNotice, mode Notic
 		return nil, err
 	}
 	tell := mode == NoticeTell
+	told, err := json.Marshal(ToldFacts{Findings: n.Findings, Assets: n.Assets, Signals: n.Signals, Connected: n.Connected,
+		Outdated: n.Outdated, Missing: n.Missing, AssetIDs: n.Told.AssetIDs})
+	if err != nil {
+		return nil, err
+	}
 	return scanThreatNotice(s.Pool.QueryRow(ctx, `INSERT INTO threat_notices AS n (threat_id, verdict, notified_verdict, findings, assets,
-		  connected, outdated, signals, missing)
-		VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8)
+		  connected, outdated, signals, missing, told)
+		VALUES ($1, $2, $2, $3, $4, $5, $6, $7, $8, $11)
 		ON CONFLICT (workspace_id, threat_id) DO UPDATE SET verdict = EXCLUDED.verdict, findings = EXCLUDED.findings,
 		  assets = EXCLUDED.assets, connected = EXCLUDED.connected, outdated = EXCLUDED.outdated, signals = EXCLUDED.signals,
 		  missing = EXCLUDED.missing, updated_at = now(),
 		  notified_verdict = CASE WHEN $9 OR $10 THEN EXCLUDED.verdict ELSE n.notified_verdict END,
+		  told = CASE WHEN $9 THEN EXCLUDED.told ELSE n.told END,
 		  banner_at = CASE WHEN $9 THEN clock_timestamp() ELSE n.banner_at END,
-		  email_at = CASE WHEN $9 THEN NULL ELSE n.email_at END,
+		  email_at = CASE WHEN $9 THEN NULL WHEN $10 THEN COALESCE(n.email_at, now()) ELSE n.email_at END,
 		  email_result = CASE WHEN $9 THEN '' ELSE n.email_result END,
 		  email_recipients = CASE WHEN $9 THEN 0 ELSE n.email_recipients END,
 		  email_attempts = CASE WHEN $9 THEN 0 ELSE n.email_attempts END,
 		  channels_at = CASE WHEN $9 THEN NULL ELSE n.channels_at END,
 		  channels_queued = CASE WHEN $9 THEN 0 ELSE n.channels_queued END
-		RETURNING `+threatNoticeCols, n.ThreatID, n.Verdict, n.Findings, n.Assets, conn, old, n.Signals, n.Missing, tell, mode == NoticeReset))
+		RETURNING `+threatNoticeCols, n.ThreatID, n.Verdict, n.Findings, n.Assets, conn, old, n.Signals, n.Missing, tell, mode == NoticeReset,
+		told))
 }
 
 // ThreatEmailAttempts is how often a failed notice email is tried before

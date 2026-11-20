@@ -88,7 +88,7 @@ func (f *feedServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	f.requests = append(f.requests, r)
 	switch {
 	case f.down:
-		http.Error(w, "down", 503)
+		http.Error(w, "down", http.StatusServiceUnavailable)
 	case r.URL.Path == "/threats/feed.signed.json":
 		_, _ = w.Write(f.env)
 	default:
@@ -501,7 +501,7 @@ func memberID(t *testing.T, st *store.Store, ctx context.Context, email string) 
 }
 
 func hostBatch(name, machine, version string) *model.ObservationBatch {
-	b := model.NewBatch(model.Collector{ID: "test", Version: version, Method: "agent"},
+	b := model.NewBatch(model.Collector{ID: "linux-agent", Version: version, Method: "agent"},
 		model.AssetRef{Kind: model.AssetHost, Name: name, Identifiers: []model.Identifier{{Scheme: "machine-id", Value: machine}},
 			Attributes: map[string]string{"os": "debian"}})
 	b.Observations = append(b.Observations, model.Observation{Purl: "pkg:deb/debian/bash@5.2", Location: "/var/lib/dpkg/status"})
@@ -599,5 +599,91 @@ func TestOperatorCopy(t *testing.T) {
 	b, _ := json.Marshal(m.sent[0].m)
 	if strings.Contains(string(b), "Acme") || strings.Contains(string(b), "Globex") || !strings.Contains(string(b), "Need a connection to be checked: 2") {
 		t.Errorf("copy: %s", b)
+	}
+}
+
+// An operator's proxy on a private address is dialled; the feed itself is
+// still fetched by name through it, and names are looked up fully
+// qualified.
+func TestFeedThroughPrivateProxy(t *testing.T) {
+	ctx := tenant.System(context.Background())
+	st := store.New(testdb.New(t))
+	env := threats.SignEnvelope(feedJSON(t, 3), testPriv)
+	var asked string
+	proxy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		asked = r.URL.String() // a proxy request carries the absolute URL
+		_, _ = w.Write(env)
+	}))
+	defer proxy.Close()
+	pu, _ := url.Parse(proxy.URL)
+	restore := proxyFromEnvironment
+	proxyFromEnvironment = func(*http.Request) (*url.URL, error) { return pu, nil }
+	defer func() { proxyFromEnvironment = restore }()
+	f := NewFetcher(st, quiet, FeedConfig{Enabled: true, URL: "http://feed.stackurity.test/threats/feed.signed.json"})
+	got, err := f.get(ctx, f.URL)
+	if err != nil || string(got) != string(env) || asked != "http://feed.stackurity.test/threats/feed.signed.json" {
+		t.Fatalf("through a private proxy: %v %q", err, asked)
+	}
+	for in, want := range map[string]string{"stackurity.ai:443": "stackurity.ai.:443", "stackurity.ai.:443": "stackurity.ai.:443",
+		"10.0.0.1:443": "10.0.0.1:443", "[::1]:443": "[::1]:443"} {
+		if got := fullyQualified(in); got != want {
+			t.Errorf("fullyQualified(%s) = %s", in, got)
+		}
+	}
+	if proxyAddr(&url.URL{Scheme: "http", Host: "proxy.internal"}) != "proxy.internal:80" ||
+		proxyAddr(&url.URL{Scheme: "https", Host: "10.1.1.1:8443"}) != "10.1.1.1:8443" {
+		t.Error("proxyAddr")
+	}
+}
+
+type flakyMailer struct {
+	mailer
+	fail bool
+}
+
+func (m *flakyMailer) SendMail(ctx context.Context, to []string, msg notify.Message) error {
+	if m.fail {
+		return io.ErrUnexpectedEOF
+	}
+	return m.mailer.SendMail(ctx, to, msg)
+}
+
+// A failed email is retried with what people were told; once the threat
+// was fixed (a reset), nothing about it is sent any more.
+func TestNotifierEmailRetries(t *testing.T) {
+	bg := context.Background()
+	st := store.New(testdb.New(t))
+	w1, _, err := st.CreateWorkspace(bg, "One", "one", "admin@one.test", "Admin", "Pw-admin-123456")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := tenant.WithWorkspace(bg, w1.ID)
+	m := &flakyMailer{fail: true}
+	n := &Notifier{Store: st, Catalogues: &Catalogues{Store: st, open: openTest}, Mail: m, Running: "0.20.17", Log: quiet,
+		Now: func() time.Time { return time.Date(2026, 11, 21, 9, 0, 0, 0, time.UTC) }}
+	run := func() {
+		t.Helper()
+		if err := n.Run(ctx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Told needs_connection; the email fails.
+	run()
+	notice, _ := st.GetThreatNotice(ctx, "artex")
+	if notice.EmailResult != "failed" || notice.EmailAt != nil {
+		t.Fatalf("failed email: %+v", notice)
+	}
+	// An agent with the check reports: covered, quietly. The retry still
+	// says what was told (needs the agent), not "covered".
+	if _, err := st.Ingest(ctx, hostBatch("web-1", "m1", "0.20.17"), 0); err != nil {
+		t.Fatal(err)
+	}
+	m.fail = false
+	run()
+	if len(m.sent) != 1 || !strings.Contains(m.sent[0].m.Title, "needs the Stackurity agent") {
+		t.Fatalf("retry: %+v", m.sent)
+	}
+	if notice, _ = st.GetThreatNotice(ctx, "artex"); notice.Verdict != threats.Covered || notice.EmailResult != "sent" {
+		t.Fatalf("after the retry: %+v", notice)
 	}
 }

@@ -1,6 +1,12 @@
 package threats
 
-import "time"
+import (
+	"regexp"
+	"strings"
+	"time"
+
+	"github.com/stackurity/stackurity/internal/version"
+)
 
 // FeedStatusKey is the instance value (store.InstanceValue) that holds
 // the last feed fetch's FeedStatus, written by internal/threatnotice and
@@ -71,22 +77,26 @@ type Assessment struct {
 
 // Assess gives the verdict for one organisation. conns counts the
 // organisation's assets per connection whose latest complete collection
-// came from a collector with the check (CollectorHasCheck); outdated
-// counts those whose collector is older, which are not checked; running is the server's comparable
-// release ("" for a development build); cloud is true on Stackurity Cloud.
-// ok is false when nothing should be said yet: Stackurity Cloud has not
-// deployed the release with the check.
+// came from a collector with the check (CollectorChecked); outdated counts
+// those whose collector is older, which were not checked; running is the
+// server's comparable release ("" for a development build); cloud is true
+// on Stackurity Cloud. ok is false when nothing should be said yet:
+// Stackurity Cloud has not deployed the release with the check.
+//
+// A required connection with any outdated asset is missing: one updated
+// agent among ten old ones must not say "nothing to do". The notice then
+// says how many to update; once all are, the verdict becomes covered.
 func Assess(t Threat, ev Evidence, conns, outdated map[string]int, running string, cloud bool) (a Assessment, ok bool) {
 	a = Assessment{Evidence: ev, Connected: map[string]int{}, Outdated: map[string]int{}, Missing: []Need{}}
 	anyConnected, requiredMissing := false, false
 	for _, n := range t.Needs {
-		c := conns[n.Connection]
+		c, o := conns[n.Connection], outdated[n.Connection]
 		a.Connected[n.Connection] = c
-		if o := outdated[n.Connection]; o > 0 {
+		if o > 0 {
 			a.Outdated[n.Connection] = o
 		}
-		if c > 0 {
-			anyConnected = true
+		anyConnected = anyConnected || c > 0
+		if c > 0 && (o == 0 || !n.Required) {
 			continue
 		}
 		a.Missing = append(a.Missing, n)
@@ -117,7 +127,49 @@ func Worsened(old, now string) bool {
 	return now == Found && old != Found
 }
 
-// CollectorHasCheck reports whether a collection made by a collector of
-// version v (as recorded, normalised to "0.20.17"; "" for a development
-// build) can have found the threat: v is min_version or later.
-func (t Threat) CollectorHasCheck(v string) bool { return t.HasCheck(v) }
+// coreCollectors are the collectors released with Stackurity itself (the
+// agents and the server's own scanners): their version is Stackurity's, so
+// it can be compared with min_version. The scan CLI, plugins and uploads
+// carry versions of their own.
+var coreCollectors = map[string]bool{
+	"linux-agent": true, "linux-software": true, "linux-apps": true, "linux-docker": true,
+	"macos-agent": true, "macos-software": true, "macos-apps": true, "windows-agent": true,
+	"lockfile-scanner": true, "image-scanner": true, "container-registry": true,
+}
+
+// CollectorChecked reports whether a collection by collector id, of
+// recorded version v, ran t's check: a core collector whose version is a
+// release ("0.20.17", "v0.20.17-ee", a describe suffix) of min_version or
+// later. Any other collector, and a version that is not a release (dev,
+// demo, a commit), counts as not checked, unless serverDev: a development
+// server compares nothing.
+func (t Threat) CollectorChecked(id, v string, serverDev bool) bool {
+	if serverDev {
+		return true
+	}
+	r := ReleaseVersion(v)
+	if !coreCollectors[id] || r == "" {
+		return false
+	}
+	c, err := version.CompareSemver(r, t.MinVersion)
+	return err == nil && c >= 0
+}
+
+var (
+	releaseRE  = regexp.MustCompile(`^v?\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$`)
+	describeRE = regexp.MustCompile(`-\d+-g[0-9a-f]+$`)
+)
+
+// ReleaseVersion turns a build version into a comparable release, or ""
+// when it is not one (dev, a commit). It drops "-ee", "-dirty" and git
+// describe's "-<n>-g<hash>", like internal/updates.Running.
+func ReleaseVersion(v string) string {
+	v = strings.TrimSpace(v)
+	v = strings.TrimSuffix(v, "-ee")
+	v = strings.TrimSuffix(v, "-dirty")
+	v = describeRE.ReplaceAllString(v, "")
+	if !releaseRE.MatchString(v) {
+		return ""
+	}
+	return strings.TrimPrefix(v, "v")
+}

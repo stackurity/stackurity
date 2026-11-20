@@ -39,6 +39,9 @@ type threatAPI struct {
 	assets       []tAsset
 	findings     []tFinding
 	scanned      map[int64]bool // hosts whose config checks ran
+	// scanVersion is the agent version those checks recorded ("" means
+	// 0.20.17, the first with ARTEX's check).
+	scanVersion string
 	// extraTotal is added to the assets' total, as if more existed.
 	extraTotal int
 	// catalogue answers GET /api/v1/threats ("": 404, an older server);
@@ -104,7 +107,11 @@ func (f *threatAPI) Do(_ context.Context, method, path string, _ io.Reader, _ ma
 		id, _ := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(p, "/api/v1/assets/"), "/config-findings"), 10, 64)
 		scans := []map[string]any{}
 		if f.scanned[id] {
-			scans = append(scans, map[string]any{"collector_id": "agent", "complete": true})
+			v := f.scanVersion
+			if v == "" {
+				v = "0.20.17"
+			}
+			scans = append(scans, map[string]any{"collector_id": "linux-agent", "complete": true, "collector_version": v})
 		}
 		body = map[string]any{"items": []any{}, "total": 0, "scans": scans}
 	case p == "/api/v1/assets":
@@ -389,5 +396,21 @@ func TestListThreatNotices(t *testing.T) {
 	out = callTool(t, &Server{API: api, Version: "t"}, "list_threat_notices", nil)
 	if out["notices"] != nil || !strings.Contains(fmt.Sprint(out["message"]), "security or admin role") {
 		t.Errorf("a viewer: %v", out)
+	}
+}
+
+// A server whose agent predates the check ran config checks, but not this
+// threat's: it is not checked, as in the threat notice.
+func TestThreatCheckOldAgentNotChecked(t *testing.T) {
+	api := estate()
+	api.scanVersion = "v0.20.15"
+	out := check(t, api, "artex")
+	if out["verdict"] == "covered" || out["checked"] != false {
+		t.Errorf("old agents: %v", out)
+	}
+	api = estate()
+	api.scanVersion = "dev"
+	if out := check(t, api, "artex"); out["verdict"] == "covered" {
+		t.Errorf("a development agent on a release server counts as checked: %v", out)
 	}
 }

@@ -127,38 +127,53 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		m.Title = fmt.Sprintf("%s: your connected assets are checked, nothing was found", t.Name)
 		m.Summary = []string{inTheWild,
 			"Your connected assets are checked for it (" + connectedText(f.Connected) + ") and nothing was found. You don't need to do anything."}
-		if len(f.Missing) > 0 {
-			var more []string
-			for _, n := range f.Missing {
+		var more, update []string
+		for _, n := range f.Missing {
+			if f.Outdated[n.Connection] > 0 {
+				update = append(update, threats.ConnectionLabel(n.Connection))
+			} else {
 				more = append(more, threats.ConnectionLabel(n.Connection))
 			}
+		}
+		if len(more) > 0 {
 			m.Summary = append(m.Summary, "To check more of your estate for it, also connect "+strings.Join(more, " and ")+".")
+		}
+		if len(update) > 0 {
+			m.Summary = append(m.Summary, fmt.Sprintf("To check more of your estate for it, also update %s to Stackurity %s or later.", strings.Join(update, " and "), t.MinVersion))
 		}
 		m.Link, m.LinkLabel = absURL(base, "/help/threat-notices"), "About threat notices"
 	case threats.NeedsConnection:
-		m.Title = fmt.Sprintf("%s: Stackurity can check for it, but needs %s", t.Name, threats.ConnectionLabel(firstMissing(f.Missing)))
+		first := mainNeed(f.Missing)
+		update := f.Outdated[first.Connection] > 0
+		m.Title = fmt.Sprintf("%s: Stackurity can check for it, but needs %s", t.Name, threats.ConnectionLabel(first.Connection))
+		if update {
+			m.Title = fmt.Sprintf("%s: Stackurity can check for it, once %s is updated", t.Name, threats.ConnectionLabel(first.Connection))
+		}
 		m.Summary = []string{inTheWild, "We can check for it, but need this from you:"}
 		for _, n := range f.Missing {
 			line := "Connect " + threats.ConnectionLabel(n.Connection) + ". What it checks: " + n.Checks + "."
+			how := " How to connect: "
 			if o := f.Outdated[n.Connection]; o > 0 {
-				line = fmt.Sprintf("Update %s: %s connected but last checked by a release older than %s, the first with this check. What it checks: %s.",
-					threats.ConnectionLabel(n.Connection), plainCount(o, "asset is", "assets are"), t.MinVersion, n.Checks)
+				pron := "they are"
+				if o == 1 {
+					pron = "it is"
+				}
+				line = fmt.Sprintf("Update %s: %s last checked by a release older than %s, the first with this check, so %s not checked yet. What it checks: %s.",
+					threats.ConnectionLabel(n.Connection), plainCount(o, "asset was", "assets were"), t.MinVersion, pron, n.Checks)
+				how = " How to update: "
 			}
 			if l := absURL(base, n.Help); l != "" {
-				line += " How to connect: " + l
+				line += how + l
 			}
 			m.Summary = append(m.Summary, line)
 		}
 		if c := connectedText(f.Connected); c != "" {
 			m.Summary = append(m.Summary, "Already checked, nothing found: "+c+".")
 		}
-		if len(f.Missing) > 0 {
-			m.Link, m.LinkLabel = absURL(base, f.Missing[0].Help), "Connect"
-			if first := firstMissing(f.Missing); f.Outdated[first] > 0 {
-				m.Title = fmt.Sprintf("%s: Stackurity can check for it, once %s is updated", t.Name, threats.ConnectionLabel(first))
-				if f.Outdated[f.Missing[0].Connection] > 0 {
-					m.LinkLabel = "Update"
-				}
+		if first.Connection != "" {
+			m.Link, m.LinkLabel = absURL(base, first.Help), "Connect"
+			if update {
+				m.LinkLabel = "Update"
 			}
 		}
 	case threats.Upgrade:
@@ -191,16 +206,18 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 	return m
 }
 
-func firstMissing(ns []threats.Need) string {
+// mainNeed is the need a notice leads with: the first required one, else
+// the first. Its title, button and link all come from it.
+func mainNeed(ns []threats.Need) threats.Need {
 	for _, n := range ns {
 		if n.Required {
-			return n.Connection
+			return n
 		}
 	}
 	if len(ns) > 0 {
-		return ns[0].Connection
+		return ns[0]
 	}
-	return ""
+	return threats.Need{}
 }
 
 // ThreatNoticeCopyMessage is the operator's one summary of a threat's

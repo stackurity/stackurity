@@ -3193,9 +3193,10 @@ export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
 
 /**
  * The events for the two quick questions (onboarding). Null when neither is
- * chosen: nothing would ever be sent.
+ * chosen: nothing would ever be sent. threatNotices false leaves threat
+ * notices out (webhooks opt in to them).
  */
-export function eventsFor(now: SendNow, summary: SummaryChoice): { events: RouteEvent[]; new_min_priority: Priority } | null {
+export function eventsFor(now: SendNow, summary: SummaryChoice, threatNotices = true): { events: RouteEvent[]; new_min_priority: Priority } | null {
   if (now === "none" && summary === "none") return null;
   const events: RouteEvent[] =
     now === "all"
@@ -3203,6 +3204,8 @@ export function eventsFor(now: SendNow, summary: SummaryChoice): { events: Route
       : now === "urgent"
         ? ["urgent", "regressed", "connected", "problems", "threat_notices"]
         : [];
+  // Webhooks opt in to threat notices: a receiver may not expect them.
+  if (!threatNotices) events.splice(0, events.length, ...events.filter((e) => e !== "threat_notices"));
   if (summary === "daily") events.push("daily_summary");
   if (summary === "weekly") events.push("weekly_summary");
   return { events, new_min_priority: "P4" };

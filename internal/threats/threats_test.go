@@ -198,8 +198,34 @@ func TestAssess(t *testing.T) {
 	if a, _ := Assess(artex, Evidence{Signals: 1}, all, nil, "0.20.17", true); a.Verdict != Covered {
 		t.Errorf("signals only: %s", a.Verdict)
 	}
-	if !artex.CollectorHasCheck("0.20.17") || artex.CollectorHasCheck("0.20.16") {
-		t.Error("CollectorHasCheck")
+	// One updated agent among old ones is not covered: the required
+	// connection still has outdated servers.
+	a, _ = Assess(artex, Evidence{}, map[string]int{ConnHostAgent: 1, ConnDocker: 1, ConnRepository: 1}, map[string]int{ConnHostAgent: 9}, "0.20.17", true)
+	if a.Verdict != NeedsConnection || a.Outdated[ConnHostAgent] != 9 || len(a.Missing) != 1 || a.Missing[0].Connection != ConnHostAgent {
+		t.Errorf("1 of 10 agents updated: %+v", a)
+	}
+	// Outdated optional assets with others checked do not stop covered.
+	if a, _ := Assess(artex, Evidence{}, all, map[string]int{ConnDocker: 4}, "0.20.17", true); a.Verdict != Covered {
+		t.Errorf("old images beside checked ones: %s", a.Verdict)
+	}
+	for _, c := range []struct {
+		id, v string
+		dev   bool
+		want  bool
+	}{
+		{"linux-agent", "0.20.17", false, true},
+		{"linux-agent", "v0.20.18-ee", false, true},
+		{"linux-docker", "0.20.17-3-gabcdef0", false, true},
+		{"linux-agent", "0.20.16", false, false},
+		{"linux-agent", "dev", false, false},
+		{"linux-agent", "", false, false},
+		{"plugin:kubernetes", "1.0.0", false, false},
+		{"stackurity-scan", "9.9.9", false, false},
+		{"linux-agent", "dev", true, true},
+	} {
+		if got := artex.CollectorChecked(c.id, c.v, c.dev); got != c.want {
+			t.Errorf("CollectorChecked(%q, %q, dev %v) = %v", c.id, c.v, c.dev, got)
+		}
 	}
 	if !Worsened(Covered, Found) || !Worsened(NeedsConnection, Found) || Worsened(Found, Covered) || Worsened(Covered, NeedsConnection) || Worsened(Found, Found) {
 		t.Error("Worsened")

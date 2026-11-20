@@ -48,7 +48,10 @@ func (s *Server) listThreats(w http.ResponseWriter, r *http.Request) {
 	for _, t := range c.Threats {
 		items = append(items, threatOut{Threat: t, HasCheck: s.hasThreatCheck(t)})
 	}
-	writeJSON(w, 200, map[string]any{"schema": c.Schema, "serial": c.Serial, "generated_at": c.GeneratedAt, "threats": items})
+	// server_release: this server's comparable release, "" for a
+	// development build (which compares no collector versions).
+	writeJSON(w, 200, map[string]any{"schema": c.Schema, "serial": c.Serial, "generated_at": c.GeneratedAt, "expires_at": c.ExpiresAt,
+		"server_release": updates.Running(s.Version), "threats": items})
 }
 
 // noticeNeed is a missing connection, with its Help page.
@@ -123,8 +126,16 @@ func (s *Server) listThreatNotices(w http.ResponseWriter, r *http.Request) {
 			o.Action = &noticeAction{Label: "See findings", Link: notify.ThreatFindingsPath(t)}
 		case threats.NeedsConnection:
 			if len(o.Needs) > 0 {
-				o.Action = &noticeAction{Label: "Connect", Link: o.Needs[0].Help}
-				if o.Needs[0].Outdated > 0 {
+				// The need the notice leads with: the first required one.
+				lead := o.Needs[0]
+				for _, n := range o.Needs {
+					if n.Required {
+						lead = n
+						break
+					}
+				}
+				o.Action = &noticeAction{Label: "Connect", Link: lead.Help}
+				if lead.Outdated > 0 {
 					o.Action.Label = "Update"
 				}
 			}

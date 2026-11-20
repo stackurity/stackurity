@@ -38,6 +38,9 @@ var connectionAssets = map[string]struct{ Kind, Mode string }{
 type serverThreat struct {
 	threats.Threat
 	HasCheck bool `json:"has_check"`
+	// serverDev: the server is a development build, which compares no
+	// collector versions (threats.CollectorChecked).
+	serverDev bool
 }
 
 // loadThreats reads the server's threat catalogue (embedded in its release
@@ -46,12 +49,16 @@ type serverThreat struct {
 // catalogue; its has_check is then unknown (true).
 func loadThreats(ctx context.Context, api API) ([]serverThreat, error) {
 	var res struct {
-		Threats []serverThreat `json:"threats"`
+		Threats       []serverThreat `json:"threats"`
+		ServerRelease *string        `json:"server_release"`
 	}
 	err := api.Do(ctx, "GET", "/api/v1/threats", nil, nil, &res)
 	var ae *client.APIError
 	switch {
 	case err == nil:
+		for i := range res.Threats {
+			res.Threats[i].serverDev = res.ServerRelease != nil && *res.ServerRelease == ""
+		}
 		return res.Threats, nil
 	case errors.As(err, &ae) && ae.Status == 404:
 		var out []serverThreat
@@ -304,7 +311,7 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 	if err != nil {
 		return nil, err
 	}
-	hc, err := probeHosts(ctx, api, hosts, serverChecks, r)
+	hc, err := probeHosts(ctx, api, t, hosts, serverChecks, r)
 	if err != nil {
 		return nil, err
 	}
@@ -434,7 +441,7 @@ func readExposableAssets(ctx context.Context, api API, r *threatRun) (map[int64]
 
 // probeHosts counts the agent servers whose config checks ran, skipping
 // stale ones, reading at most maxHostProbes.
-func probeHosts(ctx context.Context, api API, hosts []threatAsset, serverChecks bool, r *threatRun) (hostCoverage, error) {
+func probeHosts(ctx context.Context, api API, t serverThreat, hosts []threatAsset, serverChecks bool, r *threatRun) (hostCoverage, error) {
 	var hc hostCoverage
 	var agentHosts []threatAsset
 	for _, h := range hosts {
@@ -456,12 +463,21 @@ func probeHosts(ctx context.Context, api API, hosts []threatAsset, serverChecks 
 	}
 	for _, h := range probes {
 		var res struct {
-			Scans []map[string]any `json:"scans"`
+			Scans []struct {
+				CollectorID      string `json:"collector_id"`
+				CollectorVersion string `json:"collector_version"`
+			} `json:"scans"`
 		}
 		if err := api.Do(ctx, "GET", "/api/v1/assets/"+strconv.FormatInt(h.ID, 10)+"/config-findings?limit=1", nil, nil, &res); err != nil {
 			return hc, err
 		}
-		if len(res.Scans) > 0 {
+		// Checked only by a collector that has the threat's check: the rule
+		// threat notices use (threats.CollectorChecked).
+		ran := false
+		for _, s := range res.Scans {
+			ran = ran || t.CollectorChecked(s.CollectorID, s.CollectorVersion, t.serverDev)
+		}
+		if ran {
 			hc.checked++
 		} else {
 			hc.unchecked++
@@ -483,8 +499,8 @@ func threatCoverage(ctx context.Context, api API, t serverThreat, hc hostCoverag
 			e["checked"], e["not_checked"], e["stale"] = hc.checked, hc.unchecked, hc.stale
 			count = hc.checked
 			if hc.unchecked > 0 {
-				e["not_checked_reason"] = "config checks never ran on these servers: an agent without config checks (Windows), " +
-					"checks turned off, or an agent older than the release with these checks"
+				e["not_checked_reason"] = "config checks with this threat's check never ran on these servers: an agent without config checks (Windows), " +
+					"checks turned off, or an agent older than the release with the check (min_version)"
 			}
 		} else {
 			var res struct {

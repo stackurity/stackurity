@@ -65,6 +65,11 @@ CREATE TABLE threat_notices (
     -- (something only named like it).
     outdated         jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(outdated) = 'object'),
     signals          integer NOT NULL DEFAULT 0 CHECK (signals >= 0),
+    -- What people were told with notified_verdict (the same counts, the
+    -- missing connections, and the assets with findings for scoping
+    -- routes): an email retried, or a delivery a restart cut short, says
+    -- that, not a later quiet change.
+    told             jsonb NOT NULL DEFAULT '{}' CHECK (jsonb_typeof(told) = 'object'),
     missing          text[] NOT NULL DEFAULT '{}',
     created_at       timestamptz NOT NULL DEFAULT now(),
     updated_at       timestamptz NOT NULL DEFAULT now(),
@@ -120,4 +125,3 @@ ALTER TABLE routes ADD CONSTRAINT routes_events_check
 UPDATE routes SET events = events || '{threat_notices}'::text[]
     WHERE NOT ('threat_notices' = ANY (events)) AND (events && '{urgent,new_issues,problems}'::text[])
       AND NOT EXISTS (SELECT 1 FROM channels c WHERE c.id = routes.channel_id AND c.kind = 'webhook');
-ALTER TABLE routes ALTER COLUMN events SET DEFAULT '{urgent,regressed,overdue,connected,problems,daily_summary,threat_notices}';

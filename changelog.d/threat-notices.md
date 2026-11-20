@@ -7,6 +7,6 @@
 ### Upgrading
 
 - Migration `0118_threat_notices` adds `threats_seen`, `threat_notices` and `threat_notice_dismissals` (row-level security on the last two), widens the `routes.events` check to allow `threat_notices`, and gives that event to every route that sends urgent alerts, new issues or problems right away, **except webhook routes**. Additive.
-- Webhook receivers: a new message kind, `"event": "threat_notice"` (`kind` `threat`; see [api.md](docs/api.md#notification-messages)). Existing webhook routes get it only once **Threat notices** is ticked on the route; new webhook routes have it by default.
+- Webhook receivers: a new message kind, `"event": "threat_notice"` (`kind` `threat`; see [api.md](docs/api.md#notification-messages)). Webhook routes, existing and new, get it only once **Threat notices** is ticked on the route.
 - A new default outbound request: `stackurity.ai` (the threat feed), turned off with the release check (`STACKURITY_UPDATE_CHECK=off`).
 - Stackurity Cloud: `STACKURITY_THREAT_NOTICE_COPY_TO` sends the operator one summary per threat (counts per verdict and one example, no names).
