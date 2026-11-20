@@ -245,6 +245,22 @@ func pageAll[T any](ctx context.Context, api API, path string, q url.Values) (it
 	}
 }
 
+// threatRun collects what a threat check could not read.
+type threatRun struct {
+	gaps      []string
+	truncated bool
+}
+
+func (r *threatRun) gap(truncated bool, format string, args ...any) {
+	r.gaps = append(r.gaps, fmt.Sprintf(format, args...))
+	r.truncated = r.truncated || truncated
+}
+
+// hostCoverage is how many agent servers ran the config checks.
+type hostCoverage struct {
+	checked, unchecked, stale int
+}
+
 func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error) {
 	name, _ := a["threat"].(string)
 	t, ok := findThreat(name)
@@ -253,45 +269,71 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 			"message":       "Stackurity has no checks for a threat by this name. These are the threats it checks for.",
 			"known_threats": knownThreats()}, nil
 	}
-	out := map[string]any{"threat": t.ID, "name": t.Name, "summary": t.Summary, "first_seen": t.FirstSeen,
-		"sources": t.Sources, "note": dataNote}
-	gaps := []string{}
-	truncated := false
+	r := &threatRun{gaps: []string{}}
+	found, serverChecks, err := readThreatFindings(ctx, api, t, r)
+	if err != nil {
+		return nil, err
+	}
+	eligible, hosts, err := readExposableAssets(ctx, api, r)
+	if err != nil {
+		return nil, err
+	}
+	hc, err := probeHosts(ctx, api, hosts, serverChecks, r)
+	if err != nil {
+		return nil, err
+	}
+	coverage, requiredMissing, err := threatCoverage(ctx, api, t, hc)
+	if err != nil {
+		return nil, err
+	}
+	list, err := readExposure(ctx, api, eligible, r)
+	if err != nil {
+		return nil, err
+	}
+	checked := serverChecks && hc.checked > 0
+	return map[string]any{"threat": t.ID, "name": t.Name, "summary": t.Summary, "first_seen": t.FirstSeen,
+		"sources": t.Sources, "note": dataNote, "found": found, "coverage": coverage, "checked": checked,
+		"exposed_assets": list, "data_gaps": r.gaps,
+		"verdict": decideVerdict(len(found) > 0, len(list) > 0, checked, requiredMissing, r.truncated || hc.unchecked > 0)}, nil
+}
 
-	// (a) the threat's own findings.
-	serverChecks := true
-	found := []map[string]any{}
+// readThreatFindings reads the open attack-tool findings of t's rules.
+// serverChecks is false on a server without the attack_tool category.
+func readThreatFindings(ctx context.Context, api API, t threat, r *threatRun) (found []map[string]any, serverChecks bool, err error) {
+	found = []map[string]any{}
 	cf, cut, err := pageAll[map[string]any](ctx, api, "/api/v1/config-findings?",
 		url.Values{"category": {"attack_tool"}, "status": {"open"}})
 	if err != nil {
 		var ae *client.APIError
 		if !errors.As(err, &ae) || ae.Status != 400 {
-			return nil, err
+			return nil, false, err
 		}
-		serverChecks = false
-		gaps = append(gaps, "this Stackurity server has no attack-tool checks yet, so nothing was looked for: a self-hosted "+
-			"server must be upgraded to the latest version to check for "+t.Name)
+		r.gap(false, "this Stackurity server has no attack-tool checks yet, so nothing was looked for: a self-hosted "+
+			"server must be upgraded to the latest version to check for %s", t.Name)
+		return found, false, nil
 	}
 	if cut {
-		truncated = true
-		gaps = append(gaps, fmt.Sprintf("only the first %d attack-tool findings were read", len(cf)))
+		r.gap(true, "only the first %d attack-tool findings were read", len(cf))
 	}
 	rules := map[string]bool{}
-	for _, r := range t.Rules {
-		rules[r] = true
+	for _, rule := range t.Rules {
+		rules[rule] = true
 	}
 	for _, f := range cf {
-		if r, _ := f["rule"].(string); rules[r] {
+		if rule, _ := f["rule"].(string); rules[rule] {
 			found = append(found, f)
 		}
 	}
-	out["found"] = found
+	return found, true, nil
+}
 
-	// The assets that can be internet-facing: every asset marked exposed,
-	// and the kinds whose unknown exposure may be.
+// readExposableAssets reads the assets that can be internet-facing: every
+// asset marked exposed, and the kinds whose unknown exposure may be. It
+// also returns every host.
+func readExposableAssets(ctx context.Context, api API, r *threatRun) (map[int64]threatAsset, []threatAsset, error) {
 	eligible := map[int64]threatAsset{}
-	assetsCut := false
 	var hosts []threatAsset
+	assetsCut := false
 	reads := []url.Values{{"exposed": {"true"}}}
 	for _, k := range []string{"host", "application", "workload", "managed_service"} {
 		reads = append(reads, url.Values{"kind": {k}})
@@ -299,7 +341,7 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 	for _, q := range reads {
 		items, cut, err := pageAll[threatAsset](ctx, api, "/api/v1/assets?", q)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		assetsCut = assetsCut || cut
 		for _, x := range items {
@@ -312,67 +354,70 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		}
 	}
 	if assetsCut {
-		truncated = true
-		gaps = append(gaps, fmt.Sprintf("more than %d assets of one kind: not every asset was read for exposure and coverage", threatMaxRows))
+		r.gap(true, "more than %d assets of one kind: not every asset was read for exposure and coverage", threatMaxRows)
 	}
+	return eligible, hosts, nil
+}
 
-	// (c) coverage: servers whose config checks ran, the others, and the
-	// optional connections.
+// probeHosts counts the agent servers whose config checks ran, skipping
+// stale ones, reading at most maxHostProbes.
+func probeHosts(ctx context.Context, api API, hosts []threatAsset, serverChecks bool, r *threatRun) (hostCoverage, error) {
+	var hc hostCoverage
 	var agentHosts []threatAsset
-	staleHosts := 0
 	for _, h := range hosts {
-		if h.Reporting.Mode != "agent" {
-			continue
+		switch {
+		case h.Reporting.Mode != "agent":
+		case h.Status == "stale" || h.Status == "removed":
+			hc.stale++
+		default:
+			agentHosts = append(agentHosts, h)
 		}
-		if h.Status == "stale" || h.Status == "removed" {
-			staleHosts++
-			continue
-		}
-		agentHosts = append(agentHosts, h)
 	}
-	checkedHosts, uncheckedHosts := 0, 0
 	probes := agentHosts
 	if len(probes) > maxHostProbes {
 		probes = probes[:maxHostProbes]
-		truncated = true
-		gaps = append(gaps, fmt.Sprintf("whether config checks ran was read for %d of %d servers", maxHostProbes, len(agentHosts)))
+		r.gap(true, "whether config checks ran was read for %d of %d servers", maxHostProbes, len(agentHosts))
 	}
-	if serverChecks {
-		for _, h := range probes {
-			var res struct {
-				Scans []map[string]any `json:"scans"`
-			}
-			if err := api.Do(ctx, "GET", "/api/v1/assets/"+strconv.FormatInt(h.ID, 10)+"/config-findings?limit=1", nil, nil, &res); err != nil {
-				return nil, err
-			}
-			if len(res.Scans) > 0 {
-				checkedHosts++
-			} else {
-				uncheckedHosts++
-			}
+	if !serverChecks {
+		return hc, nil
+	}
+	for _, h := range probes {
+		var res struct {
+			Scans []map[string]any `json:"scans"`
+		}
+		if err := api.Do(ctx, "GET", "/api/v1/assets/"+strconv.FormatInt(h.ID, 10)+"/config-findings?limit=1", nil, nil, &res); err != nil {
+			return hc, err
+		}
+		if len(res.Scans) > 0 {
+			hc.checked++
+		} else {
+			hc.unchecked++
 		}
 	}
-	var connected, missing []map[string]any
+	return hc, nil
+}
+
+// threatCoverage lists t's connections as connected or missing.
+func threatCoverage(ctx context.Context, api API, t threat, hc hostCoverage) (map[string]any, bool, error) {
+	connected, missing := []map[string]any{}, []map[string]any{}
 	requiredMissing := false
 	for _, n := range t.Needs {
 		e := map[string]any{"kind": n.Kind, "required": n.Required, "checks": n.Checks}
 		count := 0
 		if n.Kind == "host" && n.Mode == "agent" {
 			e["reporting"] = n.Mode
-			e["checked"] = checkedHosts
-			e["not_checked"] = uncheckedHosts
-			e["stale"] = staleHosts
-			count = checkedHosts
-			if uncheckedHosts > 0 {
-				e["not_checked_reason"] = "config checks never ran on these servers: an agent without config checks (Windows), checks turned off, " +
-					"or an agent older than the release with these checks"
+			e["checked"], e["not_checked"], e["stale"] = hc.checked, hc.unchecked, hc.stale
+			count = hc.checked
+			if hc.unchecked > 0 {
+				e["not_checked_reason"] = "config checks never ran on these servers: an agent without config checks (Windows), " +
+					"checks turned off, or an agent older than the release with these checks"
 			}
 		} else {
 			var res struct {
 				Total int64 `json:"total"`
 			}
 			if err := api.Do(ctx, "GET", "/api/v1/assets?"+url.Values{"kind": {n.Kind}, "limit": {"1"}}.Encode(), nil, nil, &res); err != nil {
-				return nil, err
+				return nil, false, err
 			}
 			count = int(res.Total)
 			e["assets"] = count
@@ -383,22 +428,14 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		}
 		e["connect"] = n.Connect
 		missing = append(missing, e)
-		if n.Required {
-			requiredMissing = true
-		}
+		requiredMissing = requiredMissing || n.Required
 	}
-	if connected == nil {
-		connected = []map[string]any{}
-	}
-	if missing == nil {
-		missing = []map[string]any{}
-	}
-	out["coverage"] = map[string]any{"connected": connected, "missing": missing}
-	checked := serverChecks && checkedHosts > 0
-	out["checked"] = checked
+	return map[string]any{"connected": connected, "missing": missing}, requiredMissing, nil
+}
 
-	// (b) internet-facing assets with active known-exploited or critical
-	// findings.
+// readExposure lists the eligible assets with active known-exploited or
+// critical findings, most urgent first.
+func readExposure(ctx context.Context, api API, eligible map[int64]threatAsset, r *threatRun) ([]*exposedAsset, error) {
 	exposed := map[int64]*exposedAsset{}
 	seen := map[int64]bool{}
 	for _, fl := range []struct {
@@ -413,34 +450,15 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 			return nil, err
 		}
 		if cut {
-			truncated = true
-			gaps = append(gaps, fmt.Sprintf("only the first %d active %s findings were read", len(items), fl.label))
+			r.gap(true, "only the first %d active %s findings were read", len(items), fl.label)
 		}
 		for _, f := range items {
 			if seen[f.ID] {
 				continue
 			}
 			seen[f.ID] = true
-			x, ok := eligible[f.AssetID]
-			if !ok {
-				continue // not internet-facing (every eligible asset was read unless assetsCut)
-			}
-			e := exposed[f.AssetID]
-			if e == nil {
-				e = &exposedAsset{AssetID: f.AssetID, AssetName: f.AssetName, Exposure: "may_be_internet_facing", Findings: []finding{}}
-				if x.Exposed != nil {
-					e.Exposure = "internet_facing"
-				}
-				exposed[f.AssetID] = e
-			}
-			if f.KnownExploited {
-				e.KnownExploited++
-			}
-			if f.Severity == "critical" {
-				e.Critical++
-			}
-			if len(e.Findings) < exposedPerAsset {
-				e.Findings = append(e.Findings, f)
+			if x, ok := eligible[f.AssetID]; ok {
+				addExposed(exposed, x, f)
 			}
 		}
 	}
@@ -449,39 +467,61 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 		sort.SliceStable(e.Findings, func(i, j int) bool { return e.Findings[i].KnownExploited && !e.Findings[j].KnownExploited })
 		list = append(list, e)
 	}
-	sort.Slice(list, func(i, j int) bool {
-		a, b := list[i], list[j]
-		if (a.Exposure == "internet_facing") != (b.Exposure == "internet_facing") {
-			return a.Exposure == "internet_facing"
-		}
-		if a.KnownExploited != b.KnownExploited {
-			return a.KnownExploited > b.KnownExploited
-		}
-		if a.Critical != b.Critical {
-			return a.Critical > b.Critical
-		}
-		return a.AssetID < b.AssetID
-	})
+	sort.Slice(list, func(i, j int) bool { return exposedBefore(list[i], list[j]) })
 	if len(list) > exposedAssetsMax {
-		gaps = append(gaps, fmt.Sprintf("%d exposed assets; the %d most urgent are listed", len(list), exposedAssetsMax))
+		r.gap(false, "%d exposed assets; the %d most urgent are listed", len(list), exposedAssetsMax)
 		list = list[:exposedAssetsMax]
 	}
-	out["exposed_assets"] = list
+	return list, nil
+}
 
-	// (d) the verdict. covered only when every part was read and every
-	// connected server ran the checks.
-	verdict := "covered"
-	switch {
-	case len(found) > 0:
-		verdict = "found"
-	case len(list) > 0:
-		verdict = "exposed"
-	case !checked || requiredMissing:
-		verdict = "not_checked"
-	case truncated || uncheckedHosts > 0:
-		verdict = "partial"
+func addExposed(exposed map[int64]*exposedAsset, x threatAsset, f finding) {
+	e := exposed[f.AssetID]
+	if e == nil {
+		e = &exposedAsset{AssetID: f.AssetID, AssetName: f.AssetName, Exposure: "may_be_internet_facing", Findings: []finding{}}
+		if x.Exposed != nil {
+			e.Exposure = "internet_facing"
+		}
+		exposed[f.AssetID] = e
 	}
-	out["verdict"] = verdict
-	out["data_gaps"] = gaps
-	return out, nil
+	if f.KnownExploited {
+		e.KnownExploited++
+	}
+	if f.Severity == "critical" {
+		e.Critical++
+	}
+	if len(e.Findings) < exposedPerAsset {
+		e.Findings = append(e.Findings, f)
+	}
+}
+
+// exposedBefore orders internet-facing first, then by known-exploited and
+// critical counts.
+func exposedBefore(a, b *exposedAsset) bool {
+	if (a.Exposure == "internet_facing") != (b.Exposure == "internet_facing") {
+		return a.Exposure == "internet_facing"
+	}
+	if a.KnownExploited != b.KnownExploited {
+		return a.KnownExploited > b.KnownExploited
+	}
+	if a.Critical != b.Critical {
+		return a.Critical > b.Critical
+	}
+	return a.AssetID < b.AssetID
+}
+
+// decideVerdict: covered only when every part was read and every connected
+// server ran the checks.
+func decideVerdict(found, exposed, checked, requiredMissing, incomplete bool) string {
+	switch {
+	case found:
+		return "found"
+	case exposed:
+		return "exposed"
+	case !checked || requiredMissing:
+		return "not_checked"
+	case incomplete:
+		return "partial"
+	}
+	return "covered"
 }
