@@ -151,4 +151,13 @@ func TestMergeCoverageKeepsCap(t *testing.T) {
 	if small := MergeCoverage([]model.CoverageItem{web}, cov[:3], more); len(small) != 5 || small[0] != web {
 		t.Errorf("under the cap: %+v", small)
 	}
+	// The usual case: nothing more, and the merged list lands on the cap.
+	out = MergeCoverage([]model.CoverageItem{web}, cov, nil)
+	last = out[len(out)-1]
+	if len(out) != model.MaxCoverageItems || last.Scope != "coverage-limit" || !strings.HasPrefix(last.Reason, "52 more") {
+		t.Errorf("%d items, summary %+v; want %d and 52 more", len(out), last, model.MaxCoverageItems)
+	}
+	if out[0] != web {
+		t.Errorf("front item not first: %+v", out[0])
+	}
 }

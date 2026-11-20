@@ -546,13 +546,18 @@ func MergeCoverage(front, cov, more []model.CoverageItem) []model.CoverageItem {
 	}
 	all := make([]model.CoverageItem, 0, len(front)+len(cov)+len(more))
 	all = append(append(append(all, front...), cov...), more...)
-	out := capCoverage(all)
-	if n := len(out); left > 0 && n > 0 && out[n-1].Scope == "coverage-limit" {
-		now := 0
-		_, _ = fmt.Sscanf(out[n-1].Reason, "%d more", &now)
-		out[n-1].Reason = fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", now+left, model.MaxCoverageItems)
+	if left == 0 {
+		return capCoverage(all)
 	}
-	return out
+	// Entries were left out before: the summary saying so stays, whatever
+	// the merged length.
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Status != "checked" && all[j].Status == "checked" })
+	if keep := model.MaxCoverageItems - 1; len(all) > keep {
+		left += len(all) - keep
+		all = all[:keep:keep]
+	}
+	return append(all, model.CoverageItem{Scope: "coverage-limit", Status: "partial",
+		Reason: fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left, model.MaxCoverageItems)})
 }
 
 // addCoverage appends an item to a capped list. When the list is full, the

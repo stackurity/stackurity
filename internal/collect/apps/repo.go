@@ -44,6 +44,7 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 	}
 	s := &Scanner{Root: dir}
 	den := &denied{}
+	otherErr := 0
 	// dir "" makes paths under the checkout "/js/x.js" (host paths of a
 	// root at dir) and paths relative to the application "js/x.js".
 	w := &webAssets{s: s, dir: "", seen: map[string]bool{}, denied: den, repo: true}
@@ -52,7 +53,9 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 			return cerr
 		}
 		if err != nil {
-			den.note(s.hostPath(full), err)
+			if !den.note(s.hostPath(full), err) {
+				otherErr++ // a file gone mid-walk, a name too long: not read either
+			}
 			return nil
 		}
 		if rel, rerr := filepath.Rel(dir, full); rerr == nil && ignored[filepath.ToSlash(rel)] {
@@ -91,14 +94,14 @@ func RepoWebAssets(ctx context.Context, dir string, manifest []model.Observation
 	}
 
 	web = model.CoverageItem{Scope: webAssetsScopeID + ".", Status: "checked"}
-	unread := len(den.paths) + den.more
+	unread := len(den.paths) + den.more + otherErr
 	switch {
 	case walkErr != nil:
 		web.Status, web.Reason = "partial", clipScope("stopped: "+walkErr.Error())
 	case w.limit != "":
 		web.Status, web.Reason = "partial", w.limit
 	case unread > 0:
-		web.Status, web.Reason = "partial", fmt.Sprintf("%d path(s) could not be read (permission denied)", unread)
+		web.Status, web.Reason = "partial", fmt.Sprintf("%d path(s) could not be read", unread)
 	}
 	for _, c := range bundleCov {
 		scope, rest, _ := strings.Cut(c.Scope, ":")
