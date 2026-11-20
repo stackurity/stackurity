@@ -615,6 +615,10 @@ func toolLabel(u ToolUse) string {
 		return "Reading asset" + id("asset_id")
 	case "list_findings":
 		return "Listing issues"
+	case "list_risky_settings":
+		return "Listing risky settings"
+	case "threat_check":
+		return "Checking for a named threat"
 	case "get_finding", "explain_finding":
 		return "Reading issue" + id("finding_id")
 	case "find_component":

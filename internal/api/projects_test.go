@@ -1617,7 +1617,7 @@ func TestProjectMCP(t *testing.T) {
 		lines = append(lines, string(b))
 		n++
 	}
-	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
+	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "threat_check", "get_finding", "find_component",
 		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 		"account_overview", "integrations_status", "notification_settings"}
 	for _, name := range tools {
