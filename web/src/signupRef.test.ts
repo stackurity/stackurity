@@ -1,7 +1,7 @@
 // Run with `npm test` (node --test, TypeScript types stripped).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanRef, keptRef, keptRefValue, signupRef, SIGNUP_REF_TTL_MS } from "./signupRef.ts";
+import { cleanRef, signupRef, socialStartURL } from "./signupRef.ts";
 
 test("?ref= is kept when it is a short tag", () => {
   assert.equal(signupRef("?ref=badge-acme"), "badge-acme");
@@ -37,12 +37,24 @@ test("cleanRef as the server's cleanSignupRef", () => {
   assert.equal(cleanRef(null), undefined);
 });
 
-test("a kept ref counts for an hour", () => {
-  const now = 1_800_000_000_000;
-  assert.equal(keptRef(keptRefValue("blog-x", now), now + 1000), "blog-x");
-  assert.equal(keptRef(keptRefValue("blog-x", now), now + SIGNUP_REF_TTL_MS + 1), undefined);
-  assert.equal(keptRef(keptRefValue("not a tag", now), now), undefined);
-  assert.equal(keptRef(null, now), undefined);
-  assert.equal(keptRef("{", now), undefined);
-  assert.equal(keptRef('{"ref":1,"at":1}', now), undefined);
+test("a social start URL carries return_to and ref together", () => {
+  const start = "/auth/social/google/start";
+  assert.equal(socialStartURL(start), start);
+  assert.equal(socialStartURL(start, "/"), start);
+  assert.equal(socialStartURL(start, "/findings?x=1&y=2"), start + "?return_to=%2Ffindings%3Fx%3D1%26y%3D2");
+  assert.equal(socialStartURL(start, undefined, "blog-x"), start + "?ref=blog-x");
+  const both = new URL(socialStartURL(start, "/a?b=c", "badge-acme"), "https://example.test");
+  assert.equal(both.pathname, start);
+  assert.equal(both.searchParams.get("return_to"), "/a?b=c");
+  assert.equal(both.searchParams.get("ref"), "badge-acme");
+});
+
+test("a social start URL keeps the server's own query and drops a bad ref", () => {
+  const u = new URL(socialStartURL("/auth/social/github/start?x=1", undefined, "Blog-X"), "https://example.test");
+  assert.equal(u.searchParams.get("x"), "1");
+  assert.equal(u.searchParams.get("ref"), "blog-x");
+  const two = new URL(socialStartURL("/s?x=1?y", undefined, "blog-x"), "https://example.test");
+  assert.equal(two.searchParams.get("x"), "1?y");
+  assert.equal(two.searchParams.get("ref"), "blog-x");
+  for (const bad of ["a b", "<script>", "a".repeat(65), "-x", ""]) assert.equal(socialStartURL("/s", undefined, bad), "/s", bad);
 });
