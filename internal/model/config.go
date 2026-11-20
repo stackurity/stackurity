@@ -13,7 +13,7 @@ type ConfigFinding struct {
 	// Rule is a stable id (agent-hook-remote-exec, ssh-root-key-ci, ...).
 	Rule string `json:"rule"`
 	// Category groups rules for the dashboard: ConfigAgentHook,
-	// ConfigSSH or ConfigCI.
+	// ConfigSSH, ConfigCI or ConfigAttackTool.
 	Category string `json:"category"`
 	// Title is shown: "Claude Code hook downloads and runs code".
 	Title    string `json:"title"`
@@ -40,6 +40,9 @@ const (
 	ConfigAgentHook = "agent_hook"
 	ConfigSSH       = "ssh"
 	ConfigCI        = "ci"
+	// ConfigAttackTool is an attacker's tool found on the asset (ARTEX):
+	// a binary built from it, an image of it, or a copy of its source.
+	ConfigAttackTool = "attack_tool"
 )
 
 // ConfigScan is what a collector's configuration checks found. Nil on a
@@ -51,6 +54,21 @@ type ConfigScan struct {
 	Complete bool            `json:"complete"`
 	// Reason says what was not checked when the scan is not complete.
 	Reason string `json:"reason,omitempty"`
+}
+
+// WithoutCategory drops the findings of one category, for a server that
+// does not take it. Nil stays nil.
+func (s *ConfigScan) WithoutCategory(category string) {
+	if s == nil {
+		return
+	}
+	kept := s.Found[:0]
+	for _, f := range s.Found {
+		if f.Category != category {
+			kept = append(kept, f)
+		}
+	}
+	s.Found = kept
 }
 
 // MaxConfigFindings bounds ConfigScan.Found.
@@ -82,7 +100,7 @@ func (s *ConfigScan) validate(add func(string, ...any)) {
 			return
 		}
 		switch f.Category {
-		case ConfigAgentHook, ConfigSSH, ConfigCI:
+		case ConfigAgentHook, ConfigSSH, ConfigCI, ConfigAttackTool:
 		default:
 			add("config_findings.found[%d].category %q is not valid", i, f.Category)
 			return

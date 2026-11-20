@@ -8,8 +8,9 @@ These findings appear under **Security → Risky settings** and on each asset's 
 
 | Where | Checked by | What |
 |---|---|---|
-| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access |
-| Repositories | repository integrations (GitHub, GitLab, Git URLs), `stackurity scan DIR` and the standalone scanner | GitHub Actions workflows; agent hooks and MCP servers checked into the repository |
+| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access; attack tools |
+| Container images | the agent with `--docker`, and image archives | attack tools |
+| Repositories | repository integrations (GitHub, GitLab, Git URLs), `stackurity scan DIR` and the standalone scanner | GitHub Actions workflows; agent hooks and MCP servers checked into the repository; attack tools |
 
 Files are only read, never run. SSH keys are reported by fingerprint (`SHA256:…`), comment and options, never the key itself. Passwords and tokens in commands and Git remote URLs are masked before anything is sent: credentials in a URL, credential headers (`Authorization`, `Cookie`, `X-…-Token`, `X-Api-Key`, `Private-Token`), the value after `-u`/`--user`/`--token`/`--password`/`--api-key`/`--oauth2-bearer`, `token=`/`key=`/`sig=`-style query parameters, `NAME=value` where the name contains TOKEN, KEY, SECRET, PASS or AUTH, and known token formats. Only regular files are read: a FIFO or a device is skipped without waiting, and on a mounted root (`--root`) or in a repository a symbolic link that leads outside it is not followed.
 
@@ -60,6 +61,25 @@ The agent reads `/etc/ssh/sshd_config` and the files it includes (the settings b
 | info | `gha-action-first-party-tag` | GitHub's own `actions/*` and `github/*` are used by tag. |
 
 The fix for unpinned actions links to [How to harden GitHub Actions: pin actions to a commit SHA](https://stackurity.ai/blog/how-to-harden-github-actions-pin-actions-to-a-commit-sha/).
+
+### Attack tools
+
+Some tools built for penetration testing are now run by attackers. When one turns up on a server or in an image you did not put it on, the server is being used for an attack or someone installed it without the security team knowing. Every match is **high**. Most tools have nothing to patch, so there is no CVE to match.
+
+The first tool covered is **ARTEX**, an AI-driven attack framework. Its source appeared on GitHub as `Autumn-27/ARTEX` in July 2026 and was removed on 8 October. The FBI warned about it in FLASH 261113 on 13 November 2026, and more than 1,600 of its consoles are reachable on the internet. Renamed forks, such as ScopeWeaver, are covered too.
+
+Each check uses something that can't come from an unrelated program. A file that is only named like the tool is not reported.
+
+| Severity | Rule | When |
+|---|---|---|
+| high | `attack-tool-artex` | A Go executable whose build record names an ARTEX module (`github.com/Autumn-27/ARTEX` or a known fork). The record is read; the binary is never run. Also: a `go.mod` that declares that module, which means a copy of its source, or a container image named `artex` or `scopeweaver`. |
+| high | `attack-tool-artex-backdoored-image` | The image `tomicdd/artex` or `congdonglinux/artex`, either present on the host or named in a `Dockerfile` or Compose file. BadByte reported in November 2026 that these prebuilt images carry a backdoored login handler, which runs any command sent to it before checking the password. Docker Hub removed them on 5 November, but copies already pulled are still backdoored. |
+
+Where the agent looks on a server: `/app`, `/opt`, `/srv`, `/usr/local`, `/usr/local/bin`, each login account's home directory, the application directories it reports, and the folders directly under each of these. It opens at most 400 executables, none larger than 512 MiB. In a container image every Go executable is read, as for vulnerability matching. In a repository it reads `go.mod`, `Dockerfile` and the Compose files at the root.
+
+If you run the tool yourself for authorised testing, dismiss the finding with a note. Keep its console off the internet; its default port is 8787.
+
+Agents send attack tool findings only to servers that list `config_attack_tools` in `GET /meta`. An older server gets the other findings as before.
 
 ## Alerts
 

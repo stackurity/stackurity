@@ -26,6 +26,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/model"
 )
@@ -77,6 +78,9 @@ type Reading struct {
 	Observations []model.Observation
 	Coverage     []model.CoverageItem
 	Attributes   map[string]string // os, os_version, os_name
+	// AttackTools are the image's Go binaries built from a known attack
+	// tool (confcheck.GoBinaryAttackTool).
+	AttackTools []model.ConfigFinding
 }
 
 type cached struct {
@@ -285,6 +289,12 @@ func fill(b *model.ObservationBatch, scope string, r Reading, ok bool) {
 		b.Asset.Attributes[k] = v
 	}
 	b.Observations = append(b.Observations, r.Observations...)
+	// Attack tools: the image's name and tags, and its Go binaries. The
+	// image was read in full, so a tool no longer in it is gone.
+	refs := []string{b.Asset.Attributes["image"]}
+	refs = append(refs, strings.Split(b.Asset.Attributes["tags"], ", ")...)
+	found := append(confcheck.ImageAttackTools(refs...), r.AttackTools...)
+	b.ConfigFindings = &model.ConfigScan{Found: confcheck.Dedupe(found), Complete: true}
 	b.Coverage = append([]model.CoverageItem{{Scope: scope, Status: "checked"}}, r.Coverage...)
 	b.KeepUsable()
 	b.Complete = true

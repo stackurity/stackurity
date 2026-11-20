@@ -109,6 +109,15 @@ func RepoWorkflows(dir string) (found []ConfigFinding, problems []string) {
 // server that lists it: older ones refuse the field.
 const FeatureConfigFindings = client.FeatureConfigFindings
 
+// FeatureConfigAttackTools is the server feature that says it takes config
+// findings of category attack_tool (ConfigAttackTool). For a server that
+// does not list it, drop them with ConfigScan.WithoutCategory: older
+// servers refuse the whole batch over an unknown category.
+const FeatureConfigAttackTools = client.FeatureConfigAttackTools
+
+// ConfigAttackTool is the category of attack tool findings.
+const ConfigAttackTool = model.ConfigAttackTool
+
 // ServerHas reports whether a Stackurity server lists a feature in GET /meta.
 func ServerHas(ctx context.Context, server, token, toolVersion, feature string) (bool, error) {
 	cl, err := client.New(server, token, toolVersion)
