@@ -36,6 +36,12 @@ type Store struct {
 	// (risk.Policy.Steps), from the request or job context; nil adds none.
 	// The licensed edition sets it at startup; Community leaves it nil.
 	PolicySteps func(ctx context.Context) []risk.Step
+	// AfterLeakScan, when set, runs after Ingest stored a batch's leaks
+	// or config findings, with the asset: the server gives them their
+	// second check there (internal/secondcheck), so an alert does not go
+	// out for one before its verdict. It logs its own errors; the batch is
+	// stored either way, and the periodic second check catches up.
+	AfterLeakScan func(ctx context.Context, assetID int64)
 }
 
 func New(pool *pgxpool.Pool) *Store { return &Store{Pool: pool} }

@@ -479,6 +479,17 @@ func TestListLeaksWorkflow(t *testing.T) {
 	}
 }
 
+// list_leaks and list_risky_settings pass the second check filter.
+func TestListLeaksSecondCheckFilter(t *testing.T) {
+	api := &fakeAPI{}
+	callTool(t, &Server{API: api, Version: "t"}, "list_leaks", map[string]any{"second_check": "likely_false_positive"})
+	callTool(t, &Server{API: api, Version: "t"}, "list_risky_settings", map[string]any{"second_check": "confirmed,unchecked"})
+	if len(api.paths) != 2 || api.paths[0] != "GET /api/v1/leaks?limit=50&second_check=likely_false_positive" ||
+		api.paths[1] != "GET /api/v1/config-findings?limit=50&second_check=confirmed%2Cunchecked" {
+		t.Errorf("requests = %v", api.paths)
+	}
+}
+
 // accountAPI answers the account tools' endpoints as a person with role:
 // the role checks are the API's (users for admins, channels and rules for
 // security, integrations for engineers), as in internal/api. Every answer

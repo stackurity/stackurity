@@ -11,6 +11,8 @@ import { Table, type Column } from "./Table";
 import { leaksEmpty } from "../emptyCopy";
 import { Card, EmptyState, ErrorBox, Loading, Notice, Pager, RelativeTime, StatTile, Tabs } from "./ui";
 import { Assignee, AssignPanel, DueDate } from "./Workflow";
+import { SecondCheckCell } from "./SecondCheck";
+import { NOT_FALSE_POSITIVE, falsePositiveSummary } from "../secondCheck";
 
 /**
  * Leaked keys: keys, tokens and passwords found written in files. The value
@@ -213,6 +215,7 @@ export function LeaksTable({ leaks, showAsset, onChanged }: { leaks: Leak[]; sho
           <strong>{l.title}</strong>
           {l.name && <span className="mono small"> {l.name}</span>}
           {l.preview && <div className="mono small">{l.preview}</div>}
+          <SecondCheckCell check={l.second_check} historyPath={`/leaks/${l.id}/second-checks`} />
         </>
       ),
     },
@@ -342,7 +345,13 @@ export function LeakSummaryStrip({ s }: { s: LeakSummary }) {
         label="Need rotation"
         value={todo.toLocaleString()}
         tone={todo > 0 ? "bad" : "good"}
-        sub={s.still_found > 0 ? `${s.still_found} still found after rotation` : "Critical and high, not rotated yet"}
+        sub={
+          s.still_found > 0
+            ? `${s.still_found} still found after rotation`
+            : s.likely_false_positive > 0
+              ? `Includes ${s.likely_false_positive} likely false positive${s.likely_false_positive === 1 ? "" : "s"}`
+              : "Critical and high, not rotated yet"
+        }
       />
       <StatTile label="Overdue" value={s.overdue.toLocaleString()} tone={s.overdue > 0 ? "crit" : "good"} sub="Past their rotate-by date" />
       <StatTile
@@ -399,6 +408,10 @@ const VIEW_HINT: Record<LeakView, string> = {
   resolved: "Leaked keys a complete scan no longer finds, and those dismissed.",
 };
 
+/** What the second check is, under every view. */
+const SECOND_CHECK_HINT =
+  "Each key also gets a second, independent check, which says whether it looks real: not a placeholder, a published sample, a test-mode key or a token whose built-in checksum does not match. Likely false positives are collapsed at the bottom and never alert; look before dismissing one, as real keys do end up in tests.";
+
 const STATE_FILTERS: { value: string; label: string }[] = [
   { value: "", label: "Any state" },
   { value: "needs_rotation", label: LEAK_STATE.needs_rotation.label },
@@ -423,10 +436,23 @@ export function LeaksView({ assetId }: { assetId?: number }) {
         ...LEAK_VIEW_QUERY[view],
         ...(view === "action" && state ? { state } : {}),
         ...ownerQuery,
+        second_check: NOT_FALSE_POSITIVE,
         limit: LIMIT,
         offset,
       }),
     [path, view, state, owner, offset],
+  );
+  // Likely false positives of the same view, collapsed under the list.
+  const fp = useLoad(
+    () =>
+      api.get<LeakList>(path, {
+        ...LEAK_VIEW_QUERY[view],
+        ...(view === "action" && state ? { state } : {}),
+        ...ownerQuery,
+        second_check: "likely_false_positive",
+        limit: LIMIT,
+      }),
+    [path, view, state, owner, res.data],
   );
   const summary = useLoad(
     () => api.get<LeakSummary>("/leaks/summary", { severity: "critical,high", ...(assetId ? { asset_id: assetId } : {}) }),
@@ -461,6 +487,7 @@ export function LeaksView({ assetId }: { assetId?: number }) {
         tabs={(["action", "kept", "resolved"] as LeakView[]).map((v) => ({ id: v, label: VIEW_LABEL[v] }))}
       />
       <p className="hint">{VIEW_HINT[view]}</p>
+      <p className="hint">{SECOND_CHECK_HINT}</p>
       <div className="form-grid">
         {view === "action" && (
           <div className="field">
@@ -509,6 +536,17 @@ export function LeaksView({ assetId }: { assetId?: number }) {
           <LeaksTable leaks={res.data.items} showAsset={!assetId} onChanged={res.reload} />
           <Pager total={res.data.total} limit={LIMIT} offset={offset} onChange={setOffset} />
         </>
+      )}
+      {fp.data && fp.data.total > 0 && (
+        <details className="false-positives">
+          <summary>Likely false positives ({fp.data.total.toLocaleString()})</summary>
+          <p className="hint">
+            {falsePositiveSummary(fp.data.total, "leak")}. They raise no alert, unless the web server may send the file. Each says why;
+            dismiss one you have looked at, or mark it rotated if it was real after all.
+            {fp.data.total > fp.data.items.length && ` The first ${fp.data.items.length} are shown.`}
+          </p>
+          <LeaksTable leaks={fp.data.items} showAsset={!assetId} onChanged={res.reload} />
+        </details>
       )}
     </>
   );

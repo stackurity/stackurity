@@ -218,7 +218,9 @@ func remotePacks(cl *client.Client) func(ctx context.Context) ([]lockfile.Extens
 }
 
 // serverTakes is what GET /meta says the server accepts from the agent.
-type serverTakes struct{ appList, hostImages, leaks, configFindings, attackTools, reachability bool }
+type serverTakes struct {
+	appList, hostImages, leaks, leakValueChecks, configFindings, attackTools, reachability bool
+}
 
 // forServer drops from the agent's batches what the server does not take:
 // older servers refuse unknown fields, and the whole batch would fail.
@@ -229,6 +231,9 @@ func forServer(bs []*model.ObservationBatch, t serverTakes) []*model.Observation
 		}
 		if !t.leaks {
 			b.Leaks = nil
+		}
+		if !t.leakValueChecks {
+			b.Leaks.StripLeakValueChecks()
 		}
 		if !t.configFindings {
 			b.ConfigFindings = nil
@@ -417,7 +422,7 @@ host; see docs/install.md.`,
 			var takes serverTakes
 			if m, err := cl.Meta(ctx); err == nil {
 				takes = serverTakes{appList: m.Has(client.FeatureAppList), hostImages: m.Has(client.FeatureHostImages),
-					leaks: m.Has(client.FeatureLeaks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools),
+					leaks: m.Has(client.FeatureLeaks), leakValueChecks: m.Has(client.FeatureLeakValueChecks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools),
 					reachability: m.Has(client.FeatureReachability)}
 			}
 			if opts.docker != nil && !takes.hostImages {
@@ -754,6 +759,9 @@ config findings; --no-config-checks turns them off.`,
 			if b.Leaks != nil && (merr != nil || !m.Has(client.FeatureLeaks)) {
 				fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
 				b.Leaks = nil
+			}
+			if merr != nil || !m.Has(client.FeatureLeakValueChecks) {
+				b.Leaks.StripLeakValueChecks()
 			}
 			if merr != nil || !m.Has(client.FeatureReachability) {
 				// Older servers refuse the field; the inventory is sent without it.

@@ -62,9 +62,23 @@ type Leak struct {
 	// State is what people see (LeakState*): needs_rotation, waiting_check,
 	// still_found, verified_gone or dismissed.
 	State string `json:"state"`
+	// ValueSignals are what the collector's value check read in the value
+	// (placeholder, test_mode_key, checksum_invalid...), with the version
+	// of its rules; empty from collectors before it.
+	ValueChecker string   `json:"value_checker"`
+	ValueSignals []string `json:"value_signals"`
+	// The latest second check verdict, as SecondCheck.
+	RecheckVerdict string     `json:"-"`
+	RecheckReason  string     `json:"-"`
+	RecheckChecker string     `json:"-"`
+	RecheckAt      *time.Time `json:"-"`
 	// Why says in one line why the leak has its severity and what to do,
 	// from where the file is (LeakWhy).
 	Why string `json:"why" db:"-"`
+	// SecondCheck is the latest verdict of the independent second check
+	// (confirmed, likely_false_positive, fixed, could_not_check), with its
+	// reason; nil until it has run.
+	SecondCheck *RecheckVerdict `json:"second_check" db:"-"`
 }
 
 // Reasons a leak is graded as it is. Every place a leak is shown (the
@@ -107,7 +121,16 @@ func LeakWhy(assetKind, exposure, severity string) string {
 
 func withWhy(ls []Leak) {
 	for i := range ls {
-		ls[i].Why = LeakWhy(ls[i].AssetKind, ls[i].Exposure, ls[i].Severity)
+		ls[i].fill()
+	}
+}
+
+// fill sets what is derived from the stored columns.
+func (l *Leak) fill() {
+	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity)
+	l.SecondCheck = latestVerdict(l.RecheckVerdict, l.RecheckReason, l.RecheckChecker, l.RecheckAt)
+	if l.ValueSignals == nil {
+		l.ValueSignals = []string{}
 	}
 }
 
@@ -133,7 +156,7 @@ const leakCols = `l.id, l.asset_id, a.name, a.kind, l.collector_id, l.fingerprin
 	l.preview, l.severity, l.exposure, l.status, l.resolution, l.resolution_note, l.resolved_by, l.first_seen, l.last_seen, l.resolved_at,
 	l.assignee_user_id, COALESCE(au.email, ''), l.assignee_team_id, COALESCE(ateam.name, ''), COALESCE(ot.name, ''),
 	l.due_at, COALESCE(` + leakOverdueSQL + `, false), l.rotated_at, l.rotated_by, COALESCE(NULLIF(ru.name, ''), ru.email, ''), l.rotation_note,
-	` + leakStateSQL
+	` + leakStateSQL + `, l.value_checker, l.value_signals, l.recheck_verdict, l.recheck_reason, l.recheck_checker, l.recheck_at`
 
 const leakFrom = ` FROM leaks l JOIN assets a ON a.id = l.asset_id
 	LEFT JOIN users au ON au.id = l.assignee_user_id LEFT JOIN teams ateam ON ateam.id = l.assignee_team_id
@@ -192,15 +215,21 @@ func leakDueDaysTx(ctx context.Context, tx pgx.Tx) (map[string]int, error) {
 // resolved.
 func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *model.ObservationBatch) (found int, gone int64, err error) {
 	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE leaks_in (fingerprint text, path text, line int, rule text, title text,
-		name text, preview text, severity text, exposure text) ON COMMIT DROP`); err != nil {
+		name text, preview text, severity text, exposure text, value_checker text, value_signals text[]) ON COMMIT DROP`); err != nil {
 		return 0, 0, err
 	}
 	rows := make([][]any, 0, len(b.Leaks.Found))
 	for _, l := range b.Leaks.Found {
-		rows = append(rows, []any{l.Fingerprint, l.Path, l.Line, l.Rule, l.Title, l.Name, l.Preview, l.Severity, l.Exposure})
+		checker, signals := "", []string{}
+		if l.ValueCheck != nil {
+			checker = l.ValueCheck.Checker
+			signals = append(signals, l.ValueCheck.Signals...)
+		}
+		rows = append(rows, []any{l.Fingerprint, l.Path, l.Line, l.Rule, l.Title, l.Name, l.Preview, l.Severity, l.Exposure, checker, signals})
 	}
 	if _, err := tx.CopyFrom(ctx, pgx.Identifier{"leaks_in"},
-		[]string{"fingerprint", "path", "line", "rule", "title", "name", "preview", "severity", "exposure"}, pgx.CopyFromRows(rows)); err != nil {
+		[]string{"fingerprint", "path", "line", "rule", "title", "name", "preview", "severity", "exposure", "value_checker", "value_signals"},
+		pgx.CopyFromRows(rows)); err != nil {
 		return 0, 0, err
 	}
 	due, err := leakDueDaysTx(ctx, tx)
@@ -212,8 +241,9 @@ func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *
 	// its severity: a new leak, one back after it was gone, or one raised
 	// to a higher severity (the earlier deadline wins).
 	if _, err := tx.Exec(ctx, `INSERT INTO leaks AS l (asset_id, collector_id, fingerprint, path, line, rule, title, name, preview,
-			severity, exposure, first_seen, last_seen, last_collection_id, due_at)
-		SELECT DISTINCT ON (fingerprint, path) $1, $2, fingerprint, path, line, rule, title, name, preview, severity, exposure, $3, $3, $4,
+			severity, exposure, value_checker, value_signals, first_seen, last_seen, last_collection_id, due_at)
+		SELECT DISTINCT ON (fingerprint, path) $1, $2, fingerprint, path, line, rule, title, name, preview, severity, exposure,
+		  value_checker, value_signals, $3, $3, $4,
 		  $3::timestamptz + make_interval(days => NULLIF(CASE severity WHEN 'critical' THEN $5::int WHEN 'high' THEN $6::int
 		    WHEN 'medium' THEN $7::int ELSE 0 END, 0))
 		FROM leaks_in
@@ -221,6 +251,7 @@ func writeLeaks(ctx context.Context, tx pgx.Tx, assetID, collectionID int64, b *
 		ON CONFLICT (asset_id, collector_id, fingerprint, path) DO UPDATE SET
 		  line = EXCLUDED.line, rule = EXCLUDED.rule, title = EXCLUDED.title, name = EXCLUDED.name, preview = EXCLUDED.preview,
 		  severity = EXCLUDED.severity, exposure = EXCLUDED.exposure,
+		  value_checker = EXCLUDED.value_checker, value_signals = EXCLUDED.value_signals,
 		  due_at = CASE WHEN l.resolution = 'dismissed' THEN l.due_at WHEN l.resolution = 'gone' THEN EXCLUDED.due_at
 		    ELSE LEAST(l.due_at, EXCLUDED.due_at) END,
 		  last_seen = GREATEST(l.last_seen, EXCLUDED.last_seen), last_collection_id = EXCLUDED.last_collection_id,
@@ -263,6 +294,9 @@ type LeakFilter struct {
 	AssigneeUser int64
 	AssigneeTeam int64
 	Unassigned   bool
+	// SecondCheck is one verdict or several, comma-separated, or
+	// unchecked (VerdictUnchecked) for leaks not checked yet.
+	SecondCheck string
 	Page
 }
 
@@ -304,6 +338,12 @@ func (f LeakFilter) where() (*where, error) {
 	}
 	if f.Unassigned {
 		w.conds = append(w.conds, "l.assignee_user_id IS NULL AND l.assignee_team_id IS NULL")
+	}
+	if f.SecondCheck != "" {
+		if err := ValidVerdictFilter(f.SecondCheck); err != nil {
+			return nil, err
+		}
+		verdictCond(w, "l", f.SecondCheck)
 	}
 	return w, nil
 }
@@ -348,7 +388,7 @@ func (s *Store) GetLeak(ctx context.Context, id int64) (*Leak, error) {
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity)
+	l.fill()
 	return &l, err
 }
 
@@ -362,6 +402,9 @@ type LeakSummary struct {
 	WaitingCheck   int64 `json:"waiting_check"`
 	VerifiedGone30 int64 `json:"verified_gone_30d"`
 	Unassigned     int64 `json:"unassigned"`
+	// LikelyFalsePositive counts open leaks the second check found likely
+	// not to be real keys; they are in the counts above too.
+	LikelyFalsePositive int64 `json:"likely_false_positive"`
 }
 
 // SummariseLeaks counts the leaks a filter's asset and severity select.
@@ -377,9 +420,11 @@ func (s *Store) SummariseLeaks(ctx context.Context, f LeakFilter) (LeakSummary, 
 		  count(*) FILTER (WHERE `+leakOverdueSQL+`),
 		  count(*) FILTER (WHERE l.status = 'open' AND l.last_seen <= l.rotated_at),
 		  count(*) FILTER (WHERE l.resolution = 'gone' AND l.resolved_at > now() - interval '30 days'),
-		  count(*) FILTER (WHERE l.status = 'open' AND l.assignee_user_id IS NULL AND l.assignee_team_id IS NULL)
+		  count(*) FILTER (WHERE l.status = 'open' AND l.assignee_user_id IS NULL AND l.assignee_team_id IS NULL),
+		  count(*) FILTER (WHERE l.status = 'open' AND l.recheck_verdict = 'likely_false_positive')
 		FROM leaks l JOIN assets a ON a.id = l.asset_id`+w.sql()+andMerged(w), w.args...).
-		Scan(&out.NeedsRotation, &out.StillFound, &out.Overdue, &out.WaitingCheck, &out.VerifiedGone30, &out.Unassigned)
+		Scan(&out.NeedsRotation, &out.StillFound, &out.Overdue, &out.WaitingCheck, &out.VerifiedGone30, &out.Unassigned,
+			&out.LikelyFalsePositive)
 	return out, err
 }
 
@@ -476,6 +521,12 @@ const maxLeakDetail = 10
 
 // leakProblems is one incident per asset with open critical or high
 // leaks. Medium and low leaks are listed, never alerted on.
+//
+// A leak the second check found likely not a real key (a placeholder, a
+// test-mode key, a token whose checksum does not match) raises no alert
+// unless the web server may send its file: it stays listed. The check runs
+// right after the batch is stored (Store.AfterLeakScan), before the
+// dispatcher reads this.
 func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind, a.owner_team_id, a.environment,
 		  count(*), count(*) FILTER (WHERE l.severity = 'critical'), count(*) FILTER (WHERE l.exposure = 'served'),
@@ -485,6 +536,7 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 		  (array_agg(l.severity ORDER BY l.exposure = 'served' DESC, array_position(ARRAY['critical','high'], l.severity)))[1]
 		FROM leaks l JOIN assets a ON a.id = l.asset_id
 		WHERE l.status = 'open' AND l.severity IN ('critical', 'high') AND a.merged_into IS NULL
+		  AND (l.recheck_verdict <> 'likely_false_positive' OR l.exposure = 'served')
 		GROUP BY a.id ORDER BY a.id`, maxLeakDetail)
 	if err != nil {
 		return nil, err

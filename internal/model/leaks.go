@@ -28,7 +28,39 @@ type Leak struct {
 	// the leak is; see the Exposure constants. Empty means no more than
 	// the people who can read the repository or log in as its owner.
 	Exposure string `json:"exposure,omitempty"`
+	// ValueCheck is what the collector's value check
+	// (internal/secondcheck/valuecheck) read in the value while it had
+	// it, for the server's second check. Sent only to servers that list
+	// the "leak_value_checks" feature; older ones refuse the field.
+	ValueCheck *LeakValueCheck `json:"value_check,omitempty"`
 }
+
+// LeakValueCheck is the value check's result: the version of its rules
+// and its signals, each from a fixed list (placeholder, low_entropy,
+// test_mode_key, known_sample, checksum_valid, checksum_invalid). It holds
+// nothing of the value.
+type LeakValueCheck struct {
+	Checker string   `json:"checker"`
+	Signals []string `json:"signals"`
+}
+
+// StripLeakValueChecks drops the value checks, for a server that does not
+// take them. Nil stays nil.
+func (s *LeakScan) StripLeakValueChecks() {
+	if s == nil {
+		return
+	}
+	for i := range s.Found {
+		s.Found[i].ValueCheck = nil
+	}
+}
+
+var valueCheckerRe = regexp.MustCompile(`^[a-z]+/[0-9]{1,4}$`)
+
+// leakSignals is the fixed list a value check's signals come from; the
+// database refuses others too (migration 0119).
+var leakSignals = map[string]bool{"placeholder": true, "low_entropy": true, "test_mode_key": true, "known_sample": true,
+	"checksum_valid": true, "checksum_invalid": true}
 
 // Exposure of a leaked key.
 const (
@@ -93,6 +125,18 @@ func (s *LeakScan) validate(add func(string, ...any)) {
 		default:
 			add("leaks.found[%d].exposure %q is not valid", i, l.Exposure)
 			return
+		}
+		if v := l.ValueCheck; v != nil {
+			if !valueCheckerRe.MatchString(v.Checker) || len(v.Signals) > len(leakSignals) {
+				add("leaks.found[%d].value_check has an invalid checker or too many signals", i)
+				return
+			}
+			for _, sig := range v.Signals {
+				if !leakSignals[sig] {
+					add("leaks.found[%d].value_check.signals has %q, which is not a known signal", i, sig)
+					return
+				}
+			}
 		}
 	}
 }

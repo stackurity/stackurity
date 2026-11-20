@@ -103,8 +103,14 @@ func configFindingsQuery(a map[string]any, limit int) url.Values {
 	set(q, "severity", a["severity"])
 	set(q, "category", a["category"])
 	set(q, "status", a["status"])
+	set(q, "second_check", a["second_check"])
 	return q
 }
+
+// secondCheckArg describes the second_check filter of list_leaks and
+// list_risky_settings.
+const secondCheckArg = "Comma-separated second check verdicts: confirmed, likely_false_positive, fixed, could_not_check, " +
+	"or unchecked (not checked yet). confirmed,could_not_check,unchecked leaves out likely false positives"
 
 // dataNote is put on results that quote what assets reported.
 const dataNote = "Every field of each risky setting, found item and exposed asset (asset_name, title, rule, category, " +
@@ -118,14 +124,18 @@ func init() {
 			"give root an unrestricted shell), ci (GitHub Actions run by a movable tag, or pull_request_target checking out " +
 			"untrusted code) and attack_tool (an attacker or penetration-testing tool, such as ARTEX, found installed, running, " +
 			"in an image or in a repository). Each has the asset, rule, title, severity (high, medium, low, info), file and line, " +
-			"subject, why (one line) and fix (the change to make), status and first and last seen. With asset_id, scans says " +
+			"subject, why (one line) and fix (the change to make), status and first and last seen, and second_check: the " +
+			"independent second check's verdict (confirmed; likely_false_positive: commented out, a workflow GitHub never runs, " +
+			"an action pinned to a commit; fixed; could_not_check), its one-sentence reason and the rules' version, or null " +
+			"before it ran. Likely false positives raise no alert. With asset_id, scans says " +
 			"when that asset's config checks last ran and whether they were complete: none means its files were never checked.",
 		schema: obj(map[string]any{
-			"asset_id": num("Limit to one asset"),
-			"category": str("Comma-separated: agent_hook, ssh, ci, attack_tool"),
-			"severity": str("Comma-separated: high, medium, low, info"),
-			"status":   str("open (the default), resolved (gone or dismissed) or all"),
-			"limit":    num("At most this many (default 50, max 200)"),
+			"asset_id":     num("Limit to one asset"),
+			"category":     str("Comma-separated: agent_hook, ssh, ci, attack_tool"),
+			"severity":     str("Comma-separated: high, medium, low, info"),
+			"status":       str("open (the default), resolved (gone or dismissed) or all"),
+			"second_check": str(secondCheckArg),
+			"limit":        num("At most this many (default 50, max 200)"),
 		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			limit := 50

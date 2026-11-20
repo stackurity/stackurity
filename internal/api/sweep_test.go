@@ -466,6 +466,8 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
 	"POST /api/v1/threat-notices/{id}/dismiss":                  {class: "object", obj: id("threatnotice")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
+	"GET /api/v1/leaks/{id}/second-checks":                      {class: "object", obj: id("leak"), emptyOK: true},
+	"GET /api/v1/config-findings/{id}/second-checks":            {class: "object", obj: id("configfinding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/closure":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/explain":                         {class: "object", obj: id("finding")},

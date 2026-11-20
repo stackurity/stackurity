@@ -228,6 +228,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		}
 		return nil, err
 	}
+	if s.AfterLeakScan != nil && (b.Leaks != nil || b.ConfigFindings != nil) {
+		s.AfterLeakScan(ctx, res.AssetID)
+	}
 	return res, nil
 }
 

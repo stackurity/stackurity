@@ -501,13 +501,18 @@ var tools = map[string]tool{
 			"Each leak has its state (needs_rotation; waiting_check: marked rotated, waiting for a scan; still_found: a scan " +
 			"after the rotation still saw the key in the file; verified_gone; dismissed), owner (assignee_email, assignee_team), " +
 			"due_at and overdue. " +
+			"second_check is the independent second check's verdict: confirmed (looks like a real key, still found), " +
+			"likely_false_positive (a placeholder, a documented sample, a test-mode key, a token whose checksum does not match, " +
+			"or a file that is documentation, a template or a test; listed but raises no alert), fixed (no longer found) or " +
+			"could_not_check, with a one-sentence reason and the rules' version; null before it ran. " +
 			"With asset_id, scans says whether that asset's last key scan was complete: no scan means its files were never checked.",
 		schema: obj(map[string]any{
-			"asset_id": num("Limit to one asset"),
-			"severity": str("Comma-separated: critical, high, medium, low"),
-			"status":   str("open (the default), resolved (gone or dismissed) or all"),
-			"state":    str("needs_rotation, waiting_check, still_found, verified_gone, dismissed or overdue"),
-			"limit":    num("At most this many (default 50, max 200)"),
+			"asset_id":     num("Limit to one asset"),
+			"severity":     str("Comma-separated: critical, high, medium, low"),
+			"status":       str("open (the default), resolved (gone or dismissed) or all"),
+			"state":        str("needs_rotation, waiting_check, still_found, verified_gone, dismissed or overdue"),
+			"second_check": str(secondCheckArg),
+			"limit":        num("At most this many (default 50, max 200)"),
 		}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			limit := 50
@@ -518,6 +523,7 @@ var tools = map[string]tool{
 			set(q, "severity", a["severity"])
 			set(q, "status", a["status"])
 			set(q, "state", a["state"])
+			set(q, "second_check", a["second_check"])
 			var res struct {
 				Items []map[string]any `json:"items"`
 				Total int64            `json:"total"`

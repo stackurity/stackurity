@@ -17,7 +17,7 @@ func TestForServer(t *testing.T) {
 		host := model.NewBatch(model.Collector{ID: "linux-agent"}, model.AssetRef{Kind: model.AssetHost, Name: "web1"})
 		host.Observations = []model.Observation{{Purl: "pkg:deb/debian/nginx@1.22.1-9", Version: "1.22.1-9",
 			Reachability: &model.Reachability{Status: model.ReachReachable, Evidence: []string{"Running: nginx (pid 100) is /usr/sbin/nginx."}}}}
-		host.Leaks = &model.LeakScan{}
+		host.Leaks = &model.LeakScan{Found: []model.Leak{{Rule: "github-token", ValueCheck: &model.LeakValueCheck{Checker: "value/1"}}}}
 		host.ConfigFindings = &model.ConfigScan{}
 		img := model.NewBatch(model.Collector{ID: docker.CollectorID}, model.AssetRef{Kind: model.AssetImage, Name: "postgres:16"})
 		return []*model.ObservationBatch{host, img}
@@ -30,9 +30,14 @@ func TestForServer(t *testing.T) {
 		return string(data)
 	}
 
-	all := forServer(batches(), serverTakes{appList: true, hostImages: true, leaks: true, configFindings: true, reachability: true})
-	if s := sent(all); len(all) != 2 || !strings.Contains(s, `"reachability"`) || !strings.Contains(s, `"leaks"`) || !strings.Contains(s, `"config_findings"`) {
+	all := forServer(batches(), serverTakes{appList: true, hostImages: true, leaks: true, leakValueChecks: true, configFindings: true, reachability: true})
+	if s := sent(all); len(all) != 2 || !strings.Contains(s, `"reachability"`) || !strings.Contains(s, `"leaks"`) || !strings.Contains(s, `"config_findings"`) ||
+		!strings.Contains(s, `"value_check"`) {
 		t.Errorf("a current server: %d batches, %s", len(all), s)
+	}
+	// A server that takes leaks but not their value checks (0.20).
+	if s := sent(forServer(batches(), serverTakes{leaks: true})); !strings.Contains(s, `"leaks"`) || strings.Contains(s, `"value_check"`) {
+		t.Errorf("a server without value checks: %s", s)
 	}
 	old := forServer(batches(), serverTakes{})
 	if s := sent(old); len(old) != 1 || strings.Contains(s, `"reachability"`) || strings.Contains(s, `"leaks"`) || strings.Contains(s, `"config_findings"`) {
