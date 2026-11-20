@@ -3161,7 +3161,7 @@ export type SendNow = "urgent" | "all" | "none";
 export type SummaryChoice = "daily" | "weekly" | "none";
 
 /** What a route sends (its "Trigger" checkboxes). */
-export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "daily_summary", "weekly_summary"] as const;
+export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "threat_notices", "daily_summary", "weekly_summary"] as const;
 export type RouteEvent = (typeof ROUTE_EVENTS)[number];
 
 export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
@@ -3171,15 +3171,16 @@ export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
   overdue: "Fix overdue",
   connected: "New asset connected",
   problems: "Collection, feed or platform problems",
+  threat_notices: "Threat notices (new attacks and attacker tools)",
   daily_summary: "Daily summary",
   weekly_summary: "Weekly summary",
 };
 
 /** What the old modes mean as events (routes without `events`). */
 const MODE_EVENTS: Record<string, RouteEvent[]> = {
-  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "daily_summary"],
-  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "weekly_summary"],
-  urgent_only: ["urgent", "regressed", "overdue", "connected", "problems"],
+  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices", "daily_summary"],
+  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices", "weekly_summary"],
+  urgent_only: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices"],
   daily: ["daily_summary"],
   weekly: ["weekly_summary"],
 };
@@ -3192,11 +3193,19 @@ export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
 
 /**
  * The events for the two quick questions (onboarding). Null when neither is
- * chosen: nothing would ever be sent.
+ * chosen: nothing would ever be sent. threatNotices false leaves threat
+ * notices out (webhooks opt in to them).
  */
-export function eventsFor(now: SendNow, summary: SummaryChoice): { events: RouteEvent[]; new_min_priority: Priority } | null {
+export function eventsFor(now: SendNow, summary: SummaryChoice, threatNotices = true): { events: RouteEvent[]; new_min_priority: Priority } | null {
   if (now === "none" && summary === "none") return null;
-  const events: RouteEvent[] = now === "all" ? ["new_issues", "urgent", "regressed", "connected", "problems"] : now === "urgent" ? ["urgent", "regressed", "connected", "problems"] : [];
+  const events: RouteEvent[] =
+    now === "all"
+      ? ["new_issues", "urgent", "regressed", "connected", "problems", "threat_notices"]
+      : now === "urgent"
+        ? ["urgent", "regressed", "connected", "problems", "threat_notices"]
+        : [];
+  // Webhooks opt in to threat notices: a receiver may not expect them.
+  if (!threatNotices) events.splice(0, events.length, ...events.filter((e) => e !== "threat_notices"));
   if (summary === "daily") events.push("daily_summary");
   if (summary === "weekly") events.push("weekly_summary");
   return { events, new_min_priority: "P4" };
@@ -3229,7 +3238,7 @@ export function describeRoute(r: Pick<Route, "events" | "mode" | "min_priority" 
   const at = `at ${r.summary_time || "09:00"} ${r.timezone || "UTC"}`;
   if (ev.includes("daily_summary")) now.push(`Daily summary ${at}`);
   if (ev.includes("weekly_summary")) now.push(`Weekly summary, ${capital(r.summary_day || "monday")}s ${at}`);
-  const extra = (["regressed", "overdue", "connected", "problems"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
+  const extra = (["regressed", "overdue", "connected", "problems", "threat_notices"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
   if (now.length === 0) return extra ? `${extra} kind${extra === 1 ? "" : "s"} of message` : "Nothing";
   return now.join(" · ");
 }
@@ -4406,4 +4415,40 @@ export interface OwnerCoverage {
   by_rule: number;
   by_hand: number;
   unassigned: number;
+}
+
+/** A threat notice's verdict (docs/threat-notices.md). */
+export type ThreatVerdict = "found" | "covered" | "needs_connection" | "upgrade";
+
+/** GET /threat-notices: one notice about a threat, with the caller's banner state. */
+export interface ThreatNotice {
+  id: number;
+  threat_id: string;
+  name: string;
+  kind: "attack_tool" | "exploited_vuln" | "campaign" | "practice";
+  severity: string;
+  summary: string;
+  sources: string[];
+  min_version: string;
+  verdict: ThreatVerdict;
+  notified_verdict: ThreatVerdict;
+  findings: number;
+  assets: number;
+  connected: Record<string, number>;
+  missing: string[];
+  missing_connections: { connection: string; label: string; required: boolean; checks: string; help: string }[];
+  /** The notice in words: the same as the email. */
+  title: string;
+  lines: string[];
+  /** The banner's one button; null when nothing needs doing. */
+  action: { label: string; link: string } | null;
+  created_at: string;
+  updated_at: string;
+  banner_at: string;
+  email_at: string | null;
+  email_result: "" | "sent" | "no_mailer" | "no_recipients" | "failed";
+  channels_at: string | null;
+  channels_queued: number;
+  /** You hid the banner for the current verdict. */
+  dismissed: boolean;
 }

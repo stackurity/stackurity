@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   api,
   type ConfigCategory,
@@ -250,7 +250,9 @@ function SummaryStrip({ s }: { s: ConfigSummary }) {
 export function ConfigFindingsView({ assetId }: { assetId?: number }) {
   const { can } = useAuth();
   const [view, setView] = useState<ConfigViewName>("attention");
-  const [category, setCategory] = useState("");
+  const { search } = useLocation();
+  // A link may choose the kind (?category=attack_tool, from a threat notice).
+  const [category, setCategory] = useState(() => (assetId ? "" : (new URLSearchParams(search).get("category") ?? "")));
   const [offset, setOffset] = useState(0);
   const path = assetId
     ? `/assets/${assetId}/config-findings`

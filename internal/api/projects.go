@@ -104,6 +104,7 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/packs/{id}/archive": globalScope,
 	"GET /api/v1/feeds":              globalScope,
 	"GET /api/v1/advisories/{key}":   globalScope,
+	"GET /api/v1/threats":            globalScope,
 
 	// Narrowed by row-level security.
 	"GET /api/v1/projects":                     scopedRead,

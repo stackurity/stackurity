@@ -19655,6 +19655,113 @@
      }
     }
    }
+  },
+  "/threats": {
+   "get": {
+    "operationId": "get_threats",
+    "summary": "The threat catalogue",
+    "description": "The named threats this server checks for (attacker tools, exploited vulnerabilities, campaigns): the catalogue embedded in the release, merged with the signed threat feed. Each has its rules and vulnerabilities, the connections its check needs with their Help pages, min_version and has_check\n\nRole: viewer",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/threat-notices": {
+   "get": {
+    "operationId": "get_threat_notices",
+    "summary": "The organisation's threat notices",
+    "description": "One notice per threat: the verdict (found, covered, needs_connection, upgrade), the evidence as counts, the missing connections with their Help pages, the banner's action, when each channel had it, and whether the caller hid the banner\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/threat-notices/{id}/dismiss": {
+   "post": {
+    "operationId": "post_threat_notices_id_dismiss",
+    "summary": "Hide a threat notice's banner",
+    "description": "Hide the banner of a threat notice for the caller, for its current verdict. It shows again if the threat is later found\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {

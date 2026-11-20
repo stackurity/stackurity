@@ -175,6 +175,7 @@ var routeRules = map[string]routeRule{
 	}},
 	"GET /api/v1/notification-options": {class: "list"},
 	"GET /api/v1/email-recipients":     {class: "list"},
+	"GET /api/v1/threat-notices":       {class: "list"},
 	// Connect PagerDuty: a state or session of A's (or a guessed one) is
 	// refused in B; B's connect starts in B (pagerduty_app_test.go).
 	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
@@ -328,6 +329,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/feeds":                 {class: "global"},
 	"POST /api/v1/feeds/{name}/refresh": {class: "global"},
 	"GET /api/v1/advisories/{key}":      {class: "global"},
+	"GET /api/v1/threats":               {class: "global"},
 	"GET /api/v1/plugins":               {class: "global"},
 	// Setup commands for the caller's own workspace; nothing of A's.
 	"GET /api/v1/cloud-setup/gcp":   {class: "list", query: "?project_id=acme-prod&project_number=123"},
@@ -461,6 +463,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/assets/{id}/config-findings":                   {class: "object", obj: id("asset")},
 	"POST /api/v1/config-findings/{id}/dismiss":                 {class: "object", obj: id("configfinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
 	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
+	"POST /api/v1/threat-notices/{id}/dismiss":                  {class: "object", obj: id("threatnotice")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/closure":                         {class: "object", obj: id("finding")},
@@ -793,6 +796,14 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s config findings: %v %v", tag, configs, err)
 	}
 	set("configfinding", configs[0].ID)
+	if err := e.st.RecordThreatsSeen(tenant.System(ctx), []store.ThreatSeen{{ID: "artex", Name: "ARTEX", Revision: 1, Source: "embedded"}}); err != nil {
+		t.Fatal(err)
+	}
+	notice, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered", Connected: map[string]int{"host_agent": 1}}, store.NoticeTell)
+	if err != nil {
+		t.Fatalf("%s threat notice: %v", tag, err)
+	}
+	set("threatnotice", notice.ID)
 	second := ingest("db-"+tag, []model.Identifier{{Scheme: "machine-id", Value: tag + "-m2"}},
 		model.Observation{Purl: "pkg:npm/" + tag + "-db-lib@2.0.0", Confidence: model.ConfidenceConfirmed})
 	set("asset2", second.AssetID)

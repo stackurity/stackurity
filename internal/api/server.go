@@ -36,6 +36,7 @@ import (
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
 type Server struct {
@@ -118,6 +119,11 @@ type Server struct {
 	// UpdateCheck is false when the operator turned the release check off
 	// (STACKURITY_UPDATE_CHECK=off); GET /updates then says so.
 	UpdateCheck bool
+	// Threats gives the threat catalogue (internal/threatnotice): the
+	// embedded one merged with the signed feed. Nil: the embedded one.
+	Threats interface {
+		Current(ctx context.Context) (*threats.Catalogue, error)
+	}
 	// HTTPMetrics records requests for the metrics listener; nil disables it.
 	HTTPMetrics *metrics.HTTP
 	// Schema reports when the database was migrated by a newer version while
@@ -437,6 +443,7 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/config-findings", s.listConfigFindings)
 				r.Get("/config-findings", s.listConfigFindings)
 				r.Get("/config-findings/summary", s.configSummary)
+				r.Get("/threats", s.listThreats)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -545,6 +552,10 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/notifications", s.getScopeNotifications)
 				r.Get("/notification-options", s.notificationOptions)
 				r.Get("/email-recipients", s.listEmailRecipients)
+				// Threat notices: the organisation's, with the caller's banner
+				// state (handlers_threats.go).
+				r.Get("/threat-notices", s.listThreatNotices)
+				r.Post("/threat-notices/{id}/dismiss", s.dismissThreatNotice)
 				r.Post("/ignore-requests/{id}/decision", s.decideIgnoreRequest)
 				r.Delete("/ignore-rules/{id}", s.endIgnoreRule)
 				r.Post("/vex/documents/{id}/decision", s.decideVEXDocument)

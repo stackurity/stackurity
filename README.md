@@ -97,7 +97,7 @@ Community is free and complete for finding and prioritising what to fix. Each se
 
 ## Principles
 
-- Self-hosted, with no telemetry. Each server needs a free key from a sign-up, checked offline: the server never contacts us for it ([details](docs/install.md#the-free-key)). The only automatic request to the project is a check for new releases: an anonymous read of the public release list that sends nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`. **Send feedback** in the dashboard sends only what a user writes there, when they press Send; `STACKURITY_FEEDBACK_URL=` turns it off.
+- Self-hosted, with no telemetry. Each server needs a free key from a sign-up, checked offline: the server never contacts us for it ([details](docs/install.md#the-free-key)). The only automatic requests to the project are a check for new releases and a read of the signed list of new threats ([threat notices](docs/threat-notices.md)): anonymous reads of public files that send nothing about you, compared locally, and turned off with `STACKURITY_UPDATE_CHECK=off`. **Send feedback** in the dashboard sends only what a user writes there, when they press Send; `STACKURITY_FEEDBACK_URL=` turns it off.
 - Every finding carries its source, timestamp and confidence.
 - Missing or stale data is shown as missing or stale. It is never treated as healthy.
 - Refreshing intelligence never changes your software. Changes need explicit policy.

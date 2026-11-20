@@ -90,7 +90,9 @@ Connecting an asset is quiet: one "connected" message, and no alerts, Jira issue
 | `STACKURITY_METRICS_ADDR` | off | Address for a separate Prometheus metrics listener, for example `127.0.0.1:9100` ([Health](#health)). It also serves Go heap and goroutine profiles ([Memory](operations.md#memory)). Never the API port |
 | `STACKURITY_HEAP_WARN_MIB` | `256` | Log a warning naming a job or periodic task when the heap grows by more than this many MiB while it runs; `off` turns it off ([Memory](operations.md#memory)) |
 | `STACKURITY_FEEDS` | on | `off` disables all intelligence feeds |
-| `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check: no request is made at all ([Upgrading](#upgrading)) |
+| `STACKURITY_UPDATE_CHECK` | on | `off` disables the release check and the [threat feed](threat-notices.md#the-feed): no request is made at all ([Upgrading](#upgrading)) |
+| `STACKURITY_THREAT_FEED_URL` | `https://stackurity.ai/threats/feed.signed.json` | A mirror of the signed threat feed (`feed.signed.json`, copied unchanged) for [threat notices](threat-notices.md). A mirror may be on a private network and redirect to another host; the default address may not |
+| `STACKURITY_THREAT_NOTICE_COPY_TO` | unset | Stackurity Cloud only: an address that gets one summary email per threat after its notices went out (counts per verdict and one example, no organisation or asset names). A self-hosted server ignores it and logs a warning ([threat notices](threat-notices.md#the-operators-copy)) |
 | `STACKURITY_CLIENT_ERRORS` | on | `off` stops keeping [error reports](#error-reports): the dashboard sends none and the server records none of its own. They never leave the installation either way |
 | `STACKURITY_FEEDBACK_URL` | `https://stackurity.dev/feedback` | Where **Send feedback** delivers what users write. Set it empty (`STACKURITY_FEEDBACK_URL=`) or `off` to hide the button and turn feedback off ([network.md](network.md#feedback)) |
 | `STACKURITY_UPDATE_URL` | GitHub's release list | Mirror of `https://api.github.com/repos/stackurity/stackurity/releases?per_page=20`, for installs that cannot reach GitHub |

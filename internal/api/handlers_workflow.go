@@ -697,9 +697,13 @@ func (s *Server) saveRouteAs(w http.ResponseWriter, r *http.Request, id int64, s
 	} else if rt.OwnerAssetID != nil {
 		rt.ProjectIDs = nil
 	}
+	asked := slices.Contains(rt.Events, store.EventThreatNotices)
 	if err := resolveRouteEvents(&rt, cur, sent); err != nil {
 		s.fail(w, r, err)
 		return
+	}
+	if ch, err := s.Store.GetChannel(r.Context(), rt.ChannelID); err == nil && ch.Kind == notify.KindWebhook {
+		webhookThreatOptIn(&rt, cur, sent, asked)
 	}
 	rt.ID = id
 	rt.Name = strings.TrimSpace(rt.Name)
@@ -851,6 +855,21 @@ func resolveRouteEvents(rt, cur *store.Route, sent map[string]json.RawMessage) e
 	}
 	rt.Mode = "" // derived from the events when saved
 	return nil
+}
+
+// webhookThreatOptIn: a webhook route sends threat notices only when the
+// request names threat_notices in its events, or it had them and the
+// request leaves events alone. A receiver may not expect the new message
+// kind, so defaults and mode changes never add it (migration 0118 left
+// existing webhook routes out too).
+func webhookThreatOptIn(rt, cur *store.Route, sent map[string]json.RawMessage, asked bool) {
+	_, hasEvents := sent["events"]
+	keep := (hasEvents && asked) || (!hasEvents && cur != nil && slices.Contains(cur.Events, store.EventThreatNotices))
+	if keep {
+		return
+	}
+	rt.Events = slices.DeleteFunc(slices.Clone(rt.Events), func(e string) bool { return e == store.EventThreatNotices })
+	delete(rt.EventChannels, store.EventThreatNotices)
 }
 
 func sameStrings(a, b []string) bool {

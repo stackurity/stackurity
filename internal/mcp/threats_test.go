@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
 type tAsset struct {
@@ -38,8 +39,18 @@ type threatAPI struct {
 	assets       []tAsset
 	findings     []tFinding
 	scanned      map[int64]bool // hosts whose config checks ran
+	// scanVersion is the agent version those checks recorded ("" means
+	// 0.20.17, the first with ARTEX's check).
+	scanVersion string
 	// extraTotal is added to the assets' total, as if more existed.
 	extraTotal int
+	// catalogue answers GET /api/v1/threats ("": 404, an older server);
+	// search answers GET /api/v1/search; notices GET /api/v1/threat-notices
+	// (noticesStatus: an error status instead).
+	catalogue     string
+	search        string
+	notices       string
+	noticesStatus int
 }
 
 func ptr(b bool) *bool { return &b }
@@ -64,6 +75,26 @@ func (f *threatAPI) Do(_ context.Context, method, path string, _ io.Reader, _ ma
 	bad := func(why string) error { return fmt.Errorf("fake API: %s: %s", why, path) }
 	var body any
 	switch {
+	case p == "/api/v1/threats":
+		if f.catalogue == "" {
+			return &client.APIError{Status: 404, Code: "not_found", Message: "not found"}
+		}
+		return json.Unmarshal([]byte(f.catalogue), out)
+	case p == "/api/v1/search":
+		s := f.search
+		if s == "" {
+			s = `{"vulnerabilities":[]}`
+		}
+		return json.Unmarshal([]byte(s), out)
+	case p == "/api/v1/threat-notices":
+		if f.noticesStatus != 0 {
+			return &client.APIError{Status: f.noticesStatus, Code: "forbidden", Message: "forbidden"}
+		}
+		s := f.notices
+		if s == "" {
+			s = `{"items":[]}`
+		}
+		return json.Unmarshal([]byte(s), out)
 	case p == "/api/v1/config-findings":
 		if f.configStatus != 0 {
 			return &client.APIError{Status: f.configStatus, Code: "bad_request", Message: "category must be agent_hook, ssh or ci"}
@@ -76,7 +107,11 @@ func (f *threatAPI) Do(_ context.Context, method, path string, _ io.Reader, _ ma
 		id, _ := strconv.ParseInt(strings.TrimSuffix(strings.TrimPrefix(p, "/api/v1/assets/"), "/config-findings"), 10, 64)
 		scans := []map[string]any{}
 		if f.scanned[id] {
-			scans = append(scans, map[string]any{"collector_id": "agent", "complete": true})
+			v := f.scanVersion
+			if v == "" {
+				v = "0.20.17"
+			}
+			scans = append(scans, map[string]any{"collector_id": "linux-agent", "complete": true, "collector_version": v})
 		}
 		body = map[string]any{"items": []any{}, "total": 0, "scans": scans}
 	case p == "/api/v1/assets":
@@ -281,7 +316,7 @@ func TestThreatCheckAssetOutsideRead(t *testing.T) {
 func TestThreatCheckUnknown(t *testing.T) {
 	api := &threatAPI{}
 	out := check(t, api, "no-such-thing")
-	if out["known"] != false || len(out["known_threats"].([]any)) != len(threats) || len(api.paths) != 0 {
+	if out["known"] != false || len(out["known_threats"].([]any)) != len(threats.Embedded().Threats) || len(api.paths) != 1 {
 		t.Errorf("unknown: %v %v", out, api.paths)
 	}
 }
@@ -302,18 +337,80 @@ func TestListRiskySettings(t *testing.T) {
 	}
 }
 
-// Every threat names its rules, a required connection and its sources.
-func TestThreatTable(t *testing.T) {
-	for _, th := range threats {
-		req := false
-		for _, n := range th.Needs {
-			req = req || n.Required
-			if !strings.HasPrefix(n.Connect, "/help/") {
-				t.Errorf("%s: connect %q", th.ID, n.Connect)
-			}
-		}
-		if !req || len(th.Rules) == 0 || len(th.Sources) == 0 || th.ID != strings.ToLower(th.ID) {
-			t.Errorf("threat %s is incomplete", th.ID)
-		}
+// The server's catalogue wins over this build's: a threat it added from
+// the feed (a known-exploited CVE) is checked through search, and a threat
+// whose check is newer than the server says to upgrade.
+func TestThreatCheckServerCatalogue(t *testing.T) {
+	artex, _ := threats.Embedded().Get("artex")
+	cve := threats.Threat{ID: "fooshell", Revision: 1, Name: "FooShell", Kind: threats.KindExploitedVuln, Severity: "critical",
+		Summary: "An exploited flaw.", FirstSeen: "2026-11-18", PublishedAt: "2026-11-21", MinVersion: "0.1.0",
+		Detects: threats.Detects{CVEs: []string{"CVE-2026-1111"}},
+		Needs:   []threats.Need{{Connection: threats.ConnHostAgent, Required: true, Checks: "installed packages", Help: "/help/add-server"}}}
+	type st struct {
+		threats.Threat
+		HasCheck bool `json:"has_check"`
+	}
+	old := artex
+	old.MinVersion = "0.99.0"
+	cat, _ := json.Marshal(map[string]any{"threats": []st{{old, false}, {cve, true}}})
+	api := estate()
+	api.catalogue = string(cat)
+	api.search = `{"vulnerabilities":[{"key":"GHSA-xxxx","title":"FooShell","severity":"critical","known_exploited":true,"open_findings":3,"affected_assets":2,"assets":[{"id":1,"name":"web-1"}]},
+		{"key":"CVE-2026-1111","open_findings":0}]}`
+	out := check(t, api, "fooshell")
+	found, _ := out["found"].([]any)
+	if out["verdict"] != "found" || len(found) != 1 || found[0].(map[string]any)["vulnerability"] != "GHSA-xxxx" {
+		t.Fatalf("CVE threat from the feed: %v", out)
+	}
+	api = estate()
+	api.catalogue = string(cat)
+	out = check(t, api, "artex")
+	gaps, _ := json.Marshal(out["data_gaps"])
+	if out["verdict"] != "not_checked" || out["checked"] != false || !strings.Contains(string(gaps), "older than 0.99.0") {
+		t.Errorf("server without the check: %v", out)
+	}
+}
+
+// A finding only named like ARTEX is possible, never found.
+func TestThreatCheckSignalRule(t *testing.T) {
+	api := estate()
+	api.config = []map[string]any{{"id": 9, "asset_id": 1, "rule": "attack-tool-artex-name", "category": "attack_tool", "severity": "medium"}}
+	out := check(t, api, "artex")
+	if out["verdict"] == "found" || len(out["found"].([]any)) != 0 || len(out["possible"].([]any)) != 1 {
+		t.Errorf("name only: %v", out)
+	}
+}
+
+func TestListThreatNotices(t *testing.T) {
+	api := &threatAPI{notices: `{"items":[{"id":4,"threat_id":"artex","name":"ARTEX","verdict":"needs_connection","dismissed":true,
+		"missing_connections":[{"connection":"host_agent","help":"/help/add-server"}]}]}`}
+	out := callTool(t, &Server{API: api, Version: "t"}, "list_threat_notices", nil)
+	items, _ := out["notices"].([]any)
+	if len(items) != 1 || items[0].(map[string]any)["verdict"] != "needs_connection" || api.paths[0] != "GET /api/v1/threat-notices" {
+		t.Fatalf("notices: %v %v", out, api.paths)
+	}
+	if strings.Contains(strings.ToLower(fmt.Sprint(out)), "upgrade your plan") {
+		t.Error("no upsell in a normal answer")
+	}
+	api = &threatAPI{noticesStatus: 403}
+	out = callTool(t, &Server{API: api, Version: "t"}, "list_threat_notices", nil)
+	if out["notices"] != nil || !strings.Contains(fmt.Sprint(out["message"]), "security or admin role") {
+		t.Errorf("a viewer: %v", out)
+	}
+}
+
+// A server whose agent predates the check ran config checks, but not this
+// threat's: it is not checked, as in the threat notice.
+func TestThreatCheckOldAgentNotChecked(t *testing.T) {
+	api := estate()
+	api.scanVersion = "v0.20.15"
+	out := check(t, api, "artex")
+	if out["verdict"] == "covered" || out["checked"] != false {
+		t.Errorf("old agents: %v", out)
+	}
+	api = estate()
+	api.scanVersion = "dev"
+	if out := check(t, api, "artex"); out["verdict"] == "covered" {
+		t.Errorf("a development agent on a release server counts as checked: %v", out)
 	}
 }

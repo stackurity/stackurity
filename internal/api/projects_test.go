@@ -120,6 +120,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/integrations/pagerduty/cancel":                    "org",
 	"GET /api/v1/notification-options":                              "org",
 	"GET /api/v1/email-recipients":                                  "org",
+	"GET /api/v1/threat-notices":                                    "org",
+	"POST /api/v1/threat-notices/{id}/dismiss":                      "org",
 	"POST /api/v1/email-recipients/resend":                          "org",
 	"POST /api/v1/integrations/teams/install":                       "org",
 	"GET /api/v1/integrations/teams/install/{id}":                   "account",
@@ -207,6 +209,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/packs/{id}/archive": "global",
 	"GET /api/v1/feeds":              "global",
 	"GET /api/v1/advisories/{key}":   "global",
+	"GET /api/v1/threats":            "global",
 
 	"GET /api/v1/projects":                                         "scoped",
 	"GET /api/v1/projects/{id}":                                    "scoped",
@@ -1617,7 +1620,7 @@ func TestProjectMCP(t *testing.T) {
 		lines = append(lines, string(b))
 		n++
 	}
-	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "threat_check", "get_finding", "find_component",
+	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "threat_check", "list_threat_notices", "get_finding", "find_component",
 		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 		"account_overview", "integrations_status", "notification_settings"}
 	for _, name := range tools {

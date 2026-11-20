@@ -1,0 +1,16 @@
+Subject: ARTEX: your connected assets are checked, nothing was found
+
+- ARTEX is being used against systems on the public internet.
+- Your connected assets are checked for it (12 servers with the agent, 30 container images) and nothing was found. You don't need to do anything.
+- To check more of your estate for it, also connect your repositories.
+- About ARTEX: ARTEX is an open-source, AI-driven penetration-testing framework (a Go server with a Next.js web console, default port 8787) published on GitHub in July 2026 and taken down on 8 October 2026; copies and forks still circulate. Criminal and state-aligned groups use it to automate intrusions against internet-facing systems, and the FBI warned about it on 13 November 2026. It is not a vulnerability: there is nothing to patch. Two prebuilt Docker Hub images (tomicdd/artex and congdonglinux/artex) were reported to carry a backdoored login handler.
+
+About threat notices:
+https://app.stackurity.dev/help/threat-notices
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you are an administrator or on the security team of an organisation on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai
