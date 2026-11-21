@@ -85,7 +85,12 @@ func (s *Scanner) nestedApp(dir, p string) bool {
 
 // App is one deployed application and what it has installed.
 type App struct {
-	Dir     string // host path
+	Dir string // host path
+	// Home is the application's own directory when Dir is the current
+	// release of a release layout (/var/www/shop for
+	// /var/www/shop/releases/20261121142525-31944f9): it stays the same
+	// across deploys, so the asset does too. Empty otherwise.
+	Home    string
 	Name    string
 	Version string // the version its own package.json or composer.json gives, if any
 	GitURL  string // origin remote, normalised, when the directory is a Git checkout
@@ -99,6 +104,15 @@ type App struct {
 	// Unreadable: the agent's user may not read the directory itself, so
 	// nothing in it was inventoried (see PermissionScope).
 	Unreadable bool
+}
+
+// Key identifies the application across scans: its Home in a release
+// layout, else its directory.
+func (a App) Key() string {
+	if a.Home != "" {
+		return a.Home
+	}
+	return a.Dir
 }
 
 func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, hostPath) }
@@ -415,6 +429,29 @@ func (s *Scanner) currentRelease(dir string) (string, bool) {
 	return target, true
 }
 
+// layoutHome is the application directory of a release layout when host
+// path dir is its current release, or a directory inside it (a document
+// root such as releases/3/public gives /data/rel/public), as discovery
+// and web server configuration report them. An old release, kept for
+// rollback, has none: it is not what runs.
+func (s *Scanner) layoutHome(dir string) string {
+	for p := path.Dir(dir); p != "/" && p != "."; p = path.Dir(p) {
+		if !slices.Contains(releaseDirs, path.Base(p)) {
+			continue
+		}
+		app := path.Dir(p)
+		cur, ok := s.currentRelease(app)
+		if !ok || !strings.HasPrefix(cur, p+"/") {
+			continue
+		}
+		if dir == cur || strings.HasPrefix(dir, cur+"/") {
+			return app + strings.TrimPrefix(dir, cur)
+		}
+		return ""
+	}
+	return ""
+}
+
 // isReleaseDir reports whether host path p is the versions/ (or
 // releases/) directory of a release layout: its parent has a current link
 // into it.
@@ -434,10 +471,23 @@ func (s *Scanner) hostPath(p string) string {
 // ScanApp inventories one application directory.
 func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	dir = path.Clean("/" + dir)
-	if cur, ok := s.currentRelease(dir); ok {
-		dir = cur
+	if s.isReleaseDir(dir) {
+		dir = path.Dir(dir) // a web server serving releases/ itself serves the application
+	} else if path.Base(dir) == "current" {
+		if _, ok := s.currentRelease(path.Dir(dir)); ok {
+			dir = path.Dir(dir) // configured as /var/www/shop/current
+		}
 	}
-	app := App{Dir: dir, Name: path.Base(dir)}
+	home := ""
+	if cur, ok := s.currentRelease(dir); ok {
+		home, dir = dir, cur
+	} else {
+		home = s.layoutHome(dir)
+	}
+	app := App{Dir: dir, Home: home, Name: path.Base(dir)}
+	if home != "" {
+		app.Name = path.Base(home) // "shop", not the release's timestamp
+	}
 	den := &denied{dir: dir}
 	fi, err := os.Stat(s.path(dir))
 	if den.note(dir, err) {
