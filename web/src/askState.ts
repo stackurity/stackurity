@@ -70,3 +70,20 @@ export function clearAskState(store: Store | null = storage()): void {
     // nothing to do
   }
 }
+
+// The Ask settings card (Integrations → AI assistants) and the panel's
+// status live in different parts of the page: the shell loads the status
+// once, so turning Ask on or off there left an open panel saying it was off
+// until a reload (21 Nov 2026). The card announces each saved change and the
+// shell reloads the status.
+const settingsChanged = new EventTarget();
+
+export function announceAskSettingsChanged(): void {
+  settingsChanged.dispatchEvent(new Event("changed"));
+}
+
+export function onAskSettingsChanged(fn: () => void): () => void {
+  const h = () => fn();
+  settingsChanged.addEventListener("changed", h);
+  return () => settingsChanged.removeEventListener("changed", h);
+}

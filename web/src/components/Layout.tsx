@@ -56,7 +56,7 @@ import { ErrorBox } from "./ui";
 import { useMenu, useModal } from "./useFocus";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
-import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
+import { clearAskState, EMPTY_ASK_STATE, loadAskState, onAskSettingsChanged, saveAskState, type AskPanelState } from "../askState";
 
 function readPrefs(): NavPrefs {
   try {
@@ -174,6 +174,9 @@ function Shell() {
     () => (hasWorkspace ? api.get<AskStatus>("/ask/status") : Promise.resolve(undefined)),
     [hasWorkspace, wsId, askOpen],
   );
+  // Turning Ask on or off under Integrations → AI assistants updates the
+  // panel straight away.
+  useEffect(() => onAskSettingsChanged(() => askStatus.reload()), []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === "k" || e.key === "K") && askStatus.data && askStatus.data.reason !== "not_configured") {

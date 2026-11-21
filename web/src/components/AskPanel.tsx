@@ -26,7 +26,7 @@ import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackForm, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
-import type { AskPanelState } from "../askState";
+import { announceAskSettingsChanged, type AskPanelState } from "../askState";
 import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
@@ -747,15 +747,20 @@ export function AskSettingsCard() {
     }
   };
   const [consenting, setConsenting] = useState(false);
-  const setPropose = (on: boolean) => void run(async () => setS(await api.put<AskSettings>("/ask/settings", { propose_changes: on })));
+  // Each saved change tells the shell, so an open panel shows it without a reload.
+  const save = async (body: Record<string, unknown>) => {
+    setS(await api.put<AskSettings>("/ask/settings", body));
+    announceAskSettingsChanged();
+  };
+  const setPropose = (on: boolean) => void run(() => save({ propose_changes: on }));
   // Turning it on goes through the consent dialog; off needs nothing.
   const toggle = (enabled: boolean) => {
     if (enabled) setConsenting(true);
-    else void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: false })));
+    else void run(() => save({ enabled: false }));
   };
   const consent = () => {
     setConsenting(false);
-    void run(async () => setS(await api.put<AskSettings>("/ask/settings", { enabled: true, consent_version: ASK_CONSENT_VERSION })));
+    void run(() => save({ enabled: true, consent_version: ASK_CONSENT_VERSION }));
   };
   const deleteAll = async () => {
     if (
