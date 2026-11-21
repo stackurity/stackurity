@@ -933,7 +933,7 @@ type findingVEX struct {
 // clients cache the list).
 var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "list_code_findings", "threat_check", "list_threat_notices", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
-	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options"}
+	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options", "read_help"}
 
 // readTitles are the read tools' short human titles (directories show them).
 // The account tools add theirs in account.go.

@@ -35,7 +35,7 @@ import { PlaceText } from "./PlaceText";
 import { AskProposalCard } from "./AskProposalCard";
 import { looksLikeSecret, SECRET_REMOVED_NOTICE, SECRET_TYPING_WARNING } from "../askSecrets";
 import { changedLine, proposalsByAnswer, type AskProposal } from "../askProposal";
-import { AskAnswerExtras } from "./AskAnswerExtras";
+import { AskAnswerExtras, AskPageButtons } from "./AskAnswerExtras";
 import { PHONE_QUERY, useMediaQuery, useModal } from "./useFocus";
 
 /**
@@ -700,6 +700,7 @@ export function AskPanel({
                       />
                     ))}
                   <AskAnswerExtras text={t.text} onNavigate={onLinkClick} />
+                  <AskPageButtons text={t.text} onNavigate={onLinkClick} />
                   <AskReadOnly tools={t.tools} onNavigate={onLinkClick} proposal={t.proposals?.[0]} />
                   {conv !== null && t.seq ? <AskRate conv={conv} seq={t.seq} /> : null}
                 </BotTurn>

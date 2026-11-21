@@ -111,3 +111,19 @@ test("the client's consent version is the server's", async () => {
   assert.equal(ASK_CONSENT_VERSION, m[1], "web/src/ask.ts and internal/api/ask.go disagree on the consent wording's version");
   assert.equal(ASK_NOTICE_VERSION, ASK_CONSENT_VERSION);
 });
+
+test("pages and Help articles an answer links become buttons, once each, at most three", async () => {
+  const { pageLinks } = await import("./ask.ts");
+  const text = [
+    "Connect Slack under [Integrations](/integrations), then pick the channel.",
+    "- See **[Notifications help](/help/notifications)** for the triggers.",
+    "- Again: [Integrations](/integrations), and issue [CVE-2024-1](/findings/12), asset [web-1](/assets/3).",
+    "- [People](/people) and [Settings](/settings) and [evil](https://evil.example/x).",
+  ].join("\n");
+  assert.deepEqual(pageLinks(text), [
+    { to: "/integrations", label: "Integrations", help: false },
+    { to: "/help/notifications", label: "Notifications help", help: true },
+    { to: "/people", label: "People", help: false },
+  ]);
+  assert.deepEqual(pageLinks("No links here."), []);
+});
