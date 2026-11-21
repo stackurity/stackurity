@@ -424,6 +424,7 @@ func (s *Server) Handler() http.Handler {
 				r.Use(requireRole(auth.RoleViewer))
 				r.Get("/projects", s.listProjects)
 				r.Get("/projects/{id}", s.getProject)
+				r.Get("/projects/{id}/ask-notes", s.getProjectAskNotes)
 				r.Get("/overview", s.overview)
 				r.Get("/facets", s.facets)
 				r.Get("/search", s.search)
@@ -570,6 +571,9 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/assets/{id}", s.deleteAsset)
 				r.Post("/projects", s.createProject)
 				r.Patch("/projects/{id}", s.updateProject)
+				// A project's notes for Ask: admins of that project (the
+				// handler checks the role on it; project_ask_notes.go).
+				r.Put("/projects/{id}/ask-notes", s.putProjectAskNotes)
 				r.Post("/projects/{id}/assets", s.changeProjectAssets(true))
 				r.Delete("/projects/{id}/assets", s.changeProjectAssets(false))
 				r.Get("/project-suggestions", s.projectSuggestions)

@@ -8146,6 +8146,92 @@
     }
    }
   },
+  "/projects/{id}/ask-notes": {
+   "get": {
+    "operationId": "get_projects_id_ask_notes",
+    "summary": "A project's notes for Ask Stackurity",
+    "description": "The short text the project's admins wrote about it, which Ask Stackurity reads as background (never as instructions) when a question is about this project. Answer: `notes`, `updated_at`, `max_chars` (2,000), `can_edit`.\n\nRole: viewer on the project",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "viewer on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_projects_id_ask_notes",
+    "summary": "Change a project's notes for Ask Stackurity",
+    "description": "`notes`: up to 2,000 characters; an empty string clears them. Admins of the project (an organisation-wide admin, or an admin grant on it), in the dashboard only (not an AI assistant). Audited with the old and new text.\n\nRole: admin on the project",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/projects/{id}/assets": {
    "delete": {
     "operationId": "delete_projects_id_assets",
@@ -17726,6 +17812,55 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/ask/feedback/incomplete": {
+   "get": {
+    "operationId": "get_admin_ask_feedback_incomplete",
+    "summary": "Refused and incomplete Ask Stackurity answers",
+    "description": "How many Ask Stackurity answers were refused or left incomplete, per day (UTC) and model, across this server's organisations, from the call log: `summary.days` (`answer_calls`, `refusals`, `incomplete`), totals, `summary.by_reason` (`refusal`, `cannot_answer`, `tool_error`, `max_tokens`, `tool_budget`, `too_long`) and `summary.by_refusal_category` from the detailed rows (kept 90 days, from `summary.detail_since`). Counts only, never questions or answers. `since`: a date or RFC 3339 time (default 30 days ago).\n\nRole: instance admin, or a feedback review token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin, or a feedback review token",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "description": "A date (2006-01-02) or an RFC 3339 time",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": false,
+      "description": "One organisation only",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",
