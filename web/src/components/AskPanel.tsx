@@ -26,7 +26,9 @@ import { IconMessage } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackForm, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
-import { announceAskSettingsChanged, type AskPanelState } from "../askState";
+import { announceAskSettingsChanged, onAskStackurity, type AskPanelState } from "../askState";
+import { startersFor } from "../askStarters";
+import { useAuth } from "../auth";
 import { useProject } from "../project";
 import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
@@ -146,6 +148,31 @@ export function AskReadOnly({ tools, onNavigate, proposal }: { tools?: string[];
   );
 }
 
+/**
+ * The questions to start with, as buttons: what needs doing now (the page's
+ * own question first) and how to set something up (askStarters.ts). Also
+ * on the Dashboard's Ask card.
+ */
+export function AskStarters({ pathname, admin, disabled, onAsk }: { pathname: string; admin: boolean; disabled?: boolean; onAsk: (q: string) => void }) {
+  const { now, how } = startersFor(pathname, { admin });
+  const group = (title: string, qs: string[]) => (
+    <div className="ask-starters" role="group" aria-label={title}>
+      <p className="ask-starters-title">{title}</p>
+      {qs.map((q) => (
+        <button key={q} type="button" className="ask-starter" disabled={disabled} onClick={() => onAsk(q)}>
+          {q}
+        </button>
+      ))}
+    </div>
+  );
+  return (
+    <>
+      {group("What needs doing", now)}
+      {group("Getting set up", how)}
+    </>
+  );
+}
+
 /** The top bar's button; hidden when the server has no model provider. */
 export function AskButton({ status, onOpen }: { status: AskStatus | undefined; onOpen: () => void }) {
   if (!status || status.reason === "not_configured") return null;
@@ -197,6 +224,7 @@ export function AskPanel({
   reload: () => void;
 }) {
   const { pathname } = useLocation();
+  const { can } = useAuth();
   const open = state.open && !state.minimised;
   const conv = state.conversation;
   const text = state.text;
@@ -280,6 +308,28 @@ export function AskPanel({
     if (minimised) minimise();
     else onClose();
   };
+
+  // A question asked from elsewhere on the page (askStackurity: the
+  // Dashboard's card, an empty state): open with it, then ask it as soon as
+  // the panel can (the first-question notice accepted, Ask available). Until
+  // then it waits in the question box.
+  const pending = useRef<string | null>(null);
+  const sendRef = useRef<((q: string) => void) | null>(null);
+  useEffect(
+    () =>
+      onAskStackurity((q) => {
+        pending.current = q;
+        setView("chat");
+        update({ open: true, minimised: false, text: q });
+      }),
+    [], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  useEffect(() => {
+    const q = pending.current;
+    if (!q || !open || busy || !status?.notice_accepted || !status.available || !sendRef.current) return;
+    pending.current = null;
+    sendRef.current(q);
+  });
 
   if (!state.open) return null;
   if (state.minimised) {
@@ -366,9 +416,9 @@ export function AskPanel({
     }
   };
 
-  const send = async (ev?: FormEvent) => {
+  const send = async (ev?: FormEvent, asked?: string) => {
     ev?.preventDefault();
-    const q = text.trim();
+    const q = (asked ?? text).trim();
     if (!q || busy) return;
     setError(null);
     setBusy(true);
@@ -457,6 +507,8 @@ export function AskPanel({
       reload();
     }
   };
+
+  sendRef.current = (q) => void send(undefined, q);
 
   const stop = () => abort.current?.abort();
   // A card's new state (applied, dismissed, …), kept with its answer.
@@ -619,14 +671,13 @@ export function AskPanel({
         <>
           <div className="ask-body ask-log" aria-live="polite" ref={body}>
             {turns.length === 0 && !busy && (
-              <div className="muted">
-                <p>Hi, I&apos;m Ask Stackurity, an AI assistant. Ask me about your inventory, issues and fixes. For example:</p>
-                <ul>
-                  <li>What should we fix first this week?</li>
-                  <li>Which servers run an end-of-life version of PHP?</li>
-                  <li>Was CVE-2024-3094 fixed everywhere?</li>
-                </ul>
-                <p className="small">Answers can be wrong: check the linked pages.</p>
+              <div className="ask-welcome">
+                <p className="muted">
+                  Hi, I&apos;m Ask Stackurity, an AI assistant. Ask me what to fix, what needs attention, or how to set something up. Pick a
+                  question or type your own.
+                </p>
+                <AskStarters pathname={pathname} admin={can("admin")} disabled={Boolean(blocked)} onAsk={(q) => void send(undefined, q)} />
+                <p className="small muted">Answers can be wrong: check the linked pages.</p>
               </div>
             )}
             {turns.map((t, i) =>

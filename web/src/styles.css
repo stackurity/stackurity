@@ -8220,3 +8220,61 @@ details.false-positives > summary {
   font-weight: 600;
   margin-bottom: 0.5rem;
 }
+
+/* Ask Stackurity, easy to find and quick to start (askStarters.ts): the top
+   bar button stands out, and the first questions are one click each in the
+   panel and on the Dashboard. */
+.topbar-ask {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.topbar-ask:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.ask-welcome > p:first-child {
+  margin-top: 0;
+}
+.ask-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0;
+}
+.ask-starters-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ask-starter {
+  text-align: left;
+  font: inherit;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  max-width: 100%;
+}
+.ask-starter:hover:not(:disabled),
+.ask-starter:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.ask-starter:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dash-ask-starters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 24px;
+}
