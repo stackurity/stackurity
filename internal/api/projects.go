@@ -299,8 +299,9 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			// It reads the person's role, and the questions left (its
-			// account_overview tool); no other account route.
-			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" {
+			// account_overview tool), and the plan's features (its
+			// plan_options and evidence_pack tools); no other account route.
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" && route != "GET /api/v1/plan/options" {
 				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
 				return
 			}
@@ -308,9 +309,10 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 		if a := p.Assistant; a != nil {
 			// An assistant reaches only what its tools use: no account
 			// settings, and with a connection to one project, nothing
-			// outside it.
-			if sc == accountScope && route != "GET /api/v1/auth/me" {
-				writeError(w, 403, "forbidden", "an assistant cannot change account settings")
+			// outside it. It reads the person (auth/me) and the plan's
+			// features (plan/options, for plan_options and evidence_pack).
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/plan/options" {
+				writeError(w, 403, "forbidden", "an assistant cannot read or change account settings")
 				return
 			}
 			if !a.AllowWrites && r.Method != http.MethodGet {
