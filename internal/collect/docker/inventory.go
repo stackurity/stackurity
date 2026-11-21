@@ -68,10 +68,10 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 	seen := map[string]bool{}
 	for _, dir := range dirs {
 		app := scanner.ScanApp(ctx, dir)
-		if seen[app.Dir] {
+		if seen[app.Key()] {
 			continue
 		}
-		seen[app.Dir] = true
+		seen[app.Key()] = true
 		if len(app.Observations) == 0 && !app.Unreadable && !explicit[dir] {
 			continue // a tool or an empty directory, as on a host
 		}
