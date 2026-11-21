@@ -112,7 +112,7 @@ test("the client's consent version is the server's", async () => {
   assert.equal(ASK_NOTICE_VERSION, ASK_CONSENT_VERSION);
 });
 
-test("pages and Help articles an answer links become buttons, once each, at most three", async () => {
+test("pages and Help articles an answer links become buttons, once each, at most four", async () => {
   const { pageLinks } = await import("./ask.ts");
   const text = [
     "Connect Slack under [Integrations](/integrations), then pick the channel.",
@@ -124,6 +124,23 @@ test("pages and Help articles an answer links become buttons, once each, at most
     { to: "/integrations", label: "Integrations", help: false },
     { to: "/help/notifications", label: "Notifications help", help: true },
     { to: "/people", label: "People", help: false },
+    { to: "/settings", label: "Settings", help: false },
   ]);
   assert.deepEqual(pageLinks("No links here."), []);
+});
+
+test("a how-to answer that links Help articles leads to the page that does it first", async () => {
+  const { pageLinks } = await import("./ask.ts");
+  const text = "For more detail, see [Add a server](/help/add-server). For a Mac, see [Add a Mac](/help/macos-hosts), and for many servers [Add many servers](/help/add-many-servers).";
+  assert.deepEqual(pageLinks(text), [
+    { to: "/assets/add", label: "Add server", help: false },
+    { to: "/assets/add?tab=fleet", label: "Add many servers", help: false },
+    { to: "/help/add-server", label: "Add a server", help: true },
+    { to: "/help/macos-hosts", label: "Add a Mac", help: true },
+  ]);
+  // An answer that already links the page gets no second button for it.
+  assert.deepEqual(pageLinks("Open [Integrations](/integrations); see [Notifications](/help/notifications)."), [
+    { to: "/integrations", label: "Integrations", help: false },
+    { to: "/help/notifications", label: "Notifications", help: true },
+  ]);
 });

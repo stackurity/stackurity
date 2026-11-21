@@ -695,6 +695,10 @@ func toolLabel(u ToolUse) string {
 		return "Preparing the evidence pack link"
 	case "plan_options":
 		return "Reading your plan options"
+	case "read_help":
+		// Not a read of the organisation's data: the panel leaves it out
+		// of "What Ask looked at" (web/src/askAnswer.ts HELP_READ).
+		return "Reading Help"
 	}
 	if u.Name == ConnectTool {
 		return "Preparing a connection"

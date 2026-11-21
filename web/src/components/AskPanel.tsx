@@ -30,7 +30,7 @@ import { announceAskSettingsChanged, onAskStackurity, type AskPanelState } from 
 import { startersFor } from "../askStarters";
 import { useAuth } from "../auth";
 import { useProject } from "../project";
-import { lookedAt, SECTION_TITLE, structureAnswer } from "../askAnswer";
+import { lookedAt, readHelpOnly, SECTION_TITLE, structureAnswer } from "../askAnswer";
 import { PlaceText } from "./PlaceText";
 import { AskProposalCard } from "./AskProposalCard";
 import { looksLikeSecret, SECRET_REMOVED_NOTICE, SECRET_TYPING_WARNING } from "../askSecrets";
@@ -118,6 +118,9 @@ function AnswerText({ text, onNavigate }: { text: string; onNavigate?: () => voi
  * has them), and that it changed nothing, since its tools only read.
  */
 export function AskReadOnly({ tools, onNavigate, proposal }: { tools?: string[]; onNavigate?: () => void; proposal?: AskProposal }) {
+  // A how-to answer read only Help articles: its buttons say where to go,
+  // and there is no data read or change to report.
+  if (tools && !proposal && readHelpOnly(tools)) return null;
   const reads = tools ? lookedAt(tools) : [];
   return (
     <div className="ask-ran small">
