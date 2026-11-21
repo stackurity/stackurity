@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 22 || len(writeTools) != 11 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 23 || len(writeTools) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {

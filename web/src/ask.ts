@@ -357,3 +357,33 @@ export function historyGroups(convs: AskConversation[], now: Date): { label: str
   }
   return groups.filter((g) => g.items.length > 0);
 }
+
+export interface PageLink {
+  to: string;
+  label: string;
+  /** A Help article (Read), rather than a page to act on (Open). */
+  help: boolean;
+}
+
+/**
+ * The Stackurity pages and Help articles an answer links (not issues,
+ * assets, packages or fixes, which have their own cards), first mention
+ * first, once each, at most max: shown as buttons under the answer so the
+ * next step is one click.
+ */
+export function pageLinks(text: string, max = 3): PageLink[] {
+  const out: PageLink[] = [];
+  const seen = new Set<string>();
+  const walk = (parts: Inline[]) => {
+    for (const p of parts) {
+      if (p.kind === "bold") walk(p.parts);
+      else if (p.kind === "link" && isNavPath(p.to) && !seen.has(p.to) && out.length < max) {
+        seen.add(p.to);
+        const label = p.text.replace(/\s+/g, " ").trim();
+        out.push({ to: p.to, label: label.length > 48 ? `${label.slice(0, 47)}…` : label, help: p.to.startsWith("/help") });
+      }
+    }
+  };
+  for (const line of text.split("\n")) walk(parseInline(line));
+  return out;
+}

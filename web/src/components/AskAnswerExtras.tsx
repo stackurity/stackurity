@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router";
 import { api, type FindingDetail, type FixGroup, type FixGroupDetail } from "../api";
 import { answerRefs } from "../askRefs";
+import { pageLinks } from "../ask";
 import { readMoreLinks, type ReadMoreLink } from "../advisoryLinks";
 import { ActionInstruction, isBuildStep, isCommand } from "./FixGroups";
 
@@ -158,5 +159,24 @@ export function AskAnswerExtras({ text, onNavigate }: { text: string; onNavigate
         </details>
       )}
     </div>
+  );
+}
+
+/**
+ * The pages and Help articles the answer pointed to, as buttons under it
+ * ("Open Integrations", "Read: Add a server"), so the next step is one
+ * click; the same targets as the answer's own links (ask.ts pageLinks).
+ */
+export function AskPageButtons({ text, onNavigate }: { text: string; onNavigate?: () => void }) {
+  const links = useMemo(() => pageLinks(text), [text]);
+  if (links.length === 0) return null;
+  return (
+    <nav className="ask-page-buttons" aria-label="Pages this answer points to">
+      {links.map((l) => (
+        <Link key={l.to} to={l.to} className="btn btn-sm" onClick={onNavigate}>
+          {l.help ? `Read: ${l.label}` : `Open ${l.label}`} →
+        </Link>
+      ))}
+    </nav>
   );
 }
