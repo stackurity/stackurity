@@ -8277,6 +8277,7 @@ details.false-positives > summary {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
   gap: 0 24px;
+}
 
 /* The pages and Help articles an Ask answer points to, one click each
    (AskAnswerExtras.tsx AskPageButtons). */
