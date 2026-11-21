@@ -6,6 +6,17 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.23
+
+### Changed
+
+- **A how-to answer from Ask leads to the page where you do it.** When an answer links a Help article about doing something, the first button under it opens that page: **Open Add server →** opens the Add server form (**Add many servers** its fleet tab), and articles on two-factor, API tokens, users, projects, the risk policy, AI assistants, owner rules and notifications open their pages. The article's **Read: …** button follows.
+- **How-to answers are just the steps.** They no longer carry a **Data gaps** section or a note that the screen may differ, and an answer that read only Help articles no longer shows **What Ask looked at** ("Reading") or the "changed nothing" line: reading Help is not a read of your data. Ask Stackurity prompt version `2026-11-22.1`.
+
+### Fixed
+
+- **Clearer wording for components from no package manager.** A component such as a Flutter web build's engine was listed as "1 component uses other packages, which Stackurity doesn't check yet", as if it depended on something else. It now reads "1 component is a standalone build, not from a package manager, which Stackurity doesn't check yet."
+
 ## 0.20.22
 
 ### Added
