@@ -6,6 +6,23 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.22
+
+### Added
+
+- **Ask Stackurity reads the Help articles.** A new read-only tool, `read_help`, returns a Help article's steps (by id, or the best matches for a few words), so "How do I add a server?" or "How do I connect Slack?" is answered from the same steps people read in Help, with a link to the article and to the page where it is done. AI assistants connected over MCP get the tool too (23 read-only tools). The articles are generated into `internal/helpdocs/articles.json` by `npm run help-json` in `web/`; a web test fails when it is out of date.
+- **Buttons under Ask's answers for the pages they point to:** "Open Integrations →", "Read: Add a server →", up to three, the same targets as the answer's own links.
+- **Ask Stackurity: questions to start with, one click each.** The panel opens with two short lists of questions that ask themselves when clicked: **What needs doing** ("What needs immediate attention?", "What's most important to fix this week?", and on an asset, issue, package or fix page a question about it first, such as "What should I fix on this asset first?") and **Getting set up** ("How do I add a server?" and "How do I invite my team?" for admins, "How do I get alerts in Slack or Teams?", "How do I use Stackurity day to day?").
+- **Ask Stackurity card on the Dashboard** with the same questions: a click opens the panel and asks. Where an admin turned Ask off, admins see where to turn it on; where Ask is not available (no model, not in the plan, read-only) there is no card. With no assets yet, the Dashboard also offers "Ask Stackurity how to start".
+- **Search finds pages, settings and help.** The top search now lists matching pages, settings and help articles first, under **Pages and settings**, by their name or a word people use for them: `sso` opens Single sign-on, `invite` People, `mfa` your account and the two-factor article, `api token` API tokens. Only pages the person's role can open are offered, and Billing and other hosted-only pages only where the server has them. Each result says where it lives in the sidebar ("Administration › Integrations"). The full results page has the same group. Found in the browser: no API change.
+- **Ctrl+K (⌘K) opens the search** from anywhere, as well as `/`.
+
+### Changed
+
+- **Ask Stackurity prompt version `2026-11-21.3`:** how-to questions are answered from `read_help`, never from memory; when no article covers it, Ask says so.
+- The top bar's **Ask** button is highlighted (accent colour) so it is easy to find.
+- The Settings sections are defined once (`web/src/navModel.ts`, `SETTINGS_GROUPS`) and shared by the Settings page and search.
+
 ## 0.20.21
 
 ### Fixed
