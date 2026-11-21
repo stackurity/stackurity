@@ -414,6 +414,7 @@ func (s *Server) Handler() http.Handler {
 			r.With(requireIngest).Post("/kubernetes/report", s.kubernetesReport)
 			r.With(requireIngest).Get("/collections/{id}/result", s.collectionResult)
 			r.With(requireIngest).Post("/sbom/import", s.importSBOM)
+			r.With(requireIngest).Post("/code-findings/import", s.importCodeFindings)
 			r.With(requireIngest).Get("/agent/check", s.agentCheck)
 			r.Group(func(r chi.Router) {
 				r.Use(requireIngest)
@@ -447,6 +448,9 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/config-findings/summary", s.configSummary)
 				r.Get("/threats", s.listThreats)
 				r.Get("/config-findings/{id}/second-checks", s.configSecondChecks)
+				r.Get("/assets/{id}/code-findings", s.listCodeFindings)
+				r.Get("/code-findings", s.listCodeFindings)
+				r.Get("/code-findings/summary", s.codeSummary)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -528,6 +532,8 @@ func (s *Server) Handler() http.Handler {
 				r.Post("/leaks/{id}/undismiss", s.undismissLeak)
 				r.Post("/config-findings/{id}/dismiss", s.dismissConfigFinding)
 				r.Post("/config-findings/{id}/undismiss", s.undismissConfigFinding)
+				r.Post("/code-findings/{id}/dismiss", s.dismissCodeFinding)
+				r.Post("/code-findings/{id}/undismiss", s.undismissCodeFinding)
 				// engineer, checked on the leak's asset like Check again
 				r.Post("/leaks/{id}/assign", s.assignLeak)
 				r.Post("/leaks/{id}/rotated", s.leakRotated)

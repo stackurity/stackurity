@@ -823,6 +823,8 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		d.leakMessage(&m, det, list)
 	case "config":
 		d.configMessage(&m, det, list)
+	case "code":
+		d.codeMessage(&m, det, list)
 	case "platform":
 		if det["problem"] == "client_errors" {
 			// A new error people hit (health.Checker.newClientErrors).
@@ -849,6 +851,9 @@ func (d *Dispatcher) message(in store.Incident, event string) Message {
 		}
 		if in.Kind == "config" {
 			m.Summary = []string{"No high-severity risky settings remain open on this asset"}
+		}
+		if in.Kind == "code" {
+			m.Summary = []string{"No critical or high code findings remain open on this asset"}
 		}
 		if in.Kind == "feed" {
 			m.Title = "Intelligence feed " + in.Key + " has recovered"

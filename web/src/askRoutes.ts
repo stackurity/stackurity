@@ -12,6 +12,7 @@ export const NAV_PATHS: readonly string[] = [
   "/fixes/mine",
   "/fixes/leaks",
   "/fixes/config",
+  "/fixes/code",
   "/fixes/automatic",
   // Assets
   "/coverage",
@@ -61,6 +62,7 @@ export const HELP_SLUGS: readonly string[] = [
   "ci-gate",
   "sbom",
   "vex",
+  "code-findings",
   "container-images",
   "container-registries",
   "cloud-plugins",

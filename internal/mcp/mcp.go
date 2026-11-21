@@ -161,7 +161,8 @@ const instructions = "Stackurity inventories software across hosts, deployed app
 	"for details. explain_finding cites why a finding matched and why it has its priority, upgrade_recommendation and remediation_plan " +
 	"give versions to move to (from stored data only), and verify_since checks what was fixed after a change. " +
 	"list_leaks lists keys, tokens and passwords found written in files (never their values), list_risky_settings risky " +
-	"settings (agent hooks, SSH access, GitHub Actions, attacker tools found), and threat_check whether a named attacker tool " +
+	"settings (agent hooks, SSH access, GitHub Actions, attacker tools found), list_code_findings what code scanners such as " +
+	"deepsec found in repositories' source, and threat_check whether a named attacker tool " +
 	"or campaign (such as ARTEX) was found, which internet-facing assets it could exploit, and what is not connected to check it; " +
 	"list_threat_notices lists the threat notices the organisation was sent. For questions about the " +
 	"account itself: account_overview (plan, limits and usage, your role, members by role), integrations_status (which " +
@@ -930,7 +931,7 @@ type findingVEX struct {
 
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
-var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "threat_check", "list_threat_notices", "get_finding", "find_component",
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "list_code_findings", "threat_check", "list_threat_notices", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options"}
 
@@ -944,6 +945,7 @@ var readTitles = map[string]string{
 	"list_findings":          "List issues",
 	"list_leaks":             "List leaked keys",
 	"list_risky_settings":    "List risky settings",
+	"list_code_findings":     "List code findings",
 	"threat_check":           "Check a named threat",
 	"list_threat_notices":    "List threat notices",
 	"get_finding":            "Get an issue",

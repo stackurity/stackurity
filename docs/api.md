@@ -46,7 +46,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **`402 plan_required`.** A paid feature the organisation's plan does not include answers `{"error": {"code": "plan_required", "message", "feature", "feature_name", "hosted", "included_in", "plan", "addon", "trial_available", "trial_days", "plans_url"}}`. `message` is a fixed sentence per feature. `feature` is the licence feature (such as `reachability` or `compliance_addon`) and `feature_name` what was asked for (such as `PCI DSS 4.0 evidence`). `included_in` names the plans (Stackurity Cloud, `hosted` true) or licence editions (self-hosted) that include it, smallest first. On Stackurity Cloud, `plan` is the smallest plan that includes an edition feature (`name`, `price` as a decimal in the main unit, `currency`, `interval`) and `addon` an add-on's price on top of the plans in `on`, both in the organisation's currency from the server's plan configuration; self-hosted servers give names only. `trial_available` is true only when the organisation can still start a free trial that includes the feature. `plans_url` is the informational plans page, never a checkout.
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
-- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `POST /code-findings/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -646,7 +646,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `leak_value_checks` means it takes each leak's `value_check`; collectors send it only to servers that list it. `config_findings` means `POST /ingest` stores a batch's `config_findings` ([risky settings](config-checks.md)); collectors send them only to servers that list it. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `leak_value_checks` means it takes each leak's `value_check`; collectors send it only to servers that list it. `config_findings` means `POST /ingest` stores a batch's `config_findings` ([risky settings](config-checks.md)); collectors send them only to servers that list it. `code_findings` means [`POST /code-findings/import`](#post-code-findingsimport) exists ([code findings](code-findings.md)); `stackurity import code-findings` checks it before uploading. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -701,7 +701,7 @@ Starts signing in a command-line tool from the browser, the OAuth 2.0 Device Aut
 
 **Who:** anyone (rate limited: 120 a minute per address, answered `slow_down`)
 
-The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts 90 days: it may `POST /ingest` and `POST /sbom/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
+The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts 90 days: it may `POST /ingest`, `POST /sbom/import` and `POST /code-findings/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
 
 ### `GET /ci-trusts`
 
@@ -820,6 +820,12 @@ An asset identifier with the scheme `selftest` is reserved for `stackurity selft
 **Who:** collector token, engineer and above
 
 Imports a CycloneDX or SPDX JSON document. Query: `asset_name`, `asset_kind`, `environment`, `project_id` (see [Uploads into a project](#uploads-into-a-project)). A collector token made for a project adds the assets it creates to it. VEX embedded in a CycloneDX SBOM is imported for the asset, for approval ([VEX](#vex)): the answer's `vex` is what [`POST /vex/import`](#post-veximport) would answer; with a collector token it is not imported and `vex_note` says so.
+
+### `POST /code-findings/import`
+
+**Who:** collector token, engineer and above
+
+Imports a code scanner's report as [code findings](code-findings.md) of a repository or application: the body is the report (gzip accepted, at most 16 MB and 5,000 findings). Query: `format` (`deepsec`: the JSON array `deepsec export --format json` writes; `sarif`: SARIF 2.1.0), the asset as `asset_id` or `git_url` (the repository's URL; the asset must have reported already: an import never creates one), `complete` (default `true`; `false` for a filtered report, which then resolves nothing it does not hold) and `model` (the AI model that produced the report, up to 128 characters, kept as provenance). A CI job's token ([keyless CI](#post-citoken)) may import only for its own repository, by `git_url`; a token bound to an asset only for that asset. Each source in the report (`deepsec`, or `sarif:<tool>` per SARIF run) replaces that source's earlier findings on the asset: found ones are added or updated, a complete import resolves the open ones it no longer has as `gone`, and one whose own verdict closes it (deepsec `false-positive`, `fixed`, `accepted-risk`, `duplicate`; a SARIF suppression) is stored resolved as `verdict` and never alerts. The people a deepsec export names (owners, on-call, committers) are not stored. Answers 201 `{"asset_id", "format", "complete", "sources": [{"source", "tool", "found", "open", "closed", "new", "gone", "skipped"}]}`; 400 for a document that is not of the format, 404 for an unknown `git_url`, 413 over the size limit. Audited as `code_findings.import`.
 
 ### `GET /collections/{id}/result`
 
@@ -980,6 +986,12 @@ The asset's [leaked keys](leaked-keys.md), paged, with the filters of [`GET /lea
 **Who:** viewer
 
 The asset's [risky settings](config-checks.md), paged, with the filters of [`GET /config-findings`](#get-config-findings), and `scans`: the last config check by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`, and `collector_version`: the version that collector recorded on the asset's latest complete collection). No check means the asset's settings were never checked, which is not the same as none found.
+
+### `GET /assets/{id}/code-findings`
+
+**Who:** viewer
+
+The asset's [code findings](code-findings.md), paged, with the filters of [`GET /code-findings`](#get-code-findings), and `imports`: the last import of each source (`source`, `format`, `tool`, `tool_version`, `model`, `run_id`, `complete`, `found`, `imported_at`). No import means no scanner's report was imported for the asset, which is not the same as none found.
 
 ### `GET /assets/{id}/drift`
 
@@ -1266,6 +1278,30 @@ Dismiss a config finding, with an optional `note` (up to 1,000 characters): a ke
 **Who:** security (on the finding's asset, with a project grant)
 
 Open a dismissed config finding again. `409` for one that is not dismissed.
+
+### `GET /code-findings`
+
+**Who:** viewer
+
+[Code findings](code-findings.md): what code-review security scanners found in repositories' source, imported with [`POST /code-findings/import`](#post-code-findingsimport); security findings first, most severe first, paged. Each has `asset_id`, `asset_name`, `asset_kind`, `source` (`deepsec` or `sarif:<tool>`), `rule`, `category` (`security`; `bug`: a non-security bug, deepsec's `BUG` and `HIGH_BUG`; `other`: a SARIF rule not tagged as security), `title`, `severity` (`critical`, `high`, `medium`, `low` or `info`), `path`, `start_line`, `end_line`, `description`, `recommendation`, `confidence`, `verdict` (the source's own: `true-positive`, `false-positive`, `fixed`, `uncertain`, `accepted-risk`, `duplicate`, `suppressed`, or empty), `verdict_note`, `tool`, `tool_version`, `model`, `run_id`, `status`, `resolution` (`gone`, `verdict` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. Text fields are the scanner's, as plain text. Query: `status` (`open`, the default, `resolved` or `all`), `severity` and `category` (one or several, comma-separated), `source`, `asset_id`.
+
+### `GET /code-findings/summary`
+
+**Who:** viewer
+
+Open code findings you can see, with the `asset_id` filter of [`GET /code-findings`](#get-code-findings): `by_severity`, `by_category`, and `imported_assets` (how many assets have an import at all).
+
+### `POST /code-findings/{id}/dismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Dismiss a code finding, with an optional `note` (up to 1,000 characters): not a real issue, or accepted. It stays dismissed whatever later imports say. Recorded in the activity log.
+
+### `POST /code-findings/{id}/undismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Undo a dismissal: the finding is open again, or resolved as `verdict` when its source's verdict closes it. `409` for one that is not dismissed.
 
 ### `GET /fix-groups`
 

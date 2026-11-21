@@ -17,6 +17,7 @@ import (
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/awsconnect/awsfake"
+	"github.com/stackurity/stackurity/internal/codefindings"
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/osv"
@@ -366,6 +367,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/sbom/import": {class: "create", query: "?asset_name=host-{tag}", body: func(*tenantFx) any {
 		return json.RawMessage(`{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}`)
 	}},
+	"POST /api/v1/code-findings/import": {class: "create", query: "?format=deepsec&asset_id={asset}", body: func(a *tenantFx) any {
+		return json.RawMessage(a.codeDoc())
+	}},
 	"GET /api/v1/agent/actions":              {class: "list"},
 	"GET /api/v1/agent/check":                {class: "list", query: "?asset_id={asset}&asset_id={asset2}"},
 	"POST /api/v1/agent/actions/{id}/report": {class: "object", obj: id("action"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"phase": "failed", "error": "x"} }},
@@ -381,6 +385,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/leaks":                   {class: "list", query: "?status=all&asset_id={asset}"},
 	"GET /api/v1/leaks/summary":           {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/config-findings":         {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/code-findings":           {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/code-findings/summary":   {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/config-findings/summary": {class: "list", query: "?asset_id={asset}"},
 	"GET /api/v1/findings/summary":        {class: "list"},
 	"GET /api/v1/findings/by-asset":       {class: "list", query: "?status=all&asset_id={asset}"},
@@ -465,6 +471,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/config-findings/{id}/dismiss":                 {class: "object", obj: id("configfinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
 	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
 	"POST /api/v1/threat-notices/{id}/dismiss":                  {class: "object", obj: id("threatnotice")},
+	"GET /api/v1/assets/{id}/code-findings":                     {class: "object", obj: id("asset")},
+	"POST /api/v1/code-findings/{id}/dismiss":                   {class: "object", obj: id("codefinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
+	"POST /api/v1/code-findings/{id}/undismiss":                 {class: "object", obj: id("codefinding")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
 	"GET /api/v1/leaks/{id}/second-checks":                      {class: "object", obj: id("leak"), emptyOK: true},
 	"GET /api/v1/config-findings/{id}/second-checks":            {class: "object", obj: id("configfinding"), emptyOK: true},
@@ -809,6 +818,19 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s threat notice: %v", tag, err)
 	}
 	set("threatnotice", notice.ID)
+	// And a code finding imported from a scanner's report.
+	rep, err := codefindings.Parse(codefindings.FormatDeepsec, []byte(f.codeDoc()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.ImportCodeFindings(ctx, main.AssetID, rep, "model-"+tag, true); err != nil {
+		t.Fatal(err)
+	}
+	codes, _, err := e.st.ListCodeFindings(ctx, store.CodeFindingFilter{AssetID: main.AssetID})
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("%s code findings: %v %v", tag, codes, err)
+	}
+	set("codefinding", codes[0].ID)
 	second := ingest("db-"+tag, []model.Identifier{{Scheme: "machine-id", Value: tag + "-m2"}},
 		model.Observation{Purl: "pkg:npm/" + tag + "-db-lib@2.0.0", Confidence: model.ConfidenceConfirmed})
 	set("asset2", second.AssetID)
@@ -1482,6 +1504,14 @@ func TestIsolationSweep(t *testing.T) {
 	}
 }
 
+// codeDoc is a deepsec export with one medium finding in the tenant's
+// code.
+func (f *tenantFx) codeDoc() string {
+	return `[{"title":"[MEDIUM] Open redirect in ` + f.tag + ` sign-in","description":"## Finding\n\nnext is not checked.\n\n## Recommendation\n\nAllow relative paths only.",
+		"severity":"MEDIUM","metadata":{"projectId":"` + f.tag + `","filePath":"src/` + f.tag + `/callback.ts","lineNumbers":[3],
+		"severity":"MEDIUM","vulnSlug":"open-redirect","confidence":"high","runId":"20261120000000-` + f.tag + `"}}]`
+}
+
 // vexDoc is an OpenVEX document saying the tenant's private package is not
 // affected by the fixture's vulnerability.
 func (f *tenantFx) vexDoc() json.RawMessage {
@@ -1525,7 +1555,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	var b strings.Builder
 	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
-		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/assets/{asset}/config-findings?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
+		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/assets/{asset}/config-findings?status=all", "/api/v1/assets/{asset}/code-findings?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments", "/api/v1/ci-trusts",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
 		"/api/v1/aws/connections", "/api/v1/aws/connections/{awsconnection}", "/api/v1/aws/connections/{awsconnection}/installs",

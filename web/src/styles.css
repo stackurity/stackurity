@@ -251,6 +251,9 @@ code,
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.pre-wrap {
+  white-space: pre-wrap;
+}
 .text-bad {
   color: var(--bad-fg);
 }
