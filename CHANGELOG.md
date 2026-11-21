@@ -17,7 +17,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ### Changed
 
-- **Ask Stackurity prompt version `2026-11-21.1`:** the system prompt explains project notes and how to treat them.
+- **Ask Stackurity prompt version `2026-11-21.2`:** the system prompt explains project notes and how to treat them, and lists the new Code findings page.
 
 ### Fixed
 
