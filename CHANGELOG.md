@@ -6,6 +6,29 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.19
+
+### Added
+
+- **Ask Stackurity: notes about a project.** A project's admins (an organisation-wide admin, or an admin grant on the project) can write a short note about it, up to 2,000 characters, under **Notes for Ask Stackurity** on the project's page (or its Notifications page for admins of that project only): what the project is, which hosts are for testing, what to leave out. Ask reads it with questions about that project, inside the question's context block and marked as written by an organisation administrator, as background and never as instructions. Anyone who can see the project can read the note; every change is in the audit log (`project.ask_notes_update`) with the old and new text. `GET` and `PUT /api/v1/projects/{id}/ask-notes`. See [api.md](docs/api.md).
+- **Ask Stackurity: refused and incomplete answers are counted.** Each answer call records why it ended without a full answer (`incomplete_reason`: `refusal`, `cannot_answer`, `tool_error`, `max_tokens`, `tool_budget`, `too_long`) and, for a refusal, the provider's category, without any text. The daily totals count refusals and incomplete answers, `GET /api/v1/ask/usage/calls` and `GET /api/v1/admin/ask/calls` carry the new fields, and `GET /api/v1/admin/ask/feedback/incomplete` (operators and feedback review tokens) gives the counts per day, model and reason. A refused answer is answered again on the next model up, as before; its retry is now recorded with the step-up reason `refusal` instead of `not_found`.
+- **Code findings from code scanners.** `stackurity import code-findings FILE --format deepsec|sarif --asset <repository>` (and `POST /api/v1/code-findings/import`) imports a code-review security scanner's report for a repository: [deepsec](https://github.com/vercel-labs/deepsec)'s `deepsec export --format json`, or any SARIF 2.1.0 log. Findings show under **Security → Code findings**, on the repository's **Code findings** tab, in `GET /code-findings` and in the new MCP tool `list_code_findings`. Importing again updates the same findings; a complete import resolves the ones the report no longer has. The scanner's own verdict and the model are kept: findings it closed (false positive, fixed, accepted risk, duplicate, suppressed) are resolved and never alert. Open critical and high security findings raise one incident per repository, routed like leaked keys. Reports are limited to 16 MB and 5,000 findings and shown as plain text; the people a deepsec export names are not stored. Free in every edition. See [Code findings](docs/code-findings.md).
+- **Leaked keys and risky settings get an independent second check.** Each one now shows a verdict, `confirmed`, `likely false positive`, `fixed` or `could not check`, with a one-sentence reason and the version of the rules that gave it. For keys, the collector reads the value while it has it and sends only signals from a fixed list: a placeholder (`xxxx`, `<your-key>`, `changeme`), a key published in a provider's documentation, a Stripe or Razorpay test-mode key, a value too regular to be generated, or a GitHub token whose built-in checksum does not match; the server adds documentation, template and test files. For risky settings it re-reads the stored evidence: a commented-out hook command, a workflow file GitHub never runs, an action pinned to a full commit, `PermitRootLogin` not `yes` or in a file `sshd_config.d` skips. The rules are fixed and deterministic. Likely false positives stay listed, collapsed under **Likely false positives** on **Leaked keys** and **Risky settings**, and raise no alert when their value shows they are not real keys (except a leak in a file the web server may send); a leak flagged only because it is in a test or docs file still alerts, with the reason "in a test or docs file — check whether the key is real". Every verdict is kept, append-only, with what the check read, so you can see how a conclusion was reached: `GET /leaks/{id}/second-checks`, `GET /config-findings/{id}/second-checks`, the `second_check` field and filter on `GET /leaks` and `GET /config-findings`, and in MCP's `list_leaks` and `list_risky_settings`. See [Verification](docs/verification.md#second-check-of-leaked-keys-and-risky-settings).
+
+### Changed
+
+- **Ask Stackurity prompt version `2026-11-21.2`:** the system prompt explains project notes and how to treat them, and lists the new Code findings page.
+
+### Fixed
+
+- **Ask Stackurity panel updates when an admin turns Ask on or off.** Turning Ask on (or off, or changing "Ask may propose changes") under **Integrations → AI assistants** left an open Ask panel saying an administrator had turned it off until the page was reloaded. The panel now reloads its status as soon as the change is saved.
+
+### Upgrading
+
+- Migration `0119_ask_incomplete_project_notes` adds `incomplete_reason` and `refusal_category` to `ask_api_calls`, `refusals` and `incomplete` to `ask_api_calls_daily`, and `ask_notes` and `ask_notes_updated_at` to `projects`. Additive, with constant defaults.
+- Migration `0121_code_findings` adds the `code_findings` and `code_imports` tables and lets a project-limited connection see `code` incidents of its assets.
+- Migration `0120_second_check_leaks_config` adds the value check's signals and the latest verdict to `leaks`, the latest verdict to `config_findings`, and a new append-only table, `second_check_verdicts`. Existing leaks and settings are checked within minutes of the upgrade; leaks found by agents and `stackurity scan` older than this release are `could not check` until they are updated, as only the file can be checked without the value check. Agents send `value_check` only to servers that list the `leak_value_checks` feature.
+
 ## 0.20.18
 
 ### Added
