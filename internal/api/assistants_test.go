@@ -1023,3 +1023,30 @@ func TestAssistantTurnsNotificationsOnAndOff(t *testing.T) {
 		t.Errorf("security connection: %s", text)
 	}
 }
+
+// evidence_pack and plan_options read the plan's features at
+// GET /api/v1/plan/options, an account route. The assistant gate let only
+// auth/me through, so both tools answered "an assistant cannot change
+// account settings" (seen on prod, 21 Nov 2026).
+func TestAssistantReadsPlanOptions(t *testing.T) {
+	o := newOrg(t)
+	e := o.e
+	oc := registerAssistant(t, e)
+	tokens := map[string]string{
+		"viewer":         oc.connect(t, o.admin, auth.RoleViewer, 0),
+		"admin":          oc.connect(t, o.admin, auth.RoleAdmin, 0),
+		"bound to Alpha": oc.connect(t, o.admin, auth.RoleAdmin, o.id("alpha-project")),
+	}
+	for who, token := range tokens {
+		for _, name := range []string{"plan_options", "evidence_pack"} {
+			args := map[string]any{}
+			if who == "bound to Alpha" && name == "evidence_pack" {
+				args["project_id"] = float64(o.id("alpha-project"))
+			}
+			text, _ := callMCPTool(t, e, token, name, args)
+			if strings.Contains(text, "account settings") || strings.Contains(text, "403") {
+				t.Errorf("%s: %s refused: %s", who, name, text)
+			}
+		}
+	}
+}
