@@ -79,6 +79,14 @@ test("unsupported sentences are neutral and plain", () => {
     unsupportedSentence({ key: "cms", label: "WordPress core", components: 1, assets: 1 }),
     "1 component uses WordPress core, which Stackurity doesn't check yet.",
   );
+  assert.equal(
+    unsupportedSentence({ key: "generic|ecosystem", label: "standalone builds, not from a package manager", components: 1, assets: 1 }),
+    "1 component is a standalone build, not from a package manager, which Stackurity doesn't check yet.",
+  );
+  assert.equal(
+    unsupportedSentence({ key: "generic|ecosystem", label: "standalone builds, not from a package manager", components: 2, assets: 1 }),
+    "2 components are standalone builds, not from a package manager, which Stackurity doesn't check yet.",
+  );
 });
 
 test("no internal words in what people read", () => {
