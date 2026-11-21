@@ -110,7 +110,7 @@ func uploadTokenRequest(r *http.Request) bool {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	switch r.Method {
 	case http.MethodPost:
-		return path == "/api/v1/ingest" || path == "/api/v1/sbom/import"
+		return path == "/api/v1/ingest" || path == "/api/v1/sbom/import" || path == "/api/v1/code-findings/import"
 	case http.MethodGet, http.MethodHead:
 		if path == "/api/v1/meta" || path == "/api/v1/openapi.json" {
 			return true

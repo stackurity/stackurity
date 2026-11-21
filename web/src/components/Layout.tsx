@@ -81,6 +81,7 @@ const ITEM_ICON: Record<ItemId, ReactNode> = {
   issues: <IconIssues />,
   leaks: <IconKey />,
   config: <IconDocument />,
+  code: <IconDocument />,
   automatic: <IconRemediation />,
   incidents: <IconActivity />,
   checks: <IconCheckCircle />,

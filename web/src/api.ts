@@ -2517,8 +2517,8 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config", "code", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "code", "feed", "collection", "coverage", "platform"];
 
 /** Which part of a server or repository a risky setting is in. */
 export type ConfigCategory = "agent_hook" | "ssh" | "ci" | "attack_tool";
@@ -2602,6 +2602,73 @@ export interface ConfigSummary {
   scanned_assets: number;
   /** Open findings the second check found likely not a risk (in the counts above too). */
   likely_false_positive: number;
+}
+
+/** What kind of result a code finding is: a security issue, a non-security bug, or another rule. */
+export type CodeCategory = "security" | "bug" | "other";
+
+/**
+ * A code finding (GET /code-findings): what a code-review security scanner
+ * (deepsec, or a tool writing SARIF) found in a repository's source,
+ * imported from its report. Every text field is the scanner's, shown as
+ * plain text.
+ */
+export interface CodeFinding {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  /** deepsec, or sarif:<tool>. */
+  source: string;
+  fingerprint: string;
+  rule: string;
+  category: CodeCategory;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  path: string;
+  start_line: number;
+  end_line: number;
+  description: string;
+  recommendation: string;
+  confidence: "" | "high" | "medium" | "low";
+  /** The source's own verdict, e.g. deepsec's revalidation. */
+  verdict: "" | "true-positive" | "false-positive" | "fixed" | "uncertain" | "accepted-risk" | "duplicate" | "suppressed";
+  verdict_note: string;
+  tool: string;
+  tool_version: string;
+  model: string;
+  run_id: string;
+  status: "open" | "resolved";
+  resolution: "" | "gone" | "verdict" | "dismissed";
+  resolution_note: string;
+  resolved_by: number | null;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+}
+
+/** The last import of one source's report on an asset. */
+export interface CodeImport {
+  source: string;
+  format: "deepsec" | "sarif";
+  tool: string;
+  tool_version: string;
+  model: string;
+  run_id: string;
+  complete: boolean;
+  found: number;
+  imported_at: string;
+}
+
+export interface CodeFindingList extends List<CodeFinding> {
+  imports?: CodeImport[];
+}
+
+/** GET /code-findings/summary: open findings by severity and category. */
+export interface CodeSummary {
+  by_severity: Record<string, number>;
+  by_category: Record<string, number>;
+  imported_assets: number;
 }
 
 /** A key, token or password found written in a file. The value is never stored. */

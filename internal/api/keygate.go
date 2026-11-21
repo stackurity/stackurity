@@ -61,7 +61,7 @@ func keyGateAllows(r *http.Request, p *Principal) bool {
 	switch path {
 	case "/meta", "/openapi.json":
 		return get
-	case "/setup", "/enroll", "/ingest", "/sbom/import", "/ci/token":
+	case "/setup", "/enroll", "/ingest", "/sbom/import", "/code-findings/import", "/ci/token":
 		return post // /ci/token: keyless CI exchanges its ID token, then ingests
 	case "/client-errors":
 		return post // the dashboard's own error reports, from the key step and sign-in too

@@ -238,6 +238,10 @@ const FeatureLeakValueChecks = "leak_value_checks"
 // GitHub Actions workflows). Older servers refuse the field.
 const FeatureConfigFindings = "config_findings"
 
+// FeatureCodeFindings, in Meta.Features, means the server takes code
+// scanners' reports (POST /code-findings/import).
+const FeatureCodeFindings = "code_findings"
+
 // FeatureConfigAttackTools, in Meta.Features, means the server takes
 // config findings of category attack_tool. Older servers refuse the whole
 // batch over an unknown category, so collectors drop those findings

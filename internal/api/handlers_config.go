@@ -13,8 +13,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
-
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/store"
 )
@@ -45,23 +43,11 @@ func (s *Server) listConfigFindings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, r, err)
 		return
 	}
-	var scans *[]store.ConfigScan // only on an asset's list, where none means never checked
-	if chi.URLParam(r, "id") != "" {
-		if f.AssetID, err = idParam(r, "id"); err == nil {
-			_, err = s.Store.GetAsset(r.Context(), f.AssetID)
-		}
-		var got []store.ConfigScan
-		if err == nil {
-			got, err = s.Store.ConfigScans(r.Context(), f.AssetID)
-		}
-		if err != nil {
-			s.fail(w, r, err)
-			return
-		}
-		if got == nil {
-			got = []store.ConfigScan{}
-		}
-		scans = &got
+	// Only on an asset's list, where none means never checked.
+	scans, err := assetRecords(s, r, &f.AssetID, s.Store.ConfigScans)
+	if err != nil {
+		s.fail(w, r, err)
+		return
 	}
 	items, total, err := s.Store.ListConfigFindings(r.Context(), f)
 	if err != nil {

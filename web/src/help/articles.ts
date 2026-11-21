@@ -873,6 +873,33 @@ stackurity.exe agent --interval 6h`,
     ],
   },
   {
+    id: "code-findings",
+    title: "Import code scanner findings",
+    section: "Adding servers and sources",
+    summary:
+      "Findings from code-review security scanners such as deepsec, or any tool that writes SARIF, shown next to a repository's dependency, server and image issues.",
+    keywords: "deepsec sarif code review sast semgrep codeql static analysis ai scanner import",
+    where: ["Security", "Code findings"],
+    body: [
+      {
+        code: "deepsec export --format json --project-id shop --out deepsec.json\nstackurity import code-findings deepsec.json --format deepsec --asset https://github.com/acme/shop",
+        label: "deepsec",
+      },
+      { code: "stackurity import code-findings results.sarif --format sarif --asset 12", label: "SARIF 2.1.0" },
+      {
+        list: [
+          "`--asset` is the repository's asset id or URL. The repository must have reported first (a scan or a repository integration); an import never creates an asset. In a CI job with keyless sign-in, it defaults to the job's own repository.",
+          "Importing again updates the same findings instead of adding copies. With a complete report, findings it no longer has are resolved as gone. Use `--partial` for a filtered export (for example deepsec's `--only-true-positive`), so nothing else is resolved.",
+          "The scanner's own verdict is kept. A finding deepsec revalidated as a false positive, fixed, accepted risk or duplicate, or one suppressed in SARIF, is closed and never alerts.",
+          "Open critical and high security findings raise one incident per repository and are sent where new issues go. Medium and lower, non-security bugs and rules not tagged as security are listed only.",
+          "`--model` records the AI model that produced the report. The people a deepsec export names (owners, on-call, committers) are not stored.",
+          "Reports are limited to 16 MB and 5,000 findings. Their text is shown as plain text.",
+        ],
+      },
+      { p: "Each repository's page has a **Code findings** tab; **Fixes → Code findings** lists them all. A security user can dismiss one that is not a real issue." },
+    ],
+  },
+  {
     id: "container-images",
     title: "Scan a container image",
     section: "Adding servers and sources",

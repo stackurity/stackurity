@@ -19,6 +19,8 @@ const PLACES: Record<string, string> = {
   "all issues": "/fixes/issues",
   // Security
   "security > checks": "/checks",
+  "code findings": "/fixes/code",
+  "fixes > code findings": "/fixes/code",
   incidents: "/incidents",
   checks: "/checks",
   // Environment

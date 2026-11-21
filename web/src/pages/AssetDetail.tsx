@@ -41,6 +41,7 @@ import {
 } from "../components/Badge";
 import { StackTab } from "../components/Stack";
 import { LeaksView } from "../components/Leaks";
+import { CodeFindingsView } from "../components/CodeFindings";
 import { ConfigFindingsView } from "../components/ConfigFindings";
 import { KubernetesCard, WORKLOAD_ATTRS } from "../components/Kubernetes";
 import { FindingsTable } from "../components/Findings";
@@ -76,8 +77,8 @@ import { GroupCrumb } from "../components/nav";
 import { ProcessAccessFact } from "../components/Reachability";
 import { processAccessCommand } from "../installCommand";
 
-type Tab = "action-plan" | "stack" | "findings" | "leaks" | "config" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
-const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "config", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
+type Tab = "action-plan" | "stack" | "findings" | "leaks" | "config" | "code" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
+const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "config", "code", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
 
 /** Kinds whose stack is the most useful first view when nothing needs fixing. */
 const STACK_FIRST_KINDS = ["application", "host", "repository", "cluster", "workload"];
@@ -309,6 +310,8 @@ export function AssetDetailPage() {
           ...(findingCount > 0 ? [{ id: "findings" as Tab, label: `Issues (${findingCount.toLocaleString()})` }] : []),
           { id: "leaks", label: "Leaked keys" },
           { id: "config", label: "Risky settings" },
+          // Code scanners' reports are about source code: repositories and applications.
+          ...(a.kind === "repository" || a.kind === "application" ? [{ id: "code" as Tab, label: "Code findings" }] : []),
           { id: "inventory", label: `Inventory (${a.component_count.toLocaleString()})` },
           { id: "coverage", label: "Coverage" },
           { id: "collections", label: "Collections" },
@@ -331,6 +334,7 @@ export function AssetDetailPage() {
         {tab === "findings" && <FindingsTab assetId={a.id} />}
         {tab === "leaks" && <LeaksView assetId={a.id} />}
         {tab === "config" && <ConfigFindingsView assetId={a.id} />}
+        {tab === "code" && <CodeFindingsView assetId={a.id} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}

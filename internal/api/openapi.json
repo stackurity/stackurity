@@ -20011,6 +20011,418 @@
      }
     }
    }
+  },
+  "/code-findings/import": {
+   "post": {
+    "operationId": "post_code_findings_import",
+    "summary": "Import a code scanner's report",
+    "description": "Import a code scanner's report as code findings of a repository or application: deepsec's JSON export (format=deepsec) or SARIF 2.1.0 (format=sarif), at most 16 MB and 5,000 findings. The asset is asset_id or git_url and must have reported already. Each source replaces its earlier findings on the asset; a complete import resolves the open ones it no longer has, and findings whose own verdict closes them (false positive, fixed, accepted risk, duplicate, suppressed) are stored resolved. A CI job's token imports only for its own repository\n\nRole: collector, engineer+",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "collector, engineer+",
+    "parameters": [
+     {
+      "name": "format",
+      "in": "query",
+      "required": true,
+      "description": "deepsec or sarif",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "The asset, by id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "git_url",
+      "in": "query",
+      "required": false,
+      "description": "The repository, by its URL",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "complete",
+      "in": "query",
+      "required": false,
+      "description": "true (the default) or false for a filtered report, which resolves nothing it does not hold",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "description": "The AI model that produced the report, up to 128 characters",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "description": "The report",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings": {
+   "get": {
+    "operationId": "get_code_findings",
+    "summary": "List code findings",
+    "description": "What code-review security scanners (deepsec, tools writing SARIF) found in repositories' source: rule, file and lines, description, recommendation, the source's own verdict, tool, model and run. Security findings first, most severe first. Text is the scanner's, as plain text\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (the default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium, low or info, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "security, bug or other, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "source",
+      "in": "query",
+      "required": false,
+      "description": "One source: deepsec or sarif:<tool>",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/summary": {
+   "get": {
+    "operationId": "get_code_findings_summary",
+    "summary": "Counts of open code findings",
+    "description": "Open code findings by severity and by category, and how many assets have an import at all\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/code-findings": {
+   "get": {
+    "operationId": "get_assets_id_code_findings",
+    "summary": "List an asset's code findings",
+    "description": "The asset's code findings with the filters of GET /code-findings, and imports: the last import of each source. No import means no report was imported for the asset\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (the default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium, low or info, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "security, bug or other, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "source",
+      "in": "query",
+      "required": false,
+      "description": "One source: deepsec or sarif:<tool>",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/{id}/dismiss": {
+   "post": {
+    "operationId": "post_code_findings_id_dismiss",
+    "summary": "Dismiss a code finding",
+    "description": "Dismiss a code finding (not a real issue, or accepted), with an optional note. It stays dismissed whatever later imports say\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/{id}/undismiss": {
+   "post": {
+    "operationId": "post_code_findings_id_undismiss",
+    "summary": "Undo a code finding's dismissal",
+    "description": "Undo a dismissal: open again, or resolved by its source's verdict when that closes it. 409 for one that is not dismissed\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
   }
  },
  "components": {
