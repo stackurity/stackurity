@@ -2555,6 +2555,31 @@ export interface ConfigFinding {
   first_seen: string;
   last_seen: string;
   resolved_at: string | null;
+  /** The independent second check's latest verdict; null until it has run. */
+  second_check: SecondCheckVerdict | null;
+}
+
+/**
+ * The second check's verdict on a leaked key or a risky setting
+ * (docs/verification.md): deterministic rules, one sentence of reason, and
+ * the version of the rules that gave it.
+ */
+export type SecondCheckResult = "confirmed" | "likely_false_positive" | "fixed" | "could_not_check";
+
+export interface SecondCheckVerdict {
+  id?: number;
+  verdict: SecondCheckResult;
+  reason: string;
+  checker: string;
+  checked_at: string;
+  /** In the history only: what the check read (never a value). */
+  inputs?: Record<string, unknown>;
+}
+
+/** GET /leaks/{id}/second-checks and /config-findings/{id}/second-checks. */
+export interface SecondCheckHistory {
+  second_check: SecondCheckVerdict | null;
+  items: SecondCheckVerdict[];
 }
 
 /** The last config check of an asset by one collector. */
@@ -2575,6 +2600,8 @@ export interface ConfigSummary {
   by_severity: Record<string, number>;
   by_category: Record<string, number>;
   scanned_assets: number;
+  /** Open findings the second check found likely not a risk (in the counts above too). */
+  likely_false_positive: number;
 }
 
 /** A key, token or password found written in a file. The value is never stored. */
@@ -2616,6 +2643,11 @@ export interface Leak {
   rotated_by_name: string;
   rotation_note: string;
   state: LeakState;
+  /** What the collector's value check read in the value (placeholder, checksum_invalid...); never the value. */
+  value_checker: string;
+  value_signals: string[];
+  /** The independent second check's latest verdict; null until it has run. */
+  second_check: SecondCheckVerdict | null;
 }
 
 export type LeakState = "needs_rotation" | "waiting_check" | "still_found" | "verified_gone" | "dismissed";
@@ -2628,6 +2660,8 @@ export interface LeakSummary {
   waiting_check: number;
   verified_gone_30d: number;
   unassigned: number;
+  /** Open leaks the second check found likely not real keys (in the counts above too). */
+  likely_false_positive: number;
 }
 
 /** The last key scan of an asset by one collector. */

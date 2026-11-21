@@ -256,6 +256,8 @@ var projectScopes = map[string]string{
 	"GET /api/v1/assets/{id}/config-findings":                      "scoped",
 	"GET /api/v1/config-findings":                                  "scoped",
 	"GET /api/v1/config-findings/summary":                          "scoped",
+	"GET /api/v1/leaks/{id}/second-checks":                         "scoped",
+	"GET /api/v1/config-findings/{id}/second-checks":               "scoped",
 	"GET /api/v1/assets/{id}/remediation":                          "scoped",
 	"GET /api/v1/components":                                       "scoped",
 	"GET /api/v1/components/{id}":                                  "scoped",

@@ -21,7 +21,11 @@ import (
 
 func configFilter(r *http.Request) (store.ConfigFindingFilter, error) {
 	q := r.URL.Query()
-	f := store.ConfigFindingFilter{Status: q.Get("status"), Severity: q.Get("severity"), Category: q.Get("category"), Page: page(r)}
+	f := store.ConfigFindingFilter{Status: q.Get("status"), Severity: q.Get("severity"), Category: q.Get("category"),
+		SecondCheck: q.Get("second_check"), Page: page(r)}
+	if f.SecondCheck != "" && store.ValidVerdictFilter(f.SecondCheck) != nil {
+		return f, badRequest(secondCheckFilterHelp)
+	}
 	if v := q.Get("asset_id"); v != "" {
 		id, err := strconv.ParseInt(v, 10, 64)
 		if err != nil || id <= 0 {

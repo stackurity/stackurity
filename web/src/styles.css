@@ -8203,3 +8203,17 @@ a.cov-chip:hover {
 .evidence-pack label.check.locked { color: var(--muted, #6b7280); }
 .evidence-pack .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
 .evidence-pack .btn.disabled { pointer-events: none; opacity: 0.5; }
+
+/* The second check of leaked keys and risky settings (SecondCheck.tsx). */
+.second-check-history {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+details.false-positives {
+  margin-top: 1.25rem;
+}
+details.false-positives > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}

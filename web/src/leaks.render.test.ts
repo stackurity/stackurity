@@ -13,6 +13,8 @@ let vite: ViteDevServer;
 let L: Record<string, ComponentType<any>>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let D: Record<string, ComponentType<any>>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let S: Record<string, ComponentType<any>>;
 
 before(async () => {
   vite = await createServer({
@@ -24,6 +26,7 @@ before(async () => {
   });
   L = (await vite.ssrLoadModule("/src/components/Leaks.tsx")) as typeof L;
   D = (await vite.ssrLoadModule("/src/pages/Dashboard.tsx")) as typeof D;
+  S = (await vite.ssrLoadModule("/src/components/SecondCheck.tsx")) as typeof S;
 });
 after(async () => {
   await vite?.close();
@@ -34,7 +37,7 @@ function render(c: ComponentType<any>, props: any): string {
   return renderToStaticMarkup(h(MemoryRouter, null, h(c, props)));
 }
 
-const sum = { needs_rotation: 2, still_found: 1, overdue: 1, waiting_check: 4, verified_gone_30d: 6, unassigned: 2 };
+const sum = { needs_rotation: 2, still_found: 1, overdue: 1, waiting_check: 4, verified_gone_30d: 6, unassigned: 2, likely_false_positive: 0 };
 
 test("summary strip: need rotation counts still found, then overdue, waiting and verified gone", () => {
   const html = render(L.LeakSummaryStrip, { s: sum });
@@ -66,4 +69,28 @@ test("dashboard line: how many need rotation and how many are overdue", () => {
   const none = render(D.LeakLineText, { s: { ...sum, needs_rotation: 0, still_found: 0, overdue: 0 }, kept: 2 });
   assert.match(none, /No leaked keys need rotation/);
   assert.match(none, /4 rotated keys<\/a> waiting for a check/);
+});
+
+test("second check: the verdict, its reason and its history; pending before it ran", () => {
+  const check = {
+    verdict: "likely_false_positive",
+    reason: "The value is a placeholder (such as xxxx), not a key.",
+    checker: "leaks/1",
+    checked_at: "2026-11-20T10:00:00Z",
+  };
+  const html = render(S.SecondCheckCell, { check, historyPath: "/leaks/4/second-checks" });
+  assert.match(html, /Second check: likely false positive/);
+  assert.match(html, /badge-muted/);
+  assert.match(html, /The value is a placeholder/);
+  assert.match(html, /How this was reached/);
+  const confirmed = render(S.SecondCheckBadge, { check: { ...check, verdict: "confirmed" } });
+  // A confirmed leak is a real key: a neutral fact, never green.
+  assert.match(confirmed, /Second check: confirmed/);
+  assert.doesNotMatch(confirmed, /badge-good/);
+  assert.match(render(S.SecondCheckCell, { check: null, historyPath: "/leaks/4/second-checks" }), /Second check pending/);
+});
+
+test("summary strip says how many of those needing rotation are likely false positives", () => {
+  const html = render(L.LeakSummaryStrip, { s: { ...sum, still_found: 0, likely_false_positive: 2 } });
+  assert.match(html, /Includes 2 likely false positives/);
 });

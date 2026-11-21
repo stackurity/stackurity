@@ -128,6 +128,15 @@ func serverCmd() *cobra.Command {
 			}
 			defer st.Pool.Close()
 			st.JobLockTimeout = tm.JobLock
+			// A batch with leaks or risky settings gets its second check as
+			// soon as it is stored, on whichever replica takes the batch, so
+			// the dispatcher reads its verdicts before alerting.
+			rechecker := &secondcheck.Runner{Store: st, Log: log}
+			st.AfterLeakScan = func(ctx context.Context, assetID int64) {
+				if _, err := rechecker.Recheck(ctx, assetID); err != nil && ctx.Err() == nil {
+					log.Warn("second check of leaks and settings after a scan failed; the periodic check retries", "asset", assetID, "err", err)
+				}
+			}
 			if st.SessionIdle, err = sessionIdleTimeout(); err != nil {
 				return err
 			}
@@ -1025,12 +1034,24 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if n.Checked > 0 {
 			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
 		}
+		if err != nil {
+			return err
+		}
+		// Leaked keys and risky settings: verdicts for those not checked
+		// right after their scan was stored, or due again.
+		rs, err := checker.Recheck(ctx, 0)
+		if rs.Checked > 0 {
+			log.Info("second check of leaks and settings", "checked", rs.Checked, "changed", rs.Added, "verdicts", rs.ByVerdict)
+		}
 		return err
 	})
 	w.EveryCollectingWorkspace("second-check", time.Minute, func(ctx context.Context) error {
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		waiting, err := st.SecondCheckWaiting(qctx)
+		if err == nil && !waiting {
+			waiting, err = st.RecheckWaiting(qctx)
+		}
 		if err != nil || !waiting {
 			return err
 		}

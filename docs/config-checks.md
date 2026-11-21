@@ -97,9 +97,13 @@ If you run the tool yourself for authorised testing, dismiss the finding with a 
 
 Agents send attack tool findings only to servers that list `config_attack_tools` in `GET /meta`. An older server gets the other findings as before.
 
+## Second check
+
+Each finding also gets a second, independent check that re-reads the stored evidence and gives a verdict with a one-sentence reason: **confirmed**, **likely false positive** (a hook command that is commented out, a workflow file GitHub never runs, an action pinned to a full commit, `PermitRootLogin` not `yes`), **fixed** (a complete check no longer finds it) or **could not check**. See [Verification](verification.md#second-check-of-leaked-keys-and-risky-settings).
+
 ## Alerts
 
-Only **high** findings alert. Each asset with open high findings opens one incident of kind **Risky setting** (`config`). It goes where new issues go right away, and to routes limited to the asset's projects. The incident resolves itself once a complete check no longer finds high findings on the asset, or they are dismissed. A notification rule can be limited to this kind. Medium, low and info findings are listed and never alert.
+Only **high** findings alert, and not those the second check found likely false positives (they stay listed). Each asset with open high findings opens one incident of kind **Risky setting** (`config`). It goes where new issues go right away, and to routes limited to the asset's projects. The incident resolves itself once a complete check no longer finds high findings on the asset, or they are dismissed. A notification rule can be limited to this kind. Medium, low and info findings are listed and never alert.
 
 ## Dismissing
 

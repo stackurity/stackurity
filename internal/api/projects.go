@@ -175,6 +175,10 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/ignore-rules":         scopedRead,
 	"GET /api/v1/ignore-requests":      scopedRead,
 	"GET /api/v1/ignore-requests/{id}": scopedRead,
+	// The second check's verdicts on a leak or a risky setting follow
+	// their asset, as the leak and the setting do.
+	"GET /api/v1/leaks/{id}/second-checks":           scopedRead,
+	"GET /api/v1/config-findings/{id}/second-checks": scopedRead,
 	// VEX export: our decisions about the assets the caller sees.
 	"GET /api/v1/vex/export": scopedRead,
 	// Onboarding (0.9): the waiting screen's poll, narrowed like assets.
