@@ -87,3 +87,18 @@ export function onAskSettingsChanged(fn: () => void): () => void {
   settingsChanged.addEventListener("changed", h);
   return () => settingsChanged.removeEventListener("changed", h);
 }
+
+// Asking from elsewhere on the page (the Dashboard's Ask card, an empty
+// state): the panel opens with the question and asks it. The panel is in
+// the shell, so it listens rather than being handed the question.
+const asked = new EventTarget();
+
+export function askStackurity(question: string): void {
+  asked.dispatchEvent(new CustomEvent<string>("ask", { detail: question }));
+}
+
+export function onAskStackurity(fn: (question: string) => void): () => void {
+  const h = (e: Event) => fn((e as CustomEvent<string>).detail);
+  asked.addEventListener("ask", h);
+  return () => asked.removeEventListener("ask", h);
+}
