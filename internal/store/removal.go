@@ -50,6 +50,22 @@ func blindPaths(b *model.ObservationBatch) ([]string, bool) {
 	return out, true
 }
 
+// limitedScopes are the scopes of the batch's "limited" coverage items:
+// files read in full whose format cannot list everything (a build.gradle
+// without a lockfile: a dependency moved to a version catalog or a variable
+// is not seen). What such a file no longer shows is not proven gone, so the
+// rows located in it are never removed for being missing, even by a
+// complete collection.
+func limitedScopes(b *model.ObservationBatch) []string {
+	out := []string{}
+	for _, c := range b.Coverage {
+		if c.Status == "limited" {
+			out = append(out, c.Scope)
+		}
+	}
+	return out
+}
+
 // coveragePath is the host path a coverage scope is about:
 // "path:/srv/app/tmp", "lockfile:/srv/app/yarn.lock", "pack:java:/srv/app/x.jar",
 // "npm-installed:/srv/app/node_modules". Composer's installed.json stands
@@ -138,14 +154,20 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 		id    int64
 		value string
 	}
+	// An asset with several identifiers (a release layout's asset keeps its
+	// old release's next to its own directory, appadopt.go) is present
+	// while the list names any of them.
 	var list []gone
+	present := map[int64]bool{}
 	for rows.Next() {
 		var g gone
 		if err := rows.Scan(&g.id, &g.value); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if !k.listed(g.value) {
+		if k.listed(g.value) {
+			present[g.id] = true
+		} else if len(list) == 0 || list[len(list)-1].id != g.id {
 			list = append(list, g)
 		}
 	}
@@ -153,6 +175,13 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	kept := list[:0]
+	for _, g := range list {
+		if !present[g.id] {
+			kept = append(kept, g)
+		}
+	}
+	list = kept
 	var ids []int64
 	for _, g := range list {
 		var coll int64
@@ -192,4 +221,28 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 		ids = append(ids, g.id)
 	}
 	return ids, nil
+}
+
+// webAssetSources are the evidence sources of front-end libraries found
+// outside a package manager (collect/apps: webassets.go, bundles.go).
+var webAssetSources = []string{"vendored", "cdn", "bundle", "source-map", "flutter-build"}
+
+// webAssetsUnchecked reports whether a repository batch does not prove the
+// front-end libraries found outside a package manager gone: it has no
+// "web-assets:" coverage item marked "checked". A CI scan by a CLI older
+// than the server's repository scan (or pkg/engine) reports the same
+// repository under the same collector without looking; a scan that hit a
+// read limit, an unreadable path or its time limit looked in part. Either
+// way the rows of copies found before stay (their findings neither close
+// nor reopen), while the batch still proves its lockfile rows gone.
+func webAssetsUnchecked(b *model.ObservationBatch) bool {
+	if b.Asset.Kind != model.AssetRepository {
+		return false
+	}
+	for _, c := range b.Coverage {
+		if strings.HasPrefix(c.Scope, "web-assets:") && c.Status == "checked" {
+			return false
+		}
+	}
+	return true
 }

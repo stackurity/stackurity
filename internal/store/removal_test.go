@@ -288,3 +288,131 @@ func TestExistingAppCopiesGetDistinctNames(t *testing.T) {
 		t.Errorf("person's name changed to %q", got.Name)
 	}
 }
+
+// repoReport sends a repository scan's batch (complete: "limited" coverage
+// does not make it incomplete).
+func repoReport(t *testing.T, s *store.Store, ctx context.Context, cov []model.CoverageItem, pkgs ...pkg) *store.IngestResult {
+	t.Helper()
+	time.Sleep(5 * time.Millisecond)
+	b := model.NewBatch(model.Collector{ID: "lockfile", Version: "test", Method: "repository"}, model.AssetRef{
+		Kind: model.AssetRepository, Name: "acme/app",
+		Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://github.com/acme/app"}},
+	})
+	for _, p := range pkgs {
+		b.Observations = append(b.Observations, model.Observation{Purl: p.purl, Location: p.loc, Confidence: model.ConfidenceInferred})
+	}
+	b.Coverage = cov
+	b.Complete = true
+	if err := b.Validate(); err != nil {
+		t.Fatal(err)
+	}
+	r, err := s.Ingest(store.AsServerCollection(ctx), b, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return r
+}
+
+// A build.gradle without a lockfile is "limited": the Java pack reads only
+// literal versions. When a team moves implementation("com.squareup.okhttp3:
+// okhttp:4.9.0") into a version catalog (libs.okhttp), the dependency
+// disappears from the batch but still ships: its row must stay and its
+// finding stay open, not resolve as removed or remediated. Rows in fully
+// read files are still removed when they go.
+func TestLimitedFileProvesNoRemoval(t *testing.T) {
+	ctx, s := loopStore(t)
+	const gradle = "android/app/build.gradle.kts"
+	cov := []model.CoverageItem{
+		{Scope: "pubspec:pubspec.lock", Status: "checked"},
+		{Scope: "pack:java:maven:" + gradle, Status: "limited", Reason: "declared dependencies with literal versions only"},
+	}
+	first := repoReport(t, s, ctx, cov,
+		pkg{"pkg:maven/com.squareup.okhttp3/okhttp@4.9.0", gradle},
+		pkg{"pkg:pub/http@0.13.0", "pubspec.lock"})
+	repo := first.AssetID
+	want := map[string]string{"CVE-OKHTTP": "okhttp", "CVE-HTTP": "http"}
+	syncFix(t, s, ctx, repo, want, nil)
+
+	// The catalog move: okhttp is no longer a literal; http was upgraded.
+	r := repoReport(t, s, ctx, cov, pkg{"pkg:pub/http@1.2.0", "pubspec.lock"})
+	if r.Removed != 1 {
+		t.Errorf("removed %d rows, want 1 (http@0.13.0 only)", r.Removed)
+	}
+	live := liveRows(t, s, ctx, repo)
+	if !live["okhttp@4.9.0"] || live["http@0.13.0"] {
+		t.Errorf("live rows %v; want okhttp kept and the old http gone", live)
+	}
+	syncFix(t, s, ctx, repo, map[string]string{"CVE-OKHTTP": "okhttp"}, nil)
+	if fs := findings(t, s, ctx, store.FindingFilter{AssetID: repo, Key: "CVE-OKHTTP"}); len(fs) != 1 || fs[0].Status == "resolved" {
+		t.Errorf("okhttp finding %+v; want it open", fs)
+	}
+	if fs := findings(t, s, ctx, store.FindingFilter{AssetID: repo, Key: "CVE-HTTP"}); len(fs) != 1 || fs[0].Status != "resolved" {
+		t.Errorf("http finding %+v; want resolved", fs)
+	}
+	a, err := s.GetAsset(ctx, repo)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if a.CollectionStatus != "ok" {
+		t.Errorf("collection status %q, want ok", a.CollectionStatus)
+	}
+}
+
+// A repository scanned both by the server (which reads copied front-end
+// libraries: a "web-assets:" coverage item) and by an older CLI in CI
+// (which does not): the CLI's complete batch must not remove the copied
+// jQuery the server found, or its finding would close and reopen at every
+// alternate scan. A scan that looked in part (a read limit) keeps it too,
+// yet still removes an upgraded lockfile package. A scan that looked
+// everywhere and no longer finds it removes it.
+func TestRepoScanWithoutWebAssetsKeepsCopies(t *testing.T) {
+	ctx, s := loopStore(t)
+	send := func(web, lodash string, withJQuery bool) *store.IngestResult {
+		t.Helper()
+		time.Sleep(5 * time.Millisecond)
+		b := model.NewBatch(model.Collector{ID: "lockfile", Version: "test", Method: "repository"}, model.AssetRef{
+			Kind: model.AssetRepository, Name: "acme/site",
+			Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://github.com/acme/site"}},
+		})
+		b.Observations = append(b.Observations, model.Observation{Purl: "pkg:npm/lodash@" + lodash, Location: "package-lock.json", Confidence: model.ConfidenceConfirmed})
+		b.Coverage = []model.CoverageItem{{Scope: "lockfile:package-lock.json", Status: "checked"}}
+		if web != "" {
+			b.Coverage = append(b.Coverage, model.CoverageItem{Scope: "web-assets:.", Status: web, Reason: map[bool]string{true: "stopped after 50000 files", false: ""}[web != "checked"]})
+		}
+		if withJQuery {
+			b.Observations = append(b.Observations, model.Observation{Purl: "pkg:npm/jquery@3.6.0", Version: "3.6.0", Location: "js/jquery-3.6.0.min.js",
+				Confidence: model.ConfidenceConfirmed, Evidence: map[string]string{"source": "vendored"}})
+		}
+		b.Complete = true
+		if err := b.Validate(); err != nil {
+			t.Fatal(err)
+		}
+		r, err := s.Ingest(store.AsServerCollection(ctx), b, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	repo := send("checked", "4.17.20", true).AssetID
+	if live := liveRows(t, s, ctx, repo); !live["jquery@3.6.0"] || !live["lodash@4.17.20"] {
+		t.Fatalf("after the server's scan: %v", live)
+	}
+	if r := send("", "4.17.20", false); r.Removed != 0 {
+		t.Errorf("an older CLI's scan removed %d rows, want 0", r.Removed)
+	}
+	if live := liveRows(t, s, ctx, repo); !live["jquery@3.6.0"] {
+		t.Errorf("the copied jQuery was removed by a scan that did not look: %v", live)
+	}
+	if r := send("partial", "4.17.21", false); r.Removed != 1 {
+		t.Errorf("a scan that looked in part removed %d rows, want 1 (the old lodash)", r.Removed)
+	}
+	if live := liveRows(t, s, ctx, repo); !live["jquery@3.6.0"] || live["lodash@4.17.20"] || !live["lodash@4.17.21"] {
+		t.Errorf("after a partial web scan: %v", live)
+	}
+	if r := send("checked", "4.17.21", false); r.Removed != 1 {
+		t.Errorf("a scan that looked removed %d rows, want 1 (jquery)", r.Removed)
+	}
+	if live := liveRows(t, s, ctx, repo); live["jquery@3.6.0"] || !live["lodash@4.17.21"] {
+		t.Errorf("after the copy was deleted: %v", live)
+	}
+}

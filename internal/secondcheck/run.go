@@ -129,3 +129,56 @@ func disagreementInputs(c store.SecondCheckCandidate, ev map[string]any, out Out
 		"records": recs,
 	}
 }
+
+// RecheckStats counts one second check run of leaks and config findings
+// by verdict, and the verdicts added to their histories (changed ones).
+type RecheckStats struct {
+	Checked, Added int
+	ByVerdict      map[string]int
+}
+
+// Recheck gives the leaks and config findings of one asset, or (0) of the
+// workspace, that are due a second check their verdicts: a batch of each.
+// It runs right after a batch with leaks or config findings is stored, and
+// from the periodic second check job.
+func (r *Runner) Recheck(ctx context.Context, assetID int64) (RecheckStats, error) {
+	st := RecheckStats{ByVerdict: map[string]int{}}
+	batch := r.Batch
+	if batch <= 0 {
+		batch = DefaultBatch
+	}
+	if assetID > 0 {
+		batch *= 4 // one asset's scan: at most 1,000 per collector
+	}
+	leaks, err := r.Store.LeakRecheckCandidates(ctx, assetID, batch)
+	if err != nil {
+		return st, err
+	}
+	results := make([]store.RecheckResult, 0, len(leaks))
+	for _, in := range leaks {
+		v := CheckLeak(in)
+		st.ByVerdict[v.Verdict]++
+		results = append(results, store.RecheckResult{ID: in.ID, AssetID: in.AssetID, Verdict: v.Verdict, Reason: v.Reason,
+			Checker: store.LeakCheckRules, Inputs: v.Inputs})
+	}
+	n, err := r.Store.RecordLeakRechecks(ctx, results)
+	st.Checked, st.Added = len(results), n
+	if err != nil {
+		return st, err
+	}
+	configs, err := r.Store.ConfigRecheckCandidates(ctx, assetID, batch)
+	if err != nil {
+		return st, err
+	}
+	results = results[:0]
+	for _, in := range configs {
+		v := CheckConfig(in)
+		st.ByVerdict[v.Verdict]++
+		results = append(results, store.RecheckResult{ID: in.ID, AssetID: in.AssetID, Verdict: v.Verdict, Reason: v.Reason,
+			Checker: store.ConfigCheckRules, Inputs: v.Inputs})
+	}
+	n, err = r.Store.RecordConfigRechecks(ctx, results)
+	st.Checked += len(results)
+	st.Added += n
+	return st, err
+}

@@ -2,11 +2,13 @@ package lockfile
 
 import (
 	"context"
-	"github.com/stackurity/stackurity/pkg/pack"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/pkg/pack"
 )
 
 func purls(obs []model.Observation) map[string]model.Observation {
@@ -374,5 +376,46 @@ func TestPackBatches(t *testing.T) {
 	}
 	if batches(nil, 10) != nil {
 		t.Error("no files should give no batches")
+	}
+}
+
+// gradleLimitedExt stands in for the Java pack on a build.gradle without a
+// lockfile: read in full, with a known limit.
+type gradleLimitedExt struct{}
+
+func (gradleLimitedExt) ID() string               { return "java" }
+func (gradleLimitedExt) Matches(name string) bool { return name == "build.gradle.kts" }
+func (gradleLimitedExt) Scan(_ context.Context, files []pack.File) ([]model.Observation, []model.CoverageItem, error) {
+	return []model.Observation{{Purl: "pkg:maven/androidx.core/core-ktx@1.9.0", Confidence: model.ConfidenceInferred}},
+		[]model.CoverageItem{{Scope: "pack:java:maven:" + files[0].Path, Status: "limited", Reason: "declared dependencies with literal versions only"}}, nil
+}
+
+// A Flutter app with an Android build file: pub data is complete, and the
+// Gradle file's known limit is listed but does not make the batch partial.
+func TestLimitedCoverageKeepsBatchComplete(t *testing.T) {
+	dir := t.TempDir()
+	for name, body := range map[string]string{
+		"pubspec.lock":                 "packages:\n  http:\n    dependency: \"direct main\"\n    source: hosted\n    version: \"1.2.0\"\n",
+		"android/app/build.gradle.kts": `implementation("androidx.core:core-ktx:1.9.0")` + "\n",
+	} {
+		_ = os.MkdirAll(filepath.Dir(filepath.Join(dir, name)), 0o755)
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	b, err := ScanDirWith(context.Background(), dir, model.AssetRef{Kind: model.AssetRepository, Name: "app",
+		Identifiers: []model.Identifier{{Scheme: "git-url", Value: "https://example.com/app"}}}, "test", []Extension{gradleLimitedExt{}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	limited := false
+	for _, c := range b.Coverage {
+		limited = limited || c.Status == "limited"
+	}
+	if !b.Complete || !limited {
+		t.Errorf("complete = %v, coverage %+v; want complete with the limited item listed", b.Complete, b.Coverage)
+	}
+	if err := b.Validate(); err != nil {
+		t.Error(err)
 	}
 }

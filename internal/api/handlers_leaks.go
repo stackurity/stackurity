@@ -22,9 +22,17 @@ import (
 // batch's leaks. Collectors send them only to servers that say so.
 const FeatureLeaks = "leaks"
 
+// FeatureLeakValueChecks, in GET /meta's features, says that POST /ingest
+// takes each leak's value_check, the signals the second check reads.
+const FeatureLeakValueChecks = "leak_value_checks"
+
 // FeatureConfigFindings, in GET /meta's features, says that POST /ingest
 // stores a batch's config_findings (store/config_findings.go).
 const FeatureConfigFindings = "config_findings"
+
+// FeatureConfigAttackTools, in GET /meta's features, says that POST
+// /ingest takes config findings of category attack_tool.
+const FeatureConfigAttackTools = "config_attack_tools"
 
 // FeatureReachability, in GET /meta's features, says that POST /ingest
 // accepts and stores observations' reachability (model.Reachability).
@@ -35,7 +43,11 @@ const FeatureReachability = "reachability"
 func leakFilter(r *http.Request) (store.LeakFilter, error) {
 	q := r.URL.Query()
 	f := store.LeakFilter{Status: q.Get("status"), Severity: q.Get("severity"), State: q.Get("state"),
-		AssigneeUser: qInt(r, "assignee_user"), AssigneeTeam: qInt(r, "assignee_team"), Unassigned: q.Get("assignee") == "none", Page: page(r)}
+		AssigneeUser: qInt(r, "assignee_user"), AssigneeTeam: qInt(r, "assignee_team"), Unassigned: q.Get("assignee") == "none",
+		SecondCheck: q.Get("second_check"), Page: page(r)}
+	if f.SecondCheck != "" && store.ValidVerdictFilter(f.SecondCheck) != nil {
+		return f, badRequest(secondCheckFilterHelp)
+	}
 	switch f.State {
 	case "", "overdue", store.LeakNeedsRotation, store.LeakWaitingCheck, store.LeakStillFound, store.LeakVerifiedGone, store.LeakDismissed:
 	default:
@@ -319,4 +331,50 @@ func (s *Server) leakCheckAgain(w http.ResponseWriter, r *http.Request) {
 	_ = s.Store.Audit(r.Context(), principal(r).Actor(r), "leak.check_again", "leak", itoa(id), map[string]any{"asset_id": l.AssetID,
 		"check_id": c.ID})
 	writeJSON(w, map[bool]int{true: 201, false: 200}[created], c)
+}
+
+const secondCheckFilterHelp = "second_check must be confirmed, likely_false_positive, fixed, could_not_check or unchecked, " +
+	"or several comma-separated"
+
+// leakSecondChecks: GET /leaks/{id}/second-checks, every verdict the
+// second check gave the leak, newest first (append-only; one is added only
+// when the verdict, its reason or the rules change).
+func (s *Server) leakSecondChecks(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	l, err := s.Store.GetLeak(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	items, err := s.Store.LeakVerdicts(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"second_check": l.SecondCheck, "items": items})
+}
+
+// configSecondChecks: GET /config-findings/{id}/second-checks, as
+// leakSecondChecks.
+func (s *Server) configSecondChecks(w http.ResponseWriter, r *http.Request) {
+	id, err := idParam(r, "id")
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	c, err := s.Store.GetConfigFinding(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	items, err := s.Store.ConfigVerdicts(r.Context(), id)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	writeJSON(w, 200, map[string]any{"second_check": c.SecondCheck, "items": items})
 }

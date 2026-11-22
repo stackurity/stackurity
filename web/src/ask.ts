@@ -8,7 +8,7 @@
 // answer cannot send anything anywhere.
 
 import { autoLink } from "./askAnswer.ts";
-import { isNavPath } from "./askRoutes.ts";
+import { HELP_ACTIONS, isNavPath } from "./askRoutes.ts";
 
 /**
  * The version of the consent wording in consentText below. The client sends
@@ -356,4 +356,42 @@ export function historyGroups(convs: AskConversation[], now: Date): { label: str
     groups[t >= start ? 0 : t >= start - day ? 1 : 2].items.push(c);
   }
   return groups.filter((g) => g.items.length > 0);
+}
+
+export interface PageLink {
+  to: string;
+  label: string;
+  /** A Help article (Read), rather than a page to act on (Open). */
+  help: boolean;
+}
+
+/**
+ * The Stackurity pages and Help articles an answer links (not issues,
+ * assets, packages or fixes, which have their own cards), first mention
+ * first, once each, at most max: shown as buttons under the answer so the
+ * next step is one click.
+ */
+export function pageLinks(text: string, max = 4): PageLink[] {
+  const out: PageLink[] = [];
+  const seen = new Set<string>();
+  const add = (to: string, text: string, help: boolean) => {
+    if (seen.has(to)) return;
+    seen.add(to);
+    const label = text.replace(/\s+/g, " ").trim();
+    out.push({ to, label: label.length > 48 ? `${label.slice(0, 47)}…` : label, help });
+  };
+  const walk = (parts: Inline[]) => {
+    for (const p of parts) {
+      if (p.kind === "bold") walk(p.parts);
+      else if (p.kind === "link" && isNavPath(p.to)) add(p.to, p.text, p.to.startsWith("/help"));
+    }
+  };
+  for (const line of text.split("\n")) walk(parseInline(line));
+  // The page where a linked article's task is done comes first, as "Open …".
+  const actions: PageLink[] = [];
+  for (const l of out) {
+    const a = l.help ? HELP_ACTIONS[l.to.slice("/help/".length)] : undefined;
+    if (a && !seen.has(a.to) && !actions.some((x) => x.to === a.to)) actions.push({ to: a.to, label: a.label, help: false });
+  }
+  return [...actions, ...out].slice(0, max);
 }

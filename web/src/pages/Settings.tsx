@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import { Link, Navigate, NavLink, Outlet, useLocation } from "react-router";
-import type { Feature, UserRole } from "../api";
+import { SETTINGS_GROUPS, type SettingsEntry } from "../navModel";
 import { useAuth } from "../auth";
 import { PageHeader } from "../components/ui";
 import { ProBadge, ProNotice } from "../components/ProNotice";
@@ -8,47 +8,26 @@ import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconPeople, I
 import { ProjectChatAppsCard } from "../components/ScopeNotifications";
 import { PoliciesTab } from "./Remediation";
 
-interface Entry {
-  to: string;
-  label: string;
-  icon: ReactNode;
-  min?: UserRole;
-  feature?: Feature;
-  /** Shown only where the server offers billing (a hosted edition). */
-  billing?: boolean;
-  /** Shown only where the trust badge is offered (Stackurity Cloud). */
-  trustBadge?: boolean;
-}
+type Entry = SettingsEntry & { icon: ReactNode };
 
-const GROUPS: { title: string; entries: Entry[] }[] = [
-  {
-    title: "How Stackurity decides",
-    entries: [
-      { to: "/settings/risk-policy", label: "Risk policy", icon: <IconShield /> },
-      { to: "/settings/fix-grouping", label: "Fix grouping", icon: <IconLayers /> },
-      { to: "/settings/vex", label: "VEX", icon: <IconDocument /> },
-      { to: "/settings/automatic-fixes", label: "Automatic fixes", icon: <IconRemediation />, min: "security", feature: "remediation" },
-    ],
-  },
-  {
-    title: "Projects",
-    entries: [{ to: "/settings/project-permissions", label: "Project permissions", icon: <IconPeople />, min: "security" }],
-  },
-  {
-    title: "Plan and usage",
-    entries: [
-      { to: "/settings/usage", label: "Usage", icon: <IconGauge />, min: "admin" },
-      { to: "/settings/billing", label: "Plan and billing", icon: <IconCard />, min: "admin", billing: true },
-      { to: "/settings/trust-badge", label: "Trust badge", icon: <IconShield />, min: "admin", trustBadge: true },
-      // Every edition: self-hosted servers get where their single sign-on is set up.
-      { to: "/settings/sso", label: "Single sign-on", icon: <IconSignIn />, min: "admin" },
-    ],
-  },
-  {
-    title: "Maintenance",
-    entries: [{ to: "/settings/jobs", label: "Jobs", icon: <IconClock />, min: "admin" }],
-  },
-];
+const ICONS: Record<string, ReactNode> = {
+  "/settings/risk-policy": <IconShield />,
+  "/settings/fix-grouping": <IconLayers />,
+  "/settings/vex": <IconDocument />,
+  "/settings/automatic-fixes": <IconRemediation />,
+  "/settings/project-permissions": <IconPeople />,
+  "/settings/usage": <IconGauge />,
+  "/settings/billing": <IconCard />,
+  "/settings/trust-badge": <IconShield />,
+  "/settings/sso": <IconSignIn />,
+  "/settings/jobs": <IconClock />,
+};
+
+// The sections live in navModel.ts, so the top search can find them too.
+const GROUPS: { title: string; entries: Entry[] }[] = SETTINGS_GROUPS.map((g) => ({
+  title: g.title,
+  entries: g.entries.map((e) => ({ ...e, icon: ICONS[e.to] })),
+}));
 
 function useVisible() {
   const { can, meta } = useAuth();

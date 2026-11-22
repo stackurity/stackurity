@@ -408,6 +408,7 @@ var unsupportedLabels = map[string]string{
 	"runtime":                   "runtimes installed outside a package manager",
 	"cms":                       "WordPress core",
 	"wordpress_extension":       "WordPress plugins and themes",
+	"java_webapp":               "Java web applications the curated catalogue does not match",
 	"kubernetes":                "Kubernetes components reported by the cluster",
 	"managed_service":           "managed cloud services",
 	"windows_hotpatch":          "Windows hotpatch builds",
@@ -420,6 +421,11 @@ var unsupportedLabels = map[string]string{
 	"other":                     "%s packages",
 }
 
+// GenericUnsupportedLabel names unsupported components that come from no
+// package manager. The dashboard words the sentence around it ("1 component
+// is a standalone build, ...").
+const GenericUnsupportedLabel = "standalone builds, not from a package manager"
+
 // uncheckedLabel names a subject for people.
 func uncheckedLabel(reason, subject, typ string) string {
 	switch reason {
@@ -431,6 +437,12 @@ func uncheckedLabel(reason, subject, typ string) string {
 		}
 		if cat == "vendor_build" && len(parts) == 3 {
 			return "vendor builds from " + parts[2]
+		}
+		// A generic package (pkg:generic, such as a Flutter web build's
+		// engine) has no ecosystem to name: "uses other packages" read as
+		// if it depended on something else.
+		if parts[0] == "generic" && (cat == "" || cat == "ecosystem" || cat == "other") {
+			return GenericUnsupportedLabel
 		}
 		if f, ok := unsupportedLabels[cat]; ok {
 			if strings.Contains(f, "%s") {

@@ -10,6 +10,7 @@ import { FeedbackNudge } from "./FeedbackNudge";
 import { updateNudge } from "../feedbackNudge";
 import { PlatformHealthBanner } from "../pages/admin/Health";
 import { UpdateBanner } from "../pages/admin/Updates";
+import { ThreatNoticeBanner } from "./ThreatNotices";
 import {
   IconActionPlan,
   IconActivity,
@@ -55,7 +56,7 @@ import { ErrorBox } from "./ui";
 import { useMenu, useModal } from "./useFocus";
 import { AskButton, AskPanel } from "./AskPanel";
 import type { AskStatus } from "../ask";
-import { clearAskState, EMPTY_ASK_STATE, loadAskState, saveAskState, type AskPanelState } from "../askState";
+import { clearAskState, EMPTY_ASK_STATE, loadAskState, onAskSettingsChanged, saveAskState, type AskPanelState } from "../askState";
 
 function readPrefs(): NavPrefs {
   try {
@@ -80,6 +81,7 @@ const ITEM_ICON: Record<ItemId, ReactNode> = {
   issues: <IconIssues />,
   leaks: <IconKey />,
   config: <IconDocument />,
+  code: <IconDocument />,
   automatic: <IconRemediation />,
   incidents: <IconActivity />,
   checks: <IconCheckCircle />,
@@ -172,6 +174,9 @@ function Shell() {
     () => (hasWorkspace ? api.get<AskStatus>("/ask/status") : Promise.resolve(undefined)),
     [hasWorkspace, wsId, askOpen],
   );
+  // Turning Ask on or off under Integrations → AI assistants updates the
+  // panel straight away.
+  useEffect(() => onAskSettingsChanged(() => askStatus.reload()), []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.altKey && (e.key === "k" || e.key === "K") && askStatus.data && askStatus.data.reason !== "not_configured") {
@@ -340,6 +345,7 @@ function Shell() {
           {!pathname.startsWith("/admin/health") && <PlatformHealthBanner />}
           {me?.workspace?.read_only && <ReadOnlyBanner state={me.workspace.read_only} />}
           {me?.workspace && !me.workspace.read_only && !projectOnly && pathname !== "/settings/usage" && <AssetLimitBanner workspaceId={me.workspace.id} />}
+          {me?.workspace && !projectOnly && !pathname.startsWith("/help") && <ThreatNoticeBanner workspaceId={me.workspace.id} />}
           {me?.workspace && <SectionTabsFor path={pathname} />}
           {me && !me.workspace && me.sso_required && !pathname.startsWith("/admin") ? (
             <SSORequiredNotice req={me.sso_required} others={(me.workspaces ?? []).filter((w) => w.workspace_id !== me.sso_required?.workspace_id)} />

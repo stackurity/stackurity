@@ -388,6 +388,12 @@ func ScopeClass(scope, status string) (class, kind string) {
 		if kind, ok := limitScopes[k]; ok {
 			return ScopeLimit, kind
 		}
+	case "limited":
+		// Read in full, but the format has a known limit (a build.gradle
+		// without dependency locking: declared versions only). The item's
+		// reason says which; the kind is generic, as any collector may
+		// send it.
+		return ScopeLimit, "files read with a known limit"
 	case "unsupported":
 		// A format or kind of system Stackurity does not read yet (an
 		// unparsed lockfile, a host without a package database).

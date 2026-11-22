@@ -14,41 +14,100 @@ func (s *Server) has(r *http.Request, f license.Feature) bool { return s.Gate.Ha
 
 // planRequired answers a request for a paid feature the workspace's plan
 // does not include. 402 lets clients tell it apart from a permissions error.
-// The refusal is counted (usage counts, migration 0109).
+// The refusal is counted (usage counts, migration 0109). Besides the code
+// and its fixed message, the error carries a license.Offer (planOption):
+// which plans include the feature and, on Stackurity Cloud, their prices.
+// MCP renders it as one line (internal/mcp/offer.go).
 func (s *Server) planRequired(w http.ResponseWriter, r *http.Request, f license.Feature) {
-	s.countUsage(r, store.UsageLimitRefused, "feature_"+string(f))
-	writeError(w, 402, "plan_required", featureName(f)+" is part of Stackurity Pro. Ask your administrator to upgrade this workspace.")
+	s.planRequiredAs(w, r, f, "")
 }
 
-func featureName(f license.Feature) string {
-	switch f {
-	case license.Remediation:
-		return "Automatic fixing"
-	case license.Teams:
-		return "Working with several teams"
-	case license.EvidenceReport:
-		return "The evidence report"
-	case license.SSO:
-		return "Single sign-on"
-	case license.EnterprisePacks:
-		return "This stack pack (Enterprise)"
-	case license.ComplianceAddon:
-		return "The Compliance add-on"
+// planRequiredAs is planRequired naming what was asked for (name, such as
+// "PCI DSS 4.0 evidence") where it is a part of feature f; "" is f's name.
+func (s *Server) planRequiredAs(w http.ResponseWriter, r *http.Request, f license.Feature, name string) {
+	s.countUsage(r, store.UsageLimitRefused, "feature_"+string(f))
+	o, _ := s.planOption(r, f)
+	if name != "" {
+		o.FeatureName = name
 	}
-	return string(f)
+	writeJSON(w, 402, map[string]apiError{"error": {Code: "plan_required", Message: planMessage(f), Offer: o}})
+}
+
+// planMessage is plan_required's fixed message for f.
+func planMessage(f license.Feature) string {
+	if license.IsAddon(f) {
+		return f.Name() + " is not included in this organisation's plan. Ask your administrator to add it."
+	}
+	ed := "Pro"
+	if license.LowestEdition(f) == license.Enterprise {
+		ed = "Enterprise"
+	}
+	return f.Name() + " is part of Stackurity " + ed + ". Ask your administrator to upgrade this workspace."
+}
+
+// planOption is the offer for f in the request's workspace, and whether f
+// is on there: what a hosted edition knows (editionPlanOffer: its plans,
+// prices and trial), or on a self-hosted server the licence editions that
+// include f.
+func (s *Server) planOption(r *http.Request, f license.Feature) (*license.Offer, bool) {
+	o := license.SelfHostedOffer(f)
+	p := principal(r)
+	if p == nil || p.Workspace <= 0 {
+		return o, false
+	}
+	if editionPlanOffer != nil {
+		on, err := editionPlanOffer(s, r, p.Workspace, f, o)
+		if err == nil {
+			return o, on || s.broughtIn(r, p.Workspace, f)
+		}
+		// The answer still goes out, with the licence editions only.
+		s.Log.Warn("plan offer", "feature", f, "err", err)
+		o = license.SelfHostedOffer(f)
+	}
+	on, err := s.hasFeatureIn(r, p.Workspace, f)
+	if err != nil {
+		s.Log.Warn("plan offer", "feature", f, "err", err)
+	}
+	return o, on || s.broughtIn(r, p.Workspace, f)
+}
+
+// broughtIn reports whether f is on in workspace ws because an add-on it
+// has brings f with it (license.BroughtBy: the Compliance add-on brings
+// the evidence pack), so plan options never tell a Starter + Compliance
+// organisation it lacks the pack.
+func (s *Server) broughtIn(r *http.Request, ws int64, f license.Feature) bool {
+	a, ok := license.BroughtBy(f)
+	if !ok {
+		return false
+	}
+	on, err := s.hasFeatureIn(r, ws, a)
+	return err == nil && on
 }
 
 // requireFeature gates a route on a paid feature.
 func (s *Server) requireFeature(f license.Feature) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if !s.has(r, f) {
+			if !s.has(r, f) && !s.broughtByAddon(r, f) {
 				s.planRequired(w, r, f)
 				return
 			}
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// broughtByAddon reports whether f is on for the request's workspace
+// because an add-on the workspace has brings it (license.BroughtBy: the
+// Compliance add-on brings the audit evidence pack, which Stackurity Cloud
+// sells on Starter, a Community plan; owner, 18 Nov 2026). Plan options
+// use the same rule (broughtIn).
+func (s *Server) broughtByAddon(r *http.Request, f license.Feature) bool {
+	p := principal(r)
+	if p == nil || p.Workspace <= 0 {
+		return false
+	}
+	return s.broughtIn(r, p.Workspace, f)
 }
 
 // adminLicense shows the installation's licence and asset use.

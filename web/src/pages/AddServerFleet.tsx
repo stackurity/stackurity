@@ -8,7 +8,6 @@ import {
   type EnrollmentUse,
   type FleetMachine,
   type FleetMachines,
-  type Project,
 } from "../api";
 import { useAction, useLoad, type Loaded } from "../hooks";
 import { absTime, plural } from "../format";
@@ -17,7 +16,9 @@ import { Badge } from "../components/Badge";
 import { Card, CardFooter, Code, CodeBlock, EmptyState, ErrorBox, FieldGroup, KeyValues, Loading, Notice, RelativeTime, Tabs } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { fleetSnippets, sshCommand, sshLoop, cloudInit, type SnippetKind } from "../fleetSnippets";
-import { CheckApps, installCommand } from "./AddServer";
+import { CheckApps, ProjectField, installCommand } from "./AddServer";
+import { useProject } from "../project";
+import { choiceProjectId, defaultEnrollProject, initialProjectChoice, openProjects, projectName, type ProjectChoice } from "../enrollProject";
 
 const LOCAL_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
 
@@ -105,11 +106,11 @@ function FleetCodeCreated({ created, onDone, hosts }: { created: EnrollmentCreat
 }
 
 function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => void }) {
-  const projects = useLoad(() => api.getAll<{ items: Project[] | null }>("/projects"), []);
+  const { projectId, projects } = useProject();
   const [count, setCount] = useState("");
   const [days, setDays] = useState("");
   const [label, setLabel] = useState("");
-  const [project, setProject] = useState("");
+  const [project, setProject] = useState<ProjectChoice>(() => initialProjectChoice(projectId, projects));
   const [environment, setEnvironment] = useState("");
   const [dirs, setDirs] = useState("");
   const [discover, setDiscover] = useState(true);
@@ -124,7 +125,7 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
         ttl_hours: Number(days) * 24,
         label: label.trim(),
         environment: environment.trim(),
-        project_id: Number(project) || 0,
+        project_id: choiceProjectId(project),
         app_dirs: dirs
           .split("\n")
           .map((d) => d.trim())
@@ -135,7 +136,6 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
     if (c) onCreated(c);
   };
 
-  const active = (projects.data?.items ?? []).filter((p) => !p.archived_at);
   return (
     <Card
       title="New fleet code"
@@ -161,20 +161,18 @@ function CreateFleetCode({ onCreated }: { onCreated: (c: EnrollmentCreated) => v
           </div>
         </div>
         </FieldGroup>
-        <FieldGroup title="Where the servers go" description="Optional. The project and environment every server enrolled with this code gets. Production is ranked higher.">
+        <FieldGroup title="Where the servers go" description="The project and environment every server enrolled with this code gets. Production is ranked higher.">
         <div className="form-grid">
-          <div className="field">
-            <label htmlFor="fl-project">Project</label>
-            <select id="fl-project" value={project} onChange={(e) => setProject(e.target.value)}>
-              <option value="">No project</option>
-              {active.map((p) => (
-                <option key={p.id} value={p.id}>
-                  {p.name}
-                </option>
-              ))}
-            </select>
-            <p className="hint">Optional. Servers enrolled with the code are added to it.</p>
-          </div>
+          {openProjects(projects).length > 0 && (
+            <ProjectField
+              id="fl-project"
+              showLabel
+              hint="The servers and the apps found on them are added to it, so everyone working on it sees them."
+              projects={projects}
+              value={project}
+              onChange={setProject}
+            />
+          )}
           <div className="field">
             <label htmlFor="fl-env">Environment</label>
             <input
@@ -408,6 +406,8 @@ function Droplets() {
   const [picked, setPicked] = useState<Set<number>>(new Set());
   const [created, setCreated] = useState<{ code: EnrollmentCreated; machines: FleetMachine[] } | null>(null);
   const act = useAction();
+  const { projectId, projects } = useProject();
+  const doProject = defaultEnrollProject(projectId, projects);
 
   const items = useMemo(() => res.data?.items ?? [], [res.data]);
   const notCovered = items.filter((m) => m.coverage === "not_covered");
@@ -428,6 +428,7 @@ function Droplets() {
         uses: machines.length,
         ttl_hours: 24,
         label: `DigitalOcean: ${plural(machines.length, "droplet")}`,
+        project_id: doProject,
       }),
     );
     if (c) setCreated({ code: c, machines });
@@ -568,6 +569,7 @@ function Droplets() {
                 <button type="button" className="btn btn-primary btn-sm" disabled={picked.size === 0 || act.pending} onClick={create}>
                   Create commands for {plural(picked.size, "droplet")}
                 </button>
+                {doProject > 0 && <span className="small muted">They go into the project {projectName(doProject, projects)}.</span>}
               </div>
               <Table caption="DigitalOcean droplets" columns={columns} rows={items} rowKey={(m) => m.id} />
             </>
@@ -582,8 +584,12 @@ function NewDroplets() {
   const [show, setShow] = useState(false);
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
   const act = useAction();
+  const { projectId, projects } = useProject();
+  const doProject = defaultEnrollProject(projectId, projects);
   const create = async () => {
-    const c = await act.run(() => api.post<EnrollmentCreated>("/enrollments", { fleet: true, uses: 100, ttl_hours: 7 * 24, label: "DigitalOcean: new droplets" }));
+    const c = await act.run(() =>
+      api.post<EnrollmentCreated>("/enrollments", { fleet: true, uses: 100, ttl_hours: 7 * 24, label: "DigitalOcean: new droplets", project_id: doProject }),
+    );
     if (c) setCreated(c);
   };
   return (
@@ -607,7 +613,8 @@ function NewDroplets() {
             Create a fleet code (100 droplets, 7 days) and show the user data
           </button>
           <span className="small muted">
-            For other counts or a project, use <strong>For many servers</strong>.
+            {doProject > 0 ? <>The droplets go into the project {projectName(doProject, projects)}. </> : null}
+            For other counts or {doProject > 0 ? "another" : "a"} project, use <strong>For many servers</strong>.
           </span>
         </div>
       ) : (

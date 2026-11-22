@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/limits"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/testdb"
@@ -281,6 +282,35 @@ func TestJobTimeoutPerKind(t *testing.T) {
 	}
 	if d := deadlines["fast"]; d < 19*time.Minute || d > 20*time.Minute {
 		t.Errorf("fast job deadline = %v, want about 20m", d)
+	}
+}
+
+// A scan stopped by the disk limit fails at once: the next attempt would
+// download the same oversized repository again. Other errors still retry.
+func TestTooLargeJobIsNotRetried(t *testing.T) {
+	st := store.New(testdb.New(t))
+	w := newWorker(st)
+	w.Handle("big", func(context.Context, json.RawMessage) error {
+		return fmt.Errorf("%w: the clone used more than 1.0 GiB on disk", limits.ErrTooLarge)
+	})
+	w.Handle("flaky", func(context.Context, json.RawMessage) error { return errors.New("connection reset") })
+	ctx := tenant.System(context.Background())
+	big, flaky := claimJob(t, st, "big", "a"), claimJob(t, st, "flaky", "a")
+	w.run(ctx, big, "a")
+	w.run(ctx, flaky, "a")
+	got, err := st.GetJob(ctx, big.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FailedAt == nil || !strings.Contains(got.LastError, "too large") {
+		t.Errorf("too large job = %+v; want failed after one attempt", got)
+	}
+	got, err = st.GetJob(ctx, flaky.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.FailedAt != nil {
+		t.Errorf("other failure = %+v; want it retried", got)
 	}
 }
 

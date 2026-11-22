@@ -4,7 +4,7 @@ A stack pack teaches Stackurity to read one technology's dependency files. Packs
 
 | Pack | Reads | Notes |
 | --- | --- | --- |
-| `java` | `.jar`, `.war`, `.ear`, `gradle.lockfile`, `pom.xml`, `build.gradle(.kts)` | Deployed archives give every bundled library from its Maven metadata (Spring Boot `BOOT-INF/lib`, `WEB-INF/lib`, EARs), skipping the application's own module. Lockfiles give exact versions, transitive included. `pom.xml` gives direct dependencies, resolving properties, `dependencyManagement` and parent poms found in the same repository, and is reported as partial coverage. |
+| `java` | `.jar`, `.war`, `.ear`, `gradle.lockfile`, `pom.xml`, `build.gradle(.kts)` | Deployed archives give every bundled library from its Maven metadata (Spring Boot `BOOT-INF/lib`, `WEB-INF/lib`, EARs), skipping the application's own module. Lockfiles give exact versions, transitive included. `pom.xml` gives direct dependencies, resolving properties, `dependencyManagement` and parent poms found in the same repository, and is reported as partial coverage. `build.gradle(.kts)` without a `gradle.lockfile` next to it gives the dependencies declared with a literal version: its coverage is `limited` (shown with the asset's coverage, but the collection is not marked partial), since reading it again cannot give more; enable [Gradle dependency locking](https://docs.gradle.org/current/userguide/dependency_locking.html) for exact versions. |
 | `cargo` | `Cargo.lock` | The Rust reader that used to be built in. |
 | `swift` | `Package.resolved`, `Podfile.lock` | Swift Package Manager formats 1, 2 and 3 (Xcode projects included) as `pkg:swift/<host>/<owner>/<repo>`, the way OSV's SwiftURL ecosystem names them; registry pins by the repository they mirror when the file records it. CocoaPods pods as `pkg:cocoapods/<pod>`, subspecs counted once, development pods (`:path:`) skipped. Packages pinned to a branch or commit have no version: the file's coverage is partial and counts them. |
 | `hex` | `mix.lock` | Every format since Mix 1.0, as `pkg:hex/<package>` (the Hex package, also when `mix.exs` renames it); private organisations' packages as `pkg:hex/<org>/<package>`. Git dependencies have no version: the file's coverage is partial and counts them. |
@@ -32,7 +32,7 @@ Instance administrators manage packs under **Admin → Stack packs**. The offici
 
 The previous version is kept, so **Roll back** reinstalls it. Disabling or removing a pack makes its files show as unsupported again from the next scan.
 
-`stackurity scan` in CI and the host agent (on `--app-dir` and discovered applications) use the server's enabled packs on their own machine, so file contents never leave it. A pack is downloaded, its signature checked against the client's own keyring and its module compiled only when a file it reads is found, and it is unloaded after the scan: hosts without such files never load one. Loading the Java pack costs about 150 MB of memory and 1.5 s; reading a 35 MB application with 120 bundled libraries adds about 50 MB and 0.3 s. Use `--no-packs` to skip packs.
+`stackurity scan` in CI and the host agent (on `--app-dir` and discovered applications, including the Java web applications deployed in Tomcat and Jetty `webapps` directories, see [Java web applications](compatibility.md#java-web-applications)) use the server's enabled packs on their own machine, so file contents never leave it. A pack is downloaded, its signature checked against the client's own keyring and its module compiled only when a file it reads is found, and it is unloaded after the scan: hosts without such files never load one. Loading the Java pack costs about 150 MB of memory and 1.5 s; reading a 35 MB application with 120 bundled libraries adds about 50 MB and 0.3 s. Use `--no-packs` to skip packs.
 
 | Variable | Purpose |
 | --- | --- |
@@ -96,7 +96,7 @@ func main() {
 
 - `files` are base-name patterns of the files the pack reads; a bare `*` is not allowed.
 - `handles` names the coverage prefixes the core reports as unsupported without the pack, which drives suggestions.
-- Report every file in coverage: `Checked`, `Partial` with the reason, or `Failed`.
+- Report every file in coverage: `Checked`, `Partial` with the reason, or `Failed`. A pack may also set a coverage status of `limited` (read in full, but the format has a known limit the reason names); the core accepts it only from official packs (from any other pack it is `partial`), and maps some official packs' known `partial` reasons to it (`internal/packs/run.go`).
 - Use real package URLs so vulnerability and lifecycle data apply.
 
 ```sh

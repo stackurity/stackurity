@@ -3,8 +3,10 @@
 // database password in a .env file the web server may serve.
 //
 // Only what identifies a leak leaves the package: the rule, the file and
-// line, a fingerprint and a masked preview. The value never does, so the
-// server never holds the keys it reports.
+// line, a fingerprint, a masked preview and the second check's signals
+// about the value (internal/secondcheck/valuecheck), each from a fixed
+// list. The value never does, so the server never holds the keys it
+// reports.
 package leaks
 
 import (
@@ -17,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/secondcheck/valuecheck"
 )
 
 // Leak is one key, token or password found in a file. Path is relative
@@ -199,7 +202,11 @@ func ScanValues(name string, data []byte, onValue func(l Leak, value string)) []
 					continue
 				}
 				l.Fingerprint = fingerprint(body)
+				value = body
 			}
+			// The second check's reading of the value, while it is here:
+			// only signals from a fixed list leave.
+			l.ValueCheck = &model.LeakValueCheck{Checker: valuecheck.Checker, Signals: valuecheck.Check(r.id, value)}
 			// A key matched by its format and again by the setting it
 			// is assigned to is one leak.
 			if !seen[l.Fingerprint] {

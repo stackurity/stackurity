@@ -34,7 +34,7 @@ export const ASSET_STATUS_HELP: Record<string, string> = {
 };
 export const CRITICALITIES = ["unknown", "low", "medium", "high", "critical"] as const;
 export const RELATION_KINDS = ["runs_on", "built_from", "deployed_as", "contains", "depends_on", "replica_of"] as const;
-export const COVERAGE_STATUSES = ["checked", "partial", "skipped", "failed", "unsupported"] as const;
+export const COVERAGE_STATUSES = ["checked", "limited", "partial", "skipped", "failed", "unsupported"] as const;
 
 export interface List<T> {
   items: T[];
@@ -220,11 +220,11 @@ export interface EmailPreferences {
   categories: EmailPreference[];
   /** Email that cannot be turned off here, and why. */
   locked: { label: string; description: string }[];
-  /** From a link in an email: "unsubscribe" (one category) or "preferences" (both). */
+  /** From a link in an email: "unsubscribe" (turns categories off only) or "preferences" (both ways). Both list every category. */
   kind?: "unsubscribe" | "preferences";
   /** From a link: the address, partly hidden. */
   email?: string;
-  /** From an unsubscribe link: its category. */
+  /** From an unsubscribe link: the category of the email it came from. */
   category?: EmailCategory;
 }
 
@@ -2517,11 +2517,11 @@ export function vexExportURL(format: "openvex" | "cyclonedx", assetID?: number, 
 export interface IgnoreRequestList extends List<IgnoreRequest> {
   can_decide: boolean;
 }
-export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config", "feed", "collection", "coverage", "platform"] as const;
-export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "feed", "collection", "coverage", "platform"];
+export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config", "code", "feed", "collection", "coverage", "platform"] as const;
+export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "code", "feed", "collection", "coverage", "platform"];
 
 /** Which part of a server or repository a risky setting is in. */
-export type ConfigCategory = "agent_hook" | "ssh" | "ci";
+export type ConfigCategory = "agent_hook" | "ssh" | "ci" | "attack_tool";
 
 /**
  * A risky setting found in a file (GET /config-findings): an AI coding-agent
@@ -2555,6 +2555,31 @@ export interface ConfigFinding {
   first_seen: string;
   last_seen: string;
   resolved_at: string | null;
+  /** The independent second check's latest verdict; null until it has run. */
+  second_check: SecondCheckVerdict | null;
+}
+
+/**
+ * The second check's verdict on a leaked key or a risky setting
+ * (docs/verification.md): deterministic rules, one sentence of reason, and
+ * the version of the rules that gave it.
+ */
+export type SecondCheckResult = "confirmed" | "likely_false_positive" | "fixed" | "could_not_check";
+
+export interface SecondCheckVerdict {
+  id?: number;
+  verdict: SecondCheckResult;
+  reason: string;
+  checker: string;
+  checked_at: string;
+  /** In the history only: what the check read (never a value). */
+  inputs?: Record<string, unknown>;
+}
+
+/** GET /leaks/{id}/second-checks and /config-findings/{id}/second-checks. */
+export interface SecondCheckHistory {
+  second_check: SecondCheckVerdict | null;
+  items: SecondCheckVerdict[];
 }
 
 /** The last config check of an asset by one collector. */
@@ -2575,6 +2600,75 @@ export interface ConfigSummary {
   by_severity: Record<string, number>;
   by_category: Record<string, number>;
   scanned_assets: number;
+  /** Open findings the second check found likely not a risk (in the counts above too). */
+  likely_false_positive: number;
+}
+
+/** What kind of result a code finding is: a security issue, a non-security bug, or another rule. */
+export type CodeCategory = "security" | "bug" | "other";
+
+/**
+ * A code finding (GET /code-findings): what a code-review security scanner
+ * (deepsec, or a tool writing SARIF) found in a repository's source,
+ * imported from its report. Every text field is the scanner's, shown as
+ * plain text.
+ */
+export interface CodeFinding {
+  id: number;
+  asset_id: number;
+  asset_name: string;
+  asset_kind: string;
+  /** deepsec, or sarif:<tool>. */
+  source: string;
+  fingerprint: string;
+  rule: string;
+  category: CodeCategory;
+  title: string;
+  severity: "critical" | "high" | "medium" | "low" | "info";
+  path: string;
+  start_line: number;
+  end_line: number;
+  description: string;
+  recommendation: string;
+  confidence: "" | "high" | "medium" | "low";
+  /** The source's own verdict, e.g. deepsec's revalidation. */
+  verdict: "" | "true-positive" | "false-positive" | "fixed" | "uncertain" | "accepted-risk" | "duplicate" | "suppressed";
+  verdict_note: string;
+  tool: string;
+  tool_version: string;
+  model: string;
+  run_id: string;
+  status: "open" | "resolved";
+  resolution: "" | "gone" | "verdict" | "dismissed";
+  resolution_note: string;
+  resolved_by: number | null;
+  first_seen: string;
+  last_seen: string;
+  resolved_at: string | null;
+}
+
+/** The last import of one source's report on an asset. */
+export interface CodeImport {
+  source: string;
+  format: "deepsec" | "sarif";
+  tool: string;
+  tool_version: string;
+  model: string;
+  run_id: string;
+  complete: boolean;
+  found: number;
+  imported_at: string;
+}
+
+export interface CodeFindingList extends List<CodeFinding> {
+  imports?: CodeImport[];
+}
+
+/** GET /code-findings/summary: open findings by severity and category. */
+export interface CodeSummary {
+  by_severity: Record<string, number>;
+  by_category: Record<string, number>;
+  imported_assets: number;
 }
 
 /** A key, token or password found written in a file. The value is never stored. */
@@ -2616,6 +2710,11 @@ export interface Leak {
   rotated_by_name: string;
   rotation_note: string;
   state: LeakState;
+  /** What the collector's value check read in the value (placeholder, checksum_invalid...); never the value. */
+  value_checker: string;
+  value_signals: string[];
+  /** The independent second check's latest verdict; null until it has run. */
+  second_check: SecondCheckVerdict | null;
 }
 
 export type LeakState = "needs_rotation" | "waiting_check" | "still_found" | "verified_gone" | "dismissed";
@@ -2628,6 +2727,8 @@ export interface LeakSummary {
   waiting_check: number;
   verified_gone_30d: number;
   unassigned: number;
+  /** Open leaks the second check found likely not real keys (in the counts above too). */
+  likely_false_positive: number;
 }
 
 /** The last key scan of an asset by one collector. */
@@ -3161,7 +3262,7 @@ export type SendNow = "urgent" | "all" | "none";
 export type SummaryChoice = "daily" | "weekly" | "none";
 
 /** What a route sends (its "Trigger" checkboxes). */
-export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "daily_summary", "weekly_summary"] as const;
+export const ROUTE_EVENTS = ["urgent", "new_issues", "regressed", "overdue", "connected", "problems", "threat_notices", "daily_summary", "weekly_summary"] as const;
 export type RouteEvent = (typeof ROUTE_EVENTS)[number];
 
 export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
@@ -3171,15 +3272,16 @@ export const ROUTE_EVENT_LABEL: Record<RouteEvent, string> = {
   overdue: "Fix overdue",
   connected: "New asset connected",
   problems: "Collection, feed or platform problems",
+  threat_notices: "Threat notices (new attacks and attacker tools)",
   daily_summary: "Daily summary",
   weekly_summary: "Weekly summary",
 };
 
 /** What the old modes mean as events (routes without `events`). */
 const MODE_EVENTS: Record<string, RouteEvent[]> = {
-  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "daily_summary"],
-  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "weekly_summary"],
-  urgent_only: ["urgent", "regressed", "overdue", "connected", "problems"],
+  urgent_summary: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices", "daily_summary"],
+  urgent_weekly: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices", "weekly_summary"],
+  urgent_only: ["urgent", "regressed", "overdue", "connected", "problems", "threat_notices"],
   daily: ["daily_summary"],
   weekly: ["weekly_summary"],
 };
@@ -3192,11 +3294,19 @@ export function eventsOf(r: Pick<Route, "events" | "mode">): RouteEvent[] {
 
 /**
  * The events for the two quick questions (onboarding). Null when neither is
- * chosen: nothing would ever be sent.
+ * chosen: nothing would ever be sent. threatNotices false leaves threat
+ * notices out (webhooks opt in to them).
  */
-export function eventsFor(now: SendNow, summary: SummaryChoice): { events: RouteEvent[]; new_min_priority: Priority } | null {
+export function eventsFor(now: SendNow, summary: SummaryChoice, threatNotices = true): { events: RouteEvent[]; new_min_priority: Priority } | null {
   if (now === "none" && summary === "none") return null;
-  const events: RouteEvent[] = now === "all" ? ["new_issues", "urgent", "regressed", "connected", "problems"] : now === "urgent" ? ["urgent", "regressed", "connected", "problems"] : [];
+  const events: RouteEvent[] =
+    now === "all"
+      ? ["new_issues", "urgent", "regressed", "connected", "problems", "threat_notices"]
+      : now === "urgent"
+        ? ["urgent", "regressed", "connected", "problems", "threat_notices"]
+        : [];
+  // Webhooks opt in to threat notices: a receiver may not expect them.
+  if (!threatNotices) events.splice(0, events.length, ...events.filter((e) => e !== "threat_notices"));
   if (summary === "daily") events.push("daily_summary");
   if (summary === "weekly") events.push("weekly_summary");
   return { events, new_min_priority: "P4" };
@@ -3229,7 +3339,7 @@ export function describeRoute(r: Pick<Route, "events" | "mode" | "min_priority" 
   const at = `at ${r.summary_time || "09:00"} ${r.timezone || "UTC"}`;
   if (ev.includes("daily_summary")) now.push(`Daily summary ${at}`);
   if (ev.includes("weekly_summary")) now.push(`Weekly summary, ${capital(r.summary_day || "monday")}s ${at}`);
-  const extra = (["regressed", "overdue", "connected", "problems"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
+  const extra = (["regressed", "overdue", "connected", "problems", "threat_notices"] as RouteEvent[]).filter((e) => ev.includes(e)).length;
   if (now.length === 0) return extra ? `${extra} kind${extra === 1 ? "" : "s"} of message` : "Nothing";
   return now.join(" · ");
 }
@@ -4373,7 +4483,8 @@ export const api = {
   /** Stackurity Cloud: issue the key for the signed-in person and get the address that takes it back. */
   confirmKeyLink: (b: KeyLinkRequest) => request<KeyLinkPreview & { redirect: string; key_id: string }>("POST", "/community-keys/link/confirm", b),
   socialSignupPreview: (token: string) => request<SocialSignupPreview>("POST", "/signup/social/preview", { token }, { quiet401: true }),
-  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string }) =>
+  // ref: no longer sent (the server keeps it since the start URL); still accepted by the server for old pages.
+  socialSignup: (b: { token: string; name: string; organisation: string; accept_terms: true; email_notice_version?: string; ref?: string }) =>
     request<{ workspace_id: number; next: string }>("POST", "/signup/social", b, { quiet401: true }),
   confirmSocialLink: (token: string) =>
     request<User & { mfa_required?: boolean; methods?: MfaSignInMethod[] }>("POST", "/auth/social/confirm", { token }, { quiet401: true }),
@@ -4405,4 +4516,40 @@ export interface OwnerCoverage {
   by_rule: number;
   by_hand: number;
   unassigned: number;
+}
+
+/** A threat notice's verdict (docs/threat-notices.md). */
+export type ThreatVerdict = "found" | "covered" | "needs_connection" | "upgrade";
+
+/** GET /threat-notices: one notice about a threat, with the caller's banner state. */
+export interface ThreatNotice {
+  id: number;
+  threat_id: string;
+  name: string;
+  kind: "attack_tool" | "exploited_vuln" | "campaign" | "practice";
+  severity: string;
+  summary: string;
+  sources: string[];
+  min_version: string;
+  verdict: ThreatVerdict;
+  notified_verdict: ThreatVerdict;
+  findings: number;
+  assets: number;
+  connected: Record<string, number>;
+  missing: string[];
+  missing_connections: { connection: string; label: string; required: boolean; checks: string; help: string }[];
+  /** The notice in words: the same as the email. */
+  title: string;
+  lines: string[];
+  /** The banner's one button; null when nothing needs doing. */
+  action: { label: string; link: string } | null;
+  created_at: string;
+  updated_at: string;
+  banner_at: string;
+  email_at: string | null;
+  email_result: "" | "sent" | "no_mailer" | "no_recipients" | "failed";
+  channels_at: string | null;
+  channels_queued: number;
+  /** You hid the banner for the current verdict. */
+  dismissed: boolean;
 }

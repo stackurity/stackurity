@@ -6,6 +6,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
@@ -29,6 +30,11 @@ func TestReportableApp(t *testing.T) {
 		{"discovered, empty, some files unreadable", apps.App{Coverage: gap}, false, "package.json", false},
 		{"discovered, directory unreadable", apps.App{Coverage: gap, Unreadable: true}, false, "nginx:/etc/nginx/conf.d/x.conf", true},
 		{"discovered as unreadable", apps.App{}, false, "unreadable", true},
+		// A Tomcat web application whose JARs no stack pack read: sent with
+		// that gap, not left out as empty.
+		{"Java web application, JARs not read", apps.App{Coverage: []model.CoverageItem{{Scope: apps.JavaLibrariesScope + "/var/lib/tomcat10/webapps/shop/WEB-INF/lib",
+			Status: "unsupported"}}}, false, "WEB-INF", true},
+		{"Java web application, nothing found", apps.App{}, false, "WEB-INF", false},
 	} {
 		if got := reportable(c.app, c.explicit, c.by); got != c.want {
 			t.Errorf("%s: reportable = %v", c.name, got)
@@ -121,5 +127,64 @@ func TestAppBatchVersion(t *testing.T) {
 	}
 	if _, ok := b.Asset.Attributes["app_version"]; ok {
 		t.Error("an empty app_version is left out")
+	}
+}
+
+// A release layout served as current/ and as releases/ (commmerce-ui's
+// nginx aliases) is one application, keyed and named by its own directory,
+// so a deploy (a new release) keeps the same asset and the old releases are
+// not counted.
+func TestAgentReleaseLayoutIsOneApplication(t *testing.T) {
+	root := t.TempDir()
+	write := func(p, data string) {
+		full := filepath.Join(root, p)
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(full, []byte(data), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write("etc/os-release", "ID=debian\nVERSION_ID=\"12\"\nPRETTY_NAME=\"Debian GNU/Linux 12 (bookworm)\"\n")
+	write("var/lib/dpkg/status", "")
+	for _, rel := range []string{"20261120184023-5e3735d", "20261121142525-31944f9"} {
+		d := "var/www/ui/releases/" + rel + "/flutter/"
+		write(d+"index.html", `<!DOCTYPE html><html><body><script src="flutter_bootstrap.js" async></script></body></html>`)
+		write(d+"flutter_bootstrap.js", `_flutter.buildConfig = {"engineRevision":"18818009497c581ede5d8a3b8b833b81d00cebb7","builds":[{"compileTarget":"dart2js","renderer":"canvaskit","mainJsPath":"main.dart.js"}]};`)
+		write(d+"main.dart.js", "(function dartProgram(){function copyProperties(a,b){}})()\n")
+	}
+	if err := os.Symlink("/var/www/ui/releases/20261121142525-31944f9", filepath.Join(root, "var/www/ui/current")); err != nil {
+		t.Fatal(err)
+	}
+	collect, err := hostCollector(&hostOptions{root: root, appDirs: []string{"/var/www/ui/releases", "/var/www/ui/current"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	batches, err := collect(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	var app []*model.ObservationBatch
+	for _, b := range batches {
+		if b.Asset.Kind == model.AssetApplication {
+			app = append(app, b)
+		}
+	}
+	if len(app) != 1 {
+		t.Fatalf("applications = %d", len(app))
+	}
+	a := app[0].Asset
+	if a.Identifiers[0].Value != "/var/www/ui" || a.Name != "ui on "+a.Attributes["host"] || a.Attributes["app_home"] != "/var/www/ui" ||
+		a.Attributes["app_dir"] != "/var/www/ui/releases/20261121142525-31944f9" {
+		t.Errorf("asset %+v", a)
+	}
+	engines := 0
+	for _, o := range app[0].Observations {
+		if strings.HasPrefix(o.Purl, "pkg:generic/flutter-engine@") {
+			engines++
+		}
+	}
+	if engines != 1 {
+		t.Errorf("flutter engines = %d, want the current release's only", engines)
 	}
 }

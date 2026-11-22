@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -162,13 +163,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 		if err != nil {
 			return done, err
 		}
-		err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
-			if _, err := tx.Exec(ctx, sql); err != nil {
-				return err
-			}
-			_, err := tx.Exec(ctx, `INSERT INTO schema_migrations (name) VALUES ($1)`, name)
-			return err
-		})
+		err = applyMigration(ctx, conn, name, sql)
 		if err != nil {
 			return done, fmt.Errorf("migration %s: %w", name, err)
 		}
@@ -186,8 +181,66 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool) ([]string, error) {
 	if _, err := conn.Exec(ctx, ensureAppendOnly); err != nil {
 		return done, fmt.Errorf("ensure append-only grants: %w", err)
 	}
+	if _, err := conn.Exec(ctx, ensureRunRecords); err != nil {
+		return done, fmt.Errorf("ensure run record grants: %w", err)
+	}
 	return done, nil
 }
+
+// migrationAttempts is how many times a migration is tried when it loses a
+// lock conflict.
+const migrationAttempts = 5
+
+// applyMigration runs one migration and records it, in one transaction.
+//
+// A replica of the previous version may still be running while a new one
+// migrates (a rolling upgrade, or the release check's mixed-version step).
+// Its queries lock tables in their own order, so a migration that alters
+// two tables can deadlock with it, or wait past its lock_timeout. Postgres
+// then rolls the migration's whole transaction back, so it is tried again
+// after a short pause. Any other error is returned at once.
+func applyMigration(ctx context.Context, conn *pgx.Conn, name, sql string) error {
+	var err error
+	for attempt := 1; ; attempt++ {
+		err = pgx.BeginFunc(ctx, conn, func(tx pgx.Tx) error {
+			if _, err := tx.Exec(ctx, sql); err != nil {
+				return err
+			}
+			_, err := tx.Exec(ctx, `INSERT INTO schema_migrations (name) VALUES ($1)`, name)
+			return err
+		})
+		if err == nil || !lockConflict(err) || attempt == migrationAttempts {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return err
+		case <-time.After(time.Duration(attempt) * time.Second):
+		}
+	}
+}
+
+// lockConflict reports whether err is a deadlock (40P01) or a lock wait
+// that ran past lock_timeout (55P03).
+func lockConflict(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && (pgErr.Code == "40P01" || pgErr.Code == "55P03")
+}
+
+// ensureRunRecords keeps evaluation and feed sync runs (migration 0116)
+// unchangeable by the application role after ensureAppRole's blanket
+// grants: it inserts and reads them, and deletes them only when they are
+// past retention. It does nothing before migration 0116 or where roles
+// cannot be managed.
+const ensureRunRecords = `DO $$
+BEGIN
+    IF to_regclass(format('%I.evaluation_runs', current_schema())) IS NULL THEN
+        RETURN;
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'stackurity_app') THEN
+        REVOKE UPDATE, TRUNCATE ON evaluation_runs, feed_sync_runs FROM stackurity_app;
+    END IF;
+END $$`
 
 // ensureAppendOnly keeps the trust badge's status history and purge log
 // append-only for the application role (migration 0103) after

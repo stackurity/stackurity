@@ -20,6 +20,7 @@ import (
 	"github.com/stackurity/stackurity/internal/ask"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/mcp"
 	"github.com/stackurity/stackurity/internal/notify"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
@@ -576,7 +577,7 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b)
 		_ = rc.Flush()
 	}
-	qctx, cancel := context.WithTimeout(ctx, askDeadline)
+	qctx, cancel := context.WithTimeout(mcp.WithLinks(ctx, s.baseURL(), p.Project), askDeadline)
 	defer cancel()
 	stop := make(chan struct{})
 	defer close(stop)
@@ -599,7 +600,8 @@ func (s *Server) askQuestion(w http.ResponseWriter, r *http.Request) {
 	if conv.Title == "" {
 		_ = s.Store.TitleAskConversation(ctx, p.User.ID, conv.ID, in.Text)
 	}
-	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project,
+	notes := s.askProjectNotes(ctx, p, page)
+	out, err := s.Ask.Ask(qctx, ask.Question{Conversation: conv, UserID: p.User.ID, Text: in.Text, Page: page, Project: project, ProjectNotes: notes,
 		Model: conv.Model, SpendCapMicros: l.SpendCapMicros, Ceiling: l.Model, API: api, Propose: l.Propose, SecretRemoved: secretRemoved}, func(e ask.Event) {
 		switch e.Kind {
 		case "text":
@@ -729,7 +731,7 @@ var askPaths = []string{"/api/v1/search?", "/api/v1/assets?", "/api/v1/assets/",
 var askExactPaths = map[string]bool{"/api/v1/auth/me": true, "/api/v1/usage": true, "/api/v1/users": true, "/api/v1/ask/status": true,
 	"/api/v1/channels": true, "/api/v1/routes": true, "/api/v1/settings/notifications": true, "/api/v1/integrations": true,
 	"/api/v1/integrations/github": true, "/api/v1/integrations/gitlab": true, "/api/v1/integrations/jira/connections": true,
-	"/api/v1/integrations/digitalocean": true}
+	"/api/v1/integrations/digitalocean": true, "/api/v1/integrations/evidence": true, "/api/v1/plan/options": true}
 
 // askAPI is the API as Ask Stackurity's tools see it: each call goes
 // through the server's own router with the person's session, as if their

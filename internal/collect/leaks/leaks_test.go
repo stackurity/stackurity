@@ -329,3 +329,29 @@ func TestLLMKeysOnHostStayLow(t *testing.T) {
 		t.Errorf("world-readable on a host: %s, want medium", got[0].Severity)
 	}
 }
+
+// Each leak carries the second check's reading of its value: signals from
+// a fixed list, never the value. The test token above has the right shape
+// but was made up, so its checksum does not match.
+func TestLeakValueCheck(t *testing.T) {
+	ls := Scan("src/deploy.js", []byte("const t = '"+ghToken+"';\nconst s = '"+stripeKey+"';\n"))
+	if len(ls) != 2 {
+		t.Fatalf("leaks: %v", rulesOf(ls))
+	}
+	for _, l := range ls {
+		if l.ValueCheck == nil || l.ValueCheck.Checker != "value/1" {
+			t.Fatalf("%s: no value check: %+v", l.Rule, l.ValueCheck)
+		}
+		for _, s := range l.ValueCheck.Signals {
+			if strings.Contains(ghToken+stripeKey, s) {
+				t.Errorf("%s: a signal holds part of the value: %q", l.Rule, s)
+			}
+		}
+	}
+	if got := strings.Join(ls[0].ValueCheck.Signals, ","); ls[0].Rule != "github-token" || got != "checksum_invalid" {
+		t.Errorf("made-up GitHub token: %s %q", ls[0].Rule, got)
+	}
+	if got := ls[1].ValueCheck.Signals; len(got) != 0 {
+		t.Errorf("live Stripe key: %v", got)
+	}
+}

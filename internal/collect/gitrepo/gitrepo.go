@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
@@ -89,7 +90,9 @@ type Scanner struct {
 	NoConfigChecks bool
 }
 
-// Scan clones the repository at depth 1, scans lockfiles and keys written
+// Scan clones the repository at depth 1 (without images, media and other
+// binaries: sparsePatterns), scans lockfiles, front-end libraries kept
+// outside a package manager and keys written
 // in its files, and removes the clone. token may be empty for public
 // repositories.
 func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.ObservationBatch, error) {
@@ -117,8 +120,12 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 	if max <= 0 {
 		max = DefaultMaxCloneBytes
 	}
+	var exts []lockfile.Extension
+	if s.Packs != nil {
+		exts = s.Packs(ctx)
+	}
 	cctx, stop := limits.WatchDir(ctx, dir, max, time.Second, "the clone")
-	err = s.clone(cctx, cfg, token, src)
+	err = s.clone(cctx, cfg, token, src, exts)
 	err = limits.Cause(cctx, err)
 	stop()
 	if err != nil {
@@ -129,7 +136,9 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 	}
 	git := s.gitBin()
 	commit := ""
-	if out, err := exec.CommandContext(ctx, git, "-C", src, "rev-parse", "HEAD").Output(); err == nil {
+	rp := exec.CommandContext(ctx, git, "-c", "core.fsmonitor=false", "-C", src, "rev-parse", "HEAD")
+	rp.Env = []string{"PATH=" + os.Getenv("PATH"), "HOME=" + dir, "GIT_CONFIG_NOSYSTEM=1", "GIT_TERMINAL_PROMPT=0", "GIT_NO_LAZY_FETCH=1"}
+	if out, err := rp.Output(); err == nil {
 		commit = strings.TrimSpace(string(out))
 	}
 	asset := model.AssetRef{
@@ -145,15 +154,16 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 	if commit != "" {
 		asset.Attributes["git_commit"] = commit
 	}
-	var exts []lockfile.Extension
-	if s.Packs != nil {
-		exts = s.Packs(ctx)
-	}
 	b, err := lockfile.ScanDirWith(ctx, src, asset, s.Version, exts)
 	if err != nil {
 		return nil, err
 	}
 	b.Collector.Method = "repository"
+	// Front-end libraries outside a package manager: copied files, CDN
+	// addresses in templates, committed bundles (apps.RepoWebAssets).
+	web, webCov, webMore := apps.RepoWebAssets(ctx, src, b.Observations, nil) // a fresh clone ignores nothing
+	b.Observations = append(b.Observations, web...)
+	b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
 	if !s.NoLeaks {
 		// Keys and passwords committed to the default branch. A fresh
 		// clone holds only tracked files; each keeps its severity.
@@ -186,40 +196,109 @@ func curlAddr(a netip.Addr) string {
 	return a.Unmap().String()
 }
 
-// clone runs a hardened shallow clone of cfg.URL into dest.
-func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) error {
-	// git makes its own connections, so the host is resolved and checked
-	// here and git is pinned to the checked address; redirects are refused
-	// so the server cannot send git elsewhere.
-	u, err := url.Parse(cfg.URL)
+// sparsePatterns are the checkout's sparse-checkout patterns (non-cone):
+// every tracked file except images, fonts, media, archives and other
+// binaries, the types the leak scan skips (leaks.SkippedExts), so their
+// blobs are never downloaded. A type the lockfile scan or an installed pack
+// reads (stylesheets, Java archives) is still checked out. Patterns match
+// the extension in any case, as the leak scan does.
+func sparsePatterns(exts []lockfile.Extension) []string {
+	patterns := []string{"/*"}
+	for _, e := range leaks.SkippedExts() {
+		if lockfile.ReadsExt(e) || packReads(exts, e) {
+			continue
+		}
+		var b strings.Builder
+		b.WriteString("!*.")
+		for _, r := range strings.TrimPrefix(e, ".") {
+			if lo, up := strings.ToLower(string(r)), strings.ToUpper(string(r)); lo != up {
+				b.WriteString("[" + lo + up + "]")
+			} else {
+				b.WriteRune(r)
+			}
+		}
+		patterns = append(patterns, b.String())
+	}
+	return patterns
+}
+
+// packReads reports whether an installed pack reads files with extension
+// ext, in either case.
+func packReads(exts []lockfile.Extension, ext string) bool {
+	for _, x := range exts {
+		if x.Matches("file"+ext) || x.Matches("FILE"+strings.ToUpper(ext)) {
+			return true
+		}
+	}
+	return false
+}
+
+// clone runs a hardened shallow, partial clone of cfg.URL into dest: the
+// commit and its trees first (no file contents), then the contents of the
+// files the scan reads (sparsePatterns). Repositories full of images or
+// media then stay far under the size limit.
+//
+// Every step that can reach the server (the clone, and the checkout, which
+// fetches the missing contents from the same remote) runs through run, with
+// the same pinned address, transport limits and credential. Afterwards the
+// remote is removed, so no later git command in dest (git rev-parse, the
+// lockfile scan's git ls-files) can fetch from it.
+func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string, exts []lockfile.Extension) error {
+	run, err := s.gitRunner(ctx, cfg, token, dest)
 	if err != nil {
 		return err
 	}
+	args := []string{"clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules",
+		"--filter=blob:none", "--no-checkout", "--sparse"}
+	if cfg.Ref != "" {
+		args = append(args, "--branch", cfg.Ref)
+	}
+	args = append(args, "--", cfg.URL, dest)
+	if err := run("clone", "", args...); err != nil {
+		return err
+	}
+	// Patterns on stdin, so none can be read as an option.
+	if err := run("sparse-checkout", strings.Join(sparsePatterns(exts), "\n")+"\n",
+		"-C", dest, "sparse-checkout", "set", "--no-cone", "--stdin"); err != nil {
+		return err
+	}
+	if err := run("checkout", "", "-C", dest, "checkout", "--quiet"); err != nil {
+		return err
+	}
+	return run("remote remove", "", "-C", dest, "remote", "remove", "origin")
+}
+
+// gitRunner returns a function that runs git with the hardening every step
+// of a clone needs: the host resolved and checked once, here, and git
+// pinned to that address (redirects refused, so the server cannot send git
+// elsewhere), https only, no hooks, symlinks or LFS, no user or system
+// configuration, and the credential only in the environment. step names
+// the command in errors; stdin, when not empty, is git's input.
+func (s *Scanner) gitRunner(ctx context.Context, cfg Config, token, dest string) (func(step, stdin string, args ...string) error, error) {
+	u, err := url.Parse(cfg.URL)
+	if err != nil {
+		return nil, err
+	}
 	addrs, err := netguard.Resolve(ctx, u.Hostname())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	port := u.Port()
 	if port == "" {
 		port = "443"
 	}
-	args := []string{
+	base := []string{
 		"-c", "http.curloptResolve=" + u.Hostname() + ":" + port + ":" + curlAddr(addrs[0]),
 		"-c", "http.followRedirects=false",
 		"-c", "core.hooksPath=/dev/null",
 		"-c", "protocol.allow=never", "-c", "protocol.https.allow=always",
 		"-c", "core.symlinks=false",
 		"-c", "filter.lfs.smudge=", "-c", "filter.lfs.process=", "-c", "filter.lfs.required=false",
+		"-c", "core.fsmonitor=false",
 	}
 	if s.CAFile != "" {
-		args = append(args, "-c", "http.sslCAInfo="+s.CAFile)
+		base = append(base, "-c", "http.sslCAInfo="+s.CAFile)
 	}
-	args = append(args, "clone", "--depth", "1", "--single-branch", "--no-tags", "--no-recurse-submodules")
-	if cfg.Ref != "" {
-		args = append(args, "--branch", cfg.Ref)
-	}
-	args = append(args, "--", cfg.URL, dest)
-	cmd := exec.CommandContext(ctx, s.gitBin(), args...)
 	env := []string{
 		"PATH=" + os.Getenv("PATH"),
 		"HOME=" + filepath.Dir(dest), // ignore any user-level gitconfig
@@ -238,21 +317,27 @@ func (s *Scanner) clone(ctx context.Context, cfg Config, token, dest string) err
 		basic := base64.StdEncoding.EncodeToString([]byte(user + ":" + token))
 		env = append(env, "GIT_CONFIG_COUNT=1", "GIT_CONFIG_KEY_0=http.extraHeader", "GIT_CONFIG_VALUE_0=Authorization: Basic "+basic)
 	}
-	cmd.Env = env
-	limits.KillGroup(cmd) // a deadline or the size limit stops git and its helpers
-	stderr := &capBuffer{max: 64 << 10}
-	cmd.Stderr = stderr
-	if err := cmd.Run(); err != nil {
-		msg := strings.TrimSpace(stderr.String())
-		if token != "" {
-			msg = redact(msg, token, cfg.Username)
+	return func(step, stdin string, args ...string) error {
+		cmd := exec.CommandContext(ctx, s.gitBin(), append(append([]string{}, base...), args...)...)
+		cmd.Env = env
+		if stdin != "" {
+			cmd.Stdin = strings.NewReader(stdin)
 		}
-		if len(msg) > 500 {
-			msg = msg[:500]
+		limits.KillGroup(cmd) // a deadline or the size limit stops git and its helpers
+		stderr := &capBuffer{max: 64 << 10}
+		cmd.Stderr = stderr
+		if err := cmd.Run(); err != nil {
+			msg := strings.TrimSpace(stderr.String())
+			if token != "" {
+				msg = redact(msg, token, cfg.Username)
+			}
+			if len(msg) > 500 {
+				msg = msg[:500]
+			}
+			return fmt.Errorf("git %s failed: %v: %s", step, err, msg)
 		}
-		return fmt.Errorf("git clone failed: %v: %s", err, msg)
-	}
-	return nil
+		return nil
+	}, nil
 }
 
 // redact removes the token, and the Basic credential built from it, from

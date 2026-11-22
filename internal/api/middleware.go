@@ -185,7 +185,7 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 				return
 			}
 			if p.uploadToken() && !uploadTokenRequest(r) {
-				writeError(w, 403, "forbidden", "this token was made by signing in from a terminal and can only upload scans (POST /ingest and /sbom/import) and read their results")
+				writeError(w, 403, "forbidden", "this token was made by signing in from a terminal and can only upload scans (POST /ingest, /sbom/import and /code-findings/import) and read their results")
 				return
 			}
 		} else if c, err := r.Cookie(sessionCookie); err == nil && c.Value != "" {
