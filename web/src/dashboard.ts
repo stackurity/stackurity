@@ -49,6 +49,8 @@ export interface NeedsInput {
   endOfToday?: string;
   /** Requests to ignore issues waiting for a decision (security and admin only). */
   ignoreRequests?: number;
+  /** Requests for exceptions to policy gates waiting for a decision (security role, server with policy gates). */
+  gateExceptions?: number;
   /** Automatic fixes proposed and waiting for approval (Pro). */
   fixPlans?: number;
   /** Open collection incidents: "stopped reporting" ones are used when there are any. */
@@ -229,6 +231,14 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       tone: "warn",
       title: `${plural(i.ignoreRequests!, "request")} to ignore issues ${i.ignoreRequests === 1 ? "is" : "are"} waiting for a decision`,
       action: { label: "Open approvals", to: "/approvals" },
+    });
+  if ((i.gateExceptions ?? 0) > 0)
+    rows.push({
+      key: "gate-exceptions",
+      kind: "approval",
+      tone: "warn",
+      title: `${plural(i.gateExceptions!, "request")} for a policy exception ${i.gateExceptions === 1 ? "is" : "are"} waiting for a decision`,
+      action: { label: "Open policy exceptions", to: "/approvals?tab=policy" },
     });
   const pv = i.policyViolations;
   if (pv && pv.violations > 0)

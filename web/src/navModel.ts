@@ -262,7 +262,7 @@ export interface Badge {
 const BADGES: Record<BadgeKey, { label: string; tone: Badge["tone"] }> = {
   pending: { label: "automatic fixes waiting for approval", tone: "warn" },
   sos: { label: "open SOS incidents", tone: "crit" },
-  approvals: { label: "requests to ignore issues waiting for approval", tone: "warn" },
+  approvals: { label: "requests waiting for approval (ignoring issues, policy exceptions)", tone: "warn" },
 };
 
 interface ItemDef {

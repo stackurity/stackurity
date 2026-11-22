@@ -4,6 +4,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { GateException, GateViolation } from "./api.ts";
+import { needsYou } from "./dashboard.ts";
 import {
   activeExceptions,
   dayFromNow,
@@ -163,4 +164,15 @@ test("the form: a new draft and the request it sends", () => {
   // The last allowed day is kept a few minutes inside the limit.
   const last = exceptionDraftToRequest({ ...d, note: "x", day: "2026-11-24" }, subject, 7, now).request;
   assert.ok(Date.parse(last?.expires_at ?? "") < now.getTime() + 7 * day);
+});
+
+test("the Dashboard's attention band counts policy exception requests waiting for a decision", () => {
+  const row = (n?: number) => needsYou({ gateExceptions: n }).find((r) => r.key === "gate-exceptions");
+  assert.equal(row(undefined), undefined);
+  assert.equal(row(0), undefined);
+  assert.equal(row(1)!.title, "1 request for a policy exception is waiting for a decision");
+  const r = row(3)!;
+  assert.equal(r.title, "3 requests for a policy exception are waiting for a decision");
+  assert.equal(r.kind, "approval");
+  assert.deepEqual(r.action, { label: "Open policy exceptions", to: "/approvals?tab=policy" });
 });

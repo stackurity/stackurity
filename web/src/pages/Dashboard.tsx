@@ -11,6 +11,7 @@ import {
   type FindingSummary,
   type FixGroup,
   type FixGroupSummary,
+  type GateException,
   type GateViolation,
   type IgnoreRequest,
   type Incident,
@@ -764,6 +765,11 @@ export function DashboardPage() {
   // organisation-wide; no row when no policy exists or the server has none).
   const gates = Boolean(meta?.features?.includes("gate_policies")) && can("security") && !projectOnly;
   const gateViolations = useLoad(() => (gates ? api.get<List<GateViolation>>("/gate-policies/violations") : Promise.resolve(null)), [gates]);
+  // Requests for exceptions to policy gates waiting for a decision.
+  const gateExceptions = useLoad(
+    () => (gates ? api.get<List<GateException>>("/gate-policies/exceptions", { status: "pending", limit: 1 }) : Promise.resolve(null)),
+    [gates],
+  );
   const checkOptions = useCheckOptions((top.data?.items ?? []).flatMap(fixPlaces).map((p) => p.group_id));
   useEffect(() => {
     const was = document.title;
@@ -831,6 +837,7 @@ export function DashboardPage() {
     checkedAt: trend.data?.checked_at,
     endOfToday: trend.data?.end_of_today,
     ignoreRequests: approvals.data?.total,
+    gateExceptions: gateExceptions.data?.total,
     fixPlans: plans.data?.total,
     collectionIncidents: collection.data?.items,
     assets: assets.data?.items,
