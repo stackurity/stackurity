@@ -154,14 +154,20 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 		id    int64
 		value string
 	}
+	// An asset with several identifiers (a release layout's asset keeps its
+	// old release's next to its own directory, appadopt.go) is present
+	// while the list names any of them.
 	var list []gone
+	present := map[int64]bool{}
 	for rows.Next() {
 		var g gone
 		if err := rows.Scan(&g.id, &g.value); err != nil {
 			rows.Close()
 			return nil, err
 		}
-		if !k.listed(g.value) {
+		if k.listed(g.value) {
+			present[g.id] = true
+		} else if len(list) == 0 || list[len(list)-1].id != g.id {
 			list = append(list, g)
 		}
 	}
@@ -169,6 +175,13 @@ func removeGone(ctx context.Context, tx pgx.Tx, hostID int64, b *model.Observati
 	if err := rows.Err(); err != nil {
 		return nil, err
 	}
+	kept := list[:0]
+	for _, g := range list {
+		if !present[g.id] {
+			kept = append(kept, g)
+		}
+	}
+	list = kept
 	var ids []int64
 	for _, g := range list {
 		var coll int64
