@@ -1,3 +1,0 @@
-### Fixed
-
-- **Known-malicious package versions are rated critical.** OSV's malicious-package records (`MAL-` ids, from the OpenSSF malicious-packages data) carry no CVSS vector or severity label, so an installed credential stealer, such as the poisoned `agent-framework` 1.26.1 and 1.26.2 on PyPI (MAL-2026-20101, 17 Nov 2026), was rated `unknown` and ranked like an unrated flaw. They are now `critical`, and the advisory's `severity_source` is `malicious_package`. This applies as records are stored: a malicious-package record already stored keeps its old rating until OSV changes it or the feed is next downloaded in full. See [risk.md](docs/risk.md).

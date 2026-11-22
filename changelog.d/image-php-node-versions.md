@@ -1,3 +1,0 @@
-### Fixed
-
-- **PHP and Node.js in container images have a version.** The official `php` and `node` images build the runtime from source into `/usr/local`, which no package owns, and binaries in an image are never run, so these runtimes were reported with no version and their end of life was not evaluated. Their version is now read from the headers installed with them (`include/php/main/php_version.h`, `include/node/node_version.h`), or failing that from the image's `PHP_VERSION` or `NODE_VERSION` for a binary in `/usr/local/bin`, as for Python. The same files are read on a host when running `--version` is refused or gives no version. See [install.md](docs/install.md).
