@@ -1,0 +1,17 @@
+Subject: Approval needed: feedback FB-127
+
+The feedback agent held FB-127 for your approval instead of building it.
+
+Why it needs you: It changes the wording of an email customers receive.
+
+Approve it and the agent builds it on its next run, or decline it with a reason the sender will read.
+
+Review FB-127:
+https://app.stackurity.dev/admin/feedback?item=FB-127
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because this address approves feedback changes on this installation on app.stackurity.dev.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai

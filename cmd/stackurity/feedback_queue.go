@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/mail"
 	"os"
 	"strconv"
 	"strings"
@@ -84,7 +85,42 @@ func feedbackQueueFromEnv(log *slog.Logger) (*api.FeedbackQueue, error) {
 	default:
 		return nil, fmt.Errorf("STACKURITY_FEEDBACK_EMAILS must be on or off, not %q", v)
 	}
+	// The feedback agent's emails to the sender (received, needs_info):
+	// off until the owner approves their wording.
+	switch v := strings.TrimSpace(os.Getenv("STACKURITY_FEEDBACK_AGENT_EMAILS")); v {
+	case "", "off":
+	case "on":
+		q.AgentEmails = true
+	default:
+		return nil, fmt.Errorf("STACKURITY_FEEDBACK_AGENT_EMAILS must be on or off, not %q", v)
+	}
+	approvers, err := feedbackApprovers(os.Getenv("STACKURITY_FEEDBACK_APPROVERS"))
+	if err != nil {
+		return nil, err
+	}
+	q.Approvers = approvers
 	return q, nil
+}
+
+// feedbackApprovers reads STACKURITY_FEEDBACK_APPROVERS: addresses
+// separated by commas, emailed when an item needs approval.
+func feedbackApprovers(v string) ([]string, error) {
+	var out []string
+	for _, a := range strings.Split(v, ",") {
+		a = strings.TrimSpace(a)
+		if a == "" {
+			continue
+		}
+		addr, err := mail.ParseAddress(a)
+		if err != nil || addr.Address != a {
+			return nil, fmt.Errorf("STACKURITY_FEEDBACK_APPROVERS: %q is not an email address", a)
+		}
+		out = append(out, a)
+	}
+	if len(out) > 10 {
+		return nil, errors.New("STACKURITY_FEEDBACK_APPROVERS: at most 10 addresses")
+	}
+	return out, nil
 }
 
 // registerFeedbackRetention deletes old attachment files and records daily.

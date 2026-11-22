@@ -1,6 +1,20 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { checkAttachments, feedbackForm, feedbackKindLabel, feedbackStatusLabel, formatBytes, MAX_FILES } from "./feedback.ts";
+import {
+  canReply,
+  checkAttachments,
+  commentAuthor,
+  feedbackForm,
+  feedbackKindLabel,
+  feedbackStatusLabel,
+  feedbackStatusTone,
+  formatBytes,
+  MAX_FILES,
+  QUEUE_FILTERS,
+  queueAuthor,
+  queueFilterCount,
+  queueStatusLabel,
+} from "./feedback.ts";
 
 const MB = 1 << 20;
 const f = (name: string, type: string, size: number) => ({ name, type, size });
@@ -65,6 +79,7 @@ test("every status has its own words; released names the version", () => {
   const want: Record<string, string> = {
     received: "Received",
     reviewing: "Under review",
+    needs_info: "Needs your answer",
     in_progress: "In progress",
     fixed: "Fixed, waiting for release",
     released: "Released",
@@ -77,4 +92,29 @@ test("every status has its own words; released names the version", () => {
   assert.equal(feedbackStatusLabel("fixed", "0.42.0"), "Fixed, waiting for release", "only released names the version");
   assert.equal(feedbackStatusLabel("something_new"), "Unknown", "a status this version does not know");
   assert.equal(feedbackKindLabel("feature"), "Feature request");
+});
+
+test("waiting for the sender's answer stands out, and only open items take replies", () => {
+  assert.equal(feedbackStatusTone("needs_info"), "warn");
+  for (const s of ["received", "reviewing", "needs_info", "in_progress", "fixed"]) assert.ok(canReply(s), s);
+  for (const s of ["released", "wont_fix", "duplicate", "unknown"]) assert.ok(!canReply(s), s);
+});
+
+test("the sender can tell the automated agent from the team, and never sees who on the team", () => {
+  assert.match(commentAuthor("agent"), /automated/);
+  assert.equal(commentAuthor("team"), "Stackurity team");
+  assert.equal(commentAuthor("sender"), "You");
+  assert.equal(queueAuthor({ id: 1, at: "", author_kind: "agent", author: "agent:feedback-agent", kind: "question", body: "" }), "Feedback agent (feedback-agent)");
+  assert.equal(queueAuthor({ id: 1, at: "", author_kind: "team", author: "ops@x.io", kind: "comment", body: "" }), "ops@x.io");
+});
+
+test("Admin → Feedback: approval first, approved items say the agent builds them", () => {
+  assert.equal(QUEUE_FILTERS[0].id, "attention");
+  assert.ok(QUEUE_FILTERS[0].statuses.startsWith("needs_owner"), "needs approval leads");
+  const counts = { new: 2, needs_owner: 1, needs_info: 3, triaged: 4, released: 5, wont_fix: 1 };
+  assert.equal(queueFilterCount("attention", counts), 6);
+  assert.equal(queueFilterCount("closed", counts), 6);
+  assert.equal(queueFilterCount("all", counts), 16);
+  assert.equal(queueStatusLabel("triaged", "2026-11-12T10:00:00Z"), "Approved, agent to build");
+  assert.equal(queueStatusLabel("needs_owner"), "Needs approval");
 });

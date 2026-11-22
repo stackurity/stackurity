@@ -671,6 +671,8 @@ export interface Me {
   features: Feature[];
   /** Whether Send feedback is on (STACKURITY_FEEDBACK_URL) for this signed-in user. */
   feedback_enabled?: boolean;
+  /** This server runs the feedback queue and the caller is an instance administrator (Admin → Feedback). */
+  feedback_queue?: boolean;
   /** The organisation requires a second factor this account does not have: only setting one up is possible. */
   mfa_enrolment_required?: boolean;
   /** The organisation requires a second factor this session was not signed in with: only confirming with it is possible. */

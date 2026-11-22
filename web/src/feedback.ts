@@ -124,7 +124,36 @@ export function feedbackForm(fields: FeedbackFields, files: Blob[]): FormData {
   return form;
 }
 
-export type FeedbackStatus = "received" | "reviewing" | "in_progress" | "fixed" | "released" | "wont_fix" | "duplicate" | "unknown";
+export type FeedbackStatus = "received" | "reviewing" | "needs_info" | "in_progress" | "fixed" | "released" | "wont_fix" | "duplicate" | "unknown";
+
+/** One comment in an item's thread, as the sender sees it. */
+export interface FeedbackComment {
+  at: string;
+  /** Who wrote it: the feedback agent (automated), the team, or the sender. */
+  from: "agent" | "team" | "sender" | string;
+  kind: "comment" | "question" | "reply" | string;
+  body: string;
+}
+
+/** Who wrote a comment, in the words My feedback uses. */
+export function commentAuthor(from: string): string {
+  switch (from) {
+    case "agent":
+      return "Stackurity feedback agent (automated)";
+    case "team":
+      return "Stackurity team";
+    case "sender":
+      return "You";
+  }
+  return "Stackurity";
+}
+
+/** Whether the sender can still reply: the item is open. */
+export function canReply(status: string): boolean {
+  return !["released", "wont_fix", "duplicate", "unknown"].includes(status);
+}
+
+export const FEEDBACK_REPLY_MAX = 2000;
 
 export interface FeedbackItem {
   ref: string;
@@ -137,6 +166,8 @@ export interface FeedbackItem {
   status_at: string | null;
   checked_at: string | null;
   created_at: string;
+  /** The team's questions and updates and the sender's replies, oldest first. */
+  thread?: FeedbackComment[];
 }
 
 export interface MyFeedback {
@@ -147,6 +178,7 @@ export interface MyFeedback {
 const STATUS_LABEL: Record<string, string> = {
   received: "Received",
   reviewing: "Under review",
+  needs_info: "Needs your answer",
   in_progress: "In progress",
   fixed: "Fixed, waiting for release",
   released: "Released",
@@ -165,6 +197,8 @@ export function feedbackStatusLabel(status: string, fixedIn?: string | null): st
 /** Badge tone for a status (components/Badge Tone). */
 export function feedbackStatusTone(status: string): "good" | "warn" | "muted" | "info" {
   switch (status) {
+    case "needs_info":
+      return "warn";
     case "received":
     case "reviewing":
       return "info";
@@ -176,4 +210,131 @@ export function feedbackStatusTone(status: string): "good" | "warn" | "muted" | 
     default:
       return "muted";
   }
+}
+
+// --- Admin → Feedback (the queue, on the Stackurity team's server)
+
+export type QueueStatus = "new" | "triaged" | "in_progress" | "needs_owner" | "needs_info" | "fixed" | "released" | "wont_fix" | "duplicate";
+
+export interface QueueItem {
+  id: number;
+  ref: string;
+  kind: string;
+  description: string;
+  contact_email: string;
+  source: string;
+  version: string;
+  edition: string;
+  page: string;
+  browser: string;
+  viewport: string;
+  status: QueueStatus | string;
+  resolution: string;
+  triage_notes: string;
+  link: string;
+  duplicate_of: number | null;
+  fixed_in: string;
+  created_at: string;
+  updated_at: string;
+  owner_reason: string;
+  approved_at: string | null;
+  approved_by: string;
+  approval_note: string;
+  attachment_count: number;
+  comment_count: number;
+}
+
+export interface QueueAttachment {
+  id: number;
+  name: string;
+  content_type: string;
+  size: number;
+  scan: string;
+  purged_at: string | null;
+}
+
+export interface QueueEvent {
+  id: number;
+  at: string;
+  actor: string;
+  action: string;
+  from_status: string;
+  to_status: string;
+  detail: string;
+}
+
+export interface QueueComment {
+  id: number;
+  at: string;
+  author_kind: "agent" | "team" | "sender" | string;
+  author: string;
+  kind: string;
+  body: string;
+}
+
+export interface QueueList {
+  items: QueueItem[];
+  counts: Record<string, number>;
+}
+
+export interface QueueDetail {
+  item: QueueItem;
+  attachments: QueueAttachment[];
+  events: QueueEvent[];
+  comments: QueueComment[];
+}
+
+const QUEUE_LABEL: Record<string, string> = {
+  new: "New",
+  triaged: "Triaged",
+  in_progress: "In progress",
+  needs_owner: "Needs approval",
+  needs_info: "Waiting for sender",
+  fixed: "Fixed, not released",
+  released: "Released",
+  wont_fix: "Won't fix",
+  duplicate: "Duplicate",
+};
+
+export function queueStatusLabel(status: string, approvedAt?: string | null): string {
+  if (status === "triaged" && approvedAt) return "Approved, agent to build";
+  return QUEUE_LABEL[status] ?? status;
+}
+
+export function queueStatusTone(status: string): "good" | "warn" | "muted" | "info" {
+  switch (status) {
+    case "needs_owner":
+    case "new":
+      return "warn";
+    case "fixed":
+    case "released":
+      return "good";
+    case "wont_fix":
+    case "duplicate":
+      return "muted";
+  }
+  return "info";
+}
+
+/** The filters on Admin → Feedback, in order; "attention" is the default. */
+export const QUEUE_FILTERS: { id: string; label: string; statuses: string }[] = [
+  { id: "attention", label: "Needs someone", statuses: "needs_owner,needs_info,new" },
+  { id: "needs_owner", label: "Needs approval", statuses: "needs_owner" },
+  { id: "open", label: "Being worked on", statuses: "triaged,in_progress,fixed" },
+  { id: "closed", label: "Closed", statuses: "released,wont_fix,duplicate" },
+  { id: "all", label: "All", statuses: "" },
+];
+
+/** How many items a filter shows, from the counts per status. */
+export function queueFilterCount(id: string, counts: Record<string, number>): number {
+  const f = QUEUE_FILTERS.find((x) => x.id === id);
+  if (!f) return 0;
+  const sts = f.statuses ? f.statuses.split(",") : Object.keys(counts);
+  return sts.reduce((n, s) => n + (counts[s] ?? 0), 0);
+}
+
+export function queueAuthor(c: QueueComment): string {
+  if (c.author_kind === "agent") return `Feedback agent (${c.author.replace(/^agent:/, "")})`;
+  if (c.author_kind === "sender") return "Sender";
+  return c.author || "Team";
 }

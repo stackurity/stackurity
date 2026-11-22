@@ -307,6 +307,9 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/usage-counts": {class: "account", body: func(*tenantFx) any {
 		return map[string]string{"event": "teaser_view", "key": "remediation"}
 	}},
+	// A reply to one of the caller's own items (looked up by user), sent to
+	// the queue with that item's token; feedback_agent_test.go.
+	"POST /api/v1/feedback/mine/{ref}/reply": {class: "skip"},
 	// The Stackurity team's feedback queue: the relay's key or a signed
 	// link, and instance administrators or the triage token only
 	// (feedback_queue_test.go).
@@ -321,6 +324,9 @@ var routeRules = map[string]routeRule{
 	"PATCH /api/v1/admin/feedback/{id}":                       {class: "instance"},
 	"DELETE /api/v1/admin/feedback/{id}":                      {class: "instance"},
 	"POST /api/v1/admin/feedback/{id}/attachments/{aid}/link": {class: "instance"},
+	"POST /api/v1/admin/feedback/{id}/comments":               {class: "instance"},
+	"POST /api/v1/admin/feedback/{id}/approve":                {class: "instance"},
+	"POST /api/v1/admin/feedback/{id}/decline":                {class: "instance"},
 	"GET /api/v1/admin/feedback-tokens/":                      {class: "instance"},
 	"POST /api/v1/admin/feedback-tokens/":                     {class: "instance"},
 	"DELETE /api/v1/admin/feedback-tokens/{id}":               {class: "instance"},
