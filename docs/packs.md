@@ -32,7 +32,7 @@ Instance administrators manage packs under **Admin → Stack packs**. The offici
 
 The previous version is kept, so **Roll back** reinstalls it. Disabling or removing a pack makes its files show as unsupported again from the next scan.
 
-`stackurity scan` in CI and the host agent (on `--app-dir` and discovered applications) use the server's enabled packs on their own machine, so file contents never leave it. A pack is downloaded, its signature checked against the client's own keyring and its module compiled only when a file it reads is found, and it is unloaded after the scan: hosts without such files never load one. Loading the Java pack costs about 150 MB of memory and 1.5 s; reading a 35 MB application with 120 bundled libraries adds about 50 MB and 0.3 s. Use `--no-packs` to skip packs.
+`stackurity scan` in CI and the host agent (on `--app-dir` and discovered applications, including the Java web applications deployed in Tomcat and Jetty `webapps` directories, see [Java web applications](compatibility.md#java-web-applications)) use the server's enabled packs on their own machine, so file contents never leave it. A pack is downloaded, its signature checked against the client's own keyring and its module compiled only when a file it reads is found, and it is unloaded after the scan: hosts without such files never load one. Loading the Java pack costs about 150 MB of memory and 1.5 s; reading a 35 MB application with 120 bundled libraries adds about 50 MB and 0.3 s. Use `--no-packs` to skip packs.
 
 | Variable | Purpose |
 | --- | --- |

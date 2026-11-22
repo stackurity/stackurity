@@ -593,12 +593,19 @@ func TestOperatorCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(m.sent) != 1 || m.sent[0].to[0] != "owner@stackurity.test" || m.sent[0].m.Event != notify.EventThreatNoticeCopy {
+	// One copy per threat of the embedded catalogue: neither organisation
+	// has any asset, so each needs a connection for every threat.
+	if len(m.sent) != len(threats.Embedded().Threats) {
 		t.Fatalf("copies: %+v", m.sent)
 	}
-	b, _ := json.Marshal(m.sent[0].m)
-	if strings.Contains(string(b), "Acme") || strings.Contains(string(b), "Globex") || !strings.Contains(string(b), "Need a connection to be checked: 2") {
-		t.Errorf("copy: %s", b)
+	for _, s := range m.sent {
+		if s.to[0] != "owner@stackurity.test" || s.m.Event != notify.EventThreatNoticeCopy {
+			t.Fatalf("copy: %+v", s)
+		}
+		b, _ := json.Marshal(s.m)
+		if strings.Contains(string(b), "Acme") || strings.Contains(string(b), "Globex") || !strings.Contains(string(b), "Need a connection to be checked: 2") {
+			t.Errorf("copy: %s", b)
+		}
 	}
 }
 

@@ -30,8 +30,10 @@ const PermissionScope = "app-permissions:"
 // maxDeniedPaths bounds the paths kept per application; more are counted.
 const maxDeniedPaths = 10_000
 
-// packageTrees hold what package managers installed.
-var packageTrees = map[string]bool{"node_modules": true, "vendor": true, "site-packages": true, "dist-packages": true, "venv": true, ".venv": true}
+// packageTrees hold what package managers installed, and a Java web
+// application's WEB-INF (its libraries and its own release, javawebapps.go).
+var packageTrees = map[string]bool{"node_modules": true, "vendor": true, "site-packages": true, "dist-packages": true, "venv": true, ".venv": true,
+	"WEB-INF": true}
 
 // unneededDirs hold nothing the scan reads (uploads, caches, logs, a
 // library's documentation and tests): one the agent may not read is not

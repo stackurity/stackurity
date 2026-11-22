@@ -102,8 +102,13 @@ func TestMergeNewerRevisionWins(t *testing.T) {
 		Summary: "s", FirstSeen: "2026-11-01", PublishedAt: "2026-11-21", MinVersion: "0.1.0",
 		Detects: Detects{CVEs: []string{"CVE-2026-0001"}}, Needs: []Need{{Connection: ConnHostAgent, Checks: "c", Help: "/help/add-server"}}})
 	m := Merge(base, feed)
-	if m.Serial != 7 || len(m.Threats) != 2 || m.Threats[0].ID != "new-one" {
+	if n, ok := m.Get("new-one"); m.Serial != 7 || len(m.Threats) != len(base.Threats)+1 || !ok || n.Source != "feed" {
 		t.Fatalf("merged: serial %d, %+v", m.Serial, m.Threats)
+	}
+	for i := 1; i < len(m.Threats); i++ {
+		if m.Threats[i-1].PublishedAt < m.Threats[i].PublishedAt {
+			t.Errorf("not newest first: %s before %s", m.Threats[i-1].ID, m.Threats[i].ID)
+		}
 	}
 	a, _ := m.Get("artex")
 	if a.Summary != "updated" || a.Source != "feed" {
