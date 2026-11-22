@@ -13,6 +13,7 @@ import {
 } from "../../api";
 import { OwnerRulesCard } from "../../components/Owners";
 import { ScopeNotificationsCard } from "../../components/ScopeNotifications";
+import { ScopeGatePoliciesCard } from "../../components/PolicyGates";
 import { ProjectAskNotesCard } from "../../components/ProjectAskNotes";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
@@ -620,6 +621,7 @@ export function ProjectDetailPage() {
 
       <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
 
+      <ScopeGatePoliciesCard kind="project" id={p.id} />
       {!p.archived_at && <ProjectAskNotesCard projectId={p.id} />}
 
       <Card

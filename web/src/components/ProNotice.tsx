@@ -14,6 +14,8 @@ const NAMES: Record<Feature, string> = {
   fix_loop: "The fix loop (an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix, time to fix against your SLA, and the proof export)",
   compliance_addon: "PCI DSS and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending it to Vanta or Drata",
   reachability: "Lowering the priority of packages nothing imports or runs",
+  gate_enforce: "Enforcing policy gates (a violation fails the build or the deploy)",
+  gate_deploy: "The deploy gate (a policy check in your deploy pipeline that can stop the deploy)",
 };
 
 /** Explains that a feature is part of a paid plan, and how to get it. */

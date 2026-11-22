@@ -54,6 +54,15 @@ const (
 	// drop one priority level, and the reachability filters and views.
 	// Detection and the evidence are in every edition.
 	Reachability Feature = "reachability"
+	// GateEnforce: a policy gate in enforce mode fails the check (exit 3 in
+	// CI); without it an enforce policy only warns, with
+	// enforce_requires_plan (docs/policy-gates.md, "Modes").
+	GateEnforce Feature = "gate_enforce"
+	// GateDeploy: the deploy gate, policy checks from deploy pipelines and
+	// admission hooks (source deploy, stackurity policy check). Without it
+	// a deploy check still answers but never fails, with
+	// deploy_requires_plan (docs/policy-gates.md, "At deploy").
+	GateDeploy Feature = "gate_deploy"
 )
 
 // Edition is a plan: the set of features it includes.
@@ -67,8 +76,8 @@ const (
 
 var editionFeatures = map[Edition][]Feature{
 	Community:  nil,
-	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop, Reachability},
-	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop, Reachability, ComplianceAddon},
+	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop, Reachability, GateEnforce, GateDeploy},
+	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop, Reachability, ComplianceAddon, GateEnforce, GateDeploy},
 }
 
 // Features lists what an edition includes.

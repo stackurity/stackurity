@@ -96,15 +96,17 @@ export type Tabbed = "fixes" | "assets" | "activity" | "reports" | "integrations
 const INTEGRATION_PAGES = ["/integrations/sources", "/integrations/channels", "/integrations/new", "/integrations/aws", "/integrations/kubernetes"];
 
 export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
-  // What to do (default), every issue, leaked keys, and automatic fixes (Pro).
+  // What to do (default), every issue, leaked keys, policy violations, and automatic fixes (Pro).
   fixes: {
     label: "Fixes",
     tabs: [
-      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/config", "/fixes/code")) || under(p, "/action-plan") },
+      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/config", "/fixes/code", "/fixes/policy-violations")) || under(p, "/action-plan") },
       { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
       { to: "/fixes/leaks", label: "Leaked keys" },
       { to: "/fixes/config", label: "Risky settings" },
       { to: "/fixes/code", label: "Code findings" },
+      // Policy gates (docs/policy-gates.md): reading violations needs the security role organisation-wide.
+      { to: "/fixes/policy-violations", label: "Policy violations", min: "security" },
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
     ],
   },
@@ -204,6 +206,7 @@ export const SETTINGS_GROUPS: { title: string; entries: SettingsEntry[] }[] = [
       { to: "/settings/risk-policy", label: "Risk policy" },
       { to: "/settings/fix-grouping", label: "Fix grouping" },
       { to: "/settings/vex", label: "VEX" },
+      { to: "/settings/policy-gates", label: "Policy gates", min: "security" },
       { to: "/settings/automatic-fixes", label: "Automatic fixes", min: "security", feature: "remediation" },
     ],
   },
@@ -265,7 +268,7 @@ export interface Badge {
 const BADGES: Record<BadgeKey, { label: string; tone: Badge["tone"] }> = {
   pending: { label: "automatic fixes waiting for approval", tone: "warn" },
   sos: { label: "open SOS incidents", tone: "crit" },
-  approvals: { label: "requests to ignore issues waiting for approval", tone: "warn" },
+  approvals: { label: "requests waiting for approval (ignoring issues, policy exceptions)", tone: "warn" },
 };
 
 interface ItemDef {

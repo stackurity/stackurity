@@ -72,8 +72,14 @@ func (s *Server) scopeRole(r *http.Request, sc *notifyScope) (auth.Role, error) 
 // caller cannot see it) and checks the caller's role on it: at least
 // security to read, admin to change (manage).
 func (s *Server) loadScope(w http.ResponseWriter, r *http.Request, manage bool) (*notifyScope, bool) {
+	return s.loadScopeFor(w, r, manage, "notifications")
+}
+
+// loadScopeFor is loadScope for the project's or asset's settings named
+// by what ("notifications", "policy gates"), which its messages name.
+func (s *Server) loadScopeFor(w http.ResponseWriter, r *http.Request, manage bool, what string) (*notifyScope, bool) {
 	if principal(r).Assistant != nil {
-		writeError(w, 403, "forbidden", "notification settings are changed in the dashboard")
+		writeError(w, 403, "forbidden", what+" are changed in the dashboard")
 		return nil, false
 	}
 	id, err := idParam(r, "id")
@@ -91,7 +97,7 @@ func (s *Server) loadScope(w http.ResponseWriter, r *http.Request, manage bool) 
 			return nil, false
 		}
 		if manage && pr.ArchivedAt != nil {
-			s.fail(w, r, badRequest("this project is archived; restore it to change its notifications"))
+			s.fail(w, r, badRequest("this project is archived; restore it to change its "+what))
 			return nil, false
 		}
 		sc.name, sc.owner = pr.Name, store.Owner{ProjectID: &sc.id}
@@ -119,7 +125,7 @@ func (s *Server) loadScope(w http.ResponseWriter, r *http.Request, manage bool) 
 		need = auth.RoleAdmin
 	}
 	if !role.AtLeast(need) {
-		writeError(w, 403, "forbidden", "managing the notifications of this "+sc.kind+" needs the admin role on it; reading them needs security")
+		writeError(w, 403, "forbidden", "managing the "+what+" of this "+sc.kind+" needs the admin role on it; reading them needs security")
 		return nil, false
 	}
 	return sc, true

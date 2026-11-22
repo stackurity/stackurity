@@ -14,6 +14,7 @@ const ICONS: Record<string, ReactNode> = {
   "/settings/risk-policy": <IconShield />,
   "/settings/fix-grouping": <IconLayers />,
   "/settings/vex": <IconDocument />,
+  "/settings/policy-gates": <IconShield />,
   "/settings/automatic-fixes": <IconRemediation />,
   "/settings/project-permissions": <IconPeople />,
   "/settings/usage": <IconGauge />,

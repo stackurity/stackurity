@@ -31,11 +31,11 @@ const scoped = new Set([...projects.matchAll(/^\s*"([A-Z]+ \/api\/v1[^"]+)":\s*(
 
 const proof: Record<string, string[]> = {
   "See the assets": ["GET /findings", "GET /assets/{id}", "GET /fix-groups", "GET /incidents", "GET /reports/outcomes", "GET /audit"],
-  "Ask for an issue": ["POST /ignore-requests", "POST /tokens"],
+  "Ask for an issue": ["POST /ignore-requests", "POST /gate-policies/exceptions", "POST /tokens"],
   "Acknowledge, start": ["POST /findings/{id}/actions", "POST /fix-groups/{id}/applied", "POST /assets/{id}/check"],
   "Edit assets": ["PATCH /assets/{id}", "POST /assets/{id}/relations"],
   "See integrations": ["GET /integrations", "POST /integrations/{id}/run", "POST /feeds/{name}/refresh", "POST /vex/import"],
-  "Snooze, accept": ["POST /ignore-requests/{id}/decision", "DELETE /ignore-rules/{id}"],
+  "Snooze, accept": ["POST /ignore-requests/{id}/decision", "POST /gate-policies/exceptions/{id}/decision", "POST /gate-policies/exceptions/{id}/end", "DELETE /ignore-rules/{id}"],
   "See notification": ["GET /channels", "GET /routes", "GET /deliveries", "POST /vex/documents/{id}/decision"],
   "Manage users": ["POST /users", "PATCH /users/{id}", "POST /teams", "POST /invitations", "POST /projects", "POST /access-grants"],
   "Set up integrations": ["POST /integrations", "POST /routes", "PUT /risk-policy", "PUT /secrets/{name}", "DELETE /assets/{id}"],
@@ -60,12 +60,12 @@ test("snoozing, accepting, ignoring and reopening need security", () => {
   assert.match(workflow, /securityActions = map\[string\]bool\{"suppress": true, "accept_risk": true, "ignore": true, "reopen": true\}/);
 });
 
-test("the only admin routes open to someone with specific projects are their notifications and notes for Ask", () => {
-  // Admin on chosen projects adds the notifications of those projects and
-  // assets to View, edit and decide (the handlers check the role on each),
-  // finishing Add to Slack started from one of them, and the projects'
-  // notes for Ask Stackurity.
-  const notifications = /^(GET|POST|PUT|PATCH|DELETE) \/(projects|assets)\/\{id\}\/notifications(\/|$)/;
+test("the only admin routes open to someone with specific projects are their notifications, policy gates and notes for Ask", () => {
+  // Admin on chosen projects adds the notifications and policy gates of
+  // those projects and assets to View, edit and decide (the handlers check
+  // the role on each), finishing Add to Slack started from one of them, and
+  // the projects' notes for Ask Stackurity.
+  const notifications = /^(GET|POST|PUT|PATCH|DELETE) \/(projects|assets)\/\{id\}\/(notifications|gate-policies)(\/|$)/;
   for (const [r, role] of routeRoles()) {
     if (role === "admin" && scoped.has(r)) assert.ok(notifications.test(r) || r === "PUT /projects/{id}/ask-notes" || r === "POST /integrations/slack/oauth" || r === "GET /integrations/teams/install/{id}", r);
   }

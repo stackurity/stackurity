@@ -230,7 +230,7 @@ func TestPlanOptionsTool(t *testing.T) {
 			addon["how_to_get"] != "Compliance add-on: +$99 a month on the Team or Business plan; included in Enterprise." {
 			t.Errorf("claude how_to_get: %v / %v", reach["how_to_get"], addon["how_to_get"])
 		}
-		if inc := out["included"].([]any); len(inc) != 7 || out["plans_url"] != license.PlansURL {
+		if inc := out["included"].([]any); len(inc) != 9 || out["plans_url"] != license.PlansURL {
 			t.Errorf("included / plans_url: %v", out)
 		}
 	}

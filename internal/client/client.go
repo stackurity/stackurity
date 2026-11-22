@@ -229,6 +229,10 @@ const FeatureHostImages = "host_images"
 // (keys and passwords found in files). Older servers refuse the field.
 const FeatureLeaks = "leaks"
 
+// FeatureGatePolicies, in Meta.Features, means the server answers
+// POST /gate-policies/check (policy gates).
+const FeatureGatePolicies = "gate_policies"
+
 // FeatureLeakValueChecks, in Meta.Features, means the server takes each
 // leak's value_check (model.LeakValueCheck); older servers refuse it.
 const FeatureLeakValueChecks = "leak_value_checks"
@@ -567,4 +571,97 @@ func (c *Client) KubernetesReport(ctx context.Context, batches []*model.Observat
 		}
 	}
 	return nil, err
+}
+
+// PolicyCheckRequest asks whether an asset passes its policy gates. Name
+// the asset by one of AssetID, RepositoryURL and ImageDigest, or by
+// CollectionID (an upload) alone.
+type PolicyCheckRequest struct {
+	AssetID       int64  `json:"asset_id,omitempty"`
+	RepositoryURL string `json:"repository_url,omitempty"`
+	ImageDigest   string `json:"image_digest,omitempty"`
+	CollectionID  int64  `json:"collection_id,omitempty"`
+	// Source: ci, deploy or api.
+	Source string `json:"source,omitempty"`
+	Commit string `json:"commit,omitempty"`
+	Ref    string `json:"ref,omitempty"`
+	// DryRun asks only which policies apply; nothing is recorded.
+	DryRun bool `json:"dry_run,omitempty"`
+}
+
+// PolicyViolation is one violation in a policy check's answer.
+type PolicyViolation struct {
+	PolicyID   int64  `json:"policy_id"`
+	PolicyName string `json:"policy_name"`
+	Mode       string `json:"mode"` // warn or enforce
+	Kind       string `json:"kind"`
+	Reason     string `json:"reason"`
+	Component  string `json:"component"`
+	Key        string `json:"key"`
+	FindingID  *int64 `json:"finding_id,omitempty"`
+	LeakID     *int64 `json:"leak_id,omitempty"`
+	Link       string `json:"link"`
+	// EnforceRequiresPlan: an enforce policy this server's edition or
+	// plan does not enforce; it counted as a warning.
+	EnforceRequiresPlan bool `json:"enforce_requires_plan,omitempty"`
+}
+
+// PolicyCheck is the answer of POST /gate-policies/check.
+type PolicyCheck struct {
+	CheckID           int64             `json:"check_id,omitempty"`
+	Result            string            `json:"result"` // pass, warn or fail ("" for a dry run)
+	AssetID           int64             `json:"asset_id"`
+	AssetName         string            `json:"asset_name"`
+	PoliciesEvaluated int               `json:"policies_evaluated"`
+	PoliciesEnforced  int               `json:"policies_enforced"`
+	Violations        []PolicyViolation `json:"violations"`
+	DryRun            bool              `json:"dry_run,omitempty"`
+	// DeployRequiresPlan: a deploy check on a server or plan without the
+	// deploy gate; violations are reported but the result is never fail.
+	DeployRequiresPlan bool `json:"deploy_requires_plan,omitempty"`
+}
+
+// ErrPolicyCheckUnsupported: the server has no policy gate check (older
+// than policy gates: 404 or 405).
+var ErrPolicyCheckUnsupported = errors.New("the server does not check policy gates: it is older than policy gates")
+
+// CheckPolicies asks the server whether an asset passes its policy gates
+// (POST /gate-policies/check). A server without the endpoint answers
+// ErrPolicyCheckUnsupported.
+func (c *Client) CheckPolicies(ctx context.Context, req PolicyCheckRequest) (*PolicyCheck, error) {
+	body, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	var out PolicyCheck
+	err = c.Do(ctx, "POST", "/api/v1/gate-policies/check", bytes.NewReader(body),
+		map[string]string{"Content-Type": "application/json", "X-Stackurity-CSRF": "1"}, &out)
+	if policyCheckUnsupported(err) {
+		return nil, ErrPolicyCheckUnsupported
+	}
+	if err != nil {
+		return nil, err
+	}
+	if out.Violations == nil {
+		out.Violations = []PolicyViolation{}
+	}
+	return &out, nil
+}
+
+// policyCheckUnsupported tells a server without the check from a check
+// that failed: a 405 (servers with the policy routes of 0.20 but not the
+// check route), or a 404 for the route itself ("no such endpoint", or
+// not JSON at all) rather than for the asset.
+func policyCheckUnsupported(err error) bool {
+	var ae *APIError
+	if !errors.As(err, &ae) {
+		return false
+	}
+	switch ae.Status {
+	case http.StatusMethodNotAllowed:
+		return true
+	case http.StatusNotFound:
+		return ae.Code == "" || ae.Message == "no such endpoint"
+	}
+	return false
 }

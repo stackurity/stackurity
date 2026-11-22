@@ -85,6 +85,8 @@ var featureNames = map[Feature]string{
 	FixLoop:              "Verified closure",
 	ComplianceAddon:      "The Compliance add-on",
 	Reachability:         "Reachability",
+	GateEnforce:          "Enforcing policy gates",
+	GateDeploy:           "The policy gate for deploys",
 }
 
 // featureDescriptions say what each feature does, for plan options.
@@ -98,12 +100,14 @@ var featureDescriptions = map[Feature]string{
 	FixLoop:              "A re-check right after a merged pull request or a remediation run, the pull request that fixed each finding, time to fix against the SLA, and the proof export.",
 	ComplianceAddon:      "PCI DSS 4.0 and EU Cyber Resilience Act evidence, SBOM and VEX files in the evidence pack, and sending evidence to Vanta and Drata.",
 	Reachability:         "Findings in packages that no code imports or no process runs drop one priority level, with reachability filters and views. Reachability evidence is collected in every edition.",
+	GateEnforce:          "A policy gate in enforce mode fails CI jobs and deploy checks; without it enforced policies only warn.",
+	GateDeploy:           "Policy checks from deploy pipelines (stackurity policy check) that can stop a deploy; without it they are answered but never fail.",
 }
 
 // PaidFeatures lists every paid feature, in the order plan options show
 // them.
 func PaidFeatures() []Feature {
-	return []Feature{Reachability, FixLoop, Remediation, Teams, EvidenceReport, ComplianceAddon, SSO, PhishingResistantMFA, EnterprisePacks}
+	return []Feature{Reachability, FixLoop, Remediation, Teams, EvidenceReport, ComplianceAddon, GateEnforce, GateDeploy, SSO, PhishingResistantMFA, EnterprisePacks}
 }
 
 // Name is the feature's name for people.

@@ -51,11 +51,11 @@ export interface Capability {
 
 export const CAPABILITIES: Capability[] = [
   { what: "See the assets, packages, issues, fixes, incidents, reports and activity they have access to", min: "viewer" },
-  { what: "Ask for an issue to be ignored, and create their own API tokens (never above their own permission)", min: "viewer" },
+  { what: "Ask for an issue to be ignored or for an exception to a policy gate, and create their own API tokens (never above their own permission)", min: "viewer" },
   { what: "Acknowledge, start, assign and comment on issues; mark a fix as applied; check an asset again", min: "engineer" },
   { what: "Edit assets (name, owner team, criticality, environment, tags) and how they relate", min: "engineer" },
   { what: "See integrations, run them, refresh feeds and import VEX", min: "engineer", allProjectsOnly: true },
-  { what: "Snooze, accept risk on, ignore and reopen issues; decide requests to ignore; end ignore rules", min: "security" },
+  { what: "Snooze, accept risk on, ignore and reopen issues; decide requests to ignore and policy exceptions; end ignore rules and exceptions", min: "security" },
   { what: "See notification settings and the delivery log; decide VEX documents and remediation plans", min: "security", allProjectsOnly: true },
   { what: "Set up the notifications of their projects and assets: turn the organisation's rules off or edit them there, add rules and channels", min: "admin" },
   { what: "Write their projects' notes for Ask Stackurity (what the project is, what to leave out)", min: "admin" },

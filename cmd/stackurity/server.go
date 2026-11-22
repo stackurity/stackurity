@@ -1006,6 +1006,12 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		}
 		return err
 	})
+	// Policy gates: the day's violation counts per policy, opened and
+	// closed since the last run (docs/policy-gates.md). Nothing is written
+	// for an organisation without policies.
+	w.EveryWorkspace("gate-policy-rollup", time.Hour, func(ctx context.Context) error {
+		return st.RollupGatePolicies(ctx, time.Now().UTC())
+	})
 	w.EveryWorkspace("mark-stale-assets", 10*time.Minute, func(ctx context.Context) error {
 		n, err := st.MarkStaleAssets(ctx, staleAfter)
 		if n > 0 {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, Outlet, useLocation } from "react-router";
-import { api, type IgnoreRequest, type Incident, type List, type Membership, type Plan, type ReadOnlyState, type SSORequired } from "../api";
+import { api, type GateException, type IgnoreRequest, type Incident, type List, type Membership, type Plan, type ReadOnlyState, type SSORequired } from "../api";
 import { useAction, useLoad } from "../hooks";
 import { useAuth } from "../auth";
 import { ProjectProvider, useProject } from "../project";
@@ -194,6 +194,12 @@ function Shell() {
     () => (decider ? api.get<List<IgnoreRequest>>("/ignore-requests", { status: "pending", limit: 1 }) : Promise.resolve(null)),
     [pathname, decider],
   );
+  // Requests for exceptions to policy gates waiting for a decision (Approvals → Policy exceptions).
+  const gateDecider = decider && Boolean(meta?.features?.includes("gate_policies"));
+  const gateExceptions = useLoad(
+    () => (gateDecider ? api.get<List<GateException>>("/gate-policies/exceptions", { status: "pending", limit: 1 }) : Promise.resolve(null)),
+    [pathname, gateDecider],
+  );
 
   // Each item opens its first page this person may open; an item with none
   // is hidden (People for non-admins, Admin outside instance admins), and so
@@ -203,7 +209,7 @@ function Shell() {
   const groups = visibleNav(access, {
     pending: pending.data?.total ?? 0,
     sos: sos.data?.total ?? 0,
-    approvals: approvals.data?.total ?? 0,
+    approvals: (approvals.data?.total ?? 0) + (gateExceptions.data?.total ?? 0),
   });
   const items = groups.flatMap((g) => g.items);
   const current = activeItem(pathname);

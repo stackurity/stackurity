@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -122,4 +123,84 @@ func TestEnrollWait(t *testing.T) {
 	if _, err := c.EnrollWait(context.Background(), "enr_x", "web-1", 0, 0, nil); !errors.As(err, &ae) || ae.Status != 429 || ae.RetryAfter != time.Second || calls.Load() != 1 {
 		t.Errorf("429 with no wait: %v after %d calls", err, calls.Load())
 	}
+}
+
+// CheckPolicies posts the request as JSON and reads the answer; a server
+// without the check (405, or 404 for the route) is ErrPolicyCheckUnsupported,
+// while a 404 for the asset stays an error of its own.
+func TestCheckPolicies(t *testing.T) {
+	var got map[string]any
+	var hdr http.Header
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Header.Get("X-Test") {
+		case "405":
+			w.WriteHeader(405)
+			return
+		case "route":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"no such endpoint"}}`))
+			return
+		case "plain":
+			http.NotFound(w, r)
+			return
+		case "asset":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(404)
+			_, _ = w.Write([]byte(`{"error":{"code":"not_found","message":"no asset matches, or this token cannot see it"}}`))
+			return
+		}
+		if r.Method != "POST" || r.URL.Path != "/api/v1/gate-policies/check" {
+			t.Errorf("%s %s", r.Method, r.URL.Path)
+		}
+		hdr = r.Header.Clone()
+		_ = json.NewDecoder(r.Body).Decode(&got)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"check_id":9,"result":"fail","asset_id":4,"asset_name":"app","policies_evaluated":2,"policies_enforced":1,
+			"violations":[{"policy_id":1,"policy_name":"No KEV","mode":"enforce","kind":"known_exploited","reason":"CVE-1 in a 1 is known to be exploited",
+			"component":"a 1","key":"CVE-1","finding_id":12,"link":"https://s.example/findings/12"}]}`))
+	}))
+	defer srv.Close()
+	c, err := New(srv.URL, "t", "test")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	pc, err := c.CheckPolicies(ctx, PolicyCheckRequest{CollectionID: 5, Source: "ci", Commit: "abc"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pc.Result != "fail" || pc.CheckID != 9 || pc.PoliciesEnforced != 1 || len(pc.Violations) != 1 ||
+		pc.Violations[0].FindingID == nil || *pc.Violations[0].FindingID != 12 || pc.Violations[0].Link != "https://s.example/findings/12" {
+		t.Errorf("answer %+v", pc)
+	}
+	// Only what was set is sent.
+	if len(got) != 3 || got["collection_id"] != float64(5) || got["source"] != "ci" || got["commit"] != "abc" {
+		t.Errorf("request %v", got)
+	}
+	if hdr.Get("Content-Type") != "application/json" || hdr.Get("Authorization") != "Bearer t" {
+		t.Errorf("headers %v", hdr)
+	}
+
+	for _, kind := range []string{"405", "route", "plain"} {
+		c.HTTP.Transport = headerTransport{"X-Test", kind}
+		if _, err := c.CheckPolicies(ctx, PolicyCheckRequest{AssetID: 1}); !errors.Is(err, ErrPolicyCheckUnsupported) {
+			t.Errorf("%s: %v, want ErrPolicyCheckUnsupported", kind, err)
+		}
+	}
+	c.HTTP.Transport = headerTransport{"X-Test", "asset"}
+	_, err = c.CheckPolicies(ctx, PolicyCheckRequest{AssetID: 1})
+	var ae *APIError
+	if errors.Is(err, ErrPolicyCheckUnsupported) || !errors.As(err, &ae) || ae.Status != 404 {
+		t.Errorf("unknown asset: %v", err)
+	}
+}
+
+// headerTransport adds one header to every request.
+type headerTransport struct{ k, v string }
+
+func (h headerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set(h.k, h.v)
+	return http.DefaultTransport.RoundTrip(r)
 }

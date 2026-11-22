@@ -1280,7 +1280,7 @@ stackurity.exe agent --interval 6h`,
     section: "Daily work",
     summary: "Engineers and viewers ask to ignore issues; security and admin users approve or decline.",
     where: ["Governance", "Approvals"],
-    keywords: "approve decline request ignore inbox approval",
+    keywords: "approve decline request ignore inbox approval policy exception gate",
     body: [
       { p: "Only the **security** and **admin** roles can snooze or ignore issues. Everyone else sees **Ask to ignore…** on an issue, a selection or a fix. The request records who asked, the reason, the scope and the expiry. Nothing changes until someone decides." },
       {
@@ -1291,6 +1291,8 @@ stackurity.exe agent --interval 6h`,
         ],
       },
       { p: "Requesters see their own requests and what happened to them. Every request and decision is in the audit log (`ignore_request.create`, `ignore_request.approve`, `ignore_request.decline`)." },
+      { h: "Policy exceptions" },
+      { p: "The [Policy exceptions](/approvals?tab=policy) tab lists requests for a policy gate not to count against an asset, or one issue on it, until a date. Anyone who can see the asset asks with **Ask for an exception** on a policy violation; a security or admin user of the asset approves (optionally with an earlier end), declines with a reason, or later ends an exception early. When it ends, the violation counts again. Each step is in the audit log (`policy_exception.request`, `.approve`, `.decline`, `.end`)." },
     ],
   },
   {

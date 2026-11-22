@@ -1000,6 +1000,17 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s route: %d", tag, code)
 	}
 	set("route", rt.ID)
+	var gp struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/gate-policies", map[string]any{"name": "gate-" + tag, "kind": "known_exploited"}, &gp); code != 201 {
+		t.Fatalf("%s gate policy: %d", tag, code)
+	}
+	set("gatepolicy", gp.ID)
+	var gx struct{ ID int64 }
+	if code := admin.do("POST", "/api/v1/gate-policies/exceptions", map[string]any{"policy_id": gp.ID, "asset_id": f.int("asset"),
+		"target_kind": "asset", "reason": "accepted_risk", "note": "exception-" + tag}, &gx); code != 201 {
+		t.Fatalf("%s gate exception: %d", tag, code)
+	}
+	set("gateexception", gx.ID)
 	route, incident := rt.ID, f.int("incident")
 	if _, err := e.st.EnqueueDelivery(ctx, ch.ID, &route, &incident, "opened", "sweep-"+tag, map[string]string{"title": "delivery-" + tag}); err != nil {
 		t.Fatal(err)

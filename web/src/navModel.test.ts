@@ -156,7 +156,7 @@ test("badges sit on the fitting items; a closed group adds them up", () => {
   const byId = Object.fromEntries(groups.flatMap((g) => g.items).map((i) => [i.id, i.badge]));
   assert.deepEqual(byId.automatic, { count: 2, label: "automatic fixes waiting for approval", tone: "warn" });
   assert.deepEqual(byId.incidents, { count: 1, label: "open SOS incidents", tone: "crit" });
-  assert.deepEqual(byId.approvals, { count: 3, label: "requests to ignore issues waiting for approval", tone: "warn" });
+  assert.deepEqual(byId.approvals, { count: 3, label: "requests waiting for approval (ignoring issues, policy exceptions)", tone: "warn" });
   assert.equal(byId.fixes, undefined);
   const security = groups.find((g) => g.id === "security")!;
   assert.deepEqual(rollUp(security.items), { count: 3, label: "2 automatic fixes waiting for approval, 1 open SOS incidents", tone: "crit" });

@@ -89,6 +89,8 @@ import { RiskPolicyPage } from "./pages/settings/RiskPolicy";
 import { FixGroupingPage } from "./pages/settings/FixGrouping";
 import { VexDocumentPage, VexPage } from "./pages/settings/Vex";
 import { ProjectDetailPage, ProjectNotificationsIndexPage, ProjectNotificationsPage, ProjectsPage } from "./pages/settings/Projects";
+import { PolicyGatesPage } from "./pages/settings/PolicyGates";
+import { PolicyViolationsPage } from "./pages/PolicyViolations";
 
 // The help articles are large and rarely needed, so they load on demand.
 const HelpPage = lazy(() => import("./pages/Help").then((m) => ({ default: m.HelpPage })));
@@ -293,6 +295,14 @@ export function App() {
         <Route path="fixes/config" element={<ConfigFindingsPage />} />
         <Route path="fixes/code" element={<CodeFindingsPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
+        <Route
+          path="fixes/policy-violations"
+          element={
+            <RequireRole min="security">
+              <PolicyViolationsPage />
+            </RequireRole>
+          }
+        />
         <Route path="fixes/:id" element={<FixGroupDetailPage />} />
         <Route path="action-plan" element={<Moved to={() => "/fixes"} />} />
         <Route path="action-plan/:id" element={<Moved to={(p) => `/fixes/${encodeURIComponent(p.id ?? "")}`} />} />
@@ -322,6 +332,14 @@ export function App() {
           <Route path="fix-grouping" element={<FixGroupingPage />} />
           <Route path="vex" element={<VexPage />} />
           <Route path="vex/:id" element={<VexDocumentPage />} />
+          <Route
+            path="policy-gates"
+            element={
+              <RequireRole min="security">
+                <PolicyGatesPage />
+              </RequireRole>
+            }
+          />
           <Route
             path="automatic-fixes"
             element={

@@ -417,3 +417,63 @@ export function stackEmpty(kind: string, assetId: number, suggestions: number, c
       };
   }
 }
+
+// --- policy gates (pages/settings/PolicyGates.tsx, pages/PolicyViolations.tsx)
+
+/** Settings, Policy gates: the organisation has no policy yet. canManage: an organisation admin. */
+export function gatePoliciesEmpty(canManage: boolean): EmptyCopy {
+  return {
+    title: "No policy gates yet",
+    why: "A policy gate is a rule every asset is held to, such as no known exploited vulnerability on an internet-facing server.",
+    after: "Once you add one, CI jobs and deploy checks report its violations, and the Dashboard and weekly summary count them. New policies start in warn mode, so no build fails.",
+    action: { label: "Add a policy", permitted: canManage, otherwise: "An administrator can add policies." },
+  };
+}
+
+/**
+ * The Violations page. policies: how many policies are on (not off), or
+ * undefined when unknown. filtered: a filter is on. canManage: may add
+ * policies (organisation admin).
+ */
+export function gateViolationsEmpty(o: { policies: number | undefined; filtered: boolean }, canManage: boolean): EmptyCopy {
+  if (o.filtered) {
+    return {
+      title: "No violations match these filters",
+      why: "Other policies or assets may have violations.",
+      action: { label: "Clear filters", permitted: true },
+    };
+  }
+  if (o.policies === 0) {
+    return {
+      title: "No policy gates are on",
+      why: "Violations are counted for policies in warn or enforce mode, and none is on yet.",
+      after: "Once a policy is on, every asset that breaks it is listed here with the reason and a link to the issue.",
+      action: { label: "Set up policy gates", to: "/settings/policy-gates", permitted: canManage, otherwise: "An administrator can set up policy gates." },
+    };
+  }
+  return {
+    title: "No policy violations",
+    why: "Every asset meets every policy that is on.",
+    after: "If a later scan finds something a policy does not allow, it appears here, and CI and deploy checks report it.",
+  };
+}
+
+/**
+ * Approvals, Policy exceptions: nothing to show. status: the list's
+ * filter. canDecide: may decide (security or admin somewhere).
+ */
+export function gateExceptionsEmpty(status: "pending" | "all", canDecide: boolean): EmptyCopy {
+  if (status === "pending") {
+    return {
+      title: "No exceptions waiting",
+      why: canDecide ? "Nobody is waiting for a decision on an exception to a policy gate." : "None of the exceptions you can see is waiting for a decision.",
+      after: "When someone uses Ask for an exception on a policy violation or a policy, the request waits here until a security or admin user of the asset decides.",
+      action: { label: "Go to policy violations", to: "/fixes/policy-violations", permitted: canDecide, otherwise: "Security and admin users see the violations." },
+    };
+  }
+  return {
+    title: "No exceptions yet",
+    why: "Nobody has asked for an exception to a policy gate on the assets you can see.",
+    after: "Approved exceptions take a violation out of CI and deploy checks until their end date; then it counts again.",
+  };
+}

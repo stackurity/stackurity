@@ -5136,6 +5136,26 @@ h6.md-h {
   min-width: 200px;
   margin: 0;
 }
+/* Policy gate exceptions (components/PolicyExceptions.tsx): the form for
+   asking opens full width above the list it came from. */
+.exception-ask {
+  margin: var(--s3) 0;
+  padding: var(--s3) var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow-wrap: anywhere;
+}
+.exception-form .row-actions {
+  margin-top: var(--s2);
+}
+.exceptions-in-force {
+  margin-top: var(--s4);
+}
+.exceptions-in-force summary {
+  cursor: pointer;
+  margin-bottom: var(--s2);
+}
 @media (max-width: 720px) {
   .home-tiles {
     grid-template-columns: repeat(2, minmax(0, 1fr));

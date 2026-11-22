@@ -11,7 +11,7 @@ function plural(n: number, word: string, pluralWord = word + "s"): string {
 }
 
 /** What a "Needs you now" row is about; it picks the icon. */
-export type NeedKind = "sos" | "overdue" | "due" | "reporting" | "approval" | "incomplete";
+export type NeedKind = "sos" | "overdue" | "due" | "reporting" | "approval" | "incomplete" | "policy";
 
 export interface NeedRow {
   key: string;
@@ -49,12 +49,19 @@ export interface NeedsInput {
   endOfToday?: string;
   /** Requests to ignore issues waiting for a decision (security and admin only). */
   ignoreRequests?: number;
+  /** Requests for exceptions to policy gates waiting for a decision (security role, server with policy gates). */
+  gateExceptions?: number;
   /** Automatic fixes proposed and waiting for approval (Pro). */
   fixPlans?: number;
   /** Open collection incidents: "stopped reporting" ones are used when there are any. */
   collectionIncidents?: IncidentLike[] | null;
   /** Assets, for those that stopped reporting or reported incompletely. */
   assets?: AssetLike[] | null;
+  /**
+   * Current policy gate violations (security role, server with policy
+   * gates). Absent or null: no row, as when no policy exists.
+   */
+  policyViolations?: { violations: number; assets: number; enforced: number } | null;
 }
 
 /** How a kind of asset is named to people, as in reporting incidents (store.AssetNoun). */
@@ -224,6 +231,24 @@ export function needsYou(i: NeedsInput): NeedRow[] {
       tone: "warn",
       title: `${plural(i.ignoreRequests!, "request")} to ignore issues ${i.ignoreRequests === 1 ? "is" : "are"} waiting for a decision`,
       action: { label: "Open approvals", to: "/approvals" },
+    });
+  if ((i.gateExceptions ?? 0) > 0)
+    rows.push({
+      key: "gate-exceptions",
+      kind: "approval",
+      tone: "warn",
+      title: `${plural(i.gateExceptions!, "request")} for a policy exception ${i.gateExceptions === 1 ? "is" : "are"} waiting for a decision`,
+      action: { label: "Open policy exceptions", to: "/approvals?tab=policy" },
+    });
+  const pv = i.policyViolations;
+  if (pv && pv.violations > 0)
+    rows.push({
+      key: "policy-violations",
+      kind: "policy",
+      tone: "warn",
+      title: `${plural(pv.violations, "policy violation")} on ${plural(pv.assets, "asset")}`,
+      detail: pv.enforced > 0 ? `${pv.enforced.toLocaleString()} from policies in enforce mode` : "All from policies in warn mode: checks report them and pass",
+      action: { label: "Open policy violations", to: "/fixes/policy-violations" },
     });
   if ((i.fixPlans ?? 0) > 0)
     rows.push({

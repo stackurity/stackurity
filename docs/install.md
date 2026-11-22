@@ -707,6 +707,12 @@ There are three ways to collect repository inventory:
   fail the gate. A collector token can read the result only of scans it
   submitted.
 
+  The scan also checks the organisation's [policy gates](policy-gates.md#in-ci)
+  when the server has them and one applies to the repository: violations of
+  policies in warn mode are printed, and a violation of an enforced policy
+  exits with status 3. `--policy=off` skips the check (`--policy=auto` is
+  the default).
+
   The scan reads the directory's own lockfiles. It skips `node_modules`,
   `vendor`, virtualenvs and similar, `.claude/` (coding-agent worktrees), and
   any directory below the root that is a checkout of its own: a nested
