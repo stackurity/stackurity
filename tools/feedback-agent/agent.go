@@ -322,14 +322,15 @@ Not merged by the agent: release freeze rules apply; the release owner merges, a
 	if err != nil {
 		return "", err
 	}
-	url := prURL.FindString(string(out))
+	url := strings.TrimSpace(prURL.FindString(string(out)))
 	if url == "" {
 		return "", fmt.Errorf("gh pr create gave no pull request URL: %s", oneLine(string(out), 200))
 	}
 	return url, nil
 }
 
-var prURL = regexp.MustCompile(`https://github\.com/stackurity/[A-Za-z0-9._-]+/pull/[0-9]+`)
+// gh pr create prints the new pull request URL on a line of its own.
+var prURL = regexp.MustCompile(`(?m)^https://github\.com/stackurity/[A-Za-z0-9._-]+/pull/[0-9]+\r?$`)
 
 // changedPaths lists what the worktree changed, untracked files included.
 func (a *agent) changedPaths(ctx context.Context, wt string) ([]string, error) {
