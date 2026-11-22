@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router";
-import { api, type DirectoryUser, type EpssDetail, type Finding, type FindingEvent, type List, type Team } from "../api";
+import { api, type DirectoryUser, type EpssDetail, type Finding, type FindingEvent, type List, type ReachabilityDetail, type Team } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { absTime } from "../format";
@@ -8,6 +8,7 @@ import { EscalationBadge, PriorityBadge, SosBadge, FindingStateBadge, IGNORE_REA
 import { Card, ErrorBox, KeyValues, Loading, Notice, RelativeTime } from "./ui";
 import { Assignee, DueDate } from "./Workflow";
 import { FindingRemediation } from "./RemediationSummary";
+import { ReachabilityWhy } from "./Reachability";
 import { closedReason, countsAsRemediation } from "../resolution";
 
 function FactorTable({ f }: { f: Finding }) {
@@ -153,11 +154,20 @@ export function WorkflowDetails({ f }: { f: Finding }) {
 }
 
 /** Why this priority: each factor and its points, EPSS, and the risk policy version. */
-export function PriorityWhy({ f, epss }: { f: Finding; epss?: EpssDetail | null }) {
+export function PriorityWhy({
+  f,
+  epss,
+  reachability,
+}: {
+  f: Finding;
+  epss?: EpssDetail | null;
+  reachability?: ReachabilityDetail | null;
+}) {
   return (
     <>
       <FactorTable f={f} />
       {epss && <p className="small">{epss.text}</p>}
+      {reachability && <ReachabilityWhy d={reachability} />}
       <p className="hint">
         Weights, thresholds and deadlines come from the <Link to="/settings/risk-policy">risk policy</Link>
         {f.priority_policy_version ? (

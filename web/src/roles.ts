@@ -26,7 +26,7 @@ export const PERMISSIONS: Permission[] = [
   {
     role: "admin",
     label: "Admin",
-    short: "Also manages notifications. With all projects and assets, also people, projects, integrations and settings.",
+    short: "Also manages notifications and a project's notes for Ask Stackurity. With all projects and assets, also people, projects, integrations and settings.",
   },
 ];
 
@@ -58,6 +58,7 @@ export const CAPABILITIES: Capability[] = [
   { what: "Snooze, accept risk on, ignore and reopen issues; decide requests to ignore and policy exceptions; end ignore rules and exceptions", min: "security" },
   { what: "See notification settings and the delivery log; decide VEX documents and remediation plans", min: "security", allProjectsOnly: true },
   { what: "Set up the notifications of their projects and assets: turn the organisation's rules off or edit them there, add rules and channels", min: "admin" },
+  { what: "Write their projects' notes for Ask Stackurity (what the project is, what to leave out)", min: "admin" },
   { what: "Manage users, teams, invitations, projects and who has access", min: "admin", allProjectsOnly: true },
   { what: "Set up integrations, notifications, the risk policy and secrets; delete assets", min: "admin", allProjectsOnly: true },
 ];
@@ -80,7 +81,7 @@ export function permissionTable(): string[][] {
 export const PERMISSION_NOTES = [
   `"${ALL_ONLY}": only for someone given **All projects and assets**. With specific projects or assets, these pages are not shown.`,
   "With specific projects or assets, everything else applies to those only. Ignoring an issue everywhere (every asset) needs View, edit and decide on all projects.",
-  "Admin on specific projects or assets adds only their notifications to View, edit and decide.",
+  "Admin on specific projects or assets adds only their notifications, and their projects' notes for Ask Stackurity, to View, edit and decide.",
 ];
 
 /** A member's access at a glance, for the Users list. */

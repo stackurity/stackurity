@@ -3,8 +3,10 @@
 // database password in a .env file the web server may serve.
 //
 // Only what identifies a leak leaves the package: the rule, the file and
-// line, a fingerprint and a masked preview. The value never does, so the
-// server never holds the keys it reports.
+// line, a fingerprint, a masked preview and the second check's signals
+// about the value (internal/secondcheck/valuecheck), each from a fixed
+// list. The value never does, so the server never holds the keys it
+// reports.
 package leaks
 
 import (
@@ -17,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/secondcheck/valuecheck"
 )
 
 // Leak is one key, token or password found in a file. Path is relative
@@ -86,8 +89,13 @@ func Grade(l *Leak, exposure string, onHost bool) {
 
 // assigned is a setting name that holds a credential, and the value after
 // it. Names ending in SALT, and WordPress's four keys, are left out: every
-// WordPress site has them, and DB_PASSWORD already reports the file.
-const credName = `[A-Za-z0-9_.-]*(?i:secret|passw(?:or)?d|pwd|token|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?key)[A-Za-z0-9_.-]*`
+// WordPress site has them, and DB_PASSWORD already reports the file. A
+// master or salt key (LITELLM_MASTER_KEY, LITELLM_SALT_KEY, Rails's
+// RAILS_MASTER_KEY) opens everything else: a LiteLLM master key is the
+// proxy's admin key, and its salt key decrypts the provider keys it keeps.
+// Providers whose keys have no format of their own (Mistral, DeepSeek,
+// LiteLLM's virtual keys) are found by the name they are assigned to.
+const credName = `[A-Za-z0-9_.-]*(?i:secret|passw(?:or)?d|pwd|token|api[_-]?key|access[_-]?key|private[_-]?key|auth[_-]?key|master[_-]?key|salt[_-]?key)[A-Za-z0-9_.-]*`
 
 var rules = []rule{
 	{id: "private-key", title: "Private key", severity: critical, hint: "PRIVATE KEY",
@@ -114,6 +122,14 @@ var rules = []rule{
 		re: regexp.MustCompile(`\b(sk-(?:proj-|svcacct-|admin-)?[A-Za-z0-9_-]{20,}T3BlbkFJ[A-Za-z0-9_-]{20,})\b`)},
 	{id: "anthropic-key", title: "Anthropic API key", severity: critical, hint: "sk-ant-", shown: 7,
 		re: regexp.MustCompile(`\b(sk-ant-(?:api|admin)\d\d-[A-Za-z0-9_-]{80,})`)},
+	{id: "anthropic-oauth-token", title: "Anthropic OAuth token (Claude Code)", severity: critical, hint: "sk-ant-o", shown: 7,
+		re: regexp.MustCompile(`\b(sk-ant-(?:oat|ort)\d\d-[A-Za-z0-9_-]{80,})`)},
+	{id: "openrouter-key", title: "OpenRouter API key", severity: critical, hint: "sk-or-v1-", shown: 9,
+		re: regexp.MustCompile(`\b(sk-or-v1-[0-9a-f]{64})\b`)},
+	{id: "groq-key", title: "Groq API key", severity: critical, hint: "gsk_", shown: 4,
+		re: regexp.MustCompile(`\b(gsk_[A-Za-z0-9]{52})\b`)},
+	{id: "xai-key", title: "xAI API key", severity: critical, hint: "xai-", shown: 4,
+		re: regexp.MustCompile(`\b(xai-[A-Za-z0-9_]{80})\b`)},
 	{id: "huggingface-token", title: "Hugging Face access token", severity: critical, hint: "hf_", shown: 3,
 		re: regexp.MustCompile(`\b(hf_[A-Za-z0-9]{34,40})\b`)},
 	{id: "sendgrid-key", title: "SendGrid API key", severity: critical, hint: "SG.", shown: 3,
@@ -186,7 +202,11 @@ func ScanValues(name string, data []byte, onValue func(l Leak, value string)) []
 					continue
 				}
 				l.Fingerprint = fingerprint(body)
+				value = body
 			}
+			// The second check's reading of the value, while it is here:
+			// only signals from a fixed list leave.
+			l.ValueCheck = &model.LeakValueCheck{Checker: valuecheck.Checker, Signals: valuecheck.Check(r.id, value)}
 			// A key matched by its format and again by the setting it
 			// is assigned to is one leak.
 			if !seen[l.Fingerprint] {

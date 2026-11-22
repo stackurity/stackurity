@@ -17,6 +17,7 @@ import (
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/secrets"
+	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
 
@@ -337,7 +338,7 @@ func TestAssistantOAuth(t *testing.T) {
 	if !strings.HasPrefix(access, "stka_") || !strings.HasPrefix(refresh, "stkr_") {
 		t.Fatalf("tokens: %s %s", access, refresh)
 	}
-	if code, out, _ := mcpPost(e, access, map[string]any{"id": 1, "method": "tools/list"}); code != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 26 {
+	if code, out, _ := mcpPost(e, access, map[string]any{"id": 1, "method": "tools/list"}); code != 200 || len(out["result"].(map[string]any)["tools"].([]any)) != 34 {
 		t.Errorf("tools/list: %d %v", code, out)
 	}
 	if status, _ := o.token(url.Values{"grant_type": {"authorization_code"}, "code": {code3}, "code_verifier": {v}, "redirect_uri": {redirectURI}}); status != 400 {
@@ -444,7 +445,7 @@ func TestAssistantOAuth(t *testing.T) {
 	// even if a tool were reached; it can be turned on in Settings.
 	ro := &oauthFx{e: e, clientID: o.clientID, readOnly: true}
 	roToken := ro.connect(t, admin, auth.RoleAdmin, 0)
-	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 16 {
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 23 {
 		t.Errorf("read-only connection lists %v", out)
 	}
 	if code, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/call", "params": map[string]any{"name": "create_project",
@@ -461,7 +462,7 @@ func TestAssistantOAuth(t *testing.T) {
 	if code := admin.do("PATCH", fmt.Sprint("/api/v1/assistants/", list.Items[0].ID), map[string]any{"allow_changes": true}, nil); code != 200 {
 		t.Errorf("allow changes: %d", code)
 	}
-	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 26 {
+	if _, out, _ := mcpPost(e, roToken, map[string]any{"id": 1, "method": "tools/list"}); len(out["result"].(map[string]any)["tools"].([]any)) != 34 {
 		t.Errorf("after allowing changes: %v", out)
 	}
 	// Tokens that do not work are limited per address. The window is fixed
@@ -663,6 +664,10 @@ func assistantCalls(ids map[string]string) map[string]map[string]any {
 		"asset_stack":                {"asset_id": n("asset")},
 		"list_findings":              {"asset_id": n("asset")},
 		"list_leaks":                 {"asset_id": n("asset")},
+		"list_risky_settings":        {"asset_id": n("asset")},
+		"list_code_findings":         {"asset_id": n("asset")},
+		"threat_check":               {"threat": "artex"},
+		"list_threat_notices":        {},
 		"get_finding":                {"finding_id": n("finding")},
 		"find_component":             {"name": ids["tag"] + "-private-lib"},
 		"explain_finding":            {"finding_id": n("finding")},
@@ -683,6 +688,7 @@ func assistantCalls(ids map[string]string) map[string]map[string]any {
 		"ignore":                     {"finding_ids": []any{n("finding")}, "reason": "mitigated", "note": "n", "expiry": "date", "until": future},
 		"check_again":                {"fix_group": ids["fixgroup"]},
 		"invite_to_project":          {"email": "someone@x.io", "project_id": n("project"), "role": "viewer"},
+		"set_notification_enabled":   {"target": "channel", "id": n("channel"), "enabled": false},
 	}
 }
 
@@ -904,6 +910,143 @@ func TestOAuthTokenLimits(t *testing.T) {
 	for i := range 30 {
 		if code := post(url.Values{"grant_type": {"refresh_token"}, "refresh_token": {fmt.Sprint("stkr_", i)}, "client_id": {fmt.Sprint("stkc_", i)}}); code == 429 {
 			t.Fatalf("request %d from one address was limited", i)
+		}
+	}
+}
+
+// TestAssistantTurnsNotificationsOnAndOff: set_notification_enabled
+// changes only enabled, on a channel (PATCH) and on a rule (PUT, which
+// replaces the rule, so every other setting must come back as it was),
+// and both are audited as the assistant.
+func TestAssistantTurnsNotificationsOnAndOff(t *testing.T) {
+	o := newOrg(t)
+	e := o.e
+	box, err := secrets.NewBox([]byte("0123456789abcdef0123456789abcdef"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.api.SecretBox = box
+	if code := o.admin.do("PUT", "/api/v1/secrets/HOOK", map[string]string{"value": "hook-secret"}, nil); code != 204 {
+		t.Fatalf("secret: %d", code)
+	}
+	var ch store.Channel
+	if code := o.admin.do("POST", "/api/v1/channels", map[string]any{"kind": "webhook", "name": "ops hook",
+		"config": map[string]string{"url": "https://hooks.example/ops"}, "secret_ref": "secret:HOOK"}, &ch); code != 201 {
+		t.Fatalf("channel: %d", code)
+	}
+	var rt store.Route
+	if code := o.admin.do("POST", "/api/v1/routes", map[string]any{"name": "Urgent ops", "channel_id": ch.ID, "enabled": true,
+		"min_priority": "P2", "new_min_priority": "P3", "events": []string{"urgent", "regressed", "weekly_summary"}, "kinds": []string{"vulnerability"},
+		"environments": []string{"production"}, "quiet_start": "22:00", "quiet_end": "07:00", "timezone": "Asia/Kolkata", "max_per_hour": 20,
+		"summary_time": "08:15", "summary_day": "tuesday", "summary_updates": true, "send_resolved": true}, &rt); code != 201 {
+		t.Fatalf("route: %d", code)
+	}
+	routes := func() string {
+		var out struct{ Items []map[string]any }
+		o.admin.do("GET", "/api/v1/routes", nil, &out)
+		for _, r := range out.Items {
+			if r["id"] == float64(rt.ID) {
+				delete(r, "enabled")
+				b, _ := json.Marshal(r)
+				return string(b)
+			}
+		}
+		return ""
+	}
+	before := routes()
+
+	oc := registerAssistant(t, e)
+	token := oc.connect(t, o.admin, auth.RoleAdmin, 0)
+	toggle := func(args map[string]any) string {
+		t.Helper()
+		text, isErr := callMCPTool(t, e, token, "set_notification_enabled", args)
+		var pv map[string]any
+		if err := json.Unmarshal([]byte(text), &pv); err != nil || isErr || pv["status"] != "preview" {
+			t.Fatalf("preview: %s", text)
+		}
+		args["confirm"] = pv["confirm"]
+		text, isErr = callMCPTool(t, e, token, "set_notification_enabled", args)
+		if isErr || !strings.Contains(text, `"status": "done"`) {
+			t.Fatalf("confirmed: %s", text)
+		}
+		return text
+	}
+
+	toggle(map[string]any{"target": "rule", "id": float64(rt.ID), "enabled": false})
+	if after := routes(); after != before || after == "" {
+		t.Errorf("turning the rule off changed more:\nbefore %s\nafter  %s", before, after)
+	}
+	var got struct{ Items []store.Route }
+	o.admin.do("GET", "/api/v1/routes", nil, &got)
+	for _, r := range got.Items {
+		if r.ID == rt.ID && r.Enabled {
+			t.Errorf("rule still on: %+v", r)
+		}
+	}
+
+	text := toggle(map[string]any{"target": "channel", "id": float64(ch.ID), "enabled": false})
+	if strings.Contains(text, "hooks.example") || strings.Contains(text, "HOOK") {
+		t.Errorf("answer shows the channel's configuration: %s", text)
+	}
+	var cur store.Channel
+	var chans struct{ Items []store.Channel }
+	o.admin.do("GET", "/api/v1/channels", nil, &chans)
+	for _, c := range chans.Items {
+		if c.ID == ch.ID {
+			cur = c
+		}
+	}
+	if cur.Enabled || cur.Name != "ops hook" || cur.SecretRef != "secret:HOOK" || !strings.Contains(string(cur.Config), "hooks.example/ops") {
+		t.Errorf("channel after: %+v", cur)
+	}
+
+	var audit struct {
+		Items []struct {
+			Action    string
+			ActorType string `json:"actor_type"`
+		}
+	}
+	o.admin.do("GET", "/api/v1/audit?limit=50", nil, &audit)
+	seen := map[string]bool{}
+	for _, a := range audit.Items {
+		if a.ActorType == "assistant" {
+			seen[a.Action] = true
+		}
+	}
+	if !seen["route.update"] || !seen["channel.update"] {
+		t.Errorf("not audited as the assistant: %+v", audit.Items)
+	}
+
+	// A security connection is refused before anything is read or changed.
+	sec := oc.connect(t, o.admin, auth.RoleSecurity, 0)
+	if text, _ := callMCPTool(t, e, sec, "set_notification_enabled", map[string]any{"target": "channel", "id": float64(ch.ID), "enabled": true}); !strings.Contains(text, "admin") {
+		t.Errorf("security connection: %s", text)
+	}
+}
+
+// evidence_pack and plan_options read the plan's features at
+// GET /api/v1/plan/options, an account route. The assistant gate let only
+// auth/me through, so both tools answered "an assistant cannot change
+// account settings" (seen on prod, 21 Nov 2026).
+func TestAssistantReadsPlanOptions(t *testing.T) {
+	o := newOrg(t)
+	e := o.e
+	oc := registerAssistant(t, e)
+	tokens := map[string]string{
+		"viewer":         oc.connect(t, o.admin, auth.RoleViewer, 0),
+		"admin":          oc.connect(t, o.admin, auth.RoleAdmin, 0),
+		"bound to Alpha": oc.connect(t, o.admin, auth.RoleAdmin, o.id("alpha-project")),
+	}
+	for who, token := range tokens {
+		for _, name := range []string{"plan_options", "evidence_pack"} {
+			args := map[string]any{}
+			if who == "bound to Alpha" && name == "evidence_pack" {
+				args["project_id"] = float64(o.id("alpha-project"))
+			}
+			text, _ := callMCPTool(t, e, token, name, args)
+			if strings.Contains(text, "account settings") || strings.Contains(text, "403") {
+				t.Errorf("%s: %s refused: %s", who, name, text)
+			}
 		}
 	}
 }

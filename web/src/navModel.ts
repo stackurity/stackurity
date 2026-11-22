@@ -4,7 +4,7 @@
  * Kept free of React and of imports other than types so node --test can
  * load it. The routes themselves are in App.tsx; nothing here renames one.
  */
-import type { UserRole } from "./api";
+import type { Feature, UserRole } from "./api";
 
 /**
  * The places of the dashboard, one tab bar each. Each page belongs to one;
@@ -95,13 +95,11 @@ export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
   fixes: {
     label: "Fixes",
     tabs: [
-      {
-        to: "/fixes",
-        label: "Fixes",
-        match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/policy-violations")) || under(p, "/action-plan"),
-      },
+      { to: "/fixes", label: "Fixes", match: (p) => p === "/fixes" || (under(p, "/fixes") && !under(p, "/fixes/issues", "/fixes/automatic", "/fixes/leaks", "/fixes/config", "/fixes/code", "/fixes/policy-violations")) || under(p, "/action-plan") },
       { to: "/fixes/issues", label: "All issues", match: (p) => under(p, "/fixes/issues", "/findings") },
       { to: "/fixes/leaks", label: "Leaked keys" },
+      { to: "/fixes/config", label: "Risky settings" },
+      { to: "/fixes/code", label: "Code findings" },
       // Policy gates (docs/policy-gates.md): reading violations needs the security role organisation-wide.
       { to: "/fixes/policy-violations", label: "Policy violations", min: "security" },
       { to: "/fixes/automatic", label: "Automatic fixes", match: (p) => under(p, "/fixes/automatic", "/remediation") },
@@ -185,6 +183,47 @@ const tab = (s: Tabbed, to: string): TabLink => {
   return t;
 };
 
+// --- Settings (its own two-pane layout, pages/Settings.tsx)
+
+export interface SettingsEntry extends AccessRule {
+  to: string;
+  label: string;
+  /** Shown with a Pro badge without it; the page explains what it adds. */
+  feature?: Feature;
+}
+
+/** The Settings sections, in the order its list on the left shows them. */
+export const SETTINGS_GROUPS: { title: string; entries: SettingsEntry[] }[] = [
+  {
+    title: "How Stackurity decides",
+    entries: [
+      { to: "/settings/risk-policy", label: "Risk policy" },
+      { to: "/settings/fix-grouping", label: "Fix grouping" },
+      { to: "/settings/vex", label: "VEX" },
+      { to: "/settings/policy-gates", label: "Policy gates", min: "security" },
+      { to: "/settings/automatic-fixes", label: "Automatic fixes", min: "security", feature: "remediation" },
+    ],
+  },
+  {
+    title: "Projects",
+    entries: [{ to: "/settings/project-permissions", label: "Project permissions", min: "security" }],
+  },
+  {
+    title: "Plan and usage",
+    entries: [
+      { to: "/settings/usage", label: "Usage", min: "admin" },
+      { to: "/settings/billing", label: "Plan and billing", min: "admin", billing: true },
+      { to: "/settings/trust-badge", label: "Trust badge", min: "admin", trustBadge: true },
+      // Every edition: self-hosted servers get where their single sign-on is set up.
+      { to: "/settings/sso", label: "Single sign-on", min: "admin" },
+    ],
+  },
+  {
+    title: "Maintenance",
+    entries: [{ to: "/settings/jobs", label: "Jobs", min: "admin" }],
+  },
+];
+
 // --- the sidebar
 
 export type GroupId = "overview" | "security" | "environment" | "governance" | "administration";
@@ -194,6 +233,8 @@ export type ItemId =
   | "fixes"
   | "issues"
   | "leaks"
+  | "config"
+  | "code"
   | "automatic"
   | "incidents"
   | "checks"
@@ -282,6 +323,8 @@ export const NAV_GROUPS: GroupDef[] = [
       page("fixes", "Fixes", tab("fixes", "/fixes"), { phone: true }),
       page("issues", "All issues", tab("fixes", "/fixes/issues")),
       page("leaks", "Leaked keys", tab("fixes", "/fixes/leaks")),
+      page("config", "Risky settings", tab("fixes", "/fixes/config")),
+      page("code", "Code findings", tab("fixes", "/fixes/code")),
       page("automatic", "Automatic fixes", tab("fixes", "/fixes/automatic"), { badge: "pending" }),
       page("incidents", "Incidents", tab("activity", "/incidents"), { badge: "sos", match: (p) => under(p, "/incidents", "/activity") }),
       page("checks", "Checks", tab("activity", "/checks")),

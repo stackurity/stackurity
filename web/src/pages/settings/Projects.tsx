@@ -14,6 +14,7 @@ import {
 import { OwnerRulesCard } from "../../components/Owners";
 import { ScopeNotificationsCard } from "../../components/ScopeNotifications";
 import { ScopeGatePoliciesCard } from "../../components/PolicyGates";
+import { ProjectAskNotesCard } from "../../components/ProjectAskNotes";
 import { useAuth } from "../../auth";
 import { useAction, useLoad } from "../../hooks";
 import { plural, humanize } from "../../format";
@@ -621,6 +622,7 @@ export function ProjectDetailPage() {
       <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
 
       <ScopeGatePoliciesCard kind="project" id={p.id} />
+      {!p.archived_at && <ProjectAskNotesCard projectId={p.id} />}
 
       <Card
         title="Invite by email"
@@ -693,6 +695,8 @@ export function ProjectNotificationsPage() {
       </nav>
       <PageHeader help="projects" title={`${p.name}: notifications`} sub="What this project's people are told, and where." />
       <ScopeNotificationsCard kind="project" id={p.id} orgAdmin={can("admin")} />
+      {/* Project admins without an organisation-wide role write the project's notes for Ask here. */}
+      {!can("admin") && <ProjectAskNotesCard projectId={p.id} />}
     </>
   );
 }

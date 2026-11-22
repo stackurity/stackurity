@@ -82,12 +82,18 @@ type Observation struct {
 	Scope      string            `json:"scope,omitempty"`    // runtime, dev, os
 	Confidence Confidence        `json:"confidence"`
 	Evidence   map[string]string `json:"evidence,omitempty"`
+	// Reachability is sent only to servers that list the "reachability"
+	// feature in GET /meta; nil means not assessed (unknown).
+	Reachability *Reachability `json:"reachability,omitempty"`
 }
 
 // CoverageItem records what a collector did and did not check (FR-16).
 type CoverageItem struct {
-	Scope  string `json:"scope"`  // e.g. "dpkg", "rpm", "npm:package-lock.json"
-	Status string `json:"status"` // checked, skipped, failed, unsupported, partial
+	Scope string `json:"scope"` // e.g. "dpkg", "rpm", "npm:package-lock.json"
+	// checked, skipped, failed, unsupported, partial, or limited: read in
+	// full, but the format itself has a known limitation (Reason says which,
+	// e.g. declared versions only). Limited does not make a batch incomplete.
+	Status string `json:"status"`
 	Reason string `json:"reason,omitempty"`
 }
 
@@ -144,6 +150,11 @@ type ObservationBatch struct {
 	// in the asset's files. Sent only to servers that list the "leaks"
 	// feature in GET /meta.
 	Leaks *LeakScan `json:"leaks,omitempty"`
+	// ConfigFindings are the risky settings the collector found in the
+	// asset's files: AI coding-agent hooks, SSH access for root, GitHub
+	// Actions workflows (ConfigScan). Sent only to servers that list the
+	// "config_findings" feature in GET /meta.
+	ConfigFindings *ConfigScan `json:"config_findings,omitempty"`
 }
 
 // ImageList is the set of container images a host's agent reports.

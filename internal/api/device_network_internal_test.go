@@ -1,6 +1,9 @@
 package api
 
-import "testing"
+import (
+	"testing"
+	"time"
+)
 
 func TestSameNetwork(t *testing.T) {
 	for _, c := range []struct {
@@ -18,6 +21,14 @@ func TestSameNetwork(t *testing.T) {
 	} {
 		if got := sameNetwork(c.a, c.b); got != c.want {
 			t.Errorf("sameNetwork(%q, %q) = %v", c.a, c.b, got)
+		}
+	}
+}
+
+func TestDeviceMissDelay(t *testing.T) {
+	for misses, want := range map[int]time.Duration{0: 0, 999: 0, 1000: time.Second, 1199: time.Second, 1200: 2 * time.Second, 5000: 5 * time.Second} {
+		if got := deviceMissDelay(misses); got != want {
+			t.Errorf("deviceMissDelay(%d) = %v, want %v", misses, got, want)
 		}
 	}
 }

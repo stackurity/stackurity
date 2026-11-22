@@ -45,6 +45,7 @@ import (
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/threatnotice"
 	"github.com/stackurity/stackurity/internal/updates"
 	"github.com/stackurity/stackurity/internal/worker"
 	"github.com/stackurity/stackurity/web"
@@ -127,6 +128,15 @@ func serverCmd() *cobra.Command {
 			}
 			defer st.Pool.Close()
 			st.JobLockTimeout = tm.JobLock
+			// A batch with leaks or risky settings gets its second check as
+			// soon as it is stored, on whichever replica takes the batch, so
+			// the dispatcher reads its verdicts before alerting.
+			rechecker := &secondcheck.Runner{Store: st, Log: log}
+			st.AfterLeakScan = func(ctx context.Context, assetID int64) {
+				if _, err := rechecker.Recheck(ctx, assetID); err != nil && ctx.Err() == nil {
+					log.Warn("second check of leaks and settings after a scan failed; the periodic check retries", "asset", assetID, "err", err)
+				}
+			}
 			if st.SessionIdle, err = sessionIdleTimeout(); err != nil {
 				return err
 			}
@@ -161,6 +171,15 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			threatFeedCfg, err := threatnotice.FeedConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			threatCopyTo, err := threatNoticeCopyTo(trustBadgeCloud, os.Getenv, log)
+			if err != nil {
+				return err
+			}
+			threatCatalogues := threatnotice.NewCatalogues(st)
 			feedbackURL, err := api.FeedbackURLFromEnv()
 			if err != nil {
 				return err
@@ -178,6 +197,7 @@ func serverCmd() *cobra.Command {
 				return err
 			}
 			gate := &license.Gate{Licence: holder, Plan: license.CachedPlan(st.WorkspacePlan, 30*time.Second)}
+			setPolicySteps(st, gate)
 			keyReq, err := keyRequirement(ctx, st, holder, log)
 			if err != nil {
 				return err
@@ -367,7 +387,7 @@ func serverCmd() *cobra.Command {
 				SecretBox:          box,
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
-				Health: checker, UpdateCheck: updateCfg.Enabled,
+				Health: checker, UpdateCheck: updateCfg.Enabled, Threats: threatCatalogues,
 				TrustBadge: trustBadge.On, TrustBadgePurge: trustBadge.Purge, TrustPageBase: trustBadge.PageBase,
 				// Error reports stay in this database (docs/install.md#error-reports).
 				ClientErrors:  clientErrorsOn(),
@@ -442,6 +462,12 @@ func serverCmd() *cobra.Command {
 			// The release check sends nothing about this install (see
 			// internal/updates); when it is off no request is made at all.
 			updates.Register(ctx, w, st, log, updateCfg)
+			// Threat notices (docs/threat-notices.md): the signed feed, off
+			// with the release check, and each organisation's notices.
+			threatnotice.RegisterFeed(ctx, w, st, log, threatFeedCfg)
+			registerThreatNotices(w, &threatnotice.Notifier{Store: st, Catalogues: threatCatalogues, Dispatcher: dispatcher,
+				Mail: srv.AccountMail, BaseURL: srv.BaseURL, Running: updates.Running(version), Cloud: trustBadgeCloud,
+				CopyTo: threatCopyTo, Log: log})
 			// The worker stops when a newer version migrates the database
 			// under this server (watchSchema); the API keeps answering, but
 			// /readyz fails so traffic moves to the new replicas.
@@ -861,7 +887,8 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 			if err := b.Validate(); err != nil {
 				return err
 			}
-			r, err := st.Ingest(ctx, b, 0)
+			// The server's own scan: its not imported claims are trusted.
+			r, err := st.Ingest(store.AsServerCollection(ctx), b, 0)
 			if err != nil {
 				return err
 			}
@@ -1013,20 +1040,40 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if n.Checked > 0 {
 			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
 		}
+		if err != nil {
+			return err
+		}
+		// Leaked keys and risky settings: verdicts for those not checked
+		// right after their scan was stored, or due again.
+		rs, err := checker.Recheck(ctx, 0)
+		if rs.Checked > 0 {
+			log.Info("second check of leaks and settings", "checked", rs.Checked, "changed", rs.Added, "verdicts", rs.ByVerdict)
+		}
 		return err
 	})
 	w.EveryCollectingWorkspace("second-check", time.Minute, func(ctx context.Context) error {
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		waiting, err := st.SecondCheckWaiting(qctx)
+		if err == nil && !waiting {
+			waiting, err = st.RecheckWaiting(qctx)
+		}
 		if err != nil || !waiting {
 			return err
 		}
 		_, err = st.Enqueue(ctx, "second.check", map[string]any{}, "second-check", time.Time{})
 		return err
 	})
+	// Terminal sign-ins (docs/device-login.md): an approved request whose
+	// tool never collected its token has that token revoked within minutes
+	// of expiring, not only when the next request comes in.
+	w.Every("device-sign-in-sweep", 5*time.Minute, st.SweepDeviceAuthorizations)
 	w.Every("housekeeping", time.Hour, func(ctx context.Context) error {
 		if err := st.PurgeExpiredSessions(ctx); err != nil {
+			return err
+		}
+		// Evaluation and feed sync runs after 400 days (migration 0116).
+		if _, err := st.PruneEvaluationRuns(ctx, 0); err != nil {
 			return err
 		}
 		if _, err := st.PurgeRateLimits(ctx); err != nil {
@@ -1450,7 +1497,7 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 			return err
 		}
 		for _, ws := range wss {
-			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids}, "", time.Now().Add(evalAfterSync)); err != nil {
+			if _, err := st.Enqueue(tenant.WithWorkspace(ctx, ws), "evaluate", map[string]any{"component_ids": ids, "feed": feed}, "", time.Now().Add(evalAfterSync)); err != nil {
 				return err
 			}
 		}
@@ -1474,52 +1521,14 @@ func registerIntel(w *worker.Worker, st *store.Store, dataDir string, log *slog.
 	})
 
 	w.Handle("evaluate", func(ctx context.Context, payload json.RawMessage) error {
-		var p struct {
-			AssetID      int64   `json:"asset_id"`
-			ComponentIDs []int64 `json:"component_ids"`
-			All          bool    `json:"all"`
-		}
-		if err := json.Unmarshal(payload, &p); err != nil {
-			return err
-		}
-		var comps []int64
-		if !p.All && p.AssetID == 0 {
-			comps = p.ComponentIDs
-			if comps == nil {
-				comps = []int64{}
-			}
-		}
-		start, err := st.DBNow(ctx)
-		if err != nil {
-			return err
-		}
-		// The evaluation, and the priorities of what it found, run under the
-		// workspace's evaluation lock: the dispatcher's upkeep of the same
-		// findings waits for it rather than lock them in another order.
-		release, err := lockForEvaluation(ctx, st, evaluationLockWait)
-		if err != nil {
-			return err
-		}
-		defer release()
-		stats, err := eval.EvaluateLocked(ctx, comps, p.AssetID)
-		if err != nil {
-			return err
-		}
-		log.Info("evaluated", "asset", p.AssetID, "components", len(p.ComponentIDs), "all", p.All,
-			"rows", stats.Rows, "opened", stats.Opened, "resolved", stats.Resolved, "gaps", stats.Gaps)
-		if comps != nil {
-			return nil // a partial run says nothing about whole assets
-		}
-		// Score the findings before the asset counts as evaluated: a CI
-		// gate reading the collection result must see real priorities.
-		policy, err := st.RiskPolicy(ctx)
-		if err != nil {
-			return err
-		}
-		if _, err := st.PrioritizeAsset(ctx, policy, time.Now(), p.AssetID); err != nil {
-			return fmt.Errorf("prioritize: %w", err)
-		}
-		return st.MarkEvaluated(ctx, p.AssetID, start)
+		return evaluateJob(ctx, st, eval, log, payload)
+	})
+	// The scheduled check (docs/evaluation-runs.md): every 30 minutes, so
+	// each clock hour has one, it confirms each workspace's vulnerability
+	// sources were read on schedule and no re-evaluation is waiting.
+	w.EveryCollectingWorkspace("evaluation-check", 30*time.Minute, func(ctx context.Context) error {
+		_, err := st.CheckEvaluation(ctx)
+		return err
 	})
 
 	if !feedsOn {
@@ -1719,4 +1728,92 @@ func registerInactivePause(w *worker.Worker, st *store.Store, mail notify.Mailer
 		}
 		return nil
 	})
+}
+
+// evaluateJob runs an "evaluate" job and records the run (migration 0116),
+// a failed one too.
+func evaluateJob(ctx context.Context, st *store.Store, eval *intel.Evaluator, log *slog.Logger, payload json.RawMessage) error {
+	var p struct {
+		AssetID      int64   `json:"asset_id"`
+		ComponentIDs []int64 `json:"component_ids"`
+		All          bool    `json:"all"`
+		Feed         string  `json:"feed"`
+	}
+	if err := json.Unmarshal(payload, &p); err != nil {
+		return err
+	}
+	run := store.EvaluationRun{Trigger: store.RunFeedSync, StartedAt: time.Now()}
+	switch {
+	case p.All:
+		run.Trigger = store.RunDaily
+	case p.AssetID != 0:
+		run.Trigger = store.RunIngest
+	}
+	err := evaluate(ctx, st, eval, log, p.AssetID, p.ComponentIDs, p.All, &run)
+	// A deferral (another evaluation of the workspace holds the lock) is
+	// not a run: the job runs again shortly and is recorded then.
+	var deferred *worker.Deferred
+	if errors.As(err, &deferred) {
+		return err
+	}
+	run.OK, run.ErrorClass = err == nil, store.RunErrorClass(err)
+	// The sources it used: the one that changed, or those the evaluated
+	// software is checked against.
+	rctx := context.WithoutCancel(ctx)
+	if p.Feed != "" {
+		if f, ferr := st.GetFeed(rctx, p.Feed); ferr == nil {
+			run.Feeds = []store.RunFeed{{Name: f.Name, LastSuccess: f.LastSuccess}}
+		}
+	} else if feeds, ferr := st.RunFeeds(rctx, p.AssetID); ferr == nil {
+		run.Feeds = feeds
+	}
+	if rerr := st.RecordEvaluationRun(rctx, run); rerr != nil {
+		log.Warn("recording the evaluation run", "err", rerr)
+	}
+	return err
+}
+
+// evaluate runs one evaluation job: the components a feed sync changed, an
+// asset after it reported, or everything (daily), and fills run's counts.
+func evaluate(ctx context.Context, st *store.Store, eval *intel.Evaluator, log *slog.Logger, assetID int64, componentIDs []int64, all bool,
+	run *store.EvaluationRun) error {
+	var comps []int64
+	if !all && assetID == 0 {
+		comps = componentIDs
+		if comps == nil {
+			comps = []int64{}
+		}
+	}
+	start, err := st.DBNow(ctx)
+	if err != nil {
+		return err
+	}
+	// The evaluation, and the priorities of what it found, run under the
+	// workspace's evaluation lock: the dispatcher's upkeep of the same
+	// findings waits for it rather than lock them in another order.
+	release, err := lockForEvaluation(ctx, st, evaluationLockWait)
+	if err != nil {
+		return err
+	}
+	defer release()
+	stats, err := eval.EvaluateLocked(ctx, comps, assetID)
+	if err != nil {
+		return err
+	}
+	run.AssetsEvaluated, run.FindingsOpened, run.FindingsClosed = stats.Assets, stats.Opened, stats.Resolved
+	log.Info("evaluated", "asset", assetID, "components", len(componentIDs), "all", all,
+		"rows", stats.Rows, "opened", stats.Opened, "resolved", stats.Resolved, "gaps", stats.Gaps)
+	if comps != nil {
+		return nil // a partial run says nothing about whole assets
+	}
+	// Score the findings before the asset counts as evaluated: a CI
+	// gate reading the collection result must see real priorities.
+	policy, err := st.RiskPolicy(ctx)
+	if err != nil {
+		return err
+	}
+	if _, err := st.PrioritizeAsset(ctx, policy, time.Now(), assetID); err != nil {
+		return fmt.Errorf("prioritize: %w", err)
+	}
+	return st.MarkEvaluated(ctx, assetID, start)
 }

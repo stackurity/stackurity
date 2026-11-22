@@ -41,6 +41,73 @@ export type LeakViewName = "action" | "kept" | "resolved";
  * scannedAssets: assets whose files were scanned for keys (GET /leaks), or
  * undefined on one asset's tab, which warns of no scan itself.
  */
+export type ConfigViewName = "attention" | "listed" | "resolved";
+
+/** Risky settings (config findings): nothing checked yet, or nothing in this view. */
+export function configEmpty(view: ConfigViewName, scannedAssets: number | undefined, canAddServer: boolean): EmptyCopy {
+  if (scannedAssets === 0) {
+    return {
+      title: "No settings checked yet",
+      why: "No agent, repository integration or scan has checked settings yet, so an empty list does not mean there are none.",
+      after: "Agents and stackurity scan from this version on check AI agent hooks, SSH access and GitHub Actions workflows when they report.",
+      action: { label: "Add a server", to: "/assets/add", permitted: canAddServer, otherwise: "An administrator can add servers." },
+    };
+  }
+  switch (view) {
+    case "attention":
+      return {
+        title: "No risky settings need a look",
+        why: "No high or medium risky setting was found in the files checked.",
+        after: "If a later check finds one, it appears here; a high one opens an incident.",
+      };
+    case "listed":
+      return {
+        title: "Nothing listed",
+        why: "No low or information-only settings were found.",
+        after: "Unpinned actions and root keys with no restriction are listed here. They never alert.",
+      };
+    case "resolved":
+      return {
+        title: "No resolved risky settings",
+        why: "No risky setting has gone from a check or been dismissed yet.",
+        after: "A setting appears here once a complete check no longer sees it, or someone dismisses it.",
+      };
+  }
+}
+
+export type CodeViewName = "attention" | "listed" | "resolved";
+
+export function codeEmpty(view: CodeViewName, importedAssets: number | undefined): EmptyCopy {
+  if (importedAssets === 0) {
+    return {
+      title: "No code scanner reports imported yet",
+      why: "No report from a code scanner such as deepsec, or any tool that writes SARIF, has been imported, so an empty list does not mean the code has no issues.",
+      after: "Import a report with stackurity import code-findings; its findings appear here next to the repository's other issues.",
+      action: { label: "How to import", to: "/help/code-findings", permitted: true },
+    };
+  }
+  switch (view) {
+    case "attention":
+      return {
+        title: "No code findings need a look",
+        why: "The imported reports have no open critical, high or medium security findings.",
+        after: "When a later import has one, it appears here; a critical or high one opens an incident.",
+      };
+    case "listed":
+      return {
+        title: "Nothing listed",
+        why: "No low or information-only findings, bugs or other results are open.",
+        after: "Lower-severity security findings, non-security bugs and rules not tagged as security are listed here. They never alert.",
+      };
+    case "resolved":
+      return {
+        title: "No resolved code findings",
+        why: "No finding has gone from a report, been closed by its scanner's verdict, or been dismissed yet.",
+        after: "A finding appears here once a complete import no longer has it, its scanner marks it a false positive or fixed, or someone dismisses it.",
+      };
+  }
+}
+
 export function leaksEmpty(view: LeakViewName, scannedAssets: number | undefined, canAddServer: boolean): EmptyCopy {
   if (scannedAssets === 0) {
     return {

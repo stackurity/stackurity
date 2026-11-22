@@ -95,7 +95,7 @@ func (r *Runner) Run(ctx context.Context, in *store.Integration) error {
 	var assetID int64
 	if err == nil {
 		var res *store.IngestResult
-		res, err = r.Store.Ingest(ctx, b, 0)
+		res, err = r.Store.Ingest(store.AsServerCollection(ctx), b, 0)
 		if res != nil {
 			assetID = res.AssetID
 		}

@@ -51,6 +51,8 @@ var projectRoutes = map[string]projectScope{
 	"PUT /api/v1/auth/default-project":   accountScope,
 	"POST /api/v1/feedback":              accountScope,
 	"GET /api/v1/feedback/mine":          accountScope,
+	// The organisation's paid features and plan options (plan_options.go).
+	"GET /api/v1/plan/options": accountScope,
 	// Usage counts from the dashboard: counted for the caller's workspace
 	// whatever their role or projects (usage_counts.go).
 	"POST /api/v1/usage-counts": accountScope,
@@ -102,10 +104,12 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/packs/{id}/archive": globalScope,
 	"GET /api/v1/feeds":              globalScope,
 	"GET /api/v1/advisories/{key}":   globalScope,
+	"GET /api/v1/threats":            globalScope,
 
 	// Narrowed by row-level security.
 	"GET /api/v1/projects":                     scopedRead,
 	"GET /api/v1/projects/{id}":                scopedRead,
+	"GET /api/v1/projects/{id}/ask-notes":      scopedRead,
 	"GET /api/v1/overview":                     scopedRead,
 	"GET /api/v1/facets":                       scopedRead,
 	"GET /api/v1/search":                       scopedRead,
@@ -123,6 +127,12 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/assets/{id}/leaks":            scopedRead,
 	"GET /api/v1/leaks":                        scopedRead,
 	"GET /api/v1/leaks/summary":                scopedRead,
+	"GET /api/v1/assets/{id}/config-findings":  scopedRead,
+	"GET /api/v1/config-findings":              scopedRead,
+	"GET /api/v1/config-findings/summary":      scopedRead,
+	"GET /api/v1/assets/{id}/code-findings":    scopedRead,
+	"GET /api/v1/code-findings":                scopedRead,
+	"GET /api/v1/code-findings/summary":        scopedRead,
 	"GET /api/v1/assets/{id}/remediation":      scopedRead,
 	"GET /api/v1/components":                   scopedRead,
 	"GET /api/v1/components/{id}":              scopedRead,
@@ -144,6 +154,7 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/evaluation-gaps":              scopedRead,
 	"GET /api/v1/reports/outcomes":             scopedRead,
 	"GET /api/v1/reports/evidence":             scopedRead,
+	"GET /api/v1/reports/evidence-pack":        scopedRead,
 	"GET /api/v1/incidents":                    scopedRead,
 	"GET /api/v1/incidents/{id}":               scopedRead,
 	"GET /api/v1/risk-policy":                  scopedRead,
@@ -167,6 +178,10 @@ var projectRoutes = map[string]projectScope{
 	"GET /api/v1/ignore-rules":         scopedRead,
 	"GET /api/v1/ignore-requests":      scopedRead,
 	"GET /api/v1/ignore-requests/{id}": scopedRead,
+	// The second check's verdicts on a leak or a risky setting follow
+	// their asset, as the leak and the setting do.
+	"GET /api/v1/leaks/{id}/second-checks":           scopedRead,
+	"GET /api/v1/config-findings/{id}/second-checks": scopedRead,
 	// VEX export: our decisions about the assets the caller sees.
 	"GET /api/v1/vex/export": scopedRead,
 	// Onboarding (0.9): the waiting screen's poll, narrowed like assets.
@@ -183,6 +198,10 @@ var projectRoutes = map[string]projectScope{
 	"POST /api/v1/findings/actions":                             scopedWrite,
 	"POST /api/v1/leaks/{id}/dismiss":                           scopedWrite,
 	"POST /api/v1/leaks/{id}/undismiss":                         scopedWrite,
+	"POST /api/v1/config-findings/{id}/dismiss":                 scopedWrite,
+	"POST /api/v1/config-findings/{id}/undismiss":               scopedWrite,
+	"POST /api/v1/code-findings/{id}/dismiss":                   scopedWrite,
+	"POST /api/v1/code-findings/{id}/undismiss":                 scopedWrite,
 	"POST /api/v1/leaks/{id}/assign":                            scopedWrite,
 	"POST /api/v1/leaks/{id}/rotated":                           scopedWrite,
 	"POST /api/v1/leaks/{id}/check-again":                       scopedWrite,
@@ -212,6 +231,10 @@ var projectRoutes = map[string]projectScope{
 	"DELETE /api/v1/trust-badges/{id}/logo":  scopedWrite,
 	"GET /api/v1/trust-badges/{id}/preview":  scopedWrite,
 	"GET /api/v1/trust-badges/{id}/history":  scopedWrite,
+
+	// A project's notes for Ask Stackurity: the handler checks the caller
+	// is an admin of that project (project_ask_notes.go).
+	"PUT /api/v1/projects/{id}/ask-notes": scopedWrite,
 
 	// Notifications of a project or an asset: the handler checks the
 	// caller's role on it (security to read, admin to change).
@@ -299,8 +322,9 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			// It reads the person's role, and the questions left (its
-			// account_overview tool); no other account route.
-			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" {
+			// account_overview tool), and the plan's features (its
+			// plan_options and evidence_pack tools); no other account route.
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/ask/status" && route != "GET /api/v1/plan/options" {
 				writeError(w, 403, "forbidden", "Ask Stackurity cannot read account settings")
 				return
 			}
@@ -308,9 +332,10 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 		if a := p.Assistant; a != nil {
 			// An assistant reaches only what its tools use: no account
 			// settings, and with a connection to one project, nothing
-			// outside it.
-			if sc == accountScope && route != "GET /api/v1/auth/me" {
-				writeError(w, 403, "forbidden", "an assistant cannot change account settings")
+			// outside it. It reads the person (auth/me) and the plan's
+			// features (plan/options, for plan_options and evidence_pack).
+			if sc == accountScope && route != "GET /api/v1/auth/me" && route != "GET /api/v1/plan/options" {
+				writeError(w, 403, "forbidden", "an assistant cannot read or change account settings")
 				return
 			}
 			if !a.AllowWrites && r.Method != http.MethodGet {

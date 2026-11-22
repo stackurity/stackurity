@@ -251,6 +251,9 @@ code,
   overflow-wrap: anywhere;
   word-break: break-word;
 }
+.pre-wrap {
+  white-space: pre-wrap;
+}
 .text-bad {
   color: var(--bad-fg);
 }
@@ -8214,4 +8217,93 @@ a.cov-chip:hover {
   .global-search.expanded .search-pop {
     z-index: 41;
   }
+}
+
+/* Audit evidence pack (Reports). */
+.evidence-pack fieldset.field { border: 0; padding: 0; margin: 0 0 var(--space-3, 12px); }
+.evidence-pack fieldset.field legend { font-weight: 600; margin-bottom: 4px; }
+.evidence-pack label.check { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 4px 0; }
+.evidence-pack label.check.locked { color: var(--muted, #6b7280); }
+.evidence-pack .actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 4px; }
+.evidence-pack .btn.disabled { pointer-events: none; opacity: 0.5; }
+
+/* The second check of leaked keys and risky settings (SecondCheck.tsx). */
+.second-check-history {
+  margin: 0.25rem 0 0;
+  padding-left: 1.1rem;
+}
+details.false-positives {
+  margin-top: 1.25rem;
+}
+details.false-positives > summary {
+  cursor: pointer;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
+}
+
+/* Ask Stackurity, easy to find and quick to start (askStarters.ts): the top
+   bar button stands out, and the first questions are one click each in the
+   panel and on the Dashboard. */
+.topbar-ask {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent-strong);
+  font-weight: 600;
+}
+.topbar-ask:hover {
+  background: var(--accent);
+  color: var(--accent-text);
+}
+.ask-welcome > p:first-child {
+  margin-top: 0;
+}
+.ask-starters {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 12px 0;
+}
+.ask-starters-title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--muted);
+}
+.ask-starter {
+  text-align: left;
+  font: inherit;
+  padding: 7px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  max-width: 100%;
+}
+.ask-starter:hover:not(:disabled),
+.ask-starter:focus-visible {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+}
+.ask-starter:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.dash-ask-starters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 0 24px;
+}
+
+/* The pages and Help articles an Ask answer points to, one click each
+   (AskAnswerExtras.tsx AskPageButtons). */
+.ask-page-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 4px;
 }

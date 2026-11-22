@@ -9,12 +9,8 @@ import { ErrorBox, Loading, Notice } from "../components/ui";
 import { PasswordChecklist, PasswordMatch } from "../components/PasswordStrength";
 import { passwordOK } from "../passwordStrength";
 import { SocialButtons } from "./Social";
+import { signupRef } from "../signupRef";
 
-/** The page's ?ref= when it is a short slug-like tag; undefined otherwise. */
-export function signupRef(search = typeof window === "undefined" ? "" : window.location.search): string | undefined {
-  const ref = new URLSearchParams(search).get("ref")?.toLowerCase() ?? "";
-  return /^[a-z0-9][a-z0-9-]{0,63}$/.test(ref) ? ref : undefined;
-}
 
 // The sign-up challenge widget, loaded only on the sign-up page.
 interface ChallengeWidget {
@@ -181,7 +177,7 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
         {social && (
           <>
             {/* The provider confirms the address: no password and no email to wait for. */}
-            <SocialButtons social={social} />
+            <SocialButtons social={social} signupRef={signupRef()} />
             <p className="muted small" style={{ textAlign: "center" }}>
               or sign up with your email
             </p>

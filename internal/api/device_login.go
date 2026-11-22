@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -76,6 +77,22 @@ var (
 	// someone else's is hopeless at this rate; it also stops a script.
 	limitDeviceEntry     = rateLimit{20, 15 * time.Minute}
 	limitDeviceEntryAddr = rateLimit{40, 15 * time.Minute}
+	// limitDeviceMisses is how many wrong codes the whole server sees in a
+	// window, whoever and wherever they come from, before every code
+	// lookup is slowed (deviceMissDelay). Nothing is refused: refusing
+	// would let a few accounts and addresses lock every organisation out
+	// of terminal sign-in (security review of #433). It is logged.
+	limitDeviceMisses = rateLimit{1000, 15 * time.Minute}
+)
+
+// deviceRecentAuth is how recently a person must have confirmed a second
+// factor to approve, in an organisation whose policy requires one of them:
+// approving makes a credential, so a session left signed in is not enough.
+const deviceRecentAuth = 15 * time.Minute
+
+const (
+	deviceMissBucket  = "device-entry-miss"
+	deviceMissSubject = "server"
 )
 
 // deviceTokenTTLDays is how long the token works, for the approval page.
@@ -93,7 +110,7 @@ func uploadTokenRequest(r *http.Request) bool {
 	path := strings.TrimSuffix(r.URL.Path, "/")
 	switch r.Method {
 	case http.MethodPost:
-		return path == "/api/v1/ingest" || path == "/api/v1/sbom/import"
+		return path == "/api/v1/ingest" || path == "/api/v1/sbom/import" || path == "/api/v1/code-findings/import"
 	case http.MethodGet, http.MethodHead:
 		if path == "/api/v1/meta" || path == "/api/v1/openapi.json" {
 			return true
@@ -364,8 +381,26 @@ func (s *Server) deviceLookup(w http.ResponseWriter, r *http.Request, p *Princip
 		writeError(w, 400, "bad_request", "a code is eight letters, like BCDF-GHJK; copy it from your terminal")
 		return nil, nil, "", false
 	}
+	misses, err := s.Store.RateLimitCount(r.Context(), deviceMissBucket, deviceMissSubject, limitDeviceMisses.window)
+	if err != nil {
+		s.fail(w, r, err)
+		return nil, nil, "", false
+	}
+	if d := deviceMissDelay(misses); d > 0 {
+		t := time.NewTimer(d)
+		select {
+		case <-r.Context().Done():
+			t.Stop()
+			return nil, nil, "", false
+		case <-t.C:
+		}
+	}
 	d, err := s.Store.DeviceAuthorizationByUserCode(r.Context(), code)
 	if errors.Is(err, store.ErrNotFound) {
+		if n, err := s.Store.RateLimitHit(r.Context(), deviceMissBucket, deviceMissSubject, limitDeviceMisses.window); err == nil && n == limitDeviceMisses.n {
+			s.Log.Warn("device sign-in: many wrong codes on this server; code lookups are slowed until the window ends",
+				"limit", limitDeviceMisses.n, "window", limitDeviceMisses.window)
+		}
 		writeError(w, 404, "not_found", "no sign-in request has this code: check it against your terminal, or start signing in again there")
 		return nil, nil, "", false
 	}
@@ -438,6 +473,14 @@ func (s *Server) devicePreview(w http.ResponseWriter, r *http.Request) {
 	} else {
 		out["can_approve"] = true
 	}
+	confirm, methods, err := s.deviceConfirmFirst(r, p)
+	if err != nil {
+		s.fail(w, r, err)
+		return
+	}
+	out["confirm_first"] = confirm
+	out["confirm_methods"] = methods
+	out["confirm_minutes"] = int(deviceRecentAuth / time.Minute)
 	if p.Workspace > 0 {
 		ctx := tenant.WithoutProject(r.Context())
 		ws, err := s.Store.GetWorkspace(ctx, p.Workspace)
@@ -499,6 +542,14 @@ func (s *Server) deviceDecision(w http.ResponseWriter, r *http.Request) {
 	}
 	if why := deviceCannot(p); why != "" {
 		writeError(w, 403, "forbidden", why)
+		return
+	}
+	if confirm, methods, err := s.deviceConfirmFirst(r, p); err != nil {
+		s.fail(w, r, err)
+		return
+	} else if confirm {
+		writeError(w, 403, "mfa_step_up_required", "your organisation requires two-factor sign-in: confirm with "+methodNames(methods)+
+			" before you approve (a confirmation counts for "+itoa(int64(deviceRecentAuth/time.Minute))+" minutes)")
 		return
 	}
 	var project *int64
@@ -578,4 +629,41 @@ func (s *Server) deviceFail(w http.ResponseWriter, r *http.Request, err error) {
 		return
 	}
 	s.fail(w, r, err)
+}
+
+// deviceConfirmFirst reports whether the person must confirm a second
+// factor before approving, and with which of theirs: their organisation's
+// policy requires one of them, and they last confirmed it (or signed in)
+// longer ago than deviceRecentAuth. Single sign-on sessions are left to the
+// identity provider, as by the policy itself.
+func (s *Server) deviceConfirmFirst(r *http.Request, p *Principal) (bool, []string, error) {
+	if !p.Session || p.User == nil || p.Workspace <= 0 || p.ssoSession() {
+		return false, []string{}, nil
+	}
+	pol, held, err := s.Store.SessionMFA(r.Context(), p.Workspace, p.User.ID)
+	if err != nil {
+		return false, nil, err
+	}
+	c := mfaCase{Policy: pol, Role: p.Role, ProjectRole: p.ProjectRole, InstanceAdmin: p.User.InstanceAdmin, Session: p.MFAMethod, Methods: held}
+	if !c.required() || time.Since(p.AuthAt) <= deviceRecentAuth {
+		return false, []string{}, nil
+	}
+	usable := []string{}
+	for _, m := range c.accepted() {
+		if slices.Contains(held, m) {
+			usable = append(usable, m)
+		}
+	}
+	return true, usable, nil
+}
+
+// deviceMissDelay is how long a code lookup waits once the server has seen
+// limitDeviceMisses wrong codes in the window: a second, plus a second for
+// every further 200, at most 5. Guessing then costs seconds a try while
+// people who type their own code wait a moment and are never refused.
+func deviceMissDelay(misses int) time.Duration {
+	if misses < limitDeviceMisses.n {
+		return 0
+	}
+	return min(time.Duration(1+(misses-limitDeviceMisses.n)/200)*time.Second, 5*time.Second)
 }

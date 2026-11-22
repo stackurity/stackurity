@@ -117,7 +117,7 @@ the evidence pack (shape agreed with stackurity-a9).
 
 ## 9. Delivery
 
-1. Core: migration `0110_gate_policies` (policies, exclusions, exceptions,
+1. Core: migration `0124_gate_policies` (policies, exclusions, exceptions,
    checks, daily rollup; RLS + same-workspace triggers), store engine, CRUD
    and violations API (routes classified in `projects.go`), tests.
 2. Core: check endpoint, CLI `--policy` and `policy check`; scan-action v1.x.

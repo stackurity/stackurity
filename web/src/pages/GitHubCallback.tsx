@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { Link } from "react-router";
-import { api, ApiError, type GitHubSetupResult } from "../api";
+import { api, ApiError, type GitHubAppStatus, type GitHubSetupResult } from "../api";
 import { useAuth } from "../auth";
 import { ErrorBox, Loading, Notice } from "../components/ui";
 import { errorView } from "../errors";
+import { githubCallbackStep, needsInstallationCheck } from "../githubCallback";
 import { InstallOnGitHubButton } from "./settings/GitHubApp";
 
 /*
@@ -15,7 +16,10 @@ import { InstallOnGitHubButton } from "./settings/GitHubApp";
  * The server never trusts installation_id on its own: it checks, with the
  * code, that this person's GitHub account can see that installation.
  * Installs started on GitHub's side come back without our state; nothing is
- * connected then, and the page offers a proper install instead.
+ * connected then, and the page offers a proper install instead. Save on
+ * GitHub's settings page (setup_action=update) for an installation this
+ * organisation already has only changes its repositories, which GitHub's
+ * webhook brings in: the page says so and calls nothing (githubCallback.ts).
  */
 
 const setups = new Map<string, Promise<GitHubSetupResult>>();
@@ -31,9 +35,25 @@ export function GitHubCallbackPage() {
   const admin = can("admin");
   const [error, setError] = useState<ApiError | null>(null);
   const [result, setResult] = useState<GitHubSetupResult | null>(null);
+  const [connectedIds, setConnectedIds] = useState<number[] | null>(null);
+  const check = needsInstallationCheck({ admin, denied: denied ?? "", installation, action });
+  const step = githubCallbackStep({ admin, denied: denied ?? "", state, installation, action, connectedIds });
 
   useEffect(() => {
-    if (denied || !state || !admin) return;
+    if (!check) return;
+    let live = true;
+    api
+      .get<GitHubAppStatus>("/integrations/github")
+      .then((s) => live && setConnectedIds(s.installations.filter((i) => i.status !== "deleted").map((i) => i.installation_id)))
+      // Not known: carry on as a first install would.
+      .catch(() => live && setConnectedIds([]));
+    return () => {
+      live = false;
+    };
+  }, [check]);
+
+  useEffect(() => {
+    if (step !== "setup") return;
     let p = setups.get(state);
     if (!p) {
       p = api.post<GitHubSetupResult>("/integrations/github/setup", { state, code, installation_id: installation, setup_action: action });
@@ -44,7 +64,7 @@ export function GitHubCallbackPage() {
     return () => {
       live = false;
     };
-  }, [state, code, installation, action, denied, admin]);
+  }, [step, state, code, installation, action]);
 
   const again = (label: string) => (
     <div className="slack-link-actions">
@@ -57,9 +77,26 @@ export function GitHubCallbackPage() {
 
   let title = "Install on GitHub";
   let body: ReactNode;
-  if (!admin) {
+  if (step === "not_admin") {
     body = <Notice kind="warn">Only administrators can connect GitHub. Ask one to do it.</Notice>;
-  } else if (denied) {
+  } else if (step === "checking") {
+    body = <Loading label="Checking the GitHub connection…" />;
+  } else if (step === "updated") {
+    title = "GitHub repositories saved";
+    body = (
+      <>
+        <Notice kind="success">
+          GitHub saved your change to the repositories the Stackurity app can read. This GitHub account is already connected, so new repositories are scanned
+          in the next few minutes and removed ones stop being scanned. Nothing else to do.
+        </Notice>
+        <div className="form-actions">
+          <Link className="btn btn-primary" to="/integrations">
+            See the repositories
+          </Link>
+        </div>
+      </>
+    );
+  } else if (step === "denied" && denied) {
     body = (
       <>
         <Notice kind="info">
@@ -68,7 +105,7 @@ export function GitHubCallbackPage() {
         {again("Back to integrations")}
       </>
     );
-  } else if (!state) {
+  } else if (step === "no_state") {
     title = "Finish connecting GitHub";
     body = (
       <>

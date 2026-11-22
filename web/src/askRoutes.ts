@@ -11,6 +11,8 @@ export const NAV_PATHS: readonly string[] = [
   "/fixes/issues",
   "/fixes/mine",
   "/fixes/leaks",
+  "/fixes/config",
+  "/fixes/code",
   "/fixes/automatic",
   // Assets
   "/coverage",
@@ -60,6 +62,7 @@ export const HELP_SLUGS: readonly string[] = [
   "ci-gate",
   "sbom",
   "vex",
+  "code-findings",
   "container-images",
   "container-registries",
   "cloud-plugins",
@@ -78,8 +81,10 @@ export const HELP_SLUGS: readonly string[] = [
   "assets",
   "components",
   "updates-available",
+  "threat-notices",
   "coverage-intelligence",
   "how-stackurity-knows",
+  "evidence-pack",
   "evidence-report",
   "remediation-outcomes",
   "remediation-overview",
@@ -108,3 +113,25 @@ const PROJECT = /^\/projects\/\d{1,18}(?:\/notifications)?$/;
 export function isNavPath(path: string): boolean {
   return FIXED.has(path) || PROJECT.test(path);
 }
+
+/**
+ * The page where a Help article's task is done. An Ask answer that links
+ * the article gets an "Open …" button for it before the article's own
+ * (ask.ts pageLinks), so a how-to answer leads to the form, not only to
+ * the instructions. These come from here, never from the model's words.
+ */
+export const HELP_ACTIONS: Readonly<Record<string, { label: string; to: string }>> = {
+  "add-server": { label: "Add server", to: "/assets/add" },
+  "add-linux-server": { label: "Add server", to: "/assets/add" },
+  "windows-hosts": { label: "Add server", to: "/assets/add" },
+  "macos-hosts": { label: "Add server", to: "/assets/add" },
+  "add-many-servers": { label: "Add many servers", to: "/assets/add?tab=fleet" },
+  "two-factor": { label: "Your account", to: "/account" },
+  "api-tokens": { label: "API tokens", to: "/integrations/tokens" },
+  "users-teams-roles": { label: "Users", to: "/people" },
+  projects: { label: "Projects", to: "/projects" },
+  "risk-policy": { label: "Risk policy", to: "/settings/risk-policy" },
+  "ai-assistants": { label: "AI assistants", to: "/integrations/ai-assistants" },
+  "owner-rules": { label: "Owner rules", to: "/people/owners" },
+  notifications: { label: "Integrations", to: "/integrations" },
+};

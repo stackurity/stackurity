@@ -286,7 +286,7 @@ func (s *Store) OpenFixes(ctx context.Context, assetIDs []int64) ([]FixInfo, err
 // coverage and the platform, and leaked keys, for summaries.
 func (s *Store) OpenSystemIncidents(ctx context.Context) ([]Incident, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT `+incidentCols+` FROM incidents i LEFT JOIN teams t ON t.id = i.owner_team_id
-		WHERE i.status = 'open' AND i.kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') ORDER BY i.priority, i.created_at LIMIT 1000`)
+		WHERE i.status = 'open' AND i.kind IN ('feed', 'collection', 'coverage', 'platform', 'leak', 'config', 'code') ORDER BY i.priority, i.created_at LIMIT 1000`)
 	if err != nil {
 		return nil, err
 	}

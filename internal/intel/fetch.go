@@ -99,7 +99,7 @@ func (c Config) Sources(feed string) []string {
 		return []string{c.WordPressOrgURL, c.WordPressPluginsListURL, c.WordPressThemesListURL}
 	case feed == FeedWindowsPrograms:
 		return []string{c.NVDURL, c.MozillaURL}
-	case feed == FeedVendorBuilds:
+	case feed == FeedVendorBuilds || feed == FeedJavaApps:
 		return []string{c.NVDURL}
 	}
 	u := map[string]string{

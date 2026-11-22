@@ -110,3 +110,37 @@ func SaysNotFound(answer string) bool {
 func SnapshotText(s string) string {
 	return emailRE.ReplaceAllString(redactSecrets(CleanText(s)), colleague)
 }
+
+// cannotAnswerPhrases are ways an answer says it cannot answer or help
+// with (part of) the question, beyond notFoundPhrases.
+var cannotAnswerPhrases = []string{
+	"i can't answer", "i cannot answer", "i'm unable to answer", "i am unable to answer", "i'm not able to answer",
+	"i am not able to answer", "i can't help with", "i cannot help with", "i'm unable to help with", "i'm not able to help with",
+	"i can't determine", "i cannot determine", "i'm unable to determine", "i was unable to determine",
+}
+
+// SaysCannotAnswer reports whether an answer says it could not find,
+// understand or answer what it was asked (SaysNotFound, or a phrase that
+// says it cannot answer), within the same lead SaysNotFound reads. It
+// marks the call record only (incomplete_reason cannot_answer); the step
+// up stays on SaysNotFound.
+func SaysCannotAnswer(answer string) bool {
+	if SaysNotFound(answer) {
+		return true
+	}
+	a := strings.ToLower(strings.ReplaceAll(answer, "’", "'"))
+	for _, h := range []string{"## data gaps", "**data gaps"} {
+		if i := strings.Index(a, h); i >= 0 {
+			a = a[:i]
+		}
+	}
+	if len(a) > 600 {
+		a = a[:600]
+	}
+	for _, p := range cannotAnswerPhrases {
+		if strings.Contains(a, p) {
+			return true
+		}
+	}
+	return false
+}

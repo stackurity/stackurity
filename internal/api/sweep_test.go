@@ -17,6 +17,7 @@ import (
 	"github.com/stackurity/stackurity/internal/api"
 	"github.com/stackurity/stackurity/internal/auth"
 	"github.com/stackurity/stackurity/internal/awsconnect/awsfake"
+	"github.com/stackurity/stackurity/internal/codefindings"
 	"github.com/stackurity/stackurity/internal/fixplan/planner"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/osv"
@@ -175,6 +176,7 @@ var routeRules = map[string]routeRule{
 	}},
 	"GET /api/v1/notification-options": {class: "list"},
 	"GET /api/v1/email-recipients":     {class: "list"},
+	"GET /api/v1/threat-notices":       {class: "list"},
 	// Connect PagerDuty: a state or session of A's (or a guessed one) is
 	// refused in B; B's connect starts in B (pagerduty_app_test.go).
 	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
@@ -253,6 +255,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/ask/feedback":                    {class: "create", body: func(*tenantFx) any { return map[string]string{"scope": "ui", "category": "other"} }},
 	"GET /api/v1/admin/ask/feedback/":              {class: "instance"},
 	"GET /api/v1/admin/ask/feedback/{id}":          {class: "instance"},
+	"GET /api/v1/admin/ask/feedback/incomplete":    {class: "instance"},
 	"PATCH /api/v1/admin/ask/feedback/{id}":        {class: "instance"},
 	"GET /api/v1/admin/ask/review-tokens/":         {class: "instance"},
 	"POST /api/v1/admin/ask/review-tokens/":        {class: "instance"},
@@ -298,6 +301,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/feedback": {class: "skip"},
 	// The caller's own sent items (filtered by user); feedback_queue_test.go.
 	"GET /api/v1/feedback/mine": {class: "account"},
+	"GET /api/v1/plan/options":  {class: "account"},
 	// Usage counts: added to the caller's own workspace only, nothing
 	// comes back (usage_counts_test.go).
 	"POST /api/v1/usage-counts": {class: "account", body: func(*tenantFx) any {
@@ -327,6 +331,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/feeds":                 {class: "global"},
 	"POST /api/v1/feeds/{name}/refresh": {class: "global"},
 	"GET /api/v1/advisories/{key}":      {class: "global"},
+	"GET /api/v1/threats":               {class: "global"},
 	"GET /api/v1/plugins":               {class: "global"},
 	// Setup commands for the caller's own workspace; nothing of A's.
 	"GET /api/v1/cloud-setup/gcp":   {class: "list", query: "?project_id=acme-prod&project_number=123"},
@@ -362,74 +367,82 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/sbom/import": {class: "create", query: "?asset_name=host-{tag}", body: func(*tenantFx) any {
 		return json.RawMessage(`{"bomFormat":"CycloneDX","specVersion":"1.5","components":[]}`)
 	}},
+	"POST /api/v1/code-findings/import": {class: "create", query: "?format=deepsec&asset_id={asset}", body: func(a *tenantFx) any {
+		return json.RawMessage(a.codeDoc())
+	}},
 	"GET /api/v1/agent/actions":              {class: "list"},
 	"GET /api/v1/agent/check":                {class: "list", query: "?asset_id={asset}&asset_id={asset2}"},
 	"POST /api/v1/agent/actions/{id}/report": {class: "object", obj: id("action"), edition: "ee", body: func(*tenantFx) any { return map[string]any{"phase": "failed", "error": "x"} }},
 	"GET /api/v1/remediation/renovate.json":  {class: "list"},
 
 	// Workspace listings and aggregates.
-	"GET /api/v1/overview":               {class: "list"},
-	"GET /api/v1/facets":                 {class: "list"},
-	"GET /api/v1/search":                 {class: "list", query: "?q={tag}"},
-	"GET /api/v1/assets":                 {class: "list"},
-	"GET /api/v1/components":             {class: "list", query: "?q={tag}"},
-	"GET /api/v1/findings":               {class: "list", query: "?status=all&asset_id={asset}"},
-	"GET /api/v1/leaks":                  {class: "list", query: "?status=all&asset_id={asset}"},
-	"GET /api/v1/leaks/summary":          {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/findings/summary":       {class: "list"},
-	"GET /api/v1/findings/by-asset":      {class: "list", query: "?status=all&asset_id={asset}"},
-	"GET /api/v1/dashboard/trend":        {class: "list"},
-	"GET /api/v1/findings/verify":        {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
-	"GET /api/v1/fix-groups":             {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/fix-groups/summary":     {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/fix-groups/work":        {class: "list", query: "?ids={fixgroup}"},
-	"GET /api/v1/evaluation-gaps":        {class: "list"},
-	"GET /api/v1/second-checks":          {class: "list"},
-	"GET /api/v1/reports/outcomes":       {class: "list"},
-	"GET /api/v1/reports/evidence":       {class: "list"},
-	"GET /api/v1/incidents":              {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
-	"GET /api/v1/risk-policy":            {class: "list"},
-	"GET /api/v1/settings/fix-grouping":  {class: "list"},
-	"GET /api/v1/settings/notifications": {class: "list"},
-	"GET /api/v1/inventory":              {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/inventory/updates":      {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/coverage/unchecked":     {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/coverage/overview":      {class: "list"},
-	"GET /api/v1/coverage/assets":        {class: "list"},
-	"GET /api/v1/coverage":               {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/teams":                  {class: "list"},
-	"GET /api/v1/owner-rules":            {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/audit":                  {class: "list", query: "?object_type=asset&object_id={asset}"},
-	"GET /api/v1/tokens":                 {class: "list"},
-	"GET /api/v1/remediation/plans":      {class: "list"},
-	"GET /api/v1/integrations":           {class: "list"},
-	"GET /api/v1/users/directory":        {class: "list"},
-	"GET /api/v1/deliveries":             {class: "list", query: "?channel_id={channel}&incident_id={incident}"},
-	"GET /api/v1/channels":               {class: "list"},
-	"GET /api/v1/routes":                 {class: "list"},
-	"GET /api/v1/remediation/policies":   {class: "list"},
-	"GET /api/v1/conflicts":              {class: "list"},
-	"GET /api/v1/users":                  {class: "list"},
-	"GET /api/v1/jobs":                   {class: "list"},
-	"GET /api/v1/secrets":                {class: "list"},
-	"GET /api/v1/credentials/health":     {class: "list"},
-	"GET /api/v1/enrollments":            {class: "list"},
-	"GET /api/v1/ci-trusts":              {class: "list"},
-	"GET /api/v1/aws/connections":        {class: "list"},
-	"GET /api/v1/checks":                 {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/checks/options":         {class: "list", query: "?asset_id={asset}"},
-	"GET /api/v1/ignore-rules":           {class: "list", query: "?status=all"},
-	"GET /api/v1/ignore-requests":        {class: "list", query: "?status=all"},
-	"GET /api/v1/vex/documents":          {class: "list"},
-	"GET /api/v1/vex/sources":            {class: "list"},
-	"GET /api/v1/vex/export":             {class: "list", query: "?format=cyclonedx"},
-	"GET /api/v1/projects":               {class: "list"},
-	"GET /api/v1/project-suggestions":    {class: "list"},
-	"GET /api/v1/access-grants":          {class: "list", query: "?project_id={project}"},
-	"GET /api/v1/onboarding":             {class: "list"},
-	"GET /api/v1/onboarding/results":     {class: "list", query: "?since=2000-01-01T00:00:00Z"},
-	"GET /api/v1/invitations":            {class: "list", query: "?project_id={project}"},
-	"GET /api/v1/usage":                  {class: "list"},
+	"GET /api/v1/overview":                {class: "list"},
+	"GET /api/v1/facets":                  {class: "list"},
+	"GET /api/v1/search":                  {class: "list", query: "?q={tag}"},
+	"GET /api/v1/assets":                  {class: "list"},
+	"GET /api/v1/components":              {class: "list", query: "?q={tag}"},
+	"GET /api/v1/findings":                {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/leaks":                   {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/leaks/summary":           {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/config-findings":         {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/code-findings":           {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/code-findings/summary":   {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/config-findings/summary": {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/findings/summary":        {class: "list"},
+	"GET /api/v1/findings/by-asset":       {class: "list", query: "?status=all&asset_id={asset}"},
+	"GET /api/v1/dashboard/trend":         {class: "list"},
+	"GET /api/v1/findings/verify":         {class: "list", query: "?since=2000-01-01&asset_id={asset}"},
+	"GET /api/v1/fix-groups":              {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/fix-groups/summary":      {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/fix-groups/work":         {class: "list", query: "?ids={fixgroup}"},
+	"GET /api/v1/evaluation-gaps":         {class: "list"},
+	"GET /api/v1/second-checks":           {class: "list"},
+	"GET /api/v1/reports/outcomes":        {class: "list"},
+	"GET /api/v1/reports/evidence":        {class: "list"},
+	"GET /api/v1/reports/evidence-pack":   {class: "list"},
+	"GET /api/v1/incidents":               {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
+	"GET /api/v1/risk-policy":             {class: "list"},
+	"GET /api/v1/settings/fix-grouping":   {class: "list"},
+	"GET /api/v1/settings/notifications":  {class: "list"},
+	"GET /api/v1/inventory":               {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/inventory/updates":       {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/unchecked":      {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/coverage/overview":       {class: "list"},
+	"GET /api/v1/coverage/assets":         {class: "list"},
+	"GET /api/v1/coverage":                {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/teams":                   {class: "list"},
+	"GET /api/v1/owner-rules":             {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/audit":                   {class: "list", query: "?object_type=asset&object_id={asset}"},
+	"GET /api/v1/tokens":                  {class: "list"},
+	"GET /api/v1/remediation/plans":       {class: "list"},
+	"GET /api/v1/integrations":            {class: "list"},
+	"GET /api/v1/users/directory":         {class: "list"},
+	"GET /api/v1/deliveries":              {class: "list", query: "?channel_id={channel}&incident_id={incident}"},
+	"GET /api/v1/channels":                {class: "list"},
+	"GET /api/v1/routes":                  {class: "list"},
+	"GET /api/v1/remediation/policies":    {class: "list"},
+	"GET /api/v1/conflicts":               {class: "list"},
+	"GET /api/v1/users":                   {class: "list"},
+	"GET /api/v1/jobs":                    {class: "list"},
+	"GET /api/v1/secrets":                 {class: "list"},
+	"GET /api/v1/credentials/health":      {class: "list"},
+	"GET /api/v1/enrollments":             {class: "list"},
+	"GET /api/v1/ci-trusts":               {class: "list"},
+	"GET /api/v1/aws/connections":         {class: "list"},
+	"GET /api/v1/checks":                  {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/checks/options":          {class: "list", query: "?asset_id={asset}"},
+	"GET /api/v1/ignore-rules":            {class: "list", query: "?status=all"},
+	"GET /api/v1/ignore-requests":         {class: "list", query: "?status=all"},
+	"GET /api/v1/vex/documents":           {class: "list"},
+	"GET /api/v1/vex/sources":             {class: "list"},
+	"GET /api/v1/vex/export":              {class: "list", query: "?format=cyclonedx"},
+	"GET /api/v1/projects":                {class: "list"},
+	"GET /api/v1/project-suggestions":     {class: "list"},
+	"GET /api/v1/access-grants":           {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/onboarding":              {class: "list"},
+	"GET /api/v1/onboarding/results":      {class: "list", query: "?since=2000-01-01T00:00:00Z"},
+	"GET /api/v1/invitations":             {class: "list", query: "?project_id={project}"},
+	"GET /api/v1/usage":                   {class: "list"},
 
 	// A's objects by id.
 	"GET /api/v1/assets/{id}":                                   {class: "object", obj: id("asset")},
@@ -454,7 +467,16 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/leaks/{id}/assign":                            {class: "object", obj: id("leak"), body: func(*tenantFx) any { return map[string]any{"user_id": 0} }},
 	"POST /api/v1/leaks/{id}/rotated":                           {class: "object", obj: id("leak"), body: func(*tenantFx) any { return map[string]any{"note": "sweep", "check": true} }},
 	"POST /api/v1/leaks/{id}/check-again":                       {class: "object", obj: id("leak")},
+	"GET /api/v1/assets/{id}/config-findings":                   {class: "object", obj: id("asset")},
+	"POST /api/v1/config-findings/{id}/dismiss":                 {class: "object", obj: id("configfinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
+	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
+	"POST /api/v1/threat-notices/{id}/dismiss":                  {class: "object", obj: id("threatnotice")},
+	"GET /api/v1/assets/{id}/code-findings":                     {class: "object", obj: id("asset")},
+	"POST /api/v1/code-findings/{id}/dismiss":                   {class: "object", obj: id("codefinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
+	"POST /api/v1/code-findings/{id}/undismiss":                 {class: "object", obj: id("codefinding")},
 	"GET /api/v1/findings/{id}/events":                          {class: "object", obj: id("finding"), emptyOK: true},
+	"GET /api/v1/leaks/{id}/second-checks":                      {class: "object", obj: id("leak"), emptyOK: true},
+	"GET /api/v1/config-findings/{id}/second-checks":            {class: "object", obj: id("configfinding"), emptyOK: true},
 	"GET /api/v1/findings/{id}/upgrade":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/closure":                         {class: "object", obj: id("finding")},
 	"GET /api/v1/findings/{id}/explain":                         {class: "object", obj: id("finding")},
@@ -527,6 +549,7 @@ var routeRules = map[string]routeRule{
 	// Notifications of A's project or asset: B gets 404 for the project or
 	// asset before anything else is read.
 	"GET /api/v1/projects/{id}/notifications": {class: "object", obj: id("project")},
+	"GET /api/v1/projects/{id}/ask-notes":     {class: "object", obj: id("project")},
 	// Trust badges (trust_badge.go).
 	"GET /api/v1/trust-badges": {class: "list"},
 	"POST /api/v1/trust-badges": {class: "create", body: func(a *tenantFx) any {
@@ -562,6 +585,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/projects/{id}/notifications/slack/install":       {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{} }},
 	"POST /api/v1/projects/{id}/notifications/teams/install":       {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{} }},
 	"PATCH /api/v1/projects/{id}":                                  {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{"name": "hacked"} }},
+	"PUT /api/v1/projects/{id}/ask-notes":                          {class: "object", obj: id("project"), body: func(*tenantFx) any { return map[string]any{"notes": "hacked"} }},
 	"POST /api/v1/projects/{id}/assets":                            {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset2")}} }},
 	"DELETE /api/v1/projects/{id}/assets":                          {class: "object", obj: id("project"), body: func(a *tenantFx) any { return map[string]any{"asset_ids": []int64{a.int("asset")}} }},
 	"PATCH /api/v1/access-grants/{id}":                             {class: "object", obj: id("grant"), body: func(*tenantFx) any { return map[string]any{"role": "admin"} }},
@@ -751,6 +775,11 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 			b.Leaks = &model.LeakScan{Complete: true, Found: []model.Leak{{Rule: "aws-access-key-id", Title: "AWS access key ID",
 				Severity: "high", Path: "/srv/" + tag + "/.env", Line: 3, Name: "AWS_ACCESS_KEY_ID", Fingerprint: strings.Repeat("ab", 16),
 				Preview: "AKIA…" + tag[:min(4, len(tag))]}}}
+			// And a risky setting.
+			b.ConfigFindings = &model.ConfigScan{Complete: true, Found: []model.ConfigFinding{{Rule: "ssh-root-key-ci-unrestricted",
+				Category: model.ConfigSSH, Title: "CI or deploy key has an unrestricted root shell", Severity: "medium",
+				Path: "/root/.ssh/authorized_keys", Line: 2, Subject: "SHA256:" + tag + " deploy@" + tag, Why: "why", Fix: "fix",
+				Fingerprint: strings.Repeat("cd", 16)}}}
 		}
 		raw, _ := json.Marshal(b)
 		req, _ := http.NewRequest("POST", e.srv.URL+"/api/v1/ingest", strings.NewReader(string(raw)))
@@ -776,6 +805,32 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s leaks: %v %v", tag, leaks, err)
 	}
 	set("leak", leaks[0].ID)
+	configs, _, err := e.st.ListConfigFindings(ctx, store.ConfigFindingFilter{AssetID: main.AssetID})
+	if err != nil || len(configs) != 1 {
+		t.Fatalf("%s config findings: %v %v", tag, configs, err)
+	}
+	set("configfinding", configs[0].ID)
+	if err := e.st.RecordThreatsSeen(tenant.System(ctx), []store.ThreatSeen{{ID: "artex", Name: "ARTEX", Revision: 1, Source: "embedded"}}); err != nil {
+		t.Fatal(err)
+	}
+	notice, err := e.st.SaveThreatNotice(ctx, store.ThreatNotice{ThreatID: "artex", Verdict: "covered", Connected: map[string]int{"host_agent": 1}}, store.NoticeTell)
+	if err != nil {
+		t.Fatalf("%s threat notice: %v", tag, err)
+	}
+	set("threatnotice", notice.ID)
+	// And a code finding imported from a scanner's report.
+	rep, err := codefindings.Parse(codefindings.FormatDeepsec, []byte(f.codeDoc()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := e.st.ImportCodeFindings(ctx, main.AssetID, rep, "model-"+tag, true); err != nil {
+		t.Fatal(err)
+	}
+	codes, _, err := e.st.ListCodeFindings(ctx, store.CodeFindingFilter{AssetID: main.AssetID})
+	if err != nil || len(codes) != 1 {
+		t.Fatalf("%s code findings: %v %v", tag, codes, err)
+	}
+	set("codefinding", codes[0].ID)
 	second := ingest("db-"+tag, []model.Identifier{{Scheme: "machine-id", Value: tag + "-m2"}},
 		model.Observation{Purl: "pkg:npm/" + tag + "-db-lib@2.0.0", Confidence: model.ConfidenceConfirmed})
 	set("asset2", second.AssetID)
@@ -1460,6 +1515,14 @@ func TestIsolationSweep(t *testing.T) {
 	}
 }
 
+// codeDoc is a deepsec export with one medium finding in the tenant's
+// code.
+func (f *tenantFx) codeDoc() string {
+	return `[{"title":"[MEDIUM] Open redirect in ` + f.tag + ` sign-in","description":"## Finding\n\nnext is not checked.\n\n## Recommendation\n\nAllow relative paths only.",
+		"severity":"MEDIUM","metadata":{"projectId":"` + f.tag + `","filePath":"src/` + f.tag + `/callback.ts","lineNumbers":[3],
+		"severity":"MEDIUM","vulnSlug":"open-redirect","confidence":"high","runId":"20261120000000-` + f.tag + `"}}]`
+}
+
 // vexDoc is an OpenVEX document saying the tenant's private package is not
 // affected by the fixture's vulnerability.
 func (f *tenantFx) vexDoc() json.RawMessage {
@@ -1503,7 +1566,7 @@ func (e *env) snapshot(t *testing.T, a *tenantFx) string {
 	var b strings.Builder
 	for _, p := range append([]string{
 		"/api/v1/assets/{asset}", "/api/v1/assets/{asset2}", "/api/v1/assets/{asset}/relations", "/api/v1/assets/{asset}/inventory",
-		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
+		"/api/v1/findings/{finding}", "/api/v1/findings/{finding}/events", "/api/v1/assets/{asset}/leaks?status=all", "/api/v1/assets/{asset}/config-findings?status=all", "/api/v1/assets/{asset}/code-findings?status=all", "/api/v1/incidents/{incident}", "/api/v1/fix-groups/{fixgroup}",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments", "/api/v1/ci-trusts",
 		"/api/v1/teams", "/api/v1/channels", "/api/v1/routes", "/api/v1/deliveries", "/api/v1/integrations", "/api/v1/enrollments",
 		"/api/v1/aws/connections", "/api/v1/aws/connections/{awsconnection}", "/api/v1/aws/connections/{awsconnection}/installs",

@@ -127,6 +127,22 @@ export interface LookedAt {
 const NOT_A_READ = new Set(["Summarising the earlier conversation", "Trying again with a stronger model"]);
 
 /**
+ * The server's label for reading a Help article (internal/ask engine.go
+ * toolLabel). It is not a read of the organisation's data, so it is not
+ * listed under "What Ask looked at".
+ */
+export const HELP_READ = "Reading Help";
+
+/**
+ * True when Ask read only Help articles for an answer: a how-to answer,
+ * which needs no "What Ask looked at" or "changed nothing" footer.
+ */
+export function readHelpOnly(labels: string[]): boolean {
+  const ls = labels.map((l) => l.trim()).filter(Boolean);
+  return ls.includes(HELP_READ) && ls.every((l) => l === HELP_READ || NOT_A_READ.has(l));
+}
+
+/**
  * The reads Ask made for one answer, from the stream's tool events, in
  * order and without repeats. A label naming an issue or an asset by number
  * links to it; the number must be digits only, so nothing else in a label
@@ -136,7 +152,7 @@ export function lookedAt(labels: string[]): LookedAt[] {
   const out: LookedAt[] = [];
   for (const raw of labels) {
     const label = raw.trim();
-    if (!label || NOT_A_READ.has(label) || label.length > 120) continue;
+    if (!label || NOT_A_READ.has(label) || label === HELP_READ || label.length > 120) continue;
     const seen = out.find((l) => l.label === label);
     if (seen) {
       seen.count++;

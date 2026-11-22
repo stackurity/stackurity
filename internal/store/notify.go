@@ -257,14 +257,19 @@ const (
 	EventProblems      = "problems"
 	EventDailySummary  = "daily_summary"
 	EventWeeklySummary = "weekly_summary"
+	// EventThreatNotices: a threat notice (docs/threat-notices.md), once
+	// per threat and again only when it is found. Not part of any older
+	// mode's definition: ModeForEvents ignores it, so a route keeps its
+	// mode whether or not it has it.
+	EventThreatNotices = "threat_notices"
 )
 
 // RouteEvents lists every route event.
-var RouteEvents = []string{EventUrgent, EventNewIssues, EventRegressed, EventOverdue, EventConnected, EventProblems, EventDailySummary, EventWeeklySummary}
+var RouteEvents = []string{EventUrgent, EventNewIssues, EventRegressed, EventOverdue, EventConnected, EventProblems, EventDailySummary, EventWeeklySummary, EventThreatNotices}
 
 // rightAway is what the older modes that sent messages as they happened
-// sent: everything but summaries.
-var rightAway = []string{EventUrgent, EventRegressed, EventOverdue, EventConnected, EventProblems}
+// sent: everything but summaries, and threat notices (migration 0118).
+var rightAway = []string{EventUrgent, EventRegressed, EventOverdue, EventConnected, EventProblems, EventThreatNotices}
 
 // EventsForMode is the events an older mode sent; nil for an unknown mode.
 func EventsForMode(mode string) []string {
@@ -288,15 +293,22 @@ func EventsForMode(mode string) []string {
 func ModeForEvents(events []string) string {
 	have := map[string]bool{}
 	for _, e := range events {
-		have[e] = true
+		if e != EventThreatNotices {
+			have[e] = true
+		}
 	}
 	for _, m := range []string{ModeUrgentSummary, ModeUrgentWeekly, ModeUrgentOnly, ModeDaily, ModeWeekly} {
-		want := EventsForMode(m)
+		want := map[string]bool{}
+		for _, e := range EventsForMode(m) {
+			if e != EventThreatNotices {
+				want[e] = true
+			}
+		}
 		if len(want) != len(have) {
 			continue
 		}
 		same := true
-		for _, e := range want {
+		for e := range want {
 			same = same && have[e]
 		}
 		if same {

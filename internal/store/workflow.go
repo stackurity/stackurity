@@ -18,17 +18,26 @@ import (
 
 const riskPolicyKey = "risk_policy"
 
-// RiskPolicy returns the stored policy or the default.
+// RiskPolicy returns the stored policy or the default, with the steps the
+// workspace's plan adds (PolicySteps), so every pass, preview and
+// explanation scores a finding the same way.
 func (s *Store) RiskPolicy(ctx context.Context) (risk.Policy, error) {
 	var raw []byte
+	p := risk.DefaultPolicy()
 	err := s.Pool.QueryRow(ctx, `SELECT value FROM settings WHERE key = $1`, riskPolicyKey).Scan(&raw)
-	if errors.Is(err, pgx.ErrNoRows) {
-		return risk.DefaultPolicy(), nil
-	}
-	if err != nil {
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+	case err != nil:
 		return risk.Policy{}, err
+	default:
+		if p, err = decodeRiskPolicy(raw); err != nil {
+			return risk.Policy{}, err
+		}
 	}
-	return decodeRiskPolicy(raw)
+	if s.PolicySteps != nil {
+		p.Steps = s.PolicySteps(ctx)
+	}
+	return p, nil
 }
 
 // decodeRiskPolicy reads a stored policy over the defaults, so a field added
@@ -222,7 +231,8 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		  AND COALESCE(f.evidence->>'requires_subscription', '') = '',
 		i.scope, f.verification, COALESCE(f.due_from, f.first_seen), COALESCE((f.evidence->>'not_running_kernel')::boolean, false),
 		f.priority, f.state, f.fix_due, f.title, f.key, a.id, a.name,
-		f.sources, f.epss_cve, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text, a.tags
+		f.sources, f.epss_cve, COALESCE(f.priority_factors @> $2::jsonb, false), f.xmin::text, a.tags,
+		i.reachability, CASE WHEN i.reachability <> 'unknown' THEN i.reachability_evidence END
 		FROM findings f JOIN assets a ON a.id = f.asset_id JOIN inventory i ON i.id = f.inventory_id
 		WHERE f.status = 'open' AND ($1::bigint = 0 OR f.asset_id = $1)
 		ORDER BY f.id`, assetID, epssFactor)
@@ -240,7 +250,8 @@ func riskRows(ctx context.Context, db q, now time.Time, assetID int64) ([]riskRo
 		)
 		if err := rows.Scan(&r.id, &r.in.Kind, &r.in.Severity, &r.in.Score, &r.in.KnownExploited, &r.in.InternetExposed, &r.in.ExposureSource,
 			&r.in.Environment, &r.in.Criticality, &r.in.FixAvailable, &r.in.Scope, &r.in.Verification, &r.firstSeen, &r.in.KernelNotRunning,
-			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &sources, &r.epssStored, &r.in.EPSSCounted, &r.xmin, &r.assetTags); err != nil {
+			&r.priority, &state, &fixDue, &r.title, &r.key, &r.assetID, &r.assetName, &sources, &r.epssStored, &r.in.EPSSCounted, &r.xmin, &r.assetTags,
+			&r.in.Reachability, &r.in.ReachabilityEvidence); err != nil {
 			return nil, err
 		}
 		if r.in.Kind == "vulnerability" {
@@ -787,7 +798,7 @@ func (s *Store) SyncSystemIncidents(ctx context.Context, current []SystemInciden
 			return err
 		}
 		_, err := tx.Exec(ctx, `UPDATE incidents SET status = 'resolved', resolved_at = now(), updated_at = now()
-			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak') AND NOT (kind || '|' || key = ANY($1))`, keys)
+			WHERE status = 'open' AND kind IN ('feed', 'collection', 'coverage', 'platform', 'leak', 'config', 'code') AND NOT (kind || '|' || key = ANY($1))`, keys)
 		return err
 	})
 }
@@ -893,7 +904,18 @@ func (s *Store) DetectSystemProblems(ctx context.Context) ([]SystemIncident, err
 	if err != nil {
 		return nil, err
 	}
-	return append(out, leaks...), nil
+	// Risky settings: one incident per asset with high ones open.
+	config, err := s.configProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	// Code findings: one incident per asset with critical or high
+	// security findings open.
+	code, err := s.codeProblems(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return append(append(append(out, leaks...), config...), code...), nil
 }
 
 type IncidentFilter struct {

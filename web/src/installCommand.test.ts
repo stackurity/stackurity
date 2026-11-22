@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { linuxCommand, macCommand, uninstallCommands, windowsCommand } from "./installCommand.ts";
+import { linuxCommand, macCommand, processAccessCommand, uninstallCommands, windowsCommand } from "./installCommand.ts";
 
 const https = { origin: "https://stk.example.com", protocol: "https:", hostname: "stk.example.com" };
 const plain = { origin: "http://stk.internal:8080", protocol: "http:", hostname: "stk.internal" };
@@ -14,6 +14,12 @@ test("Linux command", () => {
   });
   assert.equal(linuxCommand("enr_abc", plain).command, "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_ALLOW_HTTP=1 sh");
   assert.equal(linuxCommand("enr_abc", https, true).command, "curl -fsSL https://stk.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_DOCKER=1 sh");
+  assert.equal(linuxCommand("enr_abc", https, false, true).command, "curl -fsSL https://stk.example.com/install/agent.sh | sudo STACKURITY_ENROLL_CODE=enr_abc STACKURITY_PROCESSES=1 sh");
+});
+
+test("Process access for a host that already reports: no code, the setting only", () => {
+  assert.equal(processAccessCommand(https), "curl -fsSL https://stk.example.com/install/agent.sh | sudo STACKURITY_PROCESSES=1 sh");
+  assert.equal(processAccessCommand(plain), "curl -fsSL http://stk.internal:8080/install/agent.sh | sudo STACKURITY_ALLOW_HTTP=1 STACKURITY_PROCESSES=1 sh");
 });
 
 test("Windows command: TLS 1.2, the code in a single-quoted string, irm piped to iex", () => {

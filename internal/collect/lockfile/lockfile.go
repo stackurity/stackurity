@@ -372,9 +372,18 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 	if !info.IsDir() {
 		return nil, errors.New("not a directory: " + dir)
 	}
-	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, gitIgnored(ctx, dir))
+	ignored := gitIgnored(ctx, dir)
+	obs, cov, err := scanWith(ctx, os.DirFS(dir), exts, ignored)
 	if err != nil {
 		return nil, err
+	}
+	// Whether first-party source imports each package
+	// (docs/reachability.md). Its coverage item is added after the batch's
+	// completeness is decided: the inventory is whole either way.
+	var reach *model.CoverageItem
+	if len(obs) > 0 {
+		c := annotateReach(ctx, os.DirFS(dir), ignored, obs)
+		reach = &c
 	}
 	if names := JoinPackageNames(ManifestNames(regularFile(dir))); names != "" {
 		attrs := make(map[string]string, len(asset.Attributes)+1)
@@ -399,6 +408,9 @@ func ScanDirWith(ctx context.Context, dir string, asset model.AssetRef, version 
 			b.Complete = false
 		}
 	}
+	if reach != nil {
+		b.Coverage = addCoverage(b.Coverage, *reach)
+	}
 	return b, nil
 }
 
@@ -417,6 +429,10 @@ func regularFile(dir string) func(string) ([]byte, error) {
 		return os.ReadFile(full)
 	}
 }
+
+// GitIgnored is gitIgnored, for the other readers of a checkout (the
+// front-end libraries a repository keeps outside a package manager).
+func GitIgnored(ctx context.Context, dir string) map[string]bool { return gitIgnored(ctx, dir) }
 
 // gitIgnored returns the paths below dir that git ignores, relative to dir
 // (directories without their trailing slash), or nil when git is not
@@ -512,6 +528,53 @@ func capCoverage(cov []model.CoverageItem) []model.CoverageItem {
 	out := append(cov[:keep:keep], model.CoverageItem{Scope: "coverage-limit", Status: "partial",
 		Reason: fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left, model.MaxCoverageItems)})
 	return out
+}
+
+// MergeCoverage adds another reader's coverage to a list capCoverage
+// capped (ScanDirWith's), keeping the batch within model.MaxCoverageItems.
+// front goes first, so among checked items it is the last left out (the
+// repository scan's "web-assets:." item, which tells the server the scan
+// looked); more goes after the list.
+func MergeCoverage(front, cov, more []model.CoverageItem) []model.CoverageItem {
+	left := 0
+	if n := len(cov); n > 0 && cov[n-1].Scope == "coverage-limit" {
+		if _, err := fmt.Sscanf(cov[n-1].Reason, "%d more", &left); err == nil {
+			cov = cov[:n-1]
+		} else {
+			left = 0
+		}
+	}
+	all := make([]model.CoverageItem, 0, len(front)+len(cov)+len(more))
+	all = append(append(append(all, front...), cov...), more...)
+	if left == 0 {
+		return capCoverage(all)
+	}
+	// Entries were left out before: the summary saying so stays, whatever
+	// the merged length.
+	sort.SliceStable(all, func(i, j int) bool { return all[i].Status != "checked" && all[j].Status == "checked" })
+	if keep := model.MaxCoverageItems - 1; len(all) > keep {
+		left += len(all) - keep
+		all = all[:keep:keep]
+	}
+	return append(all, model.CoverageItem{Scope: "coverage-limit", Status: "partial",
+		Reason: fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left, model.MaxCoverageItems)})
+}
+
+// addCoverage appends an item to a capped list. When the list is full, the
+// last kept entry before the coverage-limit summary makes room and the
+// summary counts it.
+func addCoverage(cov []model.CoverageItem, c model.CoverageItem) []model.CoverageItem {
+	if len(cov) < model.MaxCoverageItems {
+		return append(cov, c)
+	}
+	sum := cov[len(cov)-1]
+	left := 0
+	if sum.Scope != "coverage-limit" || func() bool { _, err := fmt.Sscanf(sum.Reason, "%d more", &left); return err != nil }() {
+		return cov // not a list capCoverage made: leave it whole
+	}
+	keep := cov[: len(cov)-2 : len(cov)-2]
+	sum.Reason = fmt.Sprintf("%d more coverage entries were left out (a batch holds at most %d)", left+1, model.MaxCoverageItems)
+	return append(keep, c, sum)
 }
 
 // maxIgnoredOutput bounds git's list of ignored paths.

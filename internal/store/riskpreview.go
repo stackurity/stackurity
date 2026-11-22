@@ -78,6 +78,9 @@ var previewRank = map[string]int{"P1": 4, "P2": 3, "P3": 2, "P4": 1}
 // transaction: nothing is written, whatever happens.
 func (s *Store) PreviewRiskPolicy(ctx context.Context, current, proposed risk.Policy, now time.Time) (*RiskPolicyPreview, error) {
 	current, proposed = current.Normalize(), proposed.Normalize()
+	// A proposed policy comes from a person and has no plan steps; it gets
+	// the current ones, so the preview shows only what the edit changes.
+	proposed.Steps = current.Steps
 	pv := &RiskPolicyPreview{CurrentVersion: current.Version(), ProposedVersion: proposed.Version(),
 		ChangedFields: changedFields(current, proposed), SampleLimit: PreviewSampleLimit,
 		Before: map[string]int{"P1": 0, "P2": 0, "P3": 0, "P4": 0}, After: map[string]int{"P1": 0, "P2": 0, "P3": 0, "P4": 0},

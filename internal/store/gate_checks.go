@@ -13,7 +13,7 @@ import (
 // a deploy pipeline or an API client asks whether an asset passes the
 // policies that apply to it. The API works the answer out from
 // GateViolations; every answer is stored in gate_policy_checks (migration
-// 0110) for audit and evidence.
+// 0124) for audit and evidence.
 
 // Where a check came from.
 const (

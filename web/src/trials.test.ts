@@ -89,4 +89,5 @@ test("signInLabel names providers and GitHub usernames", () => {
 test("refLabel reads trust badge refs", () => {
   assert.equal(refLabel("badge-acme"), "trust badge of acme");
   assert.equal(refLabel("hn"), "hn");
+  assert.equal(refLabel("web-reddit-com"), "link on reddit-com");
 });

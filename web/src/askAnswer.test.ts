@@ -102,3 +102,13 @@ test("auto links pass the same check as written links", () => {
     { kind: "link", text: "issue #5", to: "/findings/5" },
   ]);
 });
+
+test("reading Help is not listed as a data read, and a Help-only answer needs no footer", async () => {
+  const { lookedAt, readHelpOnly, HELP_READ } = await import("./askAnswer.ts");
+  assert.deepEqual(lookedAt([HELP_READ, "Listing assets", HELP_READ]), [{ label: "Listing assets", count: 1 }]);
+  assert.equal(readHelpOnly([HELP_READ]), true);
+  assert.equal(readHelpOnly([HELP_READ, "Trying again with a stronger model", HELP_READ]), true);
+  assert.equal(readHelpOnly([HELP_READ, "Listing assets"]), false);
+  assert.equal(readHelpOnly([]), false);
+  assert.equal(readHelpOnly(["Listing assets"]), false);
+});

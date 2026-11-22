@@ -88,6 +88,15 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 				return err
 			}
 		}
+		// Java web applications of the curated catalogue (Apache Roller),
+		// read from NVD only for those deployed somewhere.
+		if ja, err := installedJavaApps(ctx, s); err != nil {
+			return err
+		} else if len(ja) > 0 {
+			if err := ensure(FeedJavaApps, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
+		}
 		win, err := s.ComponentsWithPurlKey(ctx, windowsPurlKey)
 		if err != nil {
 			return err
@@ -145,7 +154,21 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 // ComponentsToEvaluate maps a sync result to the components that need
 // re-evaluation. nil means none.
 func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res *SyncResult) ([]int64, error) {
-	if res == nil || (res.Changed == 0 && len(res.Packages) == 0 && !res.All) {
+	if res == nil {
+		return nil, nil
+	}
+	if res.evalDone {
+		return res.evalIDs, nil
+	}
+	ids, err := componentsToEvaluate(ctx, s, feed, res)
+	if err == nil {
+		res.evalIDs, res.evalDone = ids, true
+	}
+	return ids, err
+}
+
+func componentsToEvaluate(ctx context.Context, s *store.Store, feed string, res *SyncResult) ([]int64, error) {
+	if res.Changed == 0 && len(res.Packages) == 0 && !res.All {
 		return nil, nil
 	}
 	switch {
@@ -170,6 +193,8 @@ func ComponentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		return programComponents(ctx, s, res)
 	case feed == FeedVendorBuilds:
 		return vendorComponents(ctx, s, res)
+	case feed == FeedJavaApps:
+		return javaAppComponents(ctx, s, res)
 	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)

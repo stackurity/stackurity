@@ -11,6 +11,7 @@ import (
 	"github.com/package-url/packageurl-go"
 
 	"github.com/stackurity/stackurity/internal/intel/eoloverlay"
+	"github.com/stackurity/stackurity/internal/javaapps"
 	"github.com/stackurity/stackurity/internal/lifecycle"
 	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
@@ -31,6 +32,9 @@ type Evaluator struct {
 	Programs *winprograms.Catalogue
 	// Vendors is the vendor build catalogue; nil uses the embedded one.
 	Vendors *vendorbuilds.Catalogue
+	// JavaApps is the Java web application catalogue; nil uses the
+	// embedded one.
+	JavaApps *javaapps.Catalogue
 	// afterRead, in tests, runs once everything is read and before
 	// anything is written.
 	afterRead func()
@@ -41,6 +45,8 @@ type EvalStats struct {
 	Opened   int64 `json:"opened_or_updated"`
 	Resolved int64 `json:"resolved"`
 	Gaps     int   `json:"gaps"`
+	// Assets is the number of distinct assets whose rows were evaluated.
+	Assets int `json:"assets"`
 }
 
 // versionedPackagesPattern and versionedDebProduct live in
@@ -110,6 +116,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	programAdvs := map[string][]store.AdvisoryMatch{}
 	vendors := planVendorBuilds(e.vendorCatalogue(), e.overlay(), rows)
 	vendorAdvs := map[string][]store.AdvisoryMatch{}
+	javaAdvs := map[string][]store.AdvisoryMatch{}
 	kernelFound := map[string]map[int64][]store.FindingInput{}
 	now := time.Now()
 	if e.Now != nil {
@@ -135,6 +142,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	// The unfixed counts in the Windows programs feed's cursor, read once.
 	programUnfixed := programsUnfixed(feedState[FeedWindowsPrograms].Cursor)
 	vendorUnfixed := programsUnfixed(feedState[FeedVendorBuilds].Cursor)
+	javaUnfixed := programsUnfixed(feedState[FeedJavaApps].Cursor)
 
 	// A package's advisories are read once and dropped after the last row
 	// that needs them, so an evaluation holds the advisories of the packages
@@ -161,6 +169,11 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 	coverage := make([]store.RowCoverage, 0, len(rows))
 	invIDs := make([]int64, 0, len(rows))
 	stats := &EvalStats{Rows: len(rows)}
+	seenAssets := map[int64]bool{}
+	for _, r := range rows {
+		seenAssets[r.AssetID] = true
+	}
+	stats.Assets = len(seenAssets)
 
 	for ri, r := range rows {
 		invIDs = append(invIDs, r.InventoryID)
@@ -196,6 +209,15 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			unsupported("runtime installed outside a package manager: lifecycle is tracked, vulnerabilities are not matched")
 		case r.Type == "generic" && r.Evidence["kind"] == "macos-app":
 			unsupported(macOSAppInventoryOnly)
+		case isJavaApp(r):
+			// A Java web application the agent identified by its own files
+			// (Apache Roller): matched by its release against the product's
+			// NVD records if the curated catalogue lists it.
+			found, err := e.evaluateJavaApp(ctx, r, feedState, javaAdvs, javaUnfixed, &rc)
+			if err != nil {
+				return nil, err
+			}
+			want = append(want, found...)
 		case r.Type == "generic" && r.Evidence["kind"] == "cms":
 			// WordPress core: no vulnerability source used here lists it
 			// (OSV has no WordPress ecosystem).
@@ -477,7 +499,8 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	// their "not affected" says nothing about a Ksplice or FIPS build.
 	oracle := strings.HasPrefix(t.Ecosystem, "Oracle Linux:")
 	// Advisories with a fix per version line, one affected entry per line.
-	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":") || strings.HasPrefix(t.Ecosystem, vendorbuilds.Ecosystem+":")
+	program := strings.HasPrefix(t.Ecosystem, winprograms.Ecosystem+":") || strings.HasPrefix(t.Ecosystem, vendorbuilds.Ecosystem+":") ||
+		strings.HasPrefix(t.Ecosystem, javaapps.Ecosystem+":")
 	perLine := oracle || program
 	oracleBuild, arch, signingKey := "", "", ""
 	var streams map[string]string

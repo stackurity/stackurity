@@ -10,6 +10,7 @@ import { FindingCards, FindingsTable, FindingTiles, PriorityTiles } from "../com
 import { UncheckedBanner, useUnchecked } from "../components/Unchecked";
 import { EmptyState, ErrorBox, FilterPanel, Loading, PageHeader, Pager, PresetChips } from "../components/ui";
 import { HistoryWindowNote } from "../components/PlanLimit";
+import { ReachabilityFilter } from "../components/Reachability";
 
 const LIMIT = 50;
 /** Grouped by asset: assets per page, and issues shown under each. */
@@ -43,6 +44,7 @@ const PARAMS = [
   "environment",
   "known_exploited",
   "epss_min",
+  "reachability",
   "q",
   "priority",
   "state",
@@ -75,7 +77,11 @@ export function IssuesPage() {
   const assetId = get("asset_id");
   const groups = useLoad(() => api.get<List<FixGroup>>("/fix-groups", { asset_id: assetId, limit: 100 }), [assetId]);
   const assets = useLoad(() => api.get<List<Asset>>("/assets", { limit: 200 }), []);
-  const { me, canAct } = useAuth();
+  const { me, canAct, has } = useAuth();
+  // Filtering by reachability is part of the paid plans; without it the
+  // filter shows locked and a link's reachability is not sent (the API would
+  // answer plan_required).
+  const reachPaid = has("reachability");
   const myId = me?.user?.id ? String(me.user.id) : "";
   const mine = Boolean(myId) && get("assignee_user") === myId;
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -102,7 +108,7 @@ export function IssuesPage() {
   useEffect(() => setQ(qParam), [qParam]);
 
   const query: Record<string, string> = {};
-  for (const k of PARAMS) if (params.get(k)) query[k] = params.get(k)!;
+  for (const k of PARAMS) if (params.get(k) && (k !== "reachability" || reachPaid)) query[k] = params.get(k)!;
   const queryKey = JSON.stringify(query) + (byAsset ? "|asset" : "");
   const summary = useLoad(() => api.get<FindingSummary>("/findings/summary"), []);
   // What was not checked, by who acts: of the asset when the list is filtered to one.
@@ -150,6 +156,12 @@ export function IssuesPage() {
     { label: "New this week", p: { new_within: "7" } },
     { label: "Known exploited", p: { known_exploited: "true" } },
     { label: "Came back", p: { state: "regressed" } },
+    ...(reachPaid
+      ? [
+          { label: "Reachable", p: { reachability: "reachable" } },
+          { label: "Not reached", p: { reachability: "not_reached" } },
+        ]
+      : []),
   ];
   // Panel filters: everything except the presets' own keys that are visible as chips.
   const active = PARAMS.filter((k) => params.get(k) && !(k === "status" && params.get(k) === "open")).length;
@@ -307,6 +319,7 @@ export function IssuesPage() {
               )}
             </select>
           </div>
+          <ReachabilityFilter paid={reachPaid} value={get("reachability")} onChange={(v) => update({ reachability: v })} />
           <div className="field">
             <label htmlFor="fd-env">Environment</label>
             <select id="fd-env" value={environment} onChange={(e) => update({ environment: e.target.value })}>

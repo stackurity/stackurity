@@ -1,0 +1,88 @@
+[
+  {
+    "title": "[CRITICAL] SQL injection in order search via unescaped sort column",
+    "description": "**File:** [`src/api/orders/search.ts`](https://github.com/acme/shop/blob/main/src/api/orders/search.ts#L41-L48) (lines 41, 44, 48)\n**Project:** shop\n**Severity:** CRITICAL  •  **Confidence:** high  •  **Slug:** `sql-injection`\n\n## Owners\n\n**Suggested assignee:** `oncall@acme.example` _(via oncall)_\n\n**Teams:**\n- Checkout (`checkout`)\n\n**Current on-call:**\n- Dana Oncall <oncall@acme.example> • [@dana](https://github.com/dana)\n\n## Finding\n\nThe `sort` query parameter is interpolated into the ORDER BY clause of a raw SQL string, so a request such as `?sort=id;DROP TABLE orders` runs attacker-chosen SQL with the service's database role.\n\n## Recommendation\n\nMap `sort` to an allowlist of column names and pass values as bound parameters.\n\n## Revalidation\n\n**Verdict:** true-positive\n\nThe handler is reachable without authentication from /api/orders/search.\n\n## Top contributors\n\n- Sam Dev <sam@acme.example> (score: 0.82)\n\n## Recent committers (`git log`)\n\n- Sam Dev <sam@acme.example> (2026-11-02)",
+    "severity": "CRITICAL",
+    "labels": ["security", "project:shop", "severity:CRITICAL", "slug:sql-injection", "confidence:high", "revalidation:true-positive", "owning-team:checkout"],
+    "assignee": "oncall@acme.example",
+    "metadata": {
+      "projectId": "shop",
+      "filePath": "src/api/orders/search.ts",
+      "lineNumbers": [41, 44, 48],
+      "severity": "CRITICAL",
+      "vulnSlug": "sql-injection",
+      "confidence": "high",
+      "discoveredAt": "2026-11-18T09:12:44.120Z",
+      "runId": "20261118091201-a1b2",
+      "revalidation": {
+        "verdict": "true-positive",
+        "reasoning": "The handler is reachable without authentication from /api/orders/search."
+      },
+      "githubUrl": "https://github.com/acme/shop/blob/main/src/api/orders/search.ts#L41-L48",
+      "owners": {
+        "assignee": "oncall@acme.example",
+        "assigneeSource": "oncall",
+        "teams": [{"name": "Checkout", "slug": "checkout"}],
+        "oncall": [{"name": "Dana Oncall", "email": "oncall@acme.example", "github_username": "dana"}],
+        "managers": [],
+        "contributors": [{"name": "Sam Dev", "email": "sam@acme.example", "score": 0.82}],
+        "recentCommitters": [{"name": "Sam Dev", "email": "sam@acme.example", "date": "2026-11-02T10:00:00Z"}]
+      }
+    }
+  },
+  {
+    "title": "[HIGH] Missing authorization check on invoice download <script>alert(1)</script>",
+    "description": "**File:** `src/api/invoices/[id].ts` (lines 12)\n**Project:** shop\n**Severity:** HIGH  •  **Confidence:** medium  •  **Slug:** `missing-authz`\n\n## Finding\n\nAny signed-in user can download another customer's invoice by changing the id.‮\n\n## Recommendation\n\nCheck that the invoice's customer_id is the session's customer.",
+    "severity": "HIGH",
+    "labels": ["security", "project:shop", "severity:HIGH", "slug:missing-authz", "confidence:medium", "missing-owner"],
+    "metadata": {
+      "projectId": "shop",
+      "filePath": "src/api/invoices/[id].ts",
+      "lineNumbers": [12],
+      "severity": "HIGH",
+      "vulnSlug": "missing-authz",
+      "confidence": "medium",
+      "discoveredAt": "2026-11-18T09:14:02.551Z",
+      "runId": "20261118091201-a1b2",
+      "owners": {"teams": [], "oncall": [], "managers": [], "contributors": [], "recentCommitters": []}
+    }
+  },
+  {
+    "title": "[MEDIUM] Open redirect after sign-in",
+    "description": "**File:** `src/auth/callback.ts` (lines 30)\n**Project:** shop\n**Severity:** MEDIUM  •  **Confidence:** low  •  **Slug:** `open-redirect`\n\n## Finding\n\nThe `next` parameter is used as the redirect target without checking its host.\n\n## Recommendation\n\nOnly accept relative paths.\n\n## Revalidation\n\n**Verdict:** false-positive\n\nThe middleware in src/auth/guard.ts strips absolute URLs before this handler runs.",
+    "severity": "MEDIUM",
+    "labels": ["security", "project:shop", "severity:MEDIUM", "slug:open-redirect", "confidence:low", "revalidation:false-positive", "missing-owner"],
+    "metadata": {
+      "projectId": "shop",
+      "filePath": "src/auth/callback.ts",
+      "lineNumbers": [30],
+      "severity": "MEDIUM",
+      "vulnSlug": "open-redirect",
+      "confidence": "low",
+      "discoveredAt": "2026-11-18T09:15:40.003Z",
+      "runId": "20261118101530-c3d4",
+      "revalidation": {
+        "verdict": "false-positive",
+        "reasoning": "The middleware in src/auth/guard.ts strips absolute URLs before this handler runs."
+      },
+      "owners": {"teams": [], "oncall": [], "managers": [], "contributors": [], "recentCommitters": []}
+    }
+  },
+  {
+    "title": "[HIGH_BUG] Refund job can run twice for one order",
+    "description": "**File:** `src/jobs/refund.ts` (lines 77, 90)\n**Project:** shop\n**Severity:** HIGH_BUG  •  **Confidence:** medium  •  **Slug:** `other-race-condition`\n\n## Finding\n\nTwo workers can pick up the same refund because the status check and update are not atomic.\n\n## Recommendation\n\nClaim the row with UPDATE ... WHERE status = 'pending' RETURNING.",
+    "severity": "HIGH_BUG",
+    "labels": ["security", "project:shop", "severity:HIGH_BUG", "slug:other-race-condition", "confidence:medium", "missing-owner"],
+    "metadata": {
+      "projectId": "shop",
+      "filePath": "./src/jobs/refund.ts",
+      "lineNumbers": [77, 90],
+      "severity": "HIGH_BUG",
+      "vulnSlug": "other-race-condition",
+      "confidence": "medium",
+      "discoveredAt": "2026-11-18T09:16:11.000Z",
+      "runId": "20261118091201-a1b2",
+      "owners": {"teams": [], "oncall": [], "managers": [], "contributors": [], "recentCommitters": []}
+    }
+  }
+]

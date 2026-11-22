@@ -85,7 +85,9 @@ for (const width of [1280, 390]) {
 
   await page.goto(base + "/findings/9102");
   await page.getByText("Disappeared (not verified)").first().waitFor();
-  const warn = await page.locator(".alert-warn").first().innerText();
+  // The finding's own notice: other warnings (a threat notice banner for
+  // an organisation with no agent) may come first on the page.
+  const warn = await page.locator(".alert-warn", { hasText: "Disappeared (not verified)" }).first().innerText();
   ok(warn.includes("Disappeared (not verified)") && warn.includes("not counted as remediation"), `${tag} a disappeared finding says it was not verified and is not counted`);
   ok(/Lost sight on\s*.*by a repository scan/.test(warn), `${tag} it says when Stackurity lost sight of the asset`);
   ok(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth + 1), `${tag} no horizontal scroll on a disappeared finding`);

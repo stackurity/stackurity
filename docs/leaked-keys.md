@@ -19,13 +19,18 @@ The fix for a leaked key is always the same: **rotate it** (revoke it and issue 
 | `slack-webhook` | Slack incoming webhook addresses | medium |
 | `stripe-live-key` | Stripe live secret and restricted keys | critical |
 | `razorpay-secret` | Razorpay key secrets | critical |
-| `openai-key` | OpenAI API keys | critical |
-| `anthropic-key` | Anthropic API keys | critical |
+| `openai-key` | OpenAI API keys, including project (`sk-proj-`), service account (`sk-svcacct-`) and admin (`sk-admin-`) keys | critical |
+| `anthropic-key` | Anthropic API and Admin API keys (`sk-ant-api03-`, `sk-ant-admin01-`) | critical |
+| `anthropic-oauth-token` | Anthropic OAuth tokens, as Claude Code uses (`sk-ant-oat01-`, `sk-ant-ort01-`) | critical |
+| `openrouter-key` | OpenRouter API keys (`sk-or-v1-`) | critical |
+| `groq-key` | Groq API keys (`gsk_`) | critical |
+| `xai-key` | xAI (Grok) API keys (`xai-`) | critical |
+| `huggingface-token` | Hugging Face access tokens (`hf_`) | critical |
 | `sendgrid-key` | SendGrid API keys | critical |
 | `npm-token` | npm access tokens | critical |
-| `google-api-key` | Google API keys (often meant to be public, restricted by referrer) | medium |
+| `google-api-key` | Google API keys, Gemini's included (often meant to be public, restricted by referrer) | medium |
 | `database-url` | `postgres://`, `mysql://`, `mongodb://`, `redis://` and `amqp://` addresses with a password | high |
-| `password-assignment` | A password, secret, token or API key assigned in a configuration file: `.env`, YAML, TOML, INI, `.properties`, `wp-config.php`, `config/*.php` and copies such as `wp-config.php.bak` | high |
+| `password-assignment` | A password, secret, token, API key or master key assigned in a configuration file (keys with no format of their own, such as Mistral's, DeepSeek's and a LiteLLM proxy's `LITELLM_MASTER_KEY` and `LITELLM_SALT_KEY`, are found this way): `.env`, YAML, TOML, INI, `.properties`, `wp-config.php`, `config/*.php` and copies such as `wp-config.php.bak` | high |
 
 Not reported, because their keys are made up far more often than real: example values and placeholders (`your_password_here`, `changeme`, `${DB_PASSWORD}`, `AKIAIOSFODNN7EXAMPLE`), values read from the environment (`getenv(...)`, `required('DB_PASSWORD')`), templates (`.env.example`, `wp-config-sample.php`; a key with its own format is still reported in one), tests (`*_test.go`, `*.spec.ts`, `test_*.py`), and other people's code (`node_modules`, `vendor`, `third_party`, `testdata`, `fixtures`). WordPress's authentication keys and salts are not reported: every site has them, and `DB_PASSWORD` already reports the file. Assignments in ordinary source code are not reported either: `password = '…'` in a `.js` file is far more often a form field than a credential.
 
@@ -73,7 +78,7 @@ TEST_KEY = "sk_test_…"  # stackurity:allow
 
 ## Alerts
 
-Open critical and high leaks raise one incident per asset (kind `leak`): `P1` when one is critical, otherwise `P2`. The incident is sent where new issues go right away (a route's **Urgent** and **New issues** triggers, at their priority thresholds), not with problems about Stackurity itself, and it follows the route's projects, owner teams and environments like any issue. It resolves when no critical or high leak is open on the asset, after a complete scan no longer sees them or they are dismissed.
+Open critical and high leaks raise one incident per asset (kind `leak`): `P1` when one is critical, otherwise `P2`. A leak the [second check](#second-check) found likely not a real key because of its value (a published sample, a placeholder, a too-regular value, a test-mode key, a GitHub token whose checksum does not match) is left out, unless the web server may send its file. One flagged only because it is in a test or docs file still alerts. The incident is sent where new issues go right away (a route's **Urgent** and **New issues** triggers, at their priority thresholds), not with problems about Stackurity itself, and it follows the route's projects, owner teams and environments like any issue. It resolves when no critical or high leak is open on the asset, after a complete scan no longer sees them or they are dismissed.
 
 Low and medium leaks never alert. On a server they are mostly keys kept in the application's configuration file, where they belong: the dashboard lists them under **Where keys are kept**, apart from the leaks that need action.
 
@@ -89,6 +94,17 @@ The message names the kind of key, the file and line, and one line saying why it
 | The application's configuration file | Listed so you know where the key lives when you rotate it |
 
 The fix for a leaked key is always to rotate it: revoke it and issue a new one. Removing it from the file does not undo the leak. The value is never sent to the server, stored or shown: a leak holds the file, the line, the setting's name, a fingerprint (a slow salted hash, so the same key in two places is recognised) and a masked preview such as `sk_live_…4f2a`.
+
+## Second check
+
+Every leak gets a second, independent check, which says whether it looks like a real key (see [Verification](verification.md#second-check-of-leaked-keys-and-risky-settings)). Each leak shows its verdict and a one-sentence reason:
+
+- **Confirmed**: it looks real (not a placeholder, sample or test key; for a GitHub token, its built-in checksum matches) and the last scan still found it.
+- **Likely false positive**: a placeholder (`xxxx`, `<your-key>`, `changeme`), a key published in a provider's documentation, a test-mode key (Stripe `sk_test_`), a GitHub token whose checksum does not match (so GitHub never issued it), a value far too regular to be generated, or a file that is documentation, a template or a test. These stay listed, collapsed under **Likely false positives**. Those flagged for their value raise no alert, except in a file the web server may send. Those flagged only for their file still alert, with the reason "in a test or docs file — check whether the key is real": real keys do end up in tests, so look, then dismiss it or rotate it.
+- **Fixed**: a complete scan no longer finds it. Rotate it anyway if it was real.
+- **Could not check**: the last scan did not read everything, or the collector is older than the value check (update the agent or `stackurity scan`).
+
+The collector reads the value for this while it has it and sends only signals from a fixed list (`placeholder`, `checksum_invalid`…), never the value or any part of it. Every verdict is kept, so you can see when and why it changed ([`GET /leaks/{id}/second-checks`](api.md#get-leaksidsecond-checks)).
 
 ## Rotating a leak
 
@@ -121,9 +137,10 @@ A leak a complete scan no longer sees is resolved as gone, and opens again if a 
 
 - [`GET /leaks`](api.md#get-leaks): leaked keys across the organisation, filterable by `status`, `state`, `severity` (comma-separated, e.g. `critical,high`), owner and `asset_id`.
 - [`GET /assets/{id}/leaks`](api.md#get-assetsidleaks): one asset's, with its last key scans.
-- [`GET /leaks/summary`](api.md#get-leakssummary): how many need rotation, are overdue, wait for a check and were verified gone in the last 30 days.
+- [`GET /leaks/summary`](api.md#get-leakssummary): how many need rotation, are overdue, wait for a check and were verified gone in the last 30 days, and how many are likely false positives.
+- [`GET /leaks/{id}/second-checks`](api.md#get-leaksidsecond-checks): every verdict of the second check. `GET /leaks` takes `second_check` to filter by verdict.
 - [`POST /leaks/{id}/assign`](api.md#post-leaksidassign), [`POST /leaks/{id}/rotated`](api.md#post-leaksidrotated) and [`POST /leaks/{id}/check-again`](api.md#post-leaksidcheck-again).
 - [`POST /leaks/{id}/dismiss`](api.md#post-leaksiddismiss) and [`POST /leaks/{id}/undismiss`](api.md#post-leaksidundismiss).
-- `list_leaks` for AI assistants ([AI assistants](ai-assistants.md)), read-only.
+- `list_leaks` for AI assistants ([AI assistants](ai-assistants.md)), read-only, with each leak's second check verdict and a `second_check` filter.
 
 Collectors send leaks in the batch's `leaks` field ([ObservationBatch](api.md#observationbatch)), only to servers whose `GET /meta` lists the `leaks` feature.

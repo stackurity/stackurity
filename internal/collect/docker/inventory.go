@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/stackurity/stackurity/internal/collect/apps"
+	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/gobin"
 	"github.com/stackurity/stackurity/internal/collect/linux"
 	"github.com/stackurity/stackurity/internal/model"
@@ -23,6 +24,7 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 	col := linux.New(version)
 	col.Root = root
 	col.RunVersion = nil // the image's binaries are never run
+	col.ProcDir = ""     // nor are this host's running processes the image's
 	col.ImageEnv = im.Env()
 	osBatch, err := col.Collect(ctx, "image", "")
 	if err != nil {
@@ -66,11 +68,11 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 	seen := map[string]bool{}
 	for _, dir := range dirs {
 		app := scanner.ScanApp(ctx, dir)
-		if seen[app.Dir] {
+		if seen[app.Key()] {
 			continue
 		}
-		seen[app.Dir] = true
-		if len(app.Observations) == 0 && !app.Unreadable && !explicit[dir] {
+		seen[app.Key()] = true
+		if len(app.Observations) == 0 && !app.Unreadable && !explicit[dir] && !app.UnreadJavaLibraries() {
 			continue // a tool or an empty directory, as on a host
 		}
 		r.Observations = append(r.Observations, app.Observations...)
@@ -79,7 +81,11 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 	// Go binaries dpkg or apk installed are left to the package's entry
 	// (see gobin.Scanner.Owned). Only their file lists count: guessing by
 	// directory would hide a binary no package installed.
-	gb := &gobin.Scanner{Root: root, Owned: col.ListedOwnedFunc()}
+	gb := &gobin.Scanner{Root: root, Owned: col.ListedOwnedFunc(), OnMain: func(binary, pkg, mod string) {
+		if f, ok := confcheck.GoBinaryAttackTool(binary, pkg, mod); ok {
+			r.AttackTools = append(r.AttackTools, f)
+		}
+	}}
 	goObs, goCov := gb.Scan(ctx)
 	r.Observations = append(r.Observations, goObs...)
 	r.Coverage = append(r.Coverage, goCov...)

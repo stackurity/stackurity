@@ -15,6 +15,7 @@ import { SlackOAuthCallbackPage } from "./pages/SlackOAuthCallback";
 import { GitLabCallbackPage } from "./pages/GitLabCallback";
 import { PagerDutyOAuthCallbackPage } from "./pages/PagerDutyOAuthCallback";
 import { JiraOAuthCallbackPage } from "./pages/JiraOAuthCallback";
+import { VantaOAuthCallbackPage } from "./pages/VantaOAuthCallback";
 import { GitHubCallbackPage } from "./pages/GitHubCallback";
 import { SlackInstallPage } from "./pages/SlackInstall";
 import { EmailConfirmPage, EmailStopPage } from "./pages/EmailConfirm";
@@ -69,6 +70,8 @@ import { NotFound } from "./pages/NotFound";
 import { SearchPage } from "./pages/Search";
 import { IssuesPage } from "./pages/Findings";
 import { LeaksPage } from "./pages/Leaks";
+import { CodeFindingsPage } from "./pages/CodeFindings";
+import { ConfigFindingsPage } from "./pages/ConfigFindings";
 import { FindingDetailPage } from "./pages/FindingDetail";
 import { IntelligencePage } from "./pages/Intelligence";
 import { IncidentsPage } from "./pages/Incidents";
@@ -205,6 +208,11 @@ export function App() {
   // the address and query stay. A cancel (?error=) is explained signed out.
   if (pathname === "/integrations/jira/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <JiraOAuthCallbackPage />;
   if (pathname === "/integrations/jira/oauth/callback" && state.phase === "ready") return <JiraOAuthCallbackPage />;
+  // Back from Connect Vanta (Compliance evidence): the same. The session
+  // cookie is SameSite=Strict, so the API cannot finish this on Vanta's
+  // redirect; the page posts the code from the dashboard.
+  if (pathname === "/integrations/vanta/oauth/callback" && state.phase === "login") return slackCallbackNeedsSession() ? <LoginPage /> : <VantaOAuthCallbackPage />;
+  if (pathname === "/integrations/vanta/oauth/callback" && state.phase === "ready") return <VantaOAuthCallbackPage />;
   // Back from "Install on GitHub": sign in first; the address and query
   // stay, and the page connects the installation in the signed-in session.
   if (pathname === "/integrations/github/callback" && state.phase === "login") return <LoginPage />;
@@ -283,6 +291,8 @@ export function App() {
         <Route path="fixes/mine" element={<MyWorkPage />} />
         <Route path="fixes/issues" element={<IssuesPage />} />
         <Route path="fixes/leaks" element={<LeaksPage />} />
+        <Route path="fixes/config" element={<ConfigFindingsPage />} />
+        <Route path="fixes/code" element={<CodeFindingsPage />} />
         <Route path="fixes/automatic" element={<AutomaticFixesPage />} />
         <Route
           path="fixes/policy-violations"

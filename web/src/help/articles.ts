@@ -95,7 +95,7 @@ export const ARTICLES: Article[] = [
         p: "Where your organisation has turned it on, the **Ask** button at the top of every page (Alt+K) opens an assistant that answers from your Stackurity data, with links to the issues, assets and fixes it used. It reads only what you can see, and changes nothing. The page you have open is its context; click **(remove)** to ask without it.",
       },
       {
-        p: "An answer leads with a short **Recommendation**. **Why**, **Evidence** and **Alternatives and trade-offs** open on a click; **Data gaps** (what it could not check) starts open. Advisory ids and the issues and assets it names link to their pages, and **What Ask looked at**, under each answer, lists the lookups it made. Nothing in an answer is done for you: make any change on the linked pages.",
+        p: "An answer leads with a short **Recommendation**. **Why**, **Evidence** and **Alternatives and trade-offs** open on a click; **Data gaps** (what it could not check) starts open. Advisory ids and the issues and assets it names link to their pages, and **What Ask looked at**, under each answer, lists the lookups it made. A how-to answer (\"How do I add a server?\") is the steps from the Help article, with buttons to the page where you do it (**Open Add server →**) and to the article. Nothing in an answer is done for you: make any change on the linked pages.",
       },
       {
         p: "Before your first question it shows where your questions go (with Anthropic's API, to Anthropic in the United States) and what is sent: your question, the page you have open and the data the assistant reads, without colleagues' names or email addresses. Your conversations are kept 30 days (backups up to about 60), only you can read them, and **History** lets you delete them. Answers can be wrong: check the linked pages.",
@@ -138,7 +138,7 @@ export const ARTICLES: Article[] = [
         ],
       },
       { p: "The sidebar shows only what your role can open: People and Projects need the admin role (security users get their projects' notifications), Admin is for instance administrators. Each group heading opens and closes its items; the group of the page you are on opens by itself, and a closed group shows a count when something inside waits for you. **Collapse** at the bottom narrows the sidebar to icons. On a phone the menu is a bar at the bottom: Dashboard, Fixes, Assets and **More** (the other places by group, Help and feedback). Your workspace is at the top left, search in the middle, and your account menu (email, role, help, feedback, log out) at the top right." },
-      { p: "**Search** (press `/` anywhere) finds vulnerability and advisory ids, packages (optionally with a version, such as `openssl 3.0.2`), assets, teams and people. Press Enter for the full results page. It starts with an **Overview**: how many matching components are installed, in how many versions and on how many assets, and how many open issues are critical or urgent (P1); select a figure to open that list. Then come **Components** (open one for every installed version and the assets it is on), **Vulnerabilities** (CVEs and other issues on your assets, with their severity), **Advisories** (public advisories that match but affect nothing here), then teams and people." },
+      { p: "**Search** (press `/` or Ctrl+K, ⌘K on a Mac, anywhere) first lists the **pages, settings and help articles** whose name or a word people use for them matches (type `sso`, `invite` or `api token` to jump straight there; only pages you can open are shown). It also finds vulnerability and advisory ids, packages (optionally with a version, such as `openssl 3.0.2`), assets, teams and people. Press Enter for the full results page. It starts with an **Overview**: how many matching components are installed, in how many versions and on how many assets, and how many open issues are critical or urgent (P1); select a figure to open that list. Then come **Components** (open one for every installed version and the assets it is on), **Vulnerabilities** (CVEs and other issues on your assets, with their severity), **Advisories** (public advisories that match but affect nothing here), then teams and people." },
       {
         note: "Stackurity runs on your own server and sends no telemetry. The only outbound calls are to the vulnerability feeds, your Git hosts and registries, the notification channels you configure, and [feedback](help:feedback) when you send it.",
       },
@@ -259,7 +259,7 @@ export const ARTICLES: Article[] = [
     section: "Adding servers and sources",
     summary: "Create a one-time install command in the dashboard and run it on the new Linux or Windows server or Mac. Admins only.",
     where: ["Environment", "Assets", "Add server"],
-    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding",
+    keywords: "add server new server install command enroll enrollment code curl sudo agent linux systemd windows powershell service onboarding project missing not showing",
     body: [
       {
         p: "The quickest way to add a Linux or Windows server is a one-time install command. It installs the same read-only `stackurity` agent as a manual install, without creating a token or setting up a service by hand.",
@@ -267,6 +267,7 @@ export const ARTICLES: Article[] = [
       {
         steps: [
           "Open [Assets](/assets) and click **Add server** (admins only).",
+          "If you use projects, choose the **Project** the server goes into. The project you are looking at in the project picker, or your only project, is already chosen. The server and the apps found on it are added to it, so everyone working on the project sees them. A server in no project is seen only by people who see all projects.",
           "Optionally enter a **Label** (e.g. `web servers`) and an **Environment** (e.g. `production`; production counts towards priority).",
           "**Also check websites and apps on this server** is ticked by default: the agent looks in /srv, /var/www, /opt, /app and home directories for sites and apps (including WordPress sites, whose WordPress core version is read from `wp-includes/version.php` and checked for end of life and for missing security releases on its branch; its plugins and themes are listed with their latest release on wordpress.org, but their vulnerabilities are not matched yet), and lists the libraries they use: what npm, pip and Composer installed, and front-end libraries such as jQuery or Bootstrap that a site loads from a CDN or keeps a copy of (copies WordPress itself maintains are reported with inferred confidence, so their issues show as needs validation). In a compiled app (a webpack, Vite or Next.js build, or a Flutter web build) it reports the libraries whose licence banner, version constant or source map names their release, and the Flutter engine revision; the rest of a bundle cannot be identified, and the app says so under coverage instead of showing no components. It only reads. Under **Application directories**, add apps that live somewhere else, one per line, e.g. `/data/shop`.",
           "Under **Options**, set how many servers the code can enroll (default 1) and how long it is valid (default 24 hours).",
@@ -330,7 +331,7 @@ sudo userdel stackurity`,
       { h: "Afterwards" },
       {
         list: [
-          "The server appears under **Assets** within a minute; applications appear as their own assets linked to it.",
+          "The server appears under **Assets** within a minute, in the project you chose; applications appear as their own assets linked to it. A server already enrolled in no project: switch the project picker to **All projects**, open **Assets → Not in a project**, then add it to a project from the project's page.",
           "Unused codes are listed under **Pending install codes** on the same page until they expire or are used up. **Revoke** one you no longer need; servers that already enrolled keep reporting.",
           "For many servers at once (cloud-init, Ansible, Terraform, an SSH loop or DigitalOcean), see [Add many servers](help:add-many-servers).",
           "For a Mac, see [Add a Mac](help:macos-hosts). To install by hand, see [Add a Linux server manually](help:add-linux-server), [Add a Windows server](help:windows-hosts) and docs/install.md.",
@@ -869,6 +870,33 @@ stackurity.exe agent --interval 6h`,
       },
       { code: "stackurity vex export --asset 12 --format cyclonedx -o asset.vex.cdx.json", label: "Export" },
       { p: "In the dashboard, every asset page has **Export VEX**, and **Settings → VEX** exports every asset you can see." },
+    ],
+  },
+  {
+    id: "code-findings",
+    title: "Import code scanner findings",
+    section: "Adding servers and sources",
+    summary:
+      "Findings from code-review security scanners such as deepsec, or any tool that writes SARIF, shown next to a repository's dependency, server and image issues.",
+    keywords: "deepsec sarif code review sast semgrep codeql static analysis ai scanner import",
+    where: ["Security", "Code findings"],
+    body: [
+      {
+        code: "deepsec export --format json --project-id shop --out deepsec.json\nstackurity import code-findings deepsec.json --format deepsec --asset https://github.com/acme/shop",
+        label: "deepsec",
+      },
+      { code: "stackurity import code-findings results.sarif --format sarif --asset 12", label: "SARIF 2.1.0" },
+      {
+        list: [
+          "`--asset` is the repository's asset id or URL. The repository must have reported first (a scan or a repository integration); an import never creates an asset. In a CI job with keyless sign-in, it defaults to the job's own repository.",
+          "Importing again updates the same findings instead of adding copies. With a complete report, findings it no longer has are resolved as gone. Use `--partial` for a filtered export (for example deepsec's `--only-true-positive`), so nothing else is resolved.",
+          "The scanner's own verdict is kept. A finding deepsec revalidated as a false positive, fixed, accepted risk or duplicate, or one suppressed in SARIF, is closed and never alerts.",
+          "Open critical and high security findings raise one incident per repository and are sent where new issues go. Medium and lower, non-security bugs and rules not tagged as security are listed only.",
+          "`--model` records the AI model that produced the report. The people a deepsec export names (owners, on-call, committers) are not stored.",
+          "Reports are limited to 16 MB and 5,000 findings. Their text is shown as plain text.",
+        ],
+      },
+      { p: "Each repository's page has a **Code findings** tab; **Fixes → Code findings** lists them all. A security user can dismiss one that is not a real issue." },
     ],
   },
   {
@@ -1508,6 +1536,39 @@ jobs:
     ],
   },
   {
+    id: "threat-notices",
+    title: "Threat notices",
+    section: "Daily work",
+    summary: "What Stackurity tells you when a new attack, attacker tool or exploited vulnerability appears, and what to do about it.",
+    keywords: "threat notice artex attack tool exploited vulnerability kev campaign banner found covered connect upgrade feed",
+    body: [
+      {
+        p: "When a new attack, attacker tool or actively exploited vulnerability appears, Stackurity adds a check for it and tells each organisation once what it means for them. Administrators and the security team see a **banner** and get **one email**; the organisation's notification rules that send **Threat notices** (Slack, Teams, email) get a message too. You don't have to ask: notices go out on their own.",
+      },
+      {
+        table: [
+          ["The notice says", "What it means", "What to do"],
+          ["Found", "The threat's checks found it on your assets.", "Press **See findings**. For an attacker tool, find out who installed it and why; if nobody in your organisation did, treat the asset as compromised."],
+          ["Covered", "It is being used against systems on the public internet. Your connected assets are checked and nothing was found.", "Nothing. The notice may name another connection that would check more of your estate."],
+          ["Needs a connection", "Stackurity can check for it, but needs something from you: the agent on your servers, Docker access through the agent, your repositories, a cloud account.", "Press **Connect** for the Help page that sets it up. Once connected, the check runs on its own."],
+          ["Upgrade", "Self-hosted only: this server is older than the release that has the check.", "Upgrade to the latest version ([Backups and upgrades](help:backups-upgrades)). Stackurity Cloud always runs the latest version."],
+        ],
+      },
+      {
+        list: [
+          "**Dismiss** hides the banner for you only. It comes back if the threat is later found on your assets: that is the one change you are told about again, by banner, email and your rules.",
+          "A project's or an asset's notification rule gets a notice only when the threat is found on one of its assets, and counts only those. Organisation rules get every notice.",
+          "A server counts as checked once its agent is a release that has the check. Servers with an older agent are listed as needing an update, never as checked and clean.",
+          "Notices give counts and links, never asset names, so the same message is safe for every channel.",
+          "Ask Stackurity and AI assistants answer \"are we affected by ARTEX?\" with the same checks (`threat_check`), and list the notices you were sent (`list_threat_notices`).",
+        ],
+      },
+      {
+        note: "A self-hosted server learns about new threats from a public list that Stackurity signs. Fetching it sends nothing about you, and turning off the release check (`STACKURITY_UPDATE_CHECK=off`) turns it off too. Without it, the server still knows the threats of its own release. Notices are worked out and sent by your server: nothing goes to Stackurity.",
+      },
+    ],
+  },
+  {
     id: "coverage-intelligence",
     title: "Coverage, Intelligence feeds and gaps",
     section: "Daily work",
@@ -1597,6 +1658,39 @@ jobs:
       },
       {
         p: "**Remediated** counts only issues fixed on the asset in the period: upgraded, fixed by a remediation plan, or removed. Issues that closed with nothing changed on the asset, such as an advisory withdrawn by its source, are shown on their own line as **closed, not remediation**, with a link to the list, and are never in the deadline share or the median. See [Why an issue closed](help:remediation-outcomes).",
+      },
+    ],
+  },
+  {
+    id: "evidence-pack",
+    title: "Audit evidence pack",
+    section: "Daily work",
+    summary: "One download for your auditor, mapped to SOC 2, ISO 27001 and, with the Compliance add-on, PCI DSS and the EU Cyber Resilience Act.",
+    where: ["Governance", "Reports and audit", "Evidence report", "Audit evidence pack"],
+    keywords: "audit evidence pack soc 2 soc2 iso 27001 pci dss cra cyber resilience act auditor controls cc7.1 cc8.1 a.8.8 a.8.9 6.3.3 sbom vex zip pdf compliance add-on",
+    body: [
+      {
+        steps: [
+          "Open **Reports** and find **Audit evidence pack**.",
+          "Choose the period: **Last quarter**, **This quarter to date**, or the report's own dates.",
+          "Tick the frameworks your auditor asked about.",
+          "Click **Download PDF** for the auditor, **Download ZIP** for the PDF with a CSV of every table and a SHA-256 manifest, or **Download JSON** for other tools.",
+        ],
+      },
+      {
+        p: "For each control the pack says what in it is evidence for that control, and what Stackurity does not show (for example, Stackurity is not an Approved Scanning Vendor for PCI DSS 11.3.2). It is evidence for the controls; it never says you are compliant or certified. Your auditor decides that.",
+      },
+      {
+        table: [
+          ["In the pack", "What it shows"],
+          ["**Monitoring**", "Every asset, the hours with at least one report out of the hours monitored, and the longest gap between reports."],
+          ["**Findings**", "Open at the start and end of the period, new and fixed in it, and every open finding with its CVSS score and whether it is past its deadline."],
+          ["**Time to fix**", "Your deadline for each priority and how many fixes met it, with median and 90th-percentile days. Only upgrades and removals count as fixes."],
+          ["**Exceptions**", "Every exception active in the period: reason, who asked, who approved, expiry and how it ended."],
+        ],
+      },
+      {
+        p: "Team and up get SOC 2 and ISO 27001:2022. The **Compliance add-on** (on any paid plan; Enterprise includes it) adds PCI DSS 4.0, the EU Cyber Resilience Act, an SBOM of each asset and the VEX statements in the ZIP. Every download is recorded in the audit log.",
       },
     ],
   },
@@ -2126,7 +2220,7 @@ jobs:
     section: "Settings and administration",
     summary: "Group assets into projects and give people access to chosen projects only.",
     where: ["Environment", "Projects"],
-    keywords: "project client agency site contractor access grant switcher unfiled team role permission",
+    keywords: "project client agency site contractor access grant switcher unfiled team role permission ask notes",
     body: [
       {
         p: "A **project** groups assets: a site, a client, a product. One asset can be in several projects, such as a database server two sites share. Your organisation (this workspace) holds the projects, and the projects hold the assets.",
@@ -2165,6 +2259,10 @@ jobs:
           "To send a client only their project's alerts, tick the project in a notification integration's settings (**Integrations**). A route to Jira can be limited to one project: its issues then describe only that project's part of each incident.",
           "**People ▸ Users** can change someone to **projects only**: they keep their account but lose the organisation-wide role.",
         ],
+      },
+      { h: "Notes for Ask Stackurity" },
+      {
+        p: "A project's admins can write a short note about it (up to 2,000 characters) under **Notes for Ask Stackurity** on the project's page, or on its Notifications page for admins of that project only: what the project is, which hosts are for testing, what to leave out. When Ask Stackurity is on, it reads the note with questions about that project (the project chosen in the switcher, or one of its assets open), as background from your organisation, never as instructions. Anyone who can see the project can read the note, and each change is in the audit log with the old and new text. Don't put passwords or keys in it.",
       },
       {
         note: "API clients choose a project with the `project_id` query parameter or the `X-Stackurity-Project` header. The evidence report and exports follow the choice. Agent and collector tokens belong to the workspace and are not limited by projects.",

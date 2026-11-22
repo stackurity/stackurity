@@ -26,6 +26,7 @@ import { ConnectGitLabButton, GitLabConnections } from "./GitLab";
 import { CiTrusts } from "./CiTrusts";
 import { GitHubInstallations, InstallOnGitHubButton } from "./GitHubApp";
 import { PlanLimitNote } from "../../components/PlanLimit";
+import { ComplianceEvidenceCard } from "../../components/EvidenceConnectors";
 import { Catalogue, HealthSummary, IntegrationGrid, IntegrationIcon, StatusFilterBar, type CatalogueEntry } from "../../components/IntegrationCards";
 import {
   connectedCounts,
@@ -394,6 +395,7 @@ export function IntegrationsHubPage() {
       )}
       <GitLabConnections status={gl} admin={admin} onChange={gitlab.reload} />
       <GitHubInstallations status={gh} admin={admin} onChange={github.reload} />
+      <ComplianceEvidenceCard />
       <h2 className="h-sm" id="add">
         Add an integration
       </h2>

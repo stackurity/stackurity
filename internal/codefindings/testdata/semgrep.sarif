@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+  "version": "2.1.0",
+  "runs": [
+    {
+      "tool": {
+        "driver": {
+          "name": "Semgrep OSS",
+          "semanticVersion": "1.95.0",
+          "rules": [
+            {
+              "id": "javascript.express.security.audit.xss.direct-response-write",
+              "name": "direct-response-write",
+              "shortDescription": {"text": "Untrusted input written directly to the response"},
+              "fullDescription": {"text": "Data from the request flows into res.send without escaping."},
+              "help": {"text": "Render through a template engine that escapes output.", "markdown": "Render through a **template engine**."},
+              "defaultConfiguration": {"level": "warning"},
+              "properties": {"tags": ["security", "CWE-79"], "security-severity": "7.5"}
+            },
+            {
+              "id": "javascript.lang.correctness.useless-assign",
+              "shortDescription": {"text": "Value assigned and never read"},
+              "defaultConfiguration": {"level": "note"}
+            }
+          ]
+        }
+      },
+      "automationDetails": {"id": "semgrep/ci/2026-11-20"},
+      "results": [
+        {
+          "ruleId": "javascript.express.security.audit.xss.direct-response-write",
+          "ruleIndex": 0,
+          "message": {"text": "req.query.name reaches res.send()"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/routes/hello.js"}, "region": {"startLine": 14, "endLine": 15}}}],
+          "fingerprints": {"matchBasedId/v1": "4f2a9c"}
+        },
+        {
+          "ruleId": "javascript.lang.correctness.useless-assign",
+          "message": {"text": "x is assigned but never used"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "file://src/util.js"}, "region": {"startLine": 3}}}]
+        },
+        {
+          "ruleId": "javascript.express.security.audit.xss.direct-response-write",
+          "message": {"text": "req.body.bio reaches res.send()"},
+          "locations": [{"physicalLocation": {"artifactLocation": {"uri": "src/routes/profile.js"}, "region": {"startLine": 40}}}],
+          "suppressions": [{"kind": "inSource", "justification": "escaped by sanitizeBio()"}]
+        },
+        {
+          "ruleId": "javascript.lang.correctness.useless-assign",
+          "kind": "pass",
+          "message": {"text": "checked"}
+        }
+      ]
+    }
+  ]
+}

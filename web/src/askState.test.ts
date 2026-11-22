@@ -48,3 +48,14 @@ test("a half-typed question that holds a secret is not kept for the tab", () => 
   saveAskState(7, 1, { open: true, minimised: false, conversation: 42, text: "use xoxb-1234567890-abcdefghijkl" }, s);
   assert.deepEqual(loadAskState(7, 1, s), { open: true, minimised: false, conversation: 42, text: "" });
 });
+
+test("a saved Ask settings change reaches every listener until it unsubscribes", async () => {
+  const { announceAskSettingsChanged, onAskSettingsChanged } = await import("./askState.ts");
+  let n = 0;
+  const off = onAskSettingsChanged(() => n++);
+  announceAskSettingsChanged();
+  assert.equal(n, 1);
+  off();
+  announceAskSettingsChanged();
+  assert.equal(n, 1);
+});

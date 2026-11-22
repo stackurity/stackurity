@@ -11,7 +11,7 @@ import (
 )
 
 // Exceptions to policy gates (docs/design/policy-gates.md, section 6;
-// migration 0110): someone asks for a policy not to count against one
+// migration 0124): someone asks for a policy not to count against one
 // asset, one component on it, or one finding or leaked key on it, with a
 // reason and the date it should end; a security or admin user approves or
 // declines, as for ignore requests. An approved exception always has an

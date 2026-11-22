@@ -20,10 +20,10 @@ func TestScanReportsLeaks(t *testing.T) {
 	})()
 	token := strings.Join([]string{"ghp", "_", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1Jd5Fs0Ga2Qex"}, "")
 	bin := filepath.Join(t.TempDir(), "git")
-	// "Clones" into the destination (the last argument); fails anything else.
+	// "Clones" into the destination (the last argument); does nothing else.
 	// The temporary directory's name has "clone" in it too, so the
 	// subcommand is looked for among the arguments, not in all of them.
-	script := "#!/bin/sh\nfor a; do [ \"$a\" = clone ] && c=1; d=$a; done\n[ -n \"$c\" ] || exit 1\n" +
+	script := "#!/bin/sh\nfor a; do [ \"$a\" = clone ] && c=1; d=$a; done\n[ -n \"$c\" ] || exit 0\n" +
 		"mkdir -p \"$d/src\" \"$d/.git\"\nprintf \"const t = '" + token + "';\\n\" > \"$d/src/deploy.js\"\nprintf 'x' > \"$d/.git/config\"\n"
 	if err := os.WriteFile(bin, []byte(script), 0o700); err != nil {
 		t.Fatal(err)

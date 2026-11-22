@@ -251,3 +251,61 @@ func TestInstallScriptHTTPGuard(t *testing.T) {
 		}
 	}
 }
+
+// Process access (STACKURITY_PROCESSES) is opt-in and kept across upgrades:
+// only then does the unit get CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH (to
+// read Debian's crontabs), always with the ptrace and process_vm system
+// calls blocked.
+func TestInstallScriptProcessAccess(t *testing.T) {
+	if _, err := exec.LookPath("sh"); err != nil {
+		t.Skip("no sh")
+	}
+	script, err := os.ReadFile("install/agent.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(script)
+	start := strings.Index(src, `PROCS="${STACKURITY_PROCESSES:-}"`)
+	end := strings.Index(src[max(start, 0):], "\nesac\n")
+	if start < 0 || end < 0 {
+		t.Fatal("the process-access block is not where the test expects it in agent.sh")
+	}
+	block := src[start : start+end+len("\nesac\n")]
+	if !strings.Contains(src, "LockPersonality=yes\n$CAPS\n") {
+		t.Error("the unit does not take its capabilities from $CAPS")
+	}
+	for _, c := range []struct {
+		env, saved string
+		want       bool
+	}{
+		{"", "", false},
+		{"1", "", true},
+		{"true", "", true},
+		{"", "STACKURITY_PROCESSES=true\n", true}, // an upgrade keeps it
+		{"0", "STACKURITY_PROCESSES=true\n", false},
+	} {
+		dir := t.TempDir()
+		if err := os.WriteFile(filepath.Join(dir, "agent.env"), []byte(c.saved), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		cmd := exec.Command("sh", "-c", "say() { :; }; sed() { :; }; CONF='"+dir+"'\n"+block+`printf '%s' "$CAPS"`)
+		cmd.Env = []string{"PATH=" + os.Getenv("PATH"), "STACKURITY_PROCESSES=" + c.env}
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("%+v: %v %s", c, err, out)
+		}
+		caps := string(out)
+		on := strings.Contains(caps, "AmbientCapabilities=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH\n") &&
+			strings.Contains(caps, "CapabilityBoundingSet=CAP_SYS_PTRACE CAP_DAC_READ_SEARCH\n")
+		if on != c.want {
+			t.Errorf("%+v: %q", c, caps)
+		}
+		if on && (!strings.Contains(caps, "SystemCallFilter=~ptrace process_vm_readv process_vm_writev pidfd_getfd kcmp") ||
+			!strings.Contains(caps, "StateDirectory=stackurity-agent")) {
+			t.Errorf("%+v: no system call filter or state directory: %q", c, caps)
+		}
+		if !on && caps != "CapabilityBoundingSet=" {
+			t.Errorf("%+v: %q", c, caps)
+		}
+	}
+}

@@ -22,9 +22,20 @@ import {
 } from "../components/ui";
 import { confirmAction } from "../components/ConfirmDialog";
 import { DigitalOceanPanel, FleetPanel } from "./AddServerFleet";
+import { PROCESS_ACCESS_TEXT } from "../components/Reachability";
 import { linuxCommand, macCommand, windowsCommand } from "../installCommand";
 import { AgentFacts } from "../components/AgentFacts";
 import { GroupCrumb } from "../components/nav";
+import { useProject } from "../project";
+import {
+  choiceProjectId,
+  initialProjectChoice,
+  openProjects,
+  projectName,
+  whereServerAppears,
+  type ProjectChoice,
+  type ProjectOption,
+} from "../enrollProject";
 
 type Mode = "one" | "fleet" | "digitalocean";
 
@@ -33,8 +44,8 @@ type Mode = "one" | "fleet" | "digitalocean";
  * docker, it also gives the agent access to the Docker socket
  * (STACKURITY_DOCKER=1) so it checks the images of running containers.
  */
-export function installCommand(code: string, docker = false): { command: string; insecure: boolean } {
-  return linuxCommand(code, window.location, docker);
+export function installCommand(code: string, docker = false, processes = false): { command: string; insecure: boolean } {
+  return linuxCommand(code, window.location, docker, processes);
 }
 
 /** The one-line installer for a new Windows host (installCommand.ts). */
@@ -56,14 +67,16 @@ export function InstallCommandTabs({
   onOS,
   idPrefix,
   docker = false,
+  processes = false,
 }: {
   code: string;
   os: ServerOS;
   onOS: (os: ServerOS) => void;
   idPrefix: string;
   docker?: boolean;
+  processes?: boolean;
 }) {
-  const { command } = os === "windows" ? windowsInstallCommand(code) : os === "macos" ? macInstallCommand(code) : installCommand(code, docker);
+  const { command } = os === "windows" ? windowsInstallCommand(code) : os === "macos" ? macInstallCommand(code) : installCommand(code, docker, processes);
   return (
     <div className="install-command">
       <Tabs<ServerOS>
@@ -102,6 +115,22 @@ export function CheckDocker({ checked, onChange }: { id: string; checked: boolea
 }
 
 /**
+ * "See which packages are running": adds STACKURITY_PROCESSES=1 to the
+ * install command. Off by default: CAP_SYS_PTRACE (with CAP_DAC_READ_SEARCH) is equivalent to root on
+ * the server (docs/reachability.md).
+ */
+export function CheckProcesses({ checked, onChange }: { id: string; checked: boolean; onChange: (on: boolean) => void }) {
+  return (
+    <CheckCard
+      checked={checked}
+      onChange={onChange}
+      label="See which packages are running"
+      description={PROCESS_ACCESS_TEXT}
+    />
+  );
+}
+
+/**
  * "Also check websites and apps on this server": the install code then
  * turns on the agent's application discovery (discover_apps). On by
  * default; the agent only lists directories and reads lockfiles.
@@ -114,6 +143,50 @@ export function CheckApps({ checked, onChange }: { id: string; checked: boolean;
       label="Also check websites and apps on this server"
       description="Looks in /srv, /var/www, /opt, /app and home directories for sites and apps (Node.js, PHP, Python, Ruby, Go and more), and lists the libraries they use. It only reads."
     />
+  );
+}
+
+/**
+ * "Which project": the project the code adds its servers (and the apps on
+ * them) to. Shown when the workspace has projects; the project chosen in the
+ * switcher, or the only project, is pre-selected (enrollProject.ts).
+ */
+export function ProjectField({
+  id,
+  projects,
+  value,
+  onChange,
+  showLabel = false,
+  hint,
+}: {
+  id: string;
+  projects: readonly ProjectOption[];
+  value: ProjectChoice;
+  onChange: (v: ProjectChoice) => void;
+  /** Show "Project" above the select (in a form grid); hidden inside a SettingRow, which names it. */
+  showLabel?: boolean;
+  hint?: string;
+}) {
+  const open = openProjects(projects);
+  if (open.length === 0) return null;
+  return (
+    <div className="field">
+      <label className={showLabel ? undefined : "sr-only"} htmlFor={id}>
+        Project
+      </label>
+      <select id={id} required value={value} onChange={(e) => onChange(e.target.value as ProjectChoice)}>
+        <option value="" disabled>
+          Choose a project…
+        </option>
+        {open.map((p) => (
+          <option key={p.id} value={String(p.id)}>
+            {p.name}
+          </option>
+        ))}
+        <option value="none">No project (only people who see all projects see it)</option>
+      </select>
+      {hint && <p className="hint">{hint}</p>}
+    </div>
   );
 }
 
@@ -158,6 +231,7 @@ export function AddServerPage() {
 }
 
 function OneServer() {
+  const { projects } = useProject();
   const res = useLoad(() => api.get<{ items: Enrollment[] | null }>("/enrollments"), []);
   const act = useAction();
   const [created, setCreated] = useState<EnrollmentCreated | null>(null);
@@ -192,6 +266,9 @@ function OneServer() {
       ),
     },
     { key: "env", header: "Environment", cell: (e) => e.environment || <span className="muted">—</span> },
+    ...(openProjects(projects).length > 0
+      ? ([{ key: "project", header: "Project", cell: (e) => projectName(e.project_id, projects) || <span className="muted">No project</span> }] as Column<Enrollment>[])
+      : []),
     { key: "prefix", header: "Code", cell: (e) => <span className="mono">{e.prefix}…</span> },
     { key: "uses", header: "Uses left", numeric: true, cell: (e) => e.uses_left.toLocaleString() },
     { key: "expires", header: "Expires", cell: (e) => <RelativeTime iso={e.expires_at} /> },
@@ -219,7 +296,7 @@ function OneServer() {
   return (
     <>
       {created ? (
-        <InstallCommand created={created} onDone={() => setCreated(null)} />
+        <InstallCommand created={created} projects={projects} onDone={() => setCreated(null)} />
       ) : (
         <CreateEnrollment
           onCreated={(c) => {
@@ -243,10 +320,11 @@ function OneServer() {
   );
 }
 
-function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDone: () => void }) {
+function InstallCommand({ created, projects, onDone }: { created: EnrollmentCreated; projects: readonly ProjectOption[]; onDone: () => void }) {
   const [os, setOS] = useState<ServerOS>("linux");
   const [docker, setDocker] = useState(false);
-  const { insecure } = installCommand(created.code, docker);
+  const [processes, setProcesses] = useState(false);
+  const { insecure } = installCommand(created.code, docker, processes);
   const e = created.enrollment;
   const appsAsked = e.discover_apps || (e.app_dirs?.length ?? 0) > 0;
   return (
@@ -264,11 +342,16 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             from there instead.
           </Notice>
         )}
-        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" docker={docker} />
+        <InstallCommandTabs code={created.code} os={os} onOS={setOS} idPrefix="add-" docker={docker} processes={processes} />
         {os === "linux" && (
-          <div className="field">
-            <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
-          </div>
+          <>
+            <div className="field">
+              <CheckDocker id="ic-docker" checked={docker} onChange={setDocker} />
+            </div>
+            <div className="field">
+              <CheckProcesses id="ic-processes" checked={processes} onChange={setProcesses} />
+            </div>
+          </>
         )}
         {os === "windows" && appsAsked && (
           <Notice kind="info">
@@ -281,6 +364,7 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
             ["Expires", <>{absTime(e.expires_at)} (<RelativeTime iso={e.expires_at} />)</>],
             ["Can enroll", plural(e.uses_left, "server")],
             ...(e.label ? ([["Label", e.label]] as [string, string][]) : []),
+            ...(openProjects(projects).length > 0 ? ([["Project", projectName(e.project_id, projects) || "No project"]] as [string, string][]) : []),
             ...(e.environment ? ([["Environment", e.environment]] as [string, string][]) : []),
           ]}
         />
@@ -353,8 +437,7 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
           </div>
         )}
         <p className="small">
-          <strong>Next:</strong> the server appears under <Link to="/assets">Assets</Link> within a minute; applications
-          appear as their own assets linked to it.
+          <strong>Next:</strong> {whereServerAppears(e.project_id, projects)} <Link to="/assets">Go to Assets</Link>
         </p>
         <p className="small muted">
           Other ways: MDM for Macs, manual installs, and removing the agent, are described in the documentation (docs/install.md).
@@ -370,6 +453,8 @@ function InstallCommand({ created, onDone }: { created: EnrollmentCreated; onDon
 }
 
 function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => void }) {
+  const { projectId, projects } = useProject();
+  const [project, setProject] = useState<ProjectChoice>(() => initialProjectChoice(projectId, projects));
   const [label, setLabel] = useState("");
   const [environment, setEnvironment] = useState("");
   const [dirs, setDirs] = useState("");
@@ -392,6 +477,7 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
         discover_apps: discover,
         uses: Number(uses) || 1,
         ttl_hours: Number(ttl) || 24,
+        project_id: choiceProjectId(project),
       }),
     );
     if (c) onCreated(c);
@@ -404,6 +490,14 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
     >
       <form className="form" onSubmit={submit}>
         <ErrorBox error={act.error} title="Could not create install command" />
+        {openProjects(projects).length > 0 && (
+          <SettingRow
+            title="Project"
+            description="The server and the apps found on it are added to this project, so everyone working on it sees them."
+          >
+            <ProjectField id="en-project" projects={projects} value={project} onChange={setProject} />
+          </SettingRow>
+        )}
         <SettingRow title="Label" description="Optional. Helps you recognise the code in the list below, for example web servers.">
           <div className="field">
             <label className="sr-only" htmlFor="en-label">
@@ -467,7 +561,11 @@ function CreateEnrollment({ onCreated }: { onCreated: (c: EnrollmentCreated) => 
             </div>
           </SettingRow>
         </details>
-        <CardFooter status={`The code can enroll ${plural(Number(uses) || 1, "server")} within ${Number(ttl) || 24} hours.`}>
+        <CardFooter
+          status={`The code can enroll ${plural(Number(uses) || 1, "server")} within ${Number(ttl) || 24} hours${
+            choiceProjectId(project) > 0 ? `, into ${projectName(choiceProjectId(project), projects)}` : ""
+          }.`}
+        >
           <button type="submit" className="btn btn-primary" disabled={act.pending}>
             Create install command
           </button>

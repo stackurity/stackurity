@@ -671,6 +671,32 @@ func (s *Store) SetCoverage(ctx context.Context, rows []RowCoverage) error {
 	return nil
 }
 
+// CarryForwardEvaluations moves the rows evaluated against a feed's
+// previous refresh (prev, its last successful sync before this one) to its
+// current refresh, except rows of the components the sync re-evaluates
+// (reevaluated). The sync changed nothing those rows were matched on, so
+// they stand evaluated against the new refresh; evaluated_at stays when
+// the matcher last ran. Rows behind an older refresh (their re-evaluation
+// is still queued) are not touched. Returns the rows moved.
+func (s *Store) CarryForwardEvaluations(ctx context.Context, feed string, prev time.Time, reevaluated []int64) (int64, error) {
+	if reevaluated == nil {
+		reevaluated = []int64{}
+	}
+	var n int64
+	err := pgx.BeginFunc(ctx, s.Pool, func(tx pgx.Tx) error {
+		return asSystem(ctx, tx, func() error {
+			tag, err := tx.Exec(ctx, `UPDATE inventory_evaluations e
+				SET feed_cursor = f.cursor, feed_last_success = f.last_success
+				FROM feeds f, inventory i
+				WHERE f.name = $1 AND e.feed = $1 AND e.feed_last_success = $2 AND f.last_success > $2
+				  AND i.id = e.inventory_id AND NOT (i.component_id = ANY($3::bigint[]))`, feed, prev, reevaluated)
+			n = tag.RowsAffected()
+			return err
+		})
+	})
+	return n, err
+}
+
 // --- releases and lifecycle
 
 type Release struct {
@@ -1020,6 +1046,12 @@ type Finding struct {
 	// expected of (scanned once): the finding is true as of then. Null for
 	// assets that report regularly.
 	AsOf *time.Time `json:"as_of"`
+	// Reachability is whether the package is reached on the asset, from its
+	// inventory row (model.Reach*: unknown, reachable, not_imported,
+	// not_running), and ReachabilityEvidence the collector's evidence lines.
+	// Unknown means not assessed, never "safe".
+	Reachability         string   `json:"reachability"`
+	ReachabilityEvidence []string `json:"reachability_evidence"`
 
 	// VEX is the latest imported VEX statement about this component version
 	// and vulnerability (null when none): informational for affected, fixed
@@ -1052,7 +1084,11 @@ type FindingFilter struct {
 	Exploited    bool
 	// EPSSMin keeps vulnerability findings whose EPSS (EPSSCVE's) is at
 	// least this probability (0 to 1); 0 means no filter.
-	EPSSMin      float64
+	EPSSMin float64
+	// Reachability keeps findings whose package has one of these statuses
+	// (model.ReachUnknown …); empty means no filter. A paid filter: the API
+	// checks the plan (license.Reachability).
+	Reachability []string
 	State        string // new, acknowledged, in_progress, suppressed, risk_accepted, active (= not suppressed/accepted), regressed
 	Priority     []string
 	SOS          bool
@@ -1099,7 +1135,7 @@ const findingCols = `f.id, f.kind, f.key, f.inventory_id, f.asset_id, a.name, a.
 	f.priority_policy, f.regressed_at, f.until_fix, f.ignore_reason, f.exception_id, ` + displayState + `,
 	COALESCE(sc.result, ''), COALESCE(sc.reason, ''), f.resolution_kind, f.resolution_detail,
 	ep.score, ep.percentile, ep.score_date, ep.model_version, ep.cve,
-	CASE WHEN ` + oneOffSQL + ` THEN a.last_seen END`
+	CASE WHEN ` + oneOffSQL + ` THEN a.last_seen END, i.reachability, i.reachability_evidence`
 
 var findingFrom = ` FROM findings f JOIN assets a ON a.id = f.asset_id AND a.merged_into IS NULL
 	JOIN components c ON c.id = f.component_id JOIN inventory i ON i.id = f.inventory_id
@@ -1166,6 +1202,10 @@ func (s *Store) findingConditions(ctx context.Context, f FindingFilter) (finding
 	}
 	if f.Exploited {
 		w.conds = append(w.conds, "(f.evidence->>'known_exploited')::boolean")
+	}
+	if len(f.Reachability) > 0 {
+		// The count's FROM has no inventory join, so both test it by key.
+		w.add("EXISTS (SELECT 1 FROM inventory ir WHERE ir.id = f.inventory_id AND ir.reachability = ANY(?))", f.Reachability)
 	}
 	switch f.State {
 	case "":

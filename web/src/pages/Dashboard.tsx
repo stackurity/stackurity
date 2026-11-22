@@ -31,6 +31,9 @@ import { Badge } from "../components/Badge";
 import { useUnchecked } from "../components/Unchecked";
 import { BreakdownBar, changeText, EffortPill, fixesFrom, FixKindIcon, FixPlaces, PRIO_CLASS, urgencyOf } from "../components/FixGroups";
 import { PackSuggestions } from "../components/PackSuggestions";
+import { AskStarters } from "../components/AskPanel";
+import { askStackurity } from "../askState";
+import type { AskStatus } from "../ask";
 import { fixPlaces, FixVerify, useCheckOptions, type CheckOptions } from "../components/FixVerify";
 import {
   IconActionPlan,
@@ -39,6 +42,7 @@ import {
   IconHelp,
   IconInbox,
   IconIssues,
+  IconMessage,
   IconShield,
   IconSignalOff,
   IconTrend,
@@ -677,12 +681,57 @@ export function TrendsBand({
  * (Needs your attention), what the team should fix first (Recommended
  * actions) and whether we are getting better or worse (Security trends).
  */
+/**
+ * Ask Stackurity on the Dashboard: the questions most people start with,
+ * one click each, so asking is the quickest way in (owner, 21 Nov 2026).
+ * Shown where Ask is on; where an admin turned it off, admins get the way
+ * to turn it on; otherwise (no model, not in the plan, read-only) nothing.
+ */
+function AskStartBlock({ admin, status }: { admin: boolean; status: AskStatus | undefined }) {
+  if (!status) return null;
+  if (status.reason === "ask_disabled") {
+    if (!admin) return null;
+    return (
+      <Block
+        id="dash-ask"
+        icon={<IconMessage />}
+        title="Ask Stackurity"
+        description="An AI assistant that answers what to fix first, what needs attention and how to set things up, with links to the pages and changes you can apply in one click."
+        className="dash-band dash-ask"
+      >
+        <p>
+          It is off for this organisation. <Link to="/integrations/ai-assistants">Turn it on under Integrations → AI assistants</Link>.
+        </p>
+      </Block>
+    );
+  }
+  if (!status.available && status.reason !== "spend_cap") return null;
+  return (
+    <Block
+      id="dash-ask"
+      icon={<IconMessage />}
+      title="Ask Stackurity"
+      description="The quickest way to get going: ask what to fix first, what needs attention, or how to set something up. Answers link to the pages, and can propose changes you apply in one click."
+      className="dash-band dash-ask"
+    >
+      {status.available ? (
+        <div className="dash-ask-starters">
+          <AskStarters pathname="/" admin={admin} onAsk={askStackurity} />
+        </div>
+      ) : (
+        <p className="muted">{status.message}</p>
+      )}
+    </Block>
+  );
+}
+
 export function DashboardPage() {
   const { me, meta, can, canAct, projectOnly } = useAuth();
   const { project } = useProject();
   // Setting up (0.9): a new organisation's admins start in the first-run
   // flow; until every step is done the Dashboard shows a checklist.
   const admin = can("admin");
+  const askStatus = useLoad(() => api.get<AskStatus>("/ask/status").catch(() => undefined), []);
   const ob = useLoad(() => (admin ? api.getAll<Onboarding>("/onboarding") : Promise.resolve(null)), [admin]);
   const ov = useLoad(() => api.get<Overview>("/overview"), []);
   // The same fix in several places is one fix (Settings, Fix grouping), in the list and the counts.
@@ -751,7 +800,17 @@ export function DashboardPage() {
             Run <Code>stackurity agent --once</Code> on a host, <Code>stackurity scan DIR</Code> in CI, or add a Git repository under{" "}
             <Link to="/integrations">Integrations</Link>.
           </p>
+          {askStatus.data?.available && (
+            <p>
+              Not sure which?{" "}
+              <button type="button" className="btn-link" onClick={() => askStackurity("How do I add my first server or repository?")}>
+                Ask Stackurity how to start
+              </button>
+              .
+            </p>
+          )}
         </EmptyState>
+        <AskStartBlock admin={admin} status={askStatus.data} />
       </>
     );
   }
@@ -826,6 +885,7 @@ export function DashboardPage() {
         <NeedsYouBlock rows={rows} lastReport={o.last_collection} loading={needsLoading} />
         {/* Below what is urgent, so it comes first on a phone too. */}
         {setup ? <SetupChecklist o={setup} onChange={ob.reload} compact /> : checklist}
+        <AskStartBlock admin={admin} status={askStatus.data} />
         <PackSuggestions />
         <UnfiledAssets />
 

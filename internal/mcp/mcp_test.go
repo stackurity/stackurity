@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 16 || len(writeTools) != 10 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 23 || len(writeTools) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -109,7 +109,7 @@ func TestProtocol(t *testing.T) {
 		ann := x.(map[string]any)["annotations"].(map[string]any)
 		hints[x.(map[string]any)["name"].(string)] = [2]bool{ann["destructiveHint"].(bool), ann["openWorldHint"].(bool)}
 	}
-	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project"} {
+	for _, n := range []string{"rename_project", "assign", "snooze", "ignore", "remove_assets_from_project", "set_notification_enabled"} {
 		if !hints[n][0] {
 			t.Errorf("%s is not marked destructive", n)
 		}
@@ -218,6 +218,10 @@ func (f *writeAPI) Do(_ context.Context, method, path string, body io.Reader, _ 
 		resp = `{"invitation":{"id":2},"emailed":false,"link":"https://stk.example/invite#inv_secret"}`
 	case path == "/api/v1/enrollments":
 		resp = `{"enrollment":{"id":4},"code":"enr_abc"}`
+	case path == "/api/v1/channels" && method == "GET":
+		resp = `{"items":[{"id":1,"kind":"slack","name":"Slack","enabled":true}]}`
+	case path == "/api/v1/routes" && method == "GET":
+		resp = `{"items":[{"id":10,"name":"Urgent","channel_id":1,"enabled":true,"events":["urgent"]}]}`
 	default:
 		resp = `{"id":1}`
 	}
@@ -272,6 +276,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 		"ignore":                     {"finding_ids": []any{7.0}, "reason": "mitigated", "note": "behind the WAF", "expiry": "date", "until": future},
 		"check_again":                {"fix_group": "9:package_upgrade:1"},
 		"invite_to_project":          {"email": "new@x.io", "project_id": 3.0, "role": "viewer"},
+		"set_notification_enabled":   {"target": "channel", "id": 1.0, "enabled": false},
 	}
 	if len(cases) != len(writeTools) {
 		t.Fatalf("a write tool has no case here")
@@ -474,6 +479,17 @@ func TestListLeaksWorkflow(t *testing.T) {
 	}
 }
 
+// list_leaks and list_risky_settings pass the second check filter.
+func TestListLeaksSecondCheckFilter(t *testing.T) {
+	api := &fakeAPI{}
+	callTool(t, &Server{API: api, Version: "t"}, "list_leaks", map[string]any{"second_check": "likely_false_positive"})
+	callTool(t, &Server{API: api, Version: "t"}, "list_risky_settings", map[string]any{"second_check": "confirmed,unchecked"})
+	if len(api.paths) != 2 || api.paths[0] != "GET /api/v1/leaks?limit=50&second_check=likely_false_positive" ||
+		api.paths[1] != "GET /api/v1/config-findings?limit=50&second_check=confirmed%2Cunchecked" {
+		t.Errorf("requests = %v", api.paths)
+	}
+}
+
 // accountAPI answers the account tools' endpoints as a person with role:
 // the role checks are the API's (users for admins, channels and rules for
 // security, integrations for engineers), as in internal/api. Every answer
@@ -497,7 +513,8 @@ func (f *accountAPI) Do(_ context.Context, method, path string, _ io.Reader, _ m
 	rank := map[string]int{"viewer": 1, "engineer": 2, "security": 3, "admin": 4}[f.role]
 	need := map[string]int{"/api/v1/users": 4, "/api/v1/channels": 3, "/api/v1/routes": 3, "/api/v1/settings/notifications": 3,
 		"/api/v1/integrations": 2, "/api/v1/integrations/github": 2, "/api/v1/integrations/gitlab": 2,
-		"/api/v1/integrations/jira/connections": 4, "/api/v1/integrations/digitalocean": 4}[path]
+		"/api/v1/integrations/jira/connections": 4, "/api/v1/integrations/digitalocean": 4,
+		"/api/v1/integrations/evidence": 4}[path]
 	if rank < need {
 		return &client.APIError{Status: 403, Code: "forbidden", Message: "requires a higher role"}
 	}
@@ -552,6 +569,11 @@ func (f *accountAPI) Do(_ context.Context, method, path string, _ io.Reader, _ m
 			"connected_by":2,"connected_at":"2026-10-01T00:00:00Z"}],"total":1}`
 	case "/api/v1/integrations/digitalocean":
 		body = `{"connected":true,"connected_at":"2026-10-02T00:00:00Z","secrets_enabled":true}`
+	case "/api/v1/integrations/evidence":
+		body = `{"compliance_addon":false,"vanta":{"available":false,"connection":null},"drata":{"available":true,"connection":
+			{"id":3,"vendor":"drata","region":"us","config":{"workspace_id":"drata-ws-77"},"status":"reconnect_needed",
+			"status_reason":"Drata refused the key at ` + leakWebhook + `","interval_hours":24,"next_sync_at":"2026-11-20T00:00:00Z",
+			"last_sync_at":"2026-11-19T00:00:00Z","last_sync_status":"failed","connected_by":2,"connected_at":"2026-11-01T00:00:00Z"}}}`
 	default:
 		return &client.APIError{Status: 404, Code: "not_found", Message: "no route " + path}
 	}
@@ -654,6 +676,16 @@ func TestIntegrationsAndNotificationSettings(t *testing.T) {
 	}
 	if out["digitalocean"].(map[string]any)["connected"] != true || len(out["not_available"].([]any)) != 0 {
 		t.Errorf("digitalocean / not_available: %v", out)
+	}
+	// The evidence connectors: status without vendor ids or addresses.
+	ev := out["evidence_connectors"].(map[string]any)
+	drata, vanta := ev["drata"].(map[string]any), ev["vanta"].(map[string]any)
+	if ev["compliance_addon"] != false || drata["connected"] != true || drata["status"] != "reconnect_needed" ||
+		drata["last_sync_status"] != "failed" || vanta["connected"] != false || vanta["set_up_on_server"] != false {
+		t.Errorf("evidence_connectors: %v", ev)
+	}
+	if b, _ := json.Marshal(ev); strings.Contains(string(b), "drata-ws-77") || strings.Contains(string(b), leakWebhook) {
+		t.Errorf("evidence_connectors shows configuration or an address: %s", b)
 	}
 
 	out = callTool(t, s, "notification_settings", nil)

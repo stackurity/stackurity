@@ -6,8 +6,11 @@ import { componentName, plural } from "../format";
 import { AssetKindBadge, KevBadge, SeverityBadge } from "./Badge";
 import { IconSearch } from "./Icons";
 import { errorView } from "../errors";
+import { ARTICLES } from "../help/articles";
+import { searchPages, type PageHit } from "../pageIndex";
+import { useAccess } from "./nav";
 
-export type SearchGroup = "assets" | "components" | "vulnerabilities" | "advisories" | "teams" | "members";
+export type SearchGroup = "pages" | "assets" | "components" | "vulnerabilities" | "advisories" | "teams" | "members";
 
 export interface SearchItem {
   key: string;
@@ -37,6 +40,33 @@ export const GROUP_ORDER: SearchGroup[] = ["assets", "components", "vulnerabilit
 export interface SearchSectionOptions {
   /** "rank" (the dropdown) puts the group with the best match first; "investigate" (the results page) keeps GROUP_ORDER. */
   order?: "rank" | "investigate";
+}
+
+/**
+ * Pages, settings and help articles that match, found in the browser
+ * (pageIndex.ts): always the first group, so "sso" or "invite" lands on
+ * the page that does it.
+ */
+export function pageSection(hits: PageHit[]): SearchSection | null {
+  if (hits.length === 0) return null;
+  return {
+    id: "pages",
+    title: "Pages and settings",
+    more: false,
+    rank: -1,
+    items: hits.map((h) => ({
+      key: h.key,
+      href: h.to,
+      title: <span>{h.title}</span>,
+      meta: h.kind === "help" ? "Help article" : h.where,
+    })),
+  };
+}
+
+/** The pages, settings and help articles this person may open that match q. */
+export function usePageHits(q: string, limit = 5): PageHit[] {
+  const access = useAccess();
+  return searchPages(q, access, ARTICLES, limit);
 }
 
 export function searchPath(q: string): string {
@@ -272,13 +302,17 @@ export function GlobalSearch() {
   const term = useDebounced(q.trim(), 200);
   const ready = term.length >= SEARCH_MIN_LENGTH;
   const res = useLoad(() => (ready ? api.get<SearchResults>("/search", { q: term, limit: 5 }) : Promise.resolve(null)), [term]);
-  const sections = res.data && res.data.query === term ? searchSections(res.data) : [];
+  const pages = pageSection(usePageHits(q.trim()));
+  const sections = [...(pages ? [pages] : []), ...(res.data && res.data.query === term ? searchSections(res.data) : [])];
   const items = sections.flatMap((s) => s.items);
 
-  // "/" focuses the box from anywhere that is not a text field.
+  // "/" focuses the box from anywhere that is not a text field; Ctrl+K (⌘K)
+  // from anywhere, as in most apps.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditable(e.target)) {
+      const slash = e.key === "/" && !e.ctrlKey && !e.metaKey && !e.altKey && !isEditable(e.target);
+      const cmdK = (e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+      if (slash || cmdK) {
         e.preventDefault();
         setExpanded(true);
         input.current?.focus();
@@ -361,7 +395,7 @@ export function GlobalSearch() {
         }}
       >
         <label htmlFor={`${listId}-input`} className="sr-only">
-          Search vulnerabilities, findings, packages, assets, teams and members
+          Search pages, settings, help, vulnerabilities, findings, packages, assets, teams and members
         </label>
         <span className="global-search-icon" aria-hidden="true">
           <IconSearch size={16} />
@@ -372,7 +406,7 @@ export function GlobalSearch() {
           type="search"
           value={q}
           maxLength={SEARCH_MAX_LENGTH}
-          placeholder="Search CVE, package, host, team"
+          placeholder="Search pages, settings, CVE, package, host"
           autoComplete="off"
           spellCheck={false}
           role="combobox"

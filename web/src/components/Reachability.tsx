@@ -1,0 +1,162 @@
+import type { ReactNode } from "react";
+import type { ReachabilityDetail, ReachabilityStatus } from "../api";
+import { useAuth } from "../auth";
+import { Badge, type Tone } from "./Badge";
+import { CodeBlock } from "./ui";
+import { ProBadge, ProNotice } from "./ProNotice";
+
+const LABELS: Record<ReachabilityStatus, string> = {
+  unknown: "Not assessed",
+  reachable: "Reachable",
+  not_imported: "Not imported",
+  not_running: "Not running",
+};
+
+const TITLES: Record<ReachabilityStatus, string> = {
+  unknown: "No evidence either way, so it counts as reachable",
+  reachable: "First-party code imports it, or a running process uses it",
+  not_imported: "No first-party source file imports it",
+  not_running: "No running process executes it or has it loaded",
+};
+
+// Not reached is information, not an all-clear: never shown as "good".
+const TONES: Record<ReachabilityStatus, Tone> = {
+  unknown: "muted",
+  reachable: "warn",
+  not_imported: "info",
+  not_running: "info",
+};
+
+function known(s: string | undefined): ReachabilityStatus {
+  return s && s in LABELS ? (s as ReachabilityStatus) : "unknown";
+}
+
+/** Whether a finding's package is imported or running on its asset. */
+export function ReachabilityBadge({ status }: { status?: string }) {
+  const s = known(status);
+  return (
+    <Badge status={s} tone={TONES[s]} label={LABELS[s]} title={TITLES[s]} />
+  );
+}
+
+/**
+ * Whether to show the paid-plan notice: the package is not reached, the
+ * priority was neither lowered nor kept, and the plan lacks the downgrade.
+ */
+export function showReachabilityNotice(
+  d: ReachabilityDetail,
+  licensed: boolean,
+): boolean {
+  return (
+    (d.status === "not_imported" || d.status === "not_running") &&
+    !d.lowered &&
+    !d.kept &&
+    !licensed
+  );
+}
+
+/** The reachability part of "why this priority": status, evidence and what it did to the priority. */
+export function ReachabilityWhy({ d }: { d: ReachabilityDetail }) {
+  const { has } = useAuth();
+  return (
+    <ReachabilityWhyView d={d}>
+      {showReachabilityNotice(d, has("reachability")) && (
+        <ProNotice feature="reachability">
+          On a paid plan this finding would be one priority level lower; it
+          stays listed, and known exploited issues on internet-facing assets are
+          never lowered.{" "}
+        </ProNotice>
+      )}
+    </ReachabilityWhyView>
+  );
+}
+
+/** ReachabilityWhy without the auth context; children follow the evidence. */
+export function ReachabilityWhyView({
+  d,
+  children,
+}: {
+  d: ReachabilityDetail;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="reachability-why">
+      <p className="small">
+        <ReachabilityBadge status={d.status} /> {d.text}
+      </p>
+      {d.evidence.length > 0 && (
+        <ul className="small">
+          {d.evidence.map((e, i) => (
+            <li key={i} className="break">
+              {e}
+            </li>
+          ))}
+        </ul>
+      )}
+      {children}
+    </div>
+  );
+}
+
+/** What process access does and costs, said the same way wherever it is offered. */
+export const PROCESS_ACCESS_TEXT =
+  "It reads which programs and libraries running processes use, so a service that is off and has not run for 7 days can be marked not running and paid plans can lower its priority. The agent gets CAP_SYS_PTRACE and CAP_DAC_READ_SEARCH, which also allow reading other processes' memory and any file, and are equivalent to root on the server. It only reads program paths, memory-map file names and open sockets under /proc, and crontabs.";
+
+/**
+ * A Linux host's process access (its agent's process_access attribute):
+ * what it means, and while it is off the command that turns it on.
+ */
+export function ProcessAccessFact({ value, command }: { value?: string; command: string }) {
+  if (value === "on") return <span>On: the agent sees which packages running processes use.</span>;
+  if (value !== "off") return null;
+  return (
+    <div>
+      <p className="small">
+        Off: the agent sees only programs started by their full path, so no package is marked not running. {PROCESS_ACCESS_TEXT} To
+        turn it on, run this on the server (it keeps the agent's enrollment and other settings):
+      </p>
+      <CodeBlock text={command} label="Command that turns on process access" />
+    </div>
+  );
+}
+
+/** Reachability statuses offered in the findings filter (a paid filter): [reachability, label]. */
+export const REACH_FILTER: [string, string][] = [
+  ["reachable", "Reachable (imported or running)"],
+  ["not_reached", "Not reached (not imported or not running)"],
+  ["not_imported", "Not imported"],
+  ["not_running", "Not running"],
+  ["unknown", "Not assessed"],
+];
+
+/**
+ * The findings list's reachability filter. Filtering by reachability is part
+ * of the paid plans: without it the filter shows locked, with a Pro badge and
+ * what it would do (the status itself shows on every issue in every plan).
+ */
+export function ReachabilityFilter({ paid, value, onChange }: { paid: boolean; value: string; onChange: (v: string) => void }) {
+  return (
+    <div className="field">
+      <label htmlFor="fd-reach">Reachability {!paid && <ProBadge />}</label>
+      {paid ? (
+        <select id="fd-reach" value={value} onChange={(e) => onChange(e.target.value)}>
+          <option value="">Any</option>
+          {REACH_FILTER.map(([v, label]) => (
+            <option key={v} value={v}>
+              {label}
+            </option>
+          ))}
+        </select>
+      ) : (
+        <>
+          <select id="fd-reach" value="" disabled aria-describedby="fd-reach-hint">
+            <option value="">Any</option>
+          </select>
+          <p id="fd-reach-hint" className="hint">
+            Every issue shows whether its package is imported or running. Filtering by it is part of Stackurity Pro.
+          </p>
+        </>
+      )}
+    </div>
+  );
+}

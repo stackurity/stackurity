@@ -9,6 +9,9 @@ import (
 // secret scanner, ours or a code host's.
 func key(parts ...string) string { return strings.Join(parts, "") }
 
+// repeat makes a key body of n characters from a mixed-case pattern.
+func repeat(pattern string, n int) string { return strings.Repeat(pattern, n/len(pattern)+1)[:n] }
+
 var (
 	ghToken    = key("ghp", "_", "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1Jd5Fs0Ga2Qex")
 	stripeKey  = key("sk", "_live_", "51HqT9xK2mLr8VbN4cWzP7yJd3")
@@ -237,5 +240,118 @@ func TestScanValues(t *testing.T) {
 	leaks := ScanValues(".env", []byte("STRIPE="+stripeKey+"\n"), func(l Leak, v string) { got = append(got, l.Rule+"="+v) })
 	if len(leaks) != 1 || len(got) != 1 || got[0] != "stripe-live-key="+stripeKey {
 		t.Fatalf("leaks %+v, values %q", leaks, got)
+	}
+}
+
+// Keys for AI model providers in their current formats: stolen ones are
+// sold and run up bills (LLMjacking).
+func TestLLMProviderKeys(t *testing.T) {
+	body := "Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1Jd5Fs0Ga"
+	for _, tc := range []struct{ name, value, rule string }{
+		{"anthropic api03", key("sk-ant-", "api03-", repeat(body+"_-", 93), "AA"), "anthropic-key"},
+		{"anthropic admin01", key("sk-ant-", "admin01-", repeat(body+"_-", 93), "AA"), "anthropic-key"},
+		{"claude code oauth", key("sk-ant-", "oat01-", repeat(body+"_-", 93), "AA"), "anthropic-oauth-token"},
+		{"claude code refresh", key("sk-ant-", "ort01-", repeat(body+"_-", 93), "AA"), "anthropic-oauth-token"},
+		{"openai legacy", key("sk-", repeat(body, 20), "T3Blbk", "FJ", repeat(body, 20)), "openai-key"},
+		{"openai project", key("sk-", "proj-", repeat(body+"_-", 74), "T3Blbk", "FJ", repeat(body+"-_", 74)), "openai-key"},
+		{"openai service account", key("sk-", "svcacct-", repeat(body+"_-", 74), "T3Blbk", "FJ", repeat(body, 74)), "openai-key"},
+		{"openai admin", key("sk-", "admin-", repeat(body+"_-", 74), "T3Blbk", "FJ", repeat(body, 74)), "openai-key"},
+		{"gemini", key("AIza", "SyD", repeat(body+"_-", 32)), "google-api-key"},
+		{"openrouter", key("sk-or-", "v1-", repeat("0f3a9c71e2b85d46", 64)), "openrouter-key"},
+		{"groq", key("gsk", "_", repeat(body, 52)), "groq-key"},
+		{"xai", key("xai", "-", repeat(body, 80)), "xai-key"},
+		{"hugging face", key("hf", "_", repeat(body, 34)), "huggingface-token"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// In code, where the format alone says what it is.
+			got := Scan("src/llm.py", []byte("client = Client(api_key=\""+tc.value+"\")\n"))
+			if len(got) != 1 || got[0].Rule != tc.rule || got[0].Severity == "" {
+				t.Fatalf("got %+v, want one %s", got, tc.rule)
+			}
+			if strings.Contains(got[0].Preview, tc.value[len(tc.value)/2:len(tc.value)/2+8]) {
+				t.Errorf("preview %q shows the middle of the key", got[0].Preview)
+			}
+		})
+	}
+	// One character short of the format is not the format.
+	for _, v := range []string{key("gsk", "_", repeat(body, 51)), key("sk-or-", "v1-", repeat("0f3a9c71", 63)), key("xai", "-", repeat(body, 79))} {
+		if got := Scan("src/llm.py", []byte("k = \""+v+"\"\n")); len(got) != 0 {
+			t.Errorf("%.8s…: got %v", v, rulesOf(got))
+		}
+	}
+}
+
+// Keys with no format of their own are found by the setting they are
+// assigned to in a configuration file, and only there.
+func TestLLMKeysByName(t *testing.T) {
+	for _, tc := range []struct {
+		file, data string
+		want       []string
+	}{
+		{".env", "MISTRAL_API_KEY=" + key("Xq7Lm2Xr9Tb4Kc8V", "n3Pw6Hy1Jd5Fs0Ga") + "\nDEEPSEEK_API_KEY=" + key("sk-", "4f1c9a2e7b3d8065c1a9f4e2b7d3a6c0") + "\n", []string{"MISTRAL_API_KEY", "DEEPSEEK_API_KEY"}},
+		// LiteLLM's proxy: the master key is its admin key; the salt key decrypts the provider keys it stores.
+		{".env", "LITELLM_MASTER_KEY=" + key("sk-", "Rt5wq9Zp2LmVb7Kc8Vn3") + "\nLITELLM_SALT_KEY=" + key("sk-", "Kc8Vn3Pw6Hy1Jd5Fs0Ga") + "\n", []string{"LITELLM_MASTER_KEY", "LITELLM_SALT_KEY"}},
+		{"litellm/config.yaml", "general_settings:\n  master_key: " + key("sk-", "Rt5wq9Zp2LmVb7Kc8Vn3") + "\n", []string{"master_key"}},
+		// LiteLLM's documented setups: a reference to the environment, and its sample key.
+		{"litellm/config.yaml", "general_settings:\n  master_key: os.environ/LITELLM_MASTER_KEY\n", nil},
+		{".env", "LITELLM_MASTER_KEY=sk-1234\n", nil},
+		{"proxy_config.yaml", "general_settings:\n  master_key: true\n  salt_key_rotation: disabled\n", nil},
+		// In code the name alone says nothing.
+		{"src/proxy.py", "master_key = '" + key("sk-", "Rt5wq9Zp2LmVb7Kc8Vn3") + "'\n", nil},
+	} {
+		t.Run(tc.file, func(t *testing.T) {
+			var names []string
+			for _, l := range Scan(tc.file, []byte(tc.data)) {
+				names = append(names, l.Name)
+			}
+			if strings.Join(names, ",") != strings.Join(tc.want, ",") {
+				t.Errorf("reported %q, want %q", names, tc.want)
+			}
+		})
+	}
+}
+
+// The new formats keep the policy for servers: a key in a configuration
+// file is listed (low, medium when every account can read it), never an
+// alert.
+func TestLLMKeysOnHostStayLow(t *testing.T) {
+	v := key("gsk", "_", repeat("Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1Jd5Fs0Ga", 52))
+	got := Scan(".env", []byte("GROQ_API_KEY="+v+"\n"))
+	if len(got) != 1 || got[0].Rule != "groq-key" {
+		t.Fatalf("got %+v", got)
+	}
+	Grade(&got[0], "", true)
+	if got[0].Severity != low {
+		t.Errorf("on a host: %s, want low", got[0].Severity)
+	}
+	Grade(&got[0], "world_readable", true)
+	if got[0].Severity != medium {
+		t.Errorf("world-readable on a host: %s, want medium", got[0].Severity)
+	}
+}
+
+// Each leak carries the second check's reading of its value: signals from
+// a fixed list, never the value. The test token above has the right shape
+// but was made up, so its checksum does not match.
+func TestLeakValueCheck(t *testing.T) {
+	ls := Scan("src/deploy.js", []byte("const t = '"+ghToken+"';\nconst s = '"+stripeKey+"';\n"))
+	if len(ls) != 2 {
+		t.Fatalf("leaks: %v", rulesOf(ls))
+	}
+	for _, l := range ls {
+		if l.ValueCheck == nil || l.ValueCheck.Checker != "value/1" {
+			t.Fatalf("%s: no value check: %+v", l.Rule, l.ValueCheck)
+		}
+		for _, s := range l.ValueCheck.Signals {
+			if strings.Contains(ghToken+stripeKey, s) {
+				t.Errorf("%s: a signal holds part of the value: %q", l.Rule, s)
+			}
+		}
+	}
+	if got := strings.Join(ls[0].ValueCheck.Signals, ","); ls[0].Rule != "github-token" || got != "checksum_invalid" {
+		t.Errorf("made-up GitHub token: %s %q", ls[0].Rule, got)
+	}
+	if got := ls[1].ValueCheck.Signals; len(got) != 0 {
+		t.Errorf("live Stripe key: %v", got)
 	}
 }

@@ -42,7 +42,7 @@ start; servers before 0.8, which have no projects, are refused.`,
 			if err != nil {
 				return err
 			}
-			s := &mcp.Server{API: cl, Version: version, BaseURL: cl.BaseURL, AllowWrites: writes}
+			s := &mcp.Server{API: cl, Version: version, BaseURL: cl.BaseURL, AllowWrites: writes, Project: cl.Project}
 			return s.Serve(cmd.Context(), os.Stdin, os.Stdout)
 		},
 	}

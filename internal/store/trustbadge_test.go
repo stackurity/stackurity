@@ -198,6 +198,94 @@ func TestTrustBadgeInputsAndDecision(t *testing.T) {
 	}
 }
 
+// A refresh that changed nothing a row was matched on carries the row's
+// evaluation forward, so a repository collected every 6 hours does not
+// fall overdue for a re-check it does not need; a row the refresh changed,
+// or one still behind an older refresh, stays where it was.
+func TestCarryForwardEvaluationsKeepsUnchangedRowsCurrent(t *testing.T) {
+	f := newBadgeFixture(t)
+	sys := tenant.System(f.ctx)
+	rows, _, err := f.s.ListInventory(f.ctx, store.InventoryFilter{AssetID: f.asset})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests int64
+	for _, r := range rows {
+		if r.Name == "requests" {
+			requests = r.ComponentID
+		}
+	}
+	if requests == 0 {
+		t.Fatal("no requests row")
+	}
+	refresh := func(ago string) time.Time {
+		t.Helper()
+		var at time.Time
+		if err := f.s.Pool.QueryRow(sys, `UPDATE feeds SET last_success = date_trunc('second', now()) - $1::interval, cursor = 'c2'
+			WHERE name = 'osv:PyPI' RETURNING last_success`, ago).Scan(&at); err != nil {
+			t.Fatal(err)
+		}
+		return at
+	}
+	evaluated := func() (string, time.Time) {
+		t.Helper()
+		var cur string
+		var at time.Time
+		if err := f.s.Pool.QueryRow(sys, `SELECT feed_cursor, feed_last_success FROM inventory_evaluations WHERE feed = 'osv:PyPI'`).Scan(&cur, &at); err != nil {
+			t.Fatal(err)
+		}
+		return cur, at
+	}
+	decide := func() trustbadge.Decision {
+		t.Helper()
+		in, err := f.s.TrustBadgeInputs(f.ctx, f.badge)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return trustbadge.Evaluate(in, time.Now())
+	}
+
+	// The source refreshed 30 minutes ago, and the row was read against the
+	// refresh before it, 7 hours ago: overdue, the case seen in production.
+	if _, err := f.s.Pool.Exec(sys, `UPDATE inventory_evaluations SET feed_last_success = $1 WHERE feed = 'osv:PyPI'`,
+		f.pypi.Add(-6*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	prev := f.pypi.Add(-6 * time.Hour)
+	refresh("30 minutes")
+	if d := decide(); d.Reason != trustbadge.ReasonRecheckOverdue {
+		t.Fatalf("before: %+v, want recheck_overdue", d)
+	}
+
+	// The refresh re-evaluates requests: nothing is carried.
+	if n, err := f.s.CarryForwardEvaluations(f.ctx, "osv:PyPI", prev, []int64{requests}); err != nil || n != 0 {
+		t.Fatalf("carried %d (%v), want 0 for a re-evaluated component", n, err)
+	}
+	// Carried from another refresh than the one the row read: untouched.
+	if n, err := f.s.CarryForwardEvaluations(f.ctx, "osv:PyPI", prev.Add(-time.Hour), nil); err != nil || n != 0 {
+		t.Fatalf("carried %d (%v), want 0 for a row behind another refresh", n, err)
+	}
+	// Nothing it was matched on changed: carried to the new refresh.
+	n, err := f.s.CarryForwardEvaluations(f.ctx, "osv:PyPI", prev, nil)
+	if err != nil || n != 1 {
+		t.Fatalf("carried %d (%v), want 1", n, err)
+	}
+	var latest time.Time
+	if err := f.s.Pool.QueryRow(sys, `SELECT last_success FROM feeds WHERE name = 'osv:PyPI'`).Scan(&latest); err != nil {
+		t.Fatal(err)
+	}
+	if cur, at := evaluated(); cur != "c2" || !at.Equal(latest) {
+		t.Fatalf("evaluation = %s %v, want c2 %v", cur, at, latest)
+	}
+	if d := decide(); d.Result != trustbadge.Active {
+		t.Fatalf("after carrying forward: %+v, want active", d)
+	}
+	// Running it again moves nothing: the row is current.
+	if n, err := f.s.CarryForwardEvaluations(f.ctx, "osv:PyPI", prev, nil); err != nil || n != 0 {
+		t.Fatalf("second carry moved %d (%v)", n, err)
+	}
+}
+
 func TestTrustBadgeSlugUniqueAcrossWorkspaces(t *testing.T) {
 	f := newBadgeFixture(t)
 	_, err := f.s.CreateTrustBadge(f.ctx, store.TrustBadge{Slug: "acme", ScopeKind: "assets", AssetIDs: []int64{f.asset}}, 0)

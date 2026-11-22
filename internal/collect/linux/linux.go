@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"sort"
 	"strings"
 	"time"
@@ -43,11 +44,35 @@ type Collector struct {
 	// (its ENV lines), when Root is an unpacked image; nil on a host. It
 	// is read for runtime versions the image declares (PYTHON_VERSION).
 	ImageEnv map[string]string
+
+	// ProcDir is the live host's /proc, read for which packages running
+	// processes use (procreach.go); empty when Root is not this running
+	// host. Now and ProcessAccess stand in for the clock and the agent's
+	// own access in tests.
+	ProcDir       string
+	Now           func() time.Time
+	ProcessAccess func() bool
+	// StateFile keeps the process readings' history across restarts (the
+	// agent's state directory); without it no package is called not
+	// running. FileCaps says whether a program has file capabilities; nil
+	// reads them (security.capability).
+	StateFile string
+	FileCaps  func(path string) bool
+	hist      *procHistory
 }
 
 func New(version string) *Collector {
 	return &Collector{Root: "/", Version: version, LookPath: exec.LookPath, RunRPM: runRPM,
-		Runtimes: true, RunVersion: runVersion, RunRPMOwner: runRPMOwner, UID: currentUID()}
+		Runtimes: true, RunVersion: runVersion, RunRPMOwner: runRPMOwner, UID: currentUID(),
+		ProcDir: liveProcDir()}
+}
+
+// liveProcDir is /proc on Linux; elsewhere there is no host to read.
+func liveProcDir() string {
+	if runtime.GOOS == "linux" {
+		return "/proc"
+	}
+	return ""
 }
 
 type OSRelease struct {
@@ -149,6 +174,11 @@ func (c *Collector) Collect(ctx context.Context, hostname, machineID string) (*m
 		if cov.Status != "checked" {
 			b.Complete = false
 		}
+	}
+	// After the completeness check: what the agent could see of running
+	// processes says nothing about whether the package list is whole.
+	if cov, ok := c.annotateProcesses(b); ok {
+		b.Coverage = append(b.Coverage, cov)
 	}
 	return b, nil
 }

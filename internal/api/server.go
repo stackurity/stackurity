@@ -36,6 +36,7 @@ import (
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
+	"github.com/stackurity/stackurity/internal/threats"
 )
 
 type Server struct {
@@ -118,6 +119,11 @@ type Server struct {
 	// UpdateCheck is false when the operator turned the release check off
 	// (STACKURITY_UPDATE_CHECK=off); GET /updates then says so.
 	UpdateCheck bool
+	// Threats gives the threat catalogue (internal/threatnotice): the
+	// embedded one merged with the signed feed. Nil: the embedded one.
+	Threats interface {
+		Current(ctx context.Context) (*threats.Catalogue, error)
+	}
 	// HTTPMetrics records requests for the metrics listener; nil disables it.
 	HTTPMetrics *metrics.HTTP
 	// Schema reports when the database was migrated by a newer version while
@@ -348,6 +354,9 @@ func (s *Server) Handler() http.Handler {
 			}
 			r.Post("/feedback", s.sendFeedback)
 			r.Get("/feedback/mine", s.myFeedback)
+			// The organisation's paid features and how to get the others
+			// (plan_options.go).
+			r.Get("/plan/options", s.planOptions)
 			// The caller's saved views on dashboard pages (saved_views.go).
 			r.Get("/saved-views", s.listSavedViews)
 			r.Post("/saved-views", s.saveView)
@@ -408,6 +417,7 @@ func (s *Server) Handler() http.Handler {
 			// tokens for what they report (checked inside).
 			r.Post("/gate-policies/check", s.checkGatePolicies)
 			r.With(requireIngest).Post("/sbom/import", s.importSBOM)
+			r.With(requireIngest).Post("/code-findings/import", s.importCodeFindings)
 			r.With(requireIngest).Get("/agent/check", s.agentCheck)
 			r.Group(func(r chi.Router) {
 				r.Use(requireIngest)
@@ -418,6 +428,7 @@ func (s *Server) Handler() http.Handler {
 				r.Use(requireRole(auth.RoleViewer))
 				r.Get("/projects", s.listProjects)
 				r.Get("/projects/{id}", s.getProject)
+				r.Get("/projects/{id}/ask-notes", s.getProjectAskNotes)
 				r.Get("/overview", s.overview)
 				r.Get("/facets", s.facets)
 				r.Get("/search", s.search)
@@ -434,6 +445,15 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/leaks", s.assetLeaks)
 				r.Get("/leaks", s.listLeaks)
 				r.Get("/leaks/summary", s.leakSummary)
+				r.Get("/leaks/{id}/second-checks", s.leakSecondChecks)
+				r.Get("/assets/{id}/config-findings", s.listConfigFindings)
+				r.Get("/config-findings", s.listConfigFindings)
+				r.Get("/config-findings/summary", s.configSummary)
+				r.Get("/threats", s.listThreats)
+				r.Get("/config-findings/{id}/second-checks", s.configSecondChecks)
+				r.Get("/assets/{id}/code-findings", s.listCodeFindings)
+				r.Get("/code-findings", s.listCodeFindings)
+				r.Get("/code-findings/summary", s.codeSummary)
 				r.Get("/assets/{id}/sbom", s.exportSBOM)
 				r.Get("/components", s.listComponents)
 				r.Get("/components/{id}", s.getComponent)
@@ -518,6 +538,10 @@ func (s *Server) Handler() http.Handler {
 				// security-only, checked inside like finding actions
 				r.Post("/leaks/{id}/dismiss", s.dismissLeak)
 				r.Post("/leaks/{id}/undismiss", s.undismissLeak)
+				r.Post("/config-findings/{id}/dismiss", s.dismissConfigFinding)
+				r.Post("/config-findings/{id}/undismiss", s.undismissConfigFinding)
+				r.Post("/code-findings/{id}/dismiss", s.dismissCodeFinding)
+				r.Post("/code-findings/{id}/undismiss", s.undismissCodeFinding)
 				// engineer, checked on the leak's asset like Check again
 				r.Post("/leaks/{id}/assign", s.assignLeak)
 				r.Post("/leaks/{id}/rotated", s.leakRotated)
@@ -552,6 +576,10 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/assets/{id}/gate-policies", s.getScopeGatePolicies)
 				r.Get("/notification-options", s.notificationOptions)
 				r.Get("/email-recipients", s.listEmailRecipients)
+				// Threat notices: the organisation's, with the caller's banner
+				// state (handlers_threats.go).
+				r.Get("/threat-notices", s.listThreatNotices)
+				r.Post("/threat-notices/{id}/dismiss", s.dismissThreatNotice)
 				r.Post("/ignore-requests/{id}/decision", s.decideIgnoreRequest)
 				r.Post("/gate-policies/exceptions/{id}/decision", s.decideGateException)
 				r.Post("/gate-policies/exceptions/{id}/end", s.endGateException)
@@ -568,6 +596,9 @@ func (s *Server) Handler() http.Handler {
 				r.Delete("/assets/{id}", s.deleteAsset)
 				r.Post("/projects", s.createProject)
 				r.Patch("/projects/{id}", s.updateProject)
+				// A project's notes for Ask: admins of that project (the
+				// handler checks the role on it; project_ask_notes.go).
+				r.Put("/projects/{id}/ask-notes", s.putProjectAskNotes)
 				r.Post("/projects/{id}/assets", s.changeProjectAssets(true))
 				r.Delete("/projects/{id}/assets", s.changeProjectAssets(false))
 				r.Get("/project-suggestions", s.projectSuggestions)
@@ -735,6 +766,9 @@ type apiError struct {
 	Code    string   `json:"code"`
 	Message string   `json:"message"`
 	Details []string `json:"details,omitempty"`
+	// Offer: plan_required's structured part (planRequired), its fields
+	// next to code and message.
+	*license.Offer
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

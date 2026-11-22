@@ -305,11 +305,16 @@ func (c *Collector) probeRuntime(ctx context.Context, cand *runtimeCandidate) mo
 	// When the binary is not run, or running it gives no version, the
 	// files installed with it may still say (python.go).
 	fromFiles := func() model.Observation {
-		if cand.probe.product != "python" {
-			return o
+		var fv pythonFileVersion
+		var ok bool
+		switch cand.probe.product {
+		case "python":
+			fv, ok = c.pythonVersionFromFiles(cand.resolved)
+		case "php", "nodejs":
+			fv, ok = c.headerVersionFromFiles(cand.probe.product, cand.resolved)
 		}
-		if fv, ok := c.pythonVersionFromFiles(cand.resolved); ok {
-			set("python", fv.version, fv.confidence, fv.how)
+		if ok {
+			set(cand.probe.product, fv.version, fv.confidence, fv.how)
 			for k, v := range fv.evidence {
 				o.Evidence[k] = v
 			}

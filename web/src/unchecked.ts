@@ -91,8 +91,12 @@ export function group(u: Unchecked | null | undefined, reason: UncheckedReason):
   return u?.groups.find((g) => g.reason === reason);
 }
 
-/** "3 components use CocoaPods packages, which Stackurity doesn't check yet." */
+/** "3 components use CocoaPods packages, which Stackurity doesn't check yet." (or "1 component is a standalone build, ..." for one from no package manager) */
 export function unsupportedSentence(it: UncheckedItem): string {
+  // A component from no package manager (a Flutter engine build) is the
+  // build itself; it doesn't "use" anything.
+  if (it.key.startsWith("generic|"))
+    return `${plural(it.components, "component")} ${it.components === 1 ? "is a standalone build" : "are standalone builds"}, not from a package manager, which Stackurity doesn't check yet.`;
   return `${plural(it.components, "component")} ${it.components === 1 ? "uses" : "use"} ${it.label}, which Stackurity doesn't check yet.`;
 }
 

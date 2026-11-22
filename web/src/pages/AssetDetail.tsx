@@ -42,6 +42,8 @@ import {
 } from "../components/Badge";
 import { StackTab } from "../components/Stack";
 import { LeaksView } from "../components/Leaks";
+import { CodeFindingsView } from "../components/CodeFindings";
+import { ConfigFindingsView } from "../components/ConfigFindings";
 import { KubernetesCard, WORKLOAD_ATTRS } from "../components/Kubernetes";
 import { FindingsTable } from "../components/Findings";
 import { Table, type Column } from "../components/Table";
@@ -73,15 +75,17 @@ import { coverageDimension, reportingDimension, securityDimension } from "../ass
 import { REPORTING_OVERRIDES, ReportingNotice, reportingSummary } from "../components/Reporting";
 import { AssetAskAI } from "../components/AskAI";
 import { GroupCrumb } from "../components/nav";
+import { ProcessAccessFact } from "../components/Reachability";
+import { processAccessCommand } from "../installCommand";
 
-type Tab = "action-plan" | "stack" | "findings" | "leaks" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
-const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
+type Tab = "action-plan" | "stack" | "findings" | "leaks" | "config" | "code" | "inventory" | "coverage" | "collections" | "relations" | "drift" | "remediation";
+const TABS: Tab[] = ["action-plan", "stack", "findings", "leaks", "config", "code", "inventory", "coverage", "collections", "relations", "drift", "remediation"];
 
 /** Kinds whose stack is the most useful first view when nothing needs fixing. */
 const STACK_FIRST_KINDS = ["application", "host", "repository", "cluster", "workload"];
 
 /** Host attributes about pending reboots; shown in their own block, not as raw attributes. */
-const REBOOT_ATTRS = ["reboot_required", "reboot_reason", "kernel_running", "kernel_latest_installed"];
+const REBOOT_ATTRS = ["reboot_required", "reboot_reason", "kernel_running", "kernel_latest_installed", "process_access"];
 
 /** Attributes of an application found on a host by the agent; shown first, with readable labels. */
 const APP_ATTRS: [string, string][] = [
@@ -193,6 +197,9 @@ export function AssetDetailPage() {
       </span>,
     ]);
 
+  if (at.process_access === "on" || at.process_access === "off")
+    rebootEntries.push(["process access", <ProcessAccessFact value={at.process_access} command={processAccessCommand(window.location)} />]);
+
   return (
     <>
       <nav className="crumbs" aria-label="Breadcrumb">
@@ -303,6 +310,9 @@ export function AssetDetailPage() {
           { id: "stack", label: "Stack" },
           ...(findingCount > 0 ? [{ id: "findings" as Tab, label: `Issues (${findingCount.toLocaleString()})` }] : []),
           { id: "leaks", label: "Leaked keys" },
+          { id: "config", label: "Risky settings" },
+          // Code scanners' reports are about source code: repositories and applications.
+          ...(a.kind === "repository" || a.kind === "application" ? [{ id: "code" as Tab, label: "Code findings" }] : []),
           { id: "inventory", label: `Inventory (${a.component_count.toLocaleString()})` },
           { id: "coverage", label: "Coverage" },
           { id: "collections", label: "Collections" },
@@ -324,6 +334,8 @@ export function AssetDetailPage() {
             {tab === "stack" && <StackTab asset={a} editable={canAct("engineer")} onLinked={relations.reload} />}
         {tab === "findings" && <FindingsTab assetId={a.id} />}
         {tab === "leaks" && <LeaksView assetId={a.id} />}
+        {tab === "config" && <ConfigFindingsView assetId={a.id} />}
+        {tab === "code" && <CodeFindingsView assetId={a.id} />}
         {tab === "inventory" && <InventoryTab assetId={a.id} />}
         {tab === "coverage" && <CoverageTab assetId={a.id} />}
         {tab === "collections" && <CollectionsTab assetId={a.id} />}

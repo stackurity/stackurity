@@ -193,6 +193,9 @@ type Result struct {
 	// the message; only Usage (an upper bound), ServedBy and RequestID
 	// are set.
 	Partial bool
+	// CallID is the call's row in ask_api_calls (set by Engine.call; 0
+	// when it was not stored).
+	CallID int64
 }
 
 // ToolUse is one tool call the model asked for.

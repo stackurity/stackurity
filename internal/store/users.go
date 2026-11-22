@@ -532,6 +532,10 @@ type Session struct {
 	// MFACredential the passkey it was checked with (0: none).
 	MFA           string
 	MFACredential int64
+	// AuthAt is when the person last proved who they are in this session:
+	// its second factor (a sign-in or confirmation with one), else its
+	// sign-in.
+	AuthAt time.Time
 	// PasswordChangeRequired: an administrator set a temporary password;
 	// only changing it is allowed until then.
 	PasswordChangeRequired bool
@@ -585,17 +589,17 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	var ws, pinned *int64
 	var login, mfa string
 	var mfaCred int64
-	var expiresAt time.Time
+	var expiresAt, authAt time.Time
 	var changePassword, absolute, idle, touch bool
 	var email string
 	err := s.Pool.QueryRow(ctx, `SELECT s.user_id, s.workspace_id, s.sso_workspace_id,
 		COALESCE(s.login_method, CASE WHEN s.password_login THEN 'password' ELSE '' END),
 		COALESCE(s.mfa_method, CASE WHEN s.mfa_at IS NOT NULL THEN 'totp' ELSE '' END), COALESCE(s.mfa_credential_id, 0), s.expires_at,
-		u.password_change_required, u.email,
+		COALESCE(s.mfa_at, s.signed_in_at, s.created_at), u.password_change_required, u.email,
 		s.expires_at <= now(), $2 > 0 AND s.last_seen_at < now() - make_interval(secs => $2), s.last_seen_at < now() - interval '1 minute'
 		FROM sessions s JOIN users u ON u.id = s.user_id
 		WHERE s.token_hash = $1 AND NOT u.disabled`, auth.HashToken(secret), s.SessionIdle.Seconds()).
-		Scan(&id, &ws, &pinned, &login, &mfa, &mfaCred, &expiresAt, &changePassword, &email, &absolute, &idle, &touch)
+		Scan(&id, &ws, &pinned, &login, &mfa, &mfaCred, &expiresAt, &authAt, &changePassword, &email, &absolute, &idle, &touch)
 	if err != nil {
 		return nil, notFound(err)
 	}
@@ -633,7 +637,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 		// An organisation's identity provider vouches for membership of
 		// that organisation only, never for operating the installation.
 		u.InstanceAdmin = false
-		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, Login: login, MFA: mfa, MFACredential: mfaCred,
+		return &Session{User: u, Workspace: wsID, SSOWorkspace: *pinned, Login: login, MFA: mfa, MFACredential: mfaCred, AuthAt: authAt,
 			PasswordChangeRequired: changePassword, ExpiresAt: expiresAt}, nil
 	}
 	var wsID int64
@@ -665,7 +669,7 @@ func (s *Store) SessionInfo(ctx context.Context, secret string) (*Session, error
 	if login == LoginSSO {
 		u.InstanceAdmin = false
 	}
-	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, PasswordChangeRequired: changePassword,
+	return &Session{User: u, Workspace: wsID, Login: login, MFA: mfa, MFACredential: mfaCred, AuthAt: authAt, PasswordChangeRequired: changePassword,
 		ExpiresAt: expiresAt}, nil
 }
 

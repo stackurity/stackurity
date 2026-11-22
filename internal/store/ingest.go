@@ -37,6 +37,11 @@ type IngestResult struct {
 	// saw, now resolved.
 	LeaksFound int   `json:"leaks_found,omitempty"`
 	LeaksGone  int64 `json:"leaks_gone,omitempty"`
+	// ConfigFound is the number of config findings the batch reported, and
+	// ConfigGone the open ones on the asset its complete checks no longer
+	// saw, now resolved.
+	ConfigFound int   `json:"config_found,omitempty"`
+	ConfigGone  int64 `json:"config_gone,omitempty"`
 	// VEX is what importing the VEX embedded in an uploaded CycloneDX SBOM
 	// did (POST /sbom/import), and VEXNote why it was not imported.
 	VEX     *VEXImportResult `json:"vex,omitempty"`
@@ -101,7 +106,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		if err != nil {
 			return err
 		}
-		if err := loadObservations(ctx, tx, b); err != nil {
+		trust, err := reachTrust(ctx, tx, tokenID, assetID, b.Asset.Kind)
+		if err != nil {
+			return err
+		}
+		if err := loadObservations(ctx, tx, b, trust); err != nil {
 			return fmt.Errorf("load observations: %w", err)
 		}
 		// The component catalogue is shared between workspaces, so it is written
@@ -114,18 +123,21 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 			}
 			// Duplicate rows within one batch (e.g. the same npm package nested
 			// twice in one lockfile) collapse to one inventory row; any direct
-			// occurrence wins.
+			// occurrence wins, then the safer reachability (reachable, then
+			// unknown, before a claim that it is not reached).
 			if _, err := tx.Exec(ctx, `INSERT INTO inventory AS i
 				(asset_id, component_id, purl, version, location, collector_id, direct, scope, confidence, evidence,
-				 first_seen, last_seen, last_collection_id)
+				 reachability, reachability_evidence, first_seen, last_seen, last_collection_id)
 				SELECT DISTINCT ON (c.id, o.version, o.location)
 				       $1, c.id, o.purl, o.version, o.location, $2, o.direct, o.scope, o.confidence, o.evidence,
-				       $3, $3, $4
+				       o.reachability, o.reachability_evidence, $3, $3, $4
 				FROM obs_in o JOIN components c USING (purl_key)
-				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST
+				ORDER BY c.id, o.version, o.location, o.direct DESC NULLS LAST,
+				  CASE o.reachability WHEN 'reachable' THEN 0 WHEN 'unknown' THEN 1 ELSE 2 END
 				ON CONFLICT (asset_id, component_id, version, location, collector_id) DO UPDATE SET
 				  purl = EXCLUDED.purl, direct = EXCLUDED.direct, scope = EXCLUDED.scope,
 				  confidence = EXCLUDED.confidence, evidence = EXCLUDED.evidence,
+				  reachability = EXCLUDED.reachability, reachability_evidence = EXCLUDED.reachability_evidence,
 				  last_seen = GREATEST(i.last_seen, EXCLUDED.last_seen),
 				  last_collection_id = EXCLUDED.last_collection_id, removed_at = NULL`,
 				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID); err != nil {
@@ -139,13 +151,21 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		// A complete collection proves that whatever it left out is gone.
 		// An incomplete one proves it outside the paths it could not read
 		// (an unreadable cache directory must not keep an upgraded
-		// application's old libraries open forever).
+		// application's old libraries open forever). Rows in a file whose
+		// coverage is "limited" stay: its format cannot show everything, so
+		// a missing entry proves nothing (a scope ends with ":" and the
+		// file's location, as pack and lockfile scopes do). A repository
+		// scan that did not look for copied front-end libraries keeps the
+		// rows another scan found (webAssetsUnchecked).
 		if blind, ok := blindPaths(b); ok {
 			tag, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = $3
 				WHERE asset_id = $1 AND collector_id = $2 AND removed_at IS NULL AND last_collection_id <> $4
 				  AND (cardinality($5::text[]) = 0 OR (location LIKE '/%' AND NOT EXISTS (SELECT 1 FROM unnest($5::text[]) p
-				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))`,
-				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind)
+				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))
+				  AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) s
+				    WHERE location <> '' AND right(s, length(location) + 1) = ':' || location)
+				  AND NOT ($7 AND COALESCE(evidence->>'source', '') = ANY($8::text[]))`,
+				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind, limitedScopes(b), webAssetsUnchecked(b), webAssetSources)
 			if err != nil {
 				return err
 			}
@@ -177,6 +197,11 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 				return fmt.Errorf("leaks: %w", err)
 			}
 		}
+		if b.ConfigFindings != nil {
+			if res.ConfigFound, res.ConfigGone, err = writeConfigFindings(ctx, tx, assetID, res.CollectionID, b); err != nil {
+				return fmt.Errorf("config findings: %w", err)
+			}
+		}
 		status := "ok"
 		if !b.Complete {
 			status = "partial"
@@ -203,13 +228,54 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		}
 		return nil, err
 	}
+	if s.AfterLeakScan != nil && (b.Leaks != nil || b.ConfigFindings != nil) {
+		s.AfterLeakScan(ctx, res.AssetID)
+	}
 	return res, nil
 }
 
-func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) error {
+type serverCollectionKey struct{}
+
+// AsServerCollection marks ctx as the server's own collection (a
+// repository it cloned and scanned), whose not imported claims it trusts.
+func AsServerCollection(ctx context.Context) context.Context {
+	return context.WithValue(ctx, serverCollectionKey{}, true)
+}
+
+// reachTrust says, from the server's records, which not-reached claims a
+// batch about assetID may make. An agent's token may report processes for
+// its own host only: a token bound to the host, or an enrollment token
+// pinned to the first host it reported (the agent reports its host first;
+// the pin is set here). Any other token, or the server's own scan, may
+// report imports. A batch with no token (a signed-in browser's upload)
+// may make neither.
+func reachTrust(ctx context.Context, tx pgx.Tx, tokenID, assetID int64, kind model.AssetKind) (model.ReachTrust, error) {
+	if ctx.Value(serverCollectionKey{}) != nil {
+		return model.ReachTrust{Imports: true}, nil
+	}
+	if tokenID <= 0 {
+		return model.ReachTrust{}, nil
+	}
+	if kind == model.AssetHost {
+		if _, err := tx.Exec(ctx, `UPDATE enrollment_uses SET asset_id = $2 WHERE token_id = $1 AND asset_id IS NULL`, tokenID, assetID); err != nil {
+			return model.ReachTrust{}, err
+		}
+	}
+	var agent, own bool
+	err := tx.QueryRow(ctx, `SELECT t.asset_id IS NOT NULL OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id),
+		COALESCE(t.asset_id = $2, false) OR EXISTS (SELECT 1 FROM enrollment_uses u WHERE u.token_id = t.id AND u.asset_id = $2)
+		FROM api_tokens t WHERE t.id = $1`, tokenID, assetID).Scan(&agent, &own)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return model.ReachTrust{}, nil
+	}
+	return model.ReachTrust{Processes: agent && own, Imports: !agent}, err
+}
+
+func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch, trust model.ReachTrust) error {
 	if _, err := tx.Exec(ctx, `CREATE TEMP TABLE obs_in (
 		purl_key text, type text, namespace text, name text, purl text, version text,
-		location text, direct boolean, scope text, confidence text, evidence jsonb) ON COMMIT DROP`); err != nil {
+		location text, direct boolean, scope text, confidence text, evidence jsonb,
+		reachability text, reachability_evidence jsonb) ON COMMIT DROP`); err != nil {
 		return err
 	}
 	rows := make([][]any, 0, len(b.Observations))
@@ -223,10 +289,21 @@ func loadObservations(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch)
 			ev = map[string]string{}
 		}
 		evJSON, _ := json.Marshal(ev)
-		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON})
+		// Not assessed is unknown, never the status an earlier batch sent.
+		// A claim the batch's collector cannot make is unknown too.
+		reach, reachEv := model.ReachUnknown, []byte(nil)
+		if r := b.TrustedReach(&o, trust); r != nil {
+			reach = r.Status
+			if len(r.Evidence) > 0 {
+				reachEv, _ = json.Marshal(r.Evidence)
+			}
+		}
+		rows = append(rows, []any{key, typ, ns, name, o.Purl, o.Version, o.Location, o.Direct, o.Scope, string(o.Confidence), evJSON,
+			reach, reachEv})
 	}
 	_, err := tx.CopyFrom(ctx, pgx.Identifier{"obs_in"},
-		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence"},
+		[]string{"purl_key", "type", "namespace", "name", "purl", "version", "location", "direct", "scope", "confidence", "evidence",
+			"reachability", "reachability_evidence"},
 		pgx.CopyFromRows(rows))
 	return err
 }
@@ -343,6 +420,21 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 		return 0, false, nil, err
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	if len(ids) == 0 {
+		// A release layout reported by its own directory for the first
+		// time keeps the asset of its release (appadopt.go).
+		pred, err := releasePredecessor(ctx, tx, b)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		if pred != 0 {
+			ids = []int64{pred}
+			if _, err := tx.Exec(ctx, `UPDATE assets SET name = $2 WHERE id = $1 AND NOT name_by_person`, pred, b.Asset.Name); err != nil {
+				return 0, false, nil, err
+			}
+		}
+	}
 
 	attrs, _ := json.Marshal(nonNil(b.Asset.Attributes))
 	var assetID int64

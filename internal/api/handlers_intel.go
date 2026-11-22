@@ -11,6 +11,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/stackurity/stackurity/internal/license"
+	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/upgrade"
 )
@@ -84,6 +86,18 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 		}
 		f.EPSSMin = n
 	}
+	if v := q.Get("reachability"); v != "" {
+		for _, st := range strings.Split(v, ",") {
+			switch {
+			case st == "not_reached":
+				f.Reachability = append(f.Reachability, model.ReachNotImported, model.ReachNotRunning)
+			case model.ValidReachStatus(st):
+				f.Reachability = append(f.Reachability, st)
+			default:
+				return f, badRequest("reachability must be one or more of reachable, not_imported, not_running, not_reached (both) or unknown")
+			}
+		}
+	}
 	f.ResolvedWithinDays = withinDays(qInt(r, "resolved_within"))
 	f.NewWithinDays = withinDays(qInt(r, "new_within"))
 	switch q.Get("sort") {
@@ -106,10 +120,25 @@ func findingFilter(r *http.Request) (store.FindingFilter, error) {
 	return f, nil
 }
 
-func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
+// paidFindingFilter is findingFilter for a request whose plan is checked:
+// filtering by reachability is part of the paid plans (license.Reachability);
+// false when the answer (402 or 400) is written.
+func (s *Server) paidFindingFilter(w http.ResponseWriter, r *http.Request) (store.FindingFilter, bool) {
 	f, err := findingFilter(r)
 	if err != nil {
 		s.fail(w, r, err)
+		return f, false
+	}
+	if len(f.Reachability) > 0 && !s.has(r, license.Reachability) {
+		s.planRequired(w, r, license.Reachability)
+		return f, false
+	}
+	return f, true
+}
+
+func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
+	f, ok := s.paidFindingFilter(w, r)
+	if !ok {
 		return
 	}
 	items, total, err := s.Store.ListFindings(r.Context(), f)
@@ -123,9 +152,8 @@ func (s *Server) listFindings(w http.ResponseWriter, r *http.Request) {
 // listFindingsByAsset pages the findings matching the GET /findings filters
 // by asset: each asset with its count and its first per_asset findings.
 func (s *Server) listFindingsByAsset(w http.ResponseWriter, r *http.Request) {
-	f, err := findingFilter(r)
-	if err != nil {
-		s.fail(w, r, err)
+	f, ok := s.paidFindingFilter(w, r)
+	if !ok {
 		return
 	}
 	per := 5

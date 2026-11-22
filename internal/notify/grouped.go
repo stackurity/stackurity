@@ -144,7 +144,7 @@ func incidentInProjects(r store.Route, in store.Incident) bool {
 	if isFindingKind(in.Kind) {
 		return true
 	}
-	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" {
+	if in.Kind != "collection" && in.Kind != "coverage" && in.Kind != "leak" && in.Kind != "config" && in.Kind != "code" {
 		return !r.Limited()
 	}
 	if rd, ok := readReporting(in); ok {
@@ -210,9 +210,10 @@ func urgentIncident(r store.Route, in store.Incident) bool {
 	if !inScope(r, in) {
 		return false
 	}
-	// A leaked key is a security issue, not a problem with Stackurity:
+	// A leaked key, a risky setting or a code finding is a security
+	// issue, not a problem with Stackurity:
 	// it goes where new issues go right away.
-	if in.Kind == "leak" {
+	if in.Kind == "leak" || in.Kind == "config" || in.Kind == "code" {
 		t := newIssueThreshold(r)
 		return t != "" && risk.PriorityAtLeast(in.Priority, t)
 	}

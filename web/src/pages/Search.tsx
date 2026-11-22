@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { api, qs, SEARCH_MAX_LENGTH, SEARCH_MIN_LENGTH, type SearchResults } from "../api";
 import { useLoad } from "../hooks";
-import { searchPath, searchSections, type SearchGroup, type SearchSection } from "../components/Search";
+import { pageSection, searchPath, searchSections, usePageHits, type SearchGroup, type SearchSection } from "../components/Search";
 import { EmptyState, ErrorBox, Loading, PageHeader, StatTile } from "../components/ui";
 import { searchOverview, searchSuggestions } from "../searchOverview";
 
@@ -20,6 +20,7 @@ function listFor(group: SearchGroup, r: SearchResults): string | null {
       return `/components${qs({ q: r.summary?.component_query || q })}`;
     case "teams":
       return "/people/teams";
+    case "pages": // The few that match are all shown.
     case "advisories": // No list of advisories by text; a narrower id finds the rest.
     case "members": // The member list is for admins only.
       return null;
@@ -28,6 +29,7 @@ function listFor(group: SearchGroup, r: SearchResults): string | null {
 
 /** What each group holds, in the words of someone investigating. */
 const DESCRIPTIONS: Record<SearchGroup, string> = {
+  pages: "Pages, settings and help articles whose name, or a word people use for them, matches. Only the ones you can open.",
   assets: "Servers, images, repositories and other assets whose name or an identifier matches.",
   components: "Installed packages that match, with their versions and where they are installed. Open one to see every version and asset.",
   vulnerabilities: "CVEs and other issues found on your assets, with their severity, and open issues whose title matches.",
@@ -157,12 +159,13 @@ export function SearchPage() {
   const rest = sections.filter((s) => s.id !== "assets");
   const hasOverview = Boolean(assets) || (data ? searchOverview(data).length > 0 : false);
   const suggestions = searchSuggestions(qParam);
+  const pages = pageSection(usePageHits(qParam, 10));
 
   return (
     <>
       <PageHeader
         title="Search"
-        sub="Look up a vulnerability or advisory id, a package (optionally with a version), an asset name or identifier, a team or a workspace member. Results start with an overview, then components, vulnerabilities and advisories."
+        sub="Find a page, setting or help article by name, or look up a vulnerability or advisory id, a package (optionally with a version), an asset name or identifier, a team or a workspace member. Results start with an overview, then components, vulnerabilities and advisories."
       />
       <form
         className="filters"
@@ -213,7 +216,7 @@ export function SearchPage() {
         <ErrorBox error={res.error} title="Search failed" />
       ) : !res.data || (res.loading && res.data.query !== qParam) ? (
         <Loading label="Searching…" />
-      ) : sections.length === 0 && !hasOverview ? (
+      ) : sections.length === 0 && !hasOverview && !pages ? (
         <EmptyState title={`Nothing matches “${qParam}”`}>
           <p>
             Search looks at advisory ids and aliases, the titles of open findings, installed packages, asset names and identifiers, team names and
@@ -241,6 +244,7 @@ export function SearchPage() {
         </EmptyState>
       ) : (
         <>
+          {pages && <Group s={pages} r={res.data as SearchResults} />}
           {hasOverview && <Overview r={res.data} assets={assets} />}
           {rest.map((s) => (
             <Group key={s.id} s={s} r={res.data as SearchResults} />
