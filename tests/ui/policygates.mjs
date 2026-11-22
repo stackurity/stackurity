@@ -178,10 +178,14 @@ for (const width of [1280, 390]) {
   await page.getByText("Policy: No known exploited").waitFor();
   ok(await page.locator(".filter-chip").count() === 1, `${tag} the policy filter shows as a chip`);
   await page.getByRole("button", { name: "Clear all" }).click();
+  await page.locator(".filter-chip").first().waitFor({ state: "detached", timeout: 5000 }).catch(() => {});
   ok(await page.locator(".filter-chip").count() === 0, `${tag} Clear all removes it`);
 
   // Exceptions from the violations page.
   const visible = (sel) => page.locator(sel).filter({ visible: true });
+  // Clearing the filter reloads the violations and the pending requests.
+  await page.getByText("3 violations on 2 assets").first().waitFor({ timeout: 10000 }).catch(() => {});
+  await visible(':text("is waiting for a decision")').first().waitFor({ timeout: 10000 }).catch(() => {});
   ok(await visible(':text("is waiting for a decision")').count() === 1, `${tag} a violation with a request says it is waiting`);
   ok((await page.locator(".exceptions-in-force summary").innerText()).includes("1 exception is in force"), `${tag} exceptions in force are listed below`);
   await visible('button:text-is("Ask for an exception")').first().click();
