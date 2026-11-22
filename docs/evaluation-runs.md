@@ -23,7 +23,7 @@ Each row has:
 
 A failed job is recorded on each attempt. A job deferred because another evaluation of the organisation holds its lock is not a run, and is not recorded.
 
-Most vulnerability sources are read every hour: the OSV ecosystems and the distributions' OSV data. A few are read every 6 hours because their publishers update less often: Amazon Linux, Oracle Linux, vendor builds, Microsoft's Security Update Guide and Windows programs. A source that changed hands only the components it affects to re-evaluation. Every other evaluation is carried forward to the new data, since evaluating it again would give the same result.
+Most vulnerability sources are read every hour: the OSV ecosystems and the distributions' OSV data. A few are read every 6 hours because their publishers update less often: Amazon Linux, Oracle Linux, vendor builds, Java web applications (Apache Roller), Microsoft's Security Update Guide and Windows programs. A source that changed hands only the components it affects to re-evaluation. Every other evaluation is carried forward to the new data, since evaluating it again would give the same result.
 
 `feed_sync_runs` has one row per source sync: started, finished, ok, records changed, whether it handed components to re-evaluation, and an error class. It is public intelligence like `feeds`, with no organisation data.
 

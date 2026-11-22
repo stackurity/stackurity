@@ -72,7 +72,7 @@ func ReadRoot(ctx context.Context, root string, im *Image, version string) Readi
 			continue
 		}
 		seen[app.Key()] = true
-		if len(app.Observations) == 0 && !app.Unreadable && !explicit[dir] {
+		if len(app.Observations) == 0 && !app.Unreadable && !explicit[dir] && !app.UnreadJavaLibraries() {
 			continue // a tool or an empty directory, as on a host
 		}
 		r.Observations = append(r.Observations, app.Observations...)

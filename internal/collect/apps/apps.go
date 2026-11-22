@@ -119,13 +119,14 @@ func (s *Scanner) path(hostPath string) string { return filepath.Join(s.Root, ho
 
 // markers identify a project directory during discovery. A WordPress site
 // usually has no manifest: its wp-config.php (which may sit one level above
-// the install) or wp-includes/version.php marks it. Its plugins and themes
+// the install) or wp-includes/version.php marks it, and an exploded Java web
+// application its WEB-INF/web.xml (javawebapps.go). Its plugins and themes
 // under wp-content are part of the site, never applications of their own:
 // discovery does not look below a directory a marker here has found (an
 // index file is different, see webIndexes).
 var markers = []string{"package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml", "composer.json", "composer.lock",
 	"requirements.txt", "pyproject.toml", "poetry.lock", "Pipfile.lock", "Gemfile.lock", "go.mod", "Cargo.lock", "pubspec.lock",
-	"wp-config.php", "wp-includes/version.php"}
+	"wp-config.php", "wp-includes/version.php", "WEB-INF/web.xml"}
 
 // webIndexes mark a plain PHP or HTML site, which has no manifest. They do
 // not count in a discovery base (/var/www, a home directory, /home/*/www),
@@ -238,6 +239,9 @@ func (s *Scanner) discover(maxDirs, maxApps int) ([]Discovered, bool) {
 	for _, base := range bases {
 		s.discoverIn(w, base, base, 0, "")
 	}
+	// Java web applications deployed in a servlet container outside the
+	// bases (/var/lib/tomcat10/webapps).
+	s.discoverServletWebapps(w)
 	// A document root the walk found is that application. One inside an
 	// application found by its manifest (Laravel's public/), and an alias
 	// target inside any application, are part of it. Otherwise a document
@@ -283,6 +287,12 @@ func (s *Scanner) discoverIn(w *walk, base, dir string, depth int, site string) 
 		if w.seen[dir] {
 			return
 		}
+	}
+	if depth > 0 && path.Base(dir) == webappsDir {
+		// A servlet container's webapps directory (/opt/tomcat/webapps):
+		// its web applications and undeployed .war files.
+		s.discoverWebapps(w, dir)
+		return
 	}
 	manifest := s.marker(dir, markers)
 	index := ""
@@ -471,6 +481,9 @@ func (s *Scanner) hostPath(p string) string {
 // ScanApp inventories one application directory.
 func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	dir = path.Clean("/" + dir)
+	if s.isWarFile(dir) {
+		return s.scanWar(ctx, dir) // a servlet container runs it as it is
+	}
 	if s.isReleaseDir(dir) {
 		dir = path.Dir(dir) // a web server serving releases/ itself serves the application
 	} else if path.Base(dir) == "current" {
@@ -623,6 +636,11 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	wpObs, wpCov := s.wordpressCore(dir, den)
 	add(wpObs)
 	app.Coverage = append(app.Coverage, wpCov...)
+	// A Java web application's own release (Apache Roller), and its JARs
+	// when no stack pack reads them (javawebapps.go).
+	javaObs, javaCov := s.javaWebapp(dir, den)
+	add(javaObs)
+	app.Coverage = append(app.Coverage, javaCov...)
 	// Libraries loaded from a CDN or copied into the application, unless a
 	// manifest already reported the same package and version.
 	bundleObs, bundleCov := web.bundleResults()

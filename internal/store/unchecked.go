@@ -408,6 +408,7 @@ var unsupportedLabels = map[string]string{
 	"runtime":                   "runtimes installed outside a package manager",
 	"cms":                       "WordPress core",
 	"wordpress_extension":       "WordPress plugins and themes",
+	"java_webapp":               "Java web applications the curated catalogue does not match",
 	"kubernetes":                "Kubernetes components reported by the cluster",
 	"managed_service":           "managed cloud services",
 	"windows_hotpatch":          "Windows hotpatch builds",

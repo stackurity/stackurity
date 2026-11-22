@@ -421,6 +421,21 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
+	if len(ids) == 0 {
+		// A release layout reported by its own directory for the first
+		// time keeps the asset of its release (appadopt.go).
+		pred, err := releasePredecessor(ctx, tx, b)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		if pred != 0 {
+			ids = []int64{pred}
+			if _, err := tx.Exec(ctx, `UPDATE assets SET name = $2 WHERE id = $1 AND NOT name_by_person`, pred, b.Asset.Name); err != nil {
+				return 0, false, nil, err
+			}
+		}
+	}
+
 	attrs, _ := json.Marshal(nonNil(b.Asset.Attributes))
 	var assetID int64
 	isNew := false

@@ -6,6 +6,22 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.25
+
+### Added
+
+- **Java web applications deployed in Tomcat and Jetty are inventoried.** With `--discover-apps` the agent now finds the web applications in the `webapps` directories of Tomcat and Jetty (`/var/lib/tomcat*`, `/opt/tomcat*`, `/usr/local/tomcat*` and the others listed in [install.md](docs/install.md#applications-deployed-on-the-host), and any `webapps` directory below `/srv`, `/opt` and the other bases): unpacked directories with `WEB-INF`, and `.war` files the container runs without unpacking them. Elsewhere an unpacked application is found by its `WEB-INF/web.xml`. The JARs in `WEB-INF/lib` and in `.war` files are read by the Java stack pack, so OSV's Maven advisories apply to them (Apache Axis is `pkg:maven/axis/axis`); without the pack the application is reported with an `unsupported` `maven:jar:` coverage item rather than left out, and **Admin → Coverage gaps** counts it. Container images are searched the same way (the official Tomcat image deploys to `/usr/local/tomcat/webapps`). Archives are read as data and bounded (entries, decompressed size, nesting), and links are not followed.
+- **Apache Roller is identified and matched against NVD.** Its release is read from `ro.version` in `roller-version.properties` (in `WEB-INF/classes`, or at the root of Roller's own JAR in 4.0 and 5.0), reported as `pkg:generic/apache-roller`, and matched against NVD's records for `cpe:2.3:a:apache:roller` through the new curated Java web application catalogue (feed `nvd:java-apps`, which reads NVD only when Roller is deployed somewhere; no new outbound destination). This covers the actively exploited CVE-2026-129448 (unauthenticated XML-RPC deserialisation, Roller 4.0 to 6.1.4, in CISA's Known Exploited Vulnerabilities catalogue since 20 November 2026). NVD records no affected version for CVE-2026-82384, the same flaw in 6.1.5, so 6.1.5 is not reported as affected by it; Roller rows say so and the update advice names 6.1.6. See [Java web applications](docs/compatibility.md#java-web-applications).
+- **Threat notice for Apache Roller CVE-2026-129448**, in the embedded threat catalogue (serial 2): organisations are told whether a deployed Roller is affected, or which connection is needed to check. The check needs agents from this release.
+
+### Fixed
+
+- **Upgrading the agent keeps release-layout applications' history.** From 0.20.24 the agent reports an application deployed in a release layout (Capistrano, Deployer, Envoyer, Ghost-CLI) by its own folder. Its first such report made a new asset: the old one was marked removed, its issues resolved as removed and came back as new issues on the new asset, and its projects stayed behind. The report now goes to the existing asset, which keeps its issues, history, projects, snoozes and assignments and takes the folder's name. An application that keeps its old release's path as well is no longer marked removed for it.
+
+### Upgrading
+
+- Migration `0122_release_layout_assets` repairs hosts whose agents upgraded to 0.20.24 first: each new folder-named asset hands its identity, name and projects to the asset it replaced and is deleted. On the next agent report the old asset's issues reopen as the same issues.
+
 ## 0.20.24
 
 ### Fixed
