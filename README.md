@@ -4,6 +4,31 @@ Open-source, self-hosted software inventory and upgrade intelligence. Stackurity
 
 > **Status:** an early release under active development; see the [latest release](https://github.com/stackurity/stackurity/releases/latest) and the [changelog](CHANGELOG.md). Inventory, intelligence, alerts and team workflow, stack packs, Kubernetes, Jira and workspaces are in Community; see the [known limitations](#known-limitations) below and [editions](#editions) for what Pro and Enterprise add.
 
+## Who it is for and what it answers
+
+For small and mid-sized teams that run their own servers, applications and repositories and need to know, continuously, what to patch first. Common questions it answers:
+
+- **Which of my servers are affected by a new CVE?** Search the CVE id and land on the affected assets, components and findings. The inventory is matched against new advisories and the CISA Known Exploited Vulnerabilities catalogue every hour, so nothing needs to be rescanned.
+- **Where is end-of-life software (old PHP, Node.js, Ubuntu, Kubernetes, RDS)?** Operating systems, runtimes (including ones installed outside the package manager), Kubernetes and managed cloud services are checked against endoflife.date daily.
+- **I have thousands of CVEs. What do I fix first?** Each finding is ranked P1 to P4 from exploitation (CISA KEV, EPSS), exposure and environment with a one-sentence reason, and findings are grouped into upgrades with the version to move to.
+- **Did the fix actually work?** Check again asks the agent for a fresh report; every closed finding says whether a check saw the fix (verified fixed, verified removed, disappeared or not a fix).
+- **Are there leaked API keys on our servers or in our repos?** Keys, tokens and passwords written in files are found without the value leaving the machine, graded by exposure.
+- **Which MCP servers and AI agent hooks are in use?** MCP servers configured in repositories are checked like dependencies, and AI coding-agent hooks on servers are reported as risky settings.
+- **What evidence do we give the auditor?** See [Compliance evidence](#compliance-evidence) below.
+
+## How it compares
+
+Stackurity is an inventory that keeps checking, not a one-off scanner. Each comparison is dated, sourced and says where the other tool is the better fit:
+
+- [Stackurity vs OWASP Dependency-Track](https://stackurity.ai/compare/dependency-track): Dependency-Track analyses the SBOMs you give it; Stackurity collects a live inventory from hosts, apps, repositories, images and clusters, and can import SBOMs too.
+- [An open source Snyk alternative for servers and deployed apps](https://stackurity.ai/compare/snyk-alternative): Snyk is built around the developer (IDE, pull requests, static analysis of your code); Stackurity is built around what you run, self-hosted under Apache-2.0. It does not scan your own source code.
+- [Trivy vs Grype vs Stackurity](https://stackurity.ai/compare/trivy-grype): Trivy and Grype scan an image or directory when you run them; Stackurity keeps an inventory and matches it against new advisories every hour (it bundles Syft for images).
+- [deepsec and Stackurity](https://stackurity.ai/compare/deepsec): use them together; Stackurity imports deepsec's and any SARIF code findings.
+
+## Compliance evidence
+
+Stackurity is a vulnerability evidence source for SOC 2, ISO 27001, PCI DSS 4.0 and the EU Cyber Resilience Act. On Stackurity Cloud's Team and Business plans, the audit evidence pack covers a quarter or any period, mapped to SOC 2 (CC7.1, CC8.1) and ISO 27001:2022 (A.8.8, A.8.9): every monitored asset and its reporting gaps, how often advisory data was current, findings at the start and end, time to fix against your deadlines, leaked keys and their rotation, and every exception with its approver and expiry, as PDF, CSV (ZIP with a SHA-256 manifest) or JSON. The Compliance add-on adds PCI DSS 4.0 and CRA controls, an SBOM of each asset and your VEX statements, and sends evidence to Drata, or to Vanta where the server has the Vanta app. Self-hosted, the evidence report is part of Pro. It is evidence for those controls, never a statement of compliance. Details: [stackurity.ai/compliance.html](https://stackurity.ai/compliance.html).
+
 ## What it does today
 
 - **Hosts:** a read-only, unprivileged agent for Linux (dpkg, rpm and apk) and Windows (registry). On Linux it also finds runtimes and servers installed outside the package manager (Node.js from nvm, downloaded database binaries) and flags hosts that need a reboot to run patched code. It can also read the libraries deployed applications actually have installed (node_modules, Python virtualenvs, Composer vendor, and front-end libraries loaded from a CDN or copied into a site), so each application appears with its host, web server, runtime and repository in one stack view. With `--docker` (opt-in) it also reads the images of the host's running Docker containers, locally built ones included, without running anything in them ([details](docs/install.md#docker-containers)).
