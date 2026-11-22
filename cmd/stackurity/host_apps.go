@@ -76,11 +76,12 @@ func scanAppDirs(ctx context.Context, o *hostOptions, osBatch *model.Observation
 // directory with nothing installed and no lockfile is a tool or an empty
 // checkout, not an application to track, unless the agent may not read the
 // directory at all (a site owned by its own user): that one is sent with
-// its coverage gap, so that it does not look clean or go missing. One
-// with only some files unreadable (a vendor tool under /opt with a
-// root-only directory) is not.
+// its coverage gap, so that it does not look clean or go missing, and so is
+// a Java web application whose bundled JARs no stack pack read. One with
+// only some files unreadable (a vendor tool under /opt with a root-only
+// directory) is not.
 func reportable(app apps.App, explicit bool, foundBy string) bool {
-	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable"
+	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable" || app.UnreadJavaLibraries()
 }
 
 // clipAttr keeps an attribute value within the batch's field limit.

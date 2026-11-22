@@ -30,6 +30,11 @@ func TestReportableApp(t *testing.T) {
 		{"discovered, empty, some files unreadable", apps.App{Coverage: gap}, false, "package.json", false},
 		{"discovered, directory unreadable", apps.App{Coverage: gap, Unreadable: true}, false, "nginx:/etc/nginx/conf.d/x.conf", true},
 		{"discovered as unreadable", apps.App{}, false, "unreadable", true},
+		// A Tomcat web application whose JARs no stack pack read: sent with
+		// that gap, not left out as empty.
+		{"Java web application, JARs not read", apps.App{Coverage: []model.CoverageItem{{Scope: apps.JavaLibrariesScope + "/var/lib/tomcat10/webapps/shop/WEB-INF/lib",
+			Status: "unsupported"}}}, false, "WEB-INF", true},
+		{"Java web application, nothing found", apps.App{}, false, "WEB-INF", false},
 	} {
 		if got := reportable(c.app, c.explicit, c.by); got != c.want {
 			t.Errorf("%s: reportable = %v", c.name, got)

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/javaapps"
 	"github.com/stackurity/stackurity/internal/vendorbuilds"
 	"github.com/stackurity/stackurity/internal/version"
 	"github.com/stackurity/stackurity/internal/winprograms"
@@ -554,7 +555,12 @@ func describeProgramUpdate(g *Group) {
 	g.TargetVersion = g.ToVersion
 	g.Title = fmt.Sprintf("Update %s to %s", label, g.ToVersion)
 	g.Action = fmt.Sprintf("Update %s to %s or later.", label, g.ToVersion)
-	if id, vendor := strings.CutPrefix(g.extra["program"], "vendor:"); vendor {
+	if id, java := strings.CutPrefix(g.extra["program"], "java:"); java {
+		// A Java web application (internal/javaapps).
+		if p := javaapps.Default().Product(id); p != nil && p.Update != "" {
+			g.Action += " " + p.Update
+		}
+	} else if id, vendor := strings.CutPrefix(g.extra["program"], "vendor:"); vendor {
 		// A vendor build: its findings' versions are upstream releases.
 		if p := vendorbuilds.Default().Product(id); p != nil && p.Update != "" {
 			g.Action += " " + p.Update

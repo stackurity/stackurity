@@ -88,6 +88,15 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 				return err
 			}
 		}
+		// Java web applications of the curated catalogue (Apache Roller),
+		// read from NVD only for those deployed somewhere.
+		if ja, err := installedJavaApps(ctx, s); err != nil {
+			return err
+		} else if len(ja) > 0 {
+			if err := ensure(FeedJavaApps, "vulnerability", 6*time.Hour, 72*time.Hour); err != nil {
+				return err
+			}
+		}
 		win, err := s.ComponentsWithPurlKey(ctx, windowsPurlKey)
 		if err != nil {
 			return err
@@ -184,6 +193,8 @@ func componentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		return programComponents(ctx, s, res)
 	case feed == FeedVendorBuilds:
 		return vendorComponents(ctx, s, res)
+	case feed == FeedJavaApps:
+		return javaAppComponents(ctx, s, res)
 	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
 		base, _ := feedEcosystem(feed)
 		types := purlTypesFor(base)

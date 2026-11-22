@@ -2,7 +2,7 @@
 
 When a new attack, attacker tool or actively exploited vulnerability appears, Stackurity checks whether it can already detect it, adds a check when it cannot, and tells every organisation once what it means for them. Nobody has to ask: notices go out on their own.
 
-The first threat is [ARTEX](config-checks.md) (risky settings, category `attack_tool`), the AI-driven attack framework the FBI warned about on 13 November 2026 ([FLASH](https://www.ic3.gov/CSA/2026/261113.pdf)).
+The first threat is [ARTEX](config-checks.md) (risky settings, category `attack_tool`), the AI-driven attack framework the FBI warned about on 13 November 2026 ([FLASH](https://www.ic3.gov/CSA/2026/261113.pdf)). The first exploited vulnerability (`exploited_vuln`) is Apache Roller's CVE-2026-129448, detected by its CVE on Roller deployments the agent identifies from 0.20.25 (see [Java web applications](compatibility.md#java-web-applications)).
 
 ## What an organisation is told
 

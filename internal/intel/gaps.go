@@ -79,6 +79,7 @@ var unreadKinds = map[string][2]string{
 	"maven:build.gradle":     {"build.gradle", "Gradle, without the Java stack pack"},
 	"maven:build.gradle.kts": {"build.gradle.kts", "Gradle, without the Java stack pack"},
 	"maven:build.sbt":        {"build.sbt", "sbt (Scala)"},
+	"maven:jar":              {"JARs of deployed Java web applications", "WEB-INF/lib and .war files, without the Java stack pack"},
 	"hex:mix.lock":           {"mix.lock", "Elixir (Hex)"},
 	"hex:rebar.lock":         {"rebar.lock", "Erlang (Hex)"},
 	"cargo:Cargo.lock":       {"Cargo.lock", "Rust, without the Cargo stack pack"},
@@ -105,7 +106,8 @@ var unreadKinds = map[string][2]string{
 // recognises but cannot read, and the fixed unsupported scopes of the host
 // collectors. Scopes of any other kind are counted as "other".
 func UnreadKinds() []string {
-	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps", "app-permissions", "windows:user-programs")
+	out := append(lockfile.UnsupportedKinds(), "os-packages", "windows:hotfixes", "windows:store-apps", "app-permissions", "windows:user-programs",
+		"maven:jar")
 	sort.Strings(out)
 	return out
 }
@@ -123,6 +125,7 @@ var vulnReasons = map[string]string{
 	"runtime":                   "runtime installed outside a package manager (lifecycle only)",
 	"cms":                       "content management system core, such as WordPress (lifecycle only)",
 	"wordpress_extension":       "WordPress plugins and themes: vulnerabilities are not matched yet",
+	"java_webapp":               "Java web applications (Apache Roller) at a release the curated catalogue does not read, such as a development build",
 	"kubernetes":                "Kubernetes component version (lifecycle only)",
 	"managed_service":           "managed service version (lifecycle only)",
 	"distribution":              "distribution without a vulnerability source",
@@ -193,6 +196,8 @@ func CoverageGaps(ctx context.Context, st *store.Store, ov *eoloverlay.Overlay) 
 			gap.Label = "WordPress core"
 		case cat == "wordpress_extension":
 			gap.Label = "WordPress plugins and themes"
+		case cat == "java_webapp":
+			gap.Label = "Java web applications"
 		}
 		if cat == "vendor_build" && len(parts) == 3 {
 			gap.Detail = "built by " + parts[2] + "; the distribution's advisories do not cover it"

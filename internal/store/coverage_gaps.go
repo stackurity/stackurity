@@ -63,6 +63,7 @@ const unsupportedCategorySQL = `CASE
 	WHEN i.coverage_reason LIKE 'runtime installed outside a package manager%' THEN 'runtime'
 	WHEN i.coverage_reason LIKE 'content management system core%' THEN 'cms'
 	WHEN i.coverage_reason LIKE 'WordPress plugin or theme%' THEN 'wordpress_extension'
+	WHEN c.type = 'generic' AND i.coverage_reason LIKE 'Java web application%' THEN 'java_webapp'
 	WHEN i.coverage_reason LIKE 'Kubernetes component%' THEN 'kubernetes'
 	WHEN i.coverage_reason LIKE 'managed service%' THEN 'managed_service'
 	WHEN i.coverage_reason LIKE 'Swift packages are matched by repository URL%' THEN 'no_repository_url'

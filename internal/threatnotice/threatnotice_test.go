@@ -593,12 +593,27 @@ func TestOperatorCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(m.sent) != 1 || m.sent[0].to[0] != "owner@stackurity.test" || m.sent[0].m.Event != notify.EventThreatNoticeCopy {
+	// One copy per threat of the embedded catalogue that a 0.20.17 server
+	// has the check for: neither organisation has any asset, so each needs
+	// a connection. A threat whose check came later is an "upgrade" notice,
+	// held for a day, so it has no copy yet.
+	want := 0
+	for _, th := range threats.Embedded().Threats {
+		if th.HasCheck("0.20.17") {
+			want++
+		}
+	}
+	if want == 0 || len(m.sent) != want {
 		t.Fatalf("copies: %+v", m.sent)
 	}
-	b, _ := json.Marshal(m.sent[0].m)
-	if strings.Contains(string(b), "Acme") || strings.Contains(string(b), "Globex") || !strings.Contains(string(b), "Need a connection to be checked: 2") {
-		t.Errorf("copy: %s", b)
+	for _, s := range m.sent {
+		if s.to[0] != "owner@stackurity.test" || s.m.Event != notify.EventThreatNoticeCopy {
+			t.Fatalf("copy: %+v", s)
+		}
+		b, _ := json.Marshal(s.m)
+		if strings.Contains(string(b), "Acme") || strings.Contains(string(b), "Globex") || !strings.Contains(string(b), "Need a connection to be checked: 2") {
+			t.Errorf("copy: %s", b)
+		}
 	}
 }
 
