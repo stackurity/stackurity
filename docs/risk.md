@@ -7,7 +7,7 @@ Every open finding gets a priority from P1 (most urgent) to P4, an SOS flag for 
 | Input | Where it comes from |
 |---|---|
 | CVSS score | The advisory's CVSS base score (v3.x or v4.0, whichever is higher). A score of 0 counts as none. |
-| Severity | The advisory's severity, used only when there is no CVSS score. SUSE publishes none, so SUSE findings have `unknown`. While an inventory version is unconfirmed the severity is withheld (`unknown`), but a CVSS score is still used. |
+| Severity | The advisory's severity, used only when there is no CVSS score. SUSE publishes none, so SUSE findings have `unknown`. A malicious-package record (OSV `MAL-` ids from the OpenSSF malicious-packages data) is `critical`, with `severity_source` `malicious_package`: the version was published to steal from or take over whatever installs it. While an inventory version is unconfirmed the severity is withheld (`unknown`), but a CVSS score is still used. |
 | Known exploited | The advisory, or any of its aliases, is in the CISA KEV catalogue. |
 | Predicted exploitation (EPSS) | FIRST's EPSS for the finding's CVEs (the highest among its `key` and the CVEs its advisories list as aliases or upstream ids): the probability that the CVE is exploited in the wild in the next 30 days, from the daily `epss:first` feed. See [below](#predicted-exploitation-epss). |
 | Internet exposure | In order: the **Internet exposed** value set on the asset, else the collector's observation (a Kubernetes workload's `exposure`), else for an image the current workloads deployed as it: exposed if any is, internal only if every one is internal, otherwise unknown. |
