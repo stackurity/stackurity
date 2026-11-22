@@ -261,7 +261,7 @@ func TestKeyLink(t *testing.T) {
 		"paid edition by the free issuer": k.key(license.Pro, k.comPriv),
 		"paid licence":                    k.key(license.Pro, k.licPriv),
 		"not a key":                       "hello",
-		"tampered":                        valid[:len(valid)-4] + "AAAA",
+		"tampered":                        tamper(valid),
 	} {
 		st := k.start(owner)
 		if code, _ := k.claim(owner, bad, st); code != 400 {
@@ -355,4 +355,17 @@ func TestKeyLinkNoBaseURL(t *testing.T) {
 			t.Errorf("%q: start: %d %s", base, code, e.Error.Code)
 		}
 	}
+}
+
+// tamper changes the first character of the key's signature. Replacing the
+// last characters is not enough: the signature's final bits are often zero
+// (S < L leaves the top bits of its last byte empty), so a fixed suffix can
+// decode to the very same signature and the "tampered" key is the real one.
+func tamper(key string) string {
+	i := strings.IndexByte(key, '.') + 1
+	c := byte('A')
+	if key[i] == 'A' {
+		c = 'B'
+	}
+	return key[:i] + string(c) + key[i+1:]
 }
