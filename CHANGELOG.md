@@ -6,6 +6,137 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.25
+
+### Added
+
+- **Java web applications deployed in Tomcat and Jetty are inventoried.** With `--discover-apps` the agent now finds the web applications in the `webapps` directories of Tomcat and Jetty (`/var/lib/tomcat*`, `/opt/tomcat*`, `/usr/local/tomcat*` and the others listed in [install.md](docs/install.md#applications-deployed-on-the-host), and any `webapps` directory below `/srv`, `/opt` and the other bases): unpacked directories with `WEB-INF`, and `.war` files the container runs without unpacking them. Elsewhere an unpacked application is found by its `WEB-INF/web.xml`. The JARs in `WEB-INF/lib` and in `.war` files are read by the Java stack pack, so OSV's Maven advisories apply to them (Apache Axis is `pkg:maven/axis/axis`); without the pack the application is reported with an `unsupported` `maven:jar:` coverage item rather than left out, and **Admin → Coverage gaps** counts it. Container images are searched the same way (the official Tomcat image deploys to `/usr/local/tomcat/webapps`). Archives are read as data and bounded (entries, decompressed size, nesting), and links are not followed.
+- **Apache Roller is identified and matched against NVD.** Its release is read from `ro.version` in `roller-version.properties` (in `WEB-INF/classes`, or at the root of Roller's own JAR in 4.0 and 5.0), reported as `pkg:generic/apache-roller`, and matched against NVD's records for `cpe:2.3:a:apache:roller` through the new curated Java web application catalogue (feed `nvd:java-apps`, which reads NVD only when Roller is deployed somewhere; no new outbound destination). This covers the actively exploited CVE-2026-129448 (unauthenticated XML-RPC deserialisation, Roller 4.0 to 6.1.4, in CISA's Known Exploited Vulnerabilities catalogue since 20 November 2026). NVD records no affected version for CVE-2026-82384, the same flaw in 6.1.5, so 6.1.5 is not reported as affected by it; Roller rows say so and the update advice names 6.1.6. See [Java web applications](docs/compatibility.md#java-web-applications).
+- **Threat notice for Apache Roller CVE-2026-129448**, in the embedded threat catalogue (serial 2): organisations are told whether a deployed Roller is affected, or which connection is needed to check. The check needs agents from this release.
+
+### Fixed
+
+- **Upgrading the agent keeps release-layout applications' history.** From 0.20.24 the agent reports an application deployed in a release layout (Capistrano, Deployer, Envoyer, Ghost-CLI) by its own folder. Its first such report made a new asset: the old one was marked removed, its issues resolved as removed and came back as new issues on the new asset, and its projects stayed behind. The report now goes to the existing asset, which keeps its issues, history, projects, snoozes and assignments and takes the folder's name. An application that keeps its old release's path as well is no longer marked removed for it.
+
+### Upgrading
+
+- Migration `0122_release_layout_assets` repairs hosts whose agents upgraded to 0.20.24 first: each new folder-named asset hands its identity, name and projects to the asset it replaced and is deleted. On the next agent report the old asset's issues reopen as the same issues.
+
+## 0.20.24
+
+### Fixed
+
+- **A deploy no longer creates a new application.** An application deployed in a release layout (releases/ or versions/ plus a `current` link, as Capistrano, Deployer, Envoyer and Ghost-CLI deploy) was tracked by its current release's folder, so every deploy added a new asset and marked the previous one removed. A web server that also serves the `releases/` folder made a second application, named "releases", that counted every old release. The agent now reports the application by its own folder (for example `commmerce-ui on <host>` for `/var/www/commmerce-ui`), scanning only the current release. The release scanned is still shown as the application directory.
+
+### Upgrading
+
+- After the agent updates, each such application appears once under its own folder's name, and the release-named asset it replaces is marked removed. Its snoozes and assignments do not carry over.
+
+## 0.20.23
+
+### Changed
+
+- **A how-to answer from Ask leads to the page where you do it.** When an answer links a Help article about doing something, the first button under it opens that page: **Open Add server →** opens the Add server form (**Add many servers** its fleet tab), and articles on two-factor, API tokens, users, projects, the risk policy, AI assistants, owner rules and notifications open their pages. The article's **Read: …** button follows.
+- **How-to answers are just the steps.** They no longer carry a **Data gaps** section or a note that the screen may differ, and an answer that read only Help articles no longer shows **What Ask looked at** ("Reading") or the "changed nothing" line: reading Help is not a read of your data. Ask Stackurity prompt version `2026-11-22.1`.
+
+### Fixed
+
+- **Clearer wording for components from no package manager.** A component such as a Flutter web build's engine was listed as "1 component uses other packages, which Stackurity doesn't check yet", as if it depended on something else. It now reads "1 component is a standalone build, not from a package manager, which Stackurity doesn't check yet."
+
+## 0.20.22
+
+### Added
+
+- **Ask Stackurity reads the Help articles.** A new read-only tool, `read_help`, returns a Help article's steps (by id, or the best matches for a few words), so "How do I add a server?" or "How do I connect Slack?" is answered from the same steps people read in Help, with a link to the article and to the page where it is done. AI assistants connected over MCP get the tool too (23 read-only tools). The articles are generated into `internal/helpdocs/articles.json` by `npm run help-json` in `web/`; a web test fails when it is out of date.
+- **Buttons under Ask's answers for the pages they point to:** "Open Integrations →", "Read: Add a server →", up to three, the same targets as the answer's own links.
+- **Ask Stackurity: questions to start with, one click each.** The panel opens with two short lists of questions that ask themselves when clicked: **What needs doing** ("What needs immediate attention?", "What's most important to fix this week?", and on an asset, issue, package or fix page a question about it first, such as "What should I fix on this asset first?") and **Getting set up** ("How do I add a server?" and "How do I invite my team?" for admins, "How do I get alerts in Slack or Teams?", "How do I use Stackurity day to day?").
+- **Ask Stackurity card on the Dashboard** with the same questions: a click opens the panel and asks. Where an admin turned Ask off, admins see where to turn it on; where Ask is not available (no model, not in the plan, read-only) there is no card. With no assets yet, the Dashboard also offers "Ask Stackurity how to start".
+- **Search finds pages, settings and help.** The top search now lists matching pages, settings and help articles first, under **Pages and settings**, by their name or a word people use for them: `sso` opens Single sign-on, `invite` People, `mfa` your account and the two-factor article, `api token` API tokens. Only pages the person's role can open are offered, and Billing and other hosted-only pages only where the server has them. Each result says where it lives in the sidebar ("Administration › Integrations"). The full results page has the same group. Found in the browser: no API change.
+- **Ctrl+K (⌘K) opens the search** from anywhere, as well as `/`.
+
+### Changed
+
+- **Ask Stackurity prompt version `2026-11-21.3`:** how-to questions are answered from `read_help`, never from memory; when no article covers it, Ask says so.
+- The top bar's **Ask** button is highlighted (accent colour) so it is easy to find.
+- The Settings sections are defined once (`web/src/navModel.ts`, `SETTINGS_GROUPS`) and shared by the Settings page and search.
+
+## 0.20.21
+
+### Fixed
+
+- **An upgrade no longer stops when a migration deadlocks with a server still running the previous version.** During a rolling upgrade, an older replica's queries could lock tables in a different order from a migration, and Postgres cancelled the migration with "deadlock detected" (or a lock timeout), so the new server did not start. Each migration runs in one transaction that Postgres rolls back in full, so it is now tried up to five times, with a short pause, before the upgrade gives up.
+
+## 0.20.20
+
+### Fixed
+
+- **Evidence pack and plan options work from AI assistants and Ask Stackurity.** The `evidence_pack` and `plan_options` tools in Claude, ChatGPT and other connected assistants answered "an assistant cannot change account settings", because they read the plan's features from an account route that assistants were not allowed to read. Assistants and Ask Stackurity may now read the plan's features (read-only); every other account setting stays closed to them.
+
+## 0.20.19
+
+### Added
+
+- **Ask Stackurity: notes about a project.** A project's admins (an organisation-wide admin, or an admin grant on the project) can write a short note about it, up to 2,000 characters, under **Notes for Ask Stackurity** on the project's page (or its Notifications page for admins of that project only): what the project is, which hosts are for testing, what to leave out. Ask reads it with questions about that project, inside the question's context block and marked as written by an organisation administrator, as background and never as instructions. Anyone who can see the project can read the note; every change is in the audit log (`project.ask_notes_update`) with the old and new text. `GET` and `PUT /api/v1/projects/{id}/ask-notes`. See [api.md](docs/api.md).
+- **Ask Stackurity: refused and incomplete answers are counted.** Each answer call records why it ended without a full answer (`incomplete_reason`: `refusal`, `cannot_answer`, `tool_error`, `max_tokens`, `tool_budget`, `too_long`) and, for a refusal, the provider's category, without any text. The daily totals count refusals and incomplete answers, `GET /api/v1/ask/usage/calls` and `GET /api/v1/admin/ask/calls` carry the new fields, and `GET /api/v1/admin/ask/feedback/incomplete` (operators and feedback review tokens) gives the counts per day, model and reason. A refused answer is answered again on the next model up, as before; its retry is now recorded with the step-up reason `refusal` instead of `not_found`.
+- **Code findings from code scanners.** `stackurity import code-findings FILE --format deepsec|sarif --asset <repository>` (and `POST /api/v1/code-findings/import`) imports a code-review security scanner's report for a repository: [deepsec](https://github.com/vercel-labs/deepsec)'s `deepsec export --format json`, or any SARIF 2.1.0 log. Findings show under **Security → Code findings**, on the repository's **Code findings** tab, in `GET /code-findings` and in the new MCP tool `list_code_findings`. Importing again updates the same findings; a complete import resolves the ones the report no longer has. The scanner's own verdict and the model are kept: findings it closed (false positive, fixed, accepted risk, duplicate, suppressed) are resolved and never alert. Open critical and high security findings raise one incident per repository, routed like leaked keys. Reports are limited to 16 MB and 5,000 findings and shown as plain text; the people a deepsec export names are not stored. Free in every edition. See [Code findings](docs/code-findings.md).
+- **Leaked keys and risky settings get an independent second check.** Each one now shows a verdict, `confirmed`, `likely false positive`, `fixed` or `could not check`, with a one-sentence reason and the version of the rules that gave it. For keys, the collector reads the value while it has it and sends only signals from a fixed list: a placeholder (`xxxx`, `<your-key>`, `changeme`), a key published in a provider's documentation, a Stripe or Razorpay test-mode key, a value too regular to be generated, or a GitHub token whose built-in checksum does not match; the server adds documentation, template and test files. For risky settings it re-reads the stored evidence: a commented-out hook command, a workflow file GitHub never runs, an action pinned to a full commit, `PermitRootLogin` not `yes` or in a file `sshd_config.d` skips. The rules are fixed and deterministic. Likely false positives stay listed, collapsed under **Likely false positives** on **Leaked keys** and **Risky settings**, and raise no alert when their value shows they are not real keys (except a leak in a file the web server may send); a leak flagged only because it is in a test or docs file still alerts, with the reason "in a test or docs file — check whether the key is real". Every verdict is kept, append-only, with what the check read, so you can see how a conclusion was reached: `GET /leaks/{id}/second-checks`, `GET /config-findings/{id}/second-checks`, the `second_check` field and filter on `GET /leaks` and `GET /config-findings`, and in MCP's `list_leaks` and `list_risky_settings`. See [Verification](docs/verification.md#second-check-of-leaked-keys-and-risky-settings).
+
+### Changed
+
+- **Ask Stackurity prompt version `2026-11-21.2`:** the system prompt explains project notes and how to treat them, and lists the new Code findings page.
+
+### Fixed
+
+- **Ask Stackurity panel updates when an admin turns Ask on or off.** Turning Ask on (or off, or changing "Ask may propose changes") under **Integrations → AI assistants** left an open Ask panel saying an administrator had turned it off until the page was reloaded. The panel now reloads its status as soon as the change is saved.
+
+### Upgrading
+
+- Migration `0119_ask_incomplete_project_notes` adds `incomplete_reason` and `refusal_category` to `ask_api_calls`, `refusals` and `incomplete` to `ask_api_calls_daily`, and `ask_notes` and `ask_notes_updated_at` to `projects`. Additive, with constant defaults.
+- Migration `0121_code_findings` adds the `code_findings` and `code_imports` tables and lets a project-limited connection see `code` incidents of its assets.
+- Migration `0120_second_check_leaks_config` adds the value check's signals and the latest verdict to `leaks`, the latest verdict to `config_findings`, and a new append-only table, `second_check_verdicts`. Existing leaks and settings are checked within minutes of the upgrade; leaks found by agents and `stackurity scan` older than this release are `could not check` until they are updated, as only the file can be checked without the value check. Agents send `value_check` only to servers that list the `leak_value_checks` feature.
+
+## 0.20.18
+
+### Added
+
+- **Threat notices: Stackurity tells you when a new attack or attacker tool matters to you.** When a new attack, attacker tool or actively exploited vulnerability appears (ARTEX first), every organisation is told once, without asking, whether it was **found** on its assets, whether its connected assets are checked and **covered** (nothing to do), what it **needs connected** to be checked (the agent, Docker access, repositories, a cloud account, with the Help page for each), or, on an older self-hosted server, that it must **upgrade** to get the check. Administrators and the security team see a banner with one button and get one email; notification routes with the new **Threat notices** trigger get a message, scoped like other alerts. A notice is sent again only when the threat is later found. See [Threat notices](docs/threat-notices.md).
+- **A signed threat feed.** Servers read Stackurity's public list of threats (`https://stackurity.ai/threats/feed.signed.json`, Ed25519-signed with an expiry, verified against a key built into the release) every 6 hours, so a self-hosted server hears about threats that appeared after its release. The request sends nothing about the installation, may not reach private networks or follow redirects to another host, and is off with `STACKURITY_UPDATE_CHECK=off`; `STACKURITY_THREAT_FEED_URL` sets a mirror. A feed that does not verify, is replayed or has expired is ignored and shown in Platform health, which also warns when no feed was read for 7 days. `tools/threatfeed` signs it. See [network.md](docs/network.md#threat-feed).
+- **`GET /threats`, `GET /threat-notices`, `POST /threat-notices/{id}/dismiss`**, and the MCP tool **`list_threat_notices`**. `threat_check` now reads the server's threat catalogue, so it knows threats added to the feed after the assistant's release, and checks threats detected by CVE ids against the organisation's findings.
+
+### Upgrading
+
+- Migration `0118_threat_notices` adds `threats_seen`, `threat_notices` and `threat_notice_dismissals` (row-level security on the last two), widens the `routes.events` check to allow `threat_notices`, and gives that event to every route that sends urgent alerts, new issues or problems right away, **except webhook routes**. Additive.
+- Webhook receivers: a new message kind, `"event": "threat_notice"` (`kind` `threat`; see [api.md](docs/api.md#notification-messages)). Webhook routes, existing and new, get it only once **Threat notices** is ticked on the route.
+- A new default outbound request: `stackurity.ai` (the threat feed), turned off with the release check (`STACKURITY_UPDATE_CHECK=off`).
+- Stackurity Cloud: `STACKURITY_THREAT_NOTICE_COPY_TO` sends the operator one summary per threat (counts per verdict and one example, no names).
+
+## 0.20.17
+
+### Added
+
+- **Attack tools: ARTEX.** Risky settings has a new category, **Attack tools**, for attacker tools found on your assets. The first one is ARTEX, the AI-driven attack framework the FBI warned about on 13 November 2026. It covers renamed forks such as ScopeWeaver. The agent finds it on servers as a Go executable built from it (the build record is read; nothing is run) or a copy of its source. It finds it in container images by image name or by the image's Go executables, and in repositories by `go.mod`, `Dockerfile` and Compose files. The prebuilt images `tomicdd/artex` and `congdonglinux/artex`, reported to carry a backdoor, have a rule of their own. These matches are high and raise a Risky setting incident. A module or image only named like the tool is reported as medium, which does not alert. See [Risky settings](docs/config-checks.md#attack-tools).
+- **Sign-ups from untagged links record the website they came from.** When the sign-up page has no `?ref=` and no `utm_source`, the referring website counts as `web-<host>` (for example `web-reddit-com`), so the trial report and the admin Customers page say where more sign-ups came from. Only the host is kept, and stackurity.ai and stackurity.dev pages are ignored; tagged links still win. The browser stores nothing for it.
+- **Ask Stackurity and AI assistants answer "are we affected by ARTEX?".** The new MCP tool `threat_check` takes a named attacker tool or campaign (ARTEX first) and returns what it is and its sources, `checked` (whether its checks ran at all), whether it was found on an asset, the internet-facing (or possibly internet-facing) assets with active known-exploited or critical findings, how many servers ran the checks and which connections are missing (with the Help page for each), and a verdict: `found`, `exposed`, `not_checked`, `partial` or `covered`. On a server without the attack-tool checks, `checked` is false and the answer says to upgrade to the latest version; `covered` needs every connected server checked and everything read. The new tool `list_risky_settings` lists [risky settings](docs/config-checks.md) (agent hooks, SSH access, GitHub Actions and attacker tools), which had no MCP tool before. Both are read-only and offered to Ask Stackurity. See [AI assistants](docs/ai-assistants.md).
+
+### Changed
+
+- **Unsubscribe links let people choose what to stop.** The Unsubscribe link in product update and vulnerability news emails now opens a page that lists every email category, with the one the email came from already unticked, plus an "Unsubscribe from all" button. It used to offer a single yes/no for that one category. The link can still only turn emails off, never back on; the Email preferences link and Your account still do both. Mail clients' one-click unsubscribe is unchanged and stops only that email's category.
+
+### Upgrading
+
+- Migration `0117_config_attack_tools` widens the `config_findings` category check to allow `attack_tool`. Additive. Agents send attack tool findings only to servers that list `config_attack_tools` in `GET /meta`, so older servers keep taking their batches. After this migration an older image refuses to start against the database (newer schema), so a rollback restores the pre-upgrade database dump, as for earlier migration releases.
+- `pkg/engine.ConfigForServer` drops the config findings a server does not take; the standalone scanner should call it before every upload.
+
+## 0.20.16
+
+### Added
+
+- **Repository scans find front-end libraries kept outside a package manager.** A copied `js/jquery-3.6.0.min.js` or `bootstrap.bundle.min.js` is named by its version banner, a CDN address in a template by its path, and a library compiled into a committed bundle as on a deployed application. A PHP or static site's repository with no manifest now lists the jQuery, Bootstrap or jQuery Validate it ships, instead of no components. This applies to server-side, GitHub App and GitLab scans and to `stackurity scan` in CI, which skips files git ignores. Source maps are not read in repositories (the server's clone leaves them out). A copy a lockfile also lists at the same version is reported once. See [Compatibility](docs/compatibility.md).
+
+### Changed
+
+- **A repository scan that did not fully look for copied front-end libraries no longer removes them.** A CI scan by an older `stackurity scan` reports the same repository without looking, and a scan can stop at a read limit, an unreadable path or its 3-minute limit for this step. In those cases the libraries found before stay, rather than their findings closing and reopening at each alternating scan, while upgraded lockfile packages are still removed. A read limit in this step never marks the repository's collection partial.
+
 ## 0.20.15
 
 ### Changed

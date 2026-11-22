@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 18 || len(writeTools) != 11 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 23 || len(writeTools) != 11 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -476,6 +476,17 @@ func TestListLeaksWorkflow(t *testing.T) {
 	l := leaks[0].(map[string]any)
 	if l["state"] != "still_found" || l["assignee_email"] != "ravi@x.io" || l["overdue"] != true || l["due_at"] == nil || l["rotated_at"] == nil {
 		t.Errorf("leak: %v", l)
+	}
+}
+
+// list_leaks and list_risky_settings pass the second check filter.
+func TestListLeaksSecondCheckFilter(t *testing.T) {
+	api := &fakeAPI{}
+	callTool(t, &Server{API: api, Version: "t"}, "list_leaks", map[string]any{"second_check": "likely_false_positive"})
+	callTool(t, &Server{API: api, Version: "t"}, "list_risky_settings", map[string]any{"second_check": "confirmed,unchecked"})
+	if len(api.paths) != 2 || api.paths[0] != "GET /api/v1/leaks?limit=50&second_check=likely_false_positive" ||
+		api.paths[1] != "GET /api/v1/config-findings?limit=50&second_check=confirmed%2Cunchecked" {
+		t.Errorf("requests = %v", api.paths)
 	}
 }
 

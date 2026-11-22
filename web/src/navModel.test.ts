@@ -37,7 +37,7 @@ const link = (a: Access, id: string) => visibleNav(a).flatMap((g) => g.items).fi
 test("the sidebar groups, in the order people look for them", () => {
   assert.deepEqual(shape(access("admin", { instanceAdmin: true })), [
     "Overview: Dashboard",
-    "Security: Fixes, All issues, Leaked keys, Risky settings, Automatic fixes, Incidents, Checks",
+    "Security: Fixes, All issues, Leaked keys, Risky settings, Code findings, Automatic fixes, Incidents, Checks",
     "Environment: Assets, Components, Projects, Coverage",
     "Governance: Approvals, Reports and audit",
     "Administration: Integrations, People, Settings, Admin",
@@ -56,7 +56,7 @@ test("items follow the role checks: no item for a page someone cannot open", () 
   // A viewer: no Projects, People, Admin; Integrations opens API tokens (the first tab they may open).
   assert.deepEqual(shape(access("viewer")), [
     "Overview: Dashboard",
-    "Security: Fixes, All issues, Leaked keys, Risky settings, Automatic fixes, Incidents, Checks",
+    "Security: Fixes, All issues, Leaked keys, Risky settings, Code findings, Automatic fixes, Incidents, Checks",
     "Environment: Assets, Components, Coverage",
     "Governance: Approvals, Reports and audit",
     "Administration: Integrations, Settings",
@@ -93,6 +93,7 @@ test("active item: sub-pages and old addresses light up the item they belong to"
     ["/fixes/issues", "issues"],
     ["/findings/7", "issues"],
     ["/fixes/leaks", "leaks"],
+    ["/fixes/code", "code"],
     ["/fixes/automatic", "automatic"],
     ["/remediation/plans/3", "automatic"],
     ["/incidents/9", "incidents"],

@@ -18,6 +18,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
 	"github.com/stackurity/stackurity/internal/collect/leaks"
@@ -90,7 +91,8 @@ type Scanner struct {
 }
 
 // Scan clones the repository at depth 1 (without images, media and other
-// binaries: sparsePatterns), scans lockfiles and keys written
+// binaries: sparsePatterns), scans lockfiles, front-end libraries kept
+// outside a package manager and keys written
 // in its files, and removes the clone. token may be empty for public
 // repositories.
 func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.ObservationBatch, error) {
@@ -157,6 +159,16 @@ func (s *Scanner) Scan(ctx context.Context, cfg Config, token string) (*model.Ob
 		return nil, err
 	}
 	b.Collector.Method = "repository"
+	// Front-end libraries outside a package manager: copied files, CDN
+	// addresses in templates, committed bundles (apps.RepoWebAssets).
+	web, webCov, webMore := apps.RepoWebAssets(ctx, src, b.Observations, nil) // a fresh clone ignores nothing
+	b.Observations = append(b.Observations, web...)
+	b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
+	// Registry packages the MCP servers configured in the repository
+	// start (npx, uvx, pipx), as components of the repository.
+	mcp, mcpCov := confcheck.RepoMCPPackages(ctx, src)
+	b.Observations = append(b.Observations, mcp...)
+	b.Coverage = append(b.Coverage, mcpCov)
 	if !s.NoLeaks {
 		// Keys and passwords committed to the default branch. A fresh
 		// clone holds only tracked files; each keeps its severity.

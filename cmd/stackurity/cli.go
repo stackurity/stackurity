@@ -24,6 +24,7 @@ import (
 
 	"github.com/stackurity/stackurity/internal/agentfix"
 	"github.com/stackurity/stackurity/internal/client"
+	"github.com/stackurity/stackurity/internal/collect/apps"
 	"github.com/stackurity/stackurity/internal/collect/confcheck"
 	"github.com/stackurity/stackurity/internal/collect/docker"
 	"github.com/stackurity/stackurity/internal/collect/gitremote"
@@ -217,7 +218,9 @@ func remotePacks(cl *client.Client) func(ctx context.Context) ([]lockfile.Extens
 }
 
 // serverTakes is what GET /meta says the server accepts from the agent.
-type serverTakes struct{ appList, hostImages, leaks, configFindings, reachability bool }
+type serverTakes struct {
+	appList, hostImages, leaks, leakValueChecks, configFindings, attackTools, reachability bool
+}
 
 // forServer drops from the agent's batches what the server does not take:
 // older servers refuse unknown fields, and the whole batch would fail.
@@ -229,8 +232,14 @@ func forServer(bs []*model.ObservationBatch, t serverTakes) []*model.Observation
 		if !t.leaks {
 			b.Leaks = nil
 		}
+		if !t.leakValueChecks {
+			b.Leaks.StripLeakValueChecks()
+		}
 		if !t.configFindings {
 			b.ConfigFindings = nil
+		}
+		if !t.attackTools {
+			b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
 		}
 		if !t.reachability {
 			b.StripReachability()
@@ -413,7 +422,7 @@ host; see docs/install.md.`,
 			var takes serverTakes
 			if m, err := cl.Meta(ctx); err == nil {
 				takes = serverTakes{appList: m.Has(client.FeatureAppList), hostImages: m.Has(client.FeatureHostImages),
-					leaks: m.Has(client.FeatureLeaks), configFindings: m.Has(client.FeatureConfigFindings),
+					leaks: m.Has(client.FeatureLeaks), leakValueChecks: m.Has(client.FeatureLeakValueChecks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools),
 					reachability: m.Has(client.FeatureReachability)}
 			}
 			if opts.docker != nil && !takes.hostImages {
@@ -718,6 +727,17 @@ config findings; --no-config-checks turns them off.`,
 			if err != nil {
 				return err
 			}
+			// Front-end libraries kept outside a package manager, as the
+			// server's own scan of the repository reports them; files git
+			// ignores (a build's output) are not the repository's.
+			web, webCov, webMore := apps.RepoWebAssets(cmd.Context(), dir, b.Observations, lockfile.GitIgnored(cmd.Context(), dir))
+			b.Observations = append(b.Observations, web...)
+			b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
+			// Registry packages the MCP servers configured in the repository
+			// start (npx, uvx, pipx), as components of the repository.
+			mcp, mcpCov := confcheck.RepoMCPPackages(cmd.Context(), dir)
+			b.Observations = append(b.Observations, mcp...)
+			b.Coverage = append(b.Coverage, mcpCov)
 			if !noLeaks {
 				b.Leaks = scanLeaks(cmd.Context(), dir)
 			}
@@ -745,6 +765,9 @@ config findings; --no-config-checks turns them off.`,
 				fmt.Fprintln(os.Stderr, "warning: the server does not take leaked keys (Stackurity 0.15 or later is needed); they are not sent")
 				b.Leaks = nil
 			}
+			if merr != nil || !m.Has(client.FeatureLeakValueChecks) {
+				b.Leaks.StripLeakValueChecks()
+			}
 			if merr != nil || !m.Has(client.FeatureReachability) {
 				// Older servers refuse the field; the inventory is sent without it.
 				b.StripReachability()
@@ -753,6 +776,8 @@ config findings; --no-config-checks turns them off.`,
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureConfigFindings) {
 					fmt.Fprintln(os.Stderr, "warning: the server does not take config findings (Stackurity 0.21 or later is needed); they are not sent")
 					b.ConfigFindings = nil
+				} else if !m.Has(client.FeatureConfigAttackTools) {
+					b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
 				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)

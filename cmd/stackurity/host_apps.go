@@ -49,10 +49,10 @@ func scanAppDirs(ctx context.Context, o *hostOptions, osBatch *model.Observation
 			continue
 		}
 		app := scanner.ScanApp(ctx, dir)
-		if seen[app.Dir] {
+		if seen[app.Key()] {
 			continue
 		}
-		seen[app.Dir] = true
+		seen[app.Key()] = true
 		if !reportable(app, explicit, foundBy[dir]) {
 			continue
 		}
@@ -64,7 +64,7 @@ func scanAppDirs(ctx context.Context, o *hostOptions, osBatch *model.Observation
 			b.Asset.Attributes["discovered_by"] = clipAttr(by) // a manifest, an index file, a web server's configuration
 		}
 		batches = append(batches, b)
-		reported = append(reported, app.Dir)
+		reported = append(reported, app.Key())
 	}
 	if full && len(reported) <= model.MaxAppDirs {
 		osBatch.Apps = &model.AppList{Dirs: reported}
@@ -76,11 +76,12 @@ func scanAppDirs(ctx context.Context, o *hostOptions, osBatch *model.Observation
 // directory with nothing installed and no lockfile is a tool or an empty
 // checkout, not an application to track, unless the agent may not read the
 // directory at all (a site owned by its own user): that one is sent with
-// its coverage gap, so that it does not look clean or go missing. One
-// with only some files unreadable (a vendor tool under /opt with a
-// root-only directory) is not.
+// its coverage gap, so that it does not look clean or go missing, and so is
+// a Java web application whose bundled JARs no stack pack read. One with
+// only some files unreadable (a vendor tool under /opt with a root-only
+// directory) is not.
 func reportable(app apps.App, explicit bool, foundBy string) bool {
-	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable"
+	return explicit || len(app.Observations) > 0 || app.Unreadable || foundBy == "unreadable" || app.UnreadJavaLibraries()
 }
 
 // clipAttr keeps an attribute value within the batch's field limit.
@@ -104,9 +105,12 @@ func appBatch(app apps.App, host model.AssetRef, collectorID string) *model.Obse
 	b := model.NewBatch(model.Collector{ID: collectorID, Version: version, Method: "agent"}, model.AssetRef{
 		Kind:        model.AssetApplication,
 		Name:        fmt.Sprintf("%s on %s", app.Name, host.Name),
-		Identifiers: []model.Identifier{{Scheme: model.AppPathScheme, Value: app.Dir}},
+		Identifiers: []model.Identifier{{Scheme: model.AppPathScheme, Value: app.Key()}},
 		Attributes:  map[string]string{"app_dir": app.Dir, "host": host.Name},
 	})
+	if app.Home != "" {
+		b.Asset.Attributes["app_home"] = app.Home // a release layout: app_dir is the current release
+	}
 	b.Observations = app.Observations
 	if b.Observations == nil {
 		b.Observations = []model.Observation{}

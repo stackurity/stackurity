@@ -22,7 +22,7 @@ test("rotation steps by kind of key, with the provider's guide where there is on
 });
 
 test("the work line counts what needs rotating, overdue and waiting", () => {
-  const zero = { needs_rotation: 0, still_found: 0, overdue: 0, waiting_check: 0, verified_gone_30d: 4, unassigned: 0 };
+  const zero = { needs_rotation: 0, still_found: 0, overdue: 0, waiting_check: 0, verified_gone_30d: 4, unassigned: 0, likely_false_positive: 0 };
   assert.equal(leakWorkLine(zero), "");
   assert.equal(leakWorkLine({ ...zero, needs_rotation: 1 }), "1 needs rotation");
   assert.equal(

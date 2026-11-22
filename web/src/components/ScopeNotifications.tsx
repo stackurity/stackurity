@@ -405,7 +405,9 @@ export function RuleForm({
   const idp = `rule-${rule?.id ?? "new"}`;
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    const ev = eventsFor(now, summary);
+    const kindOf = channels.find((c) => c.id === channel)?.kind;
+    // A webhook keeps threat notices only if its rule already had them.
+    const ev = eventsFor(now, summary, kindOf !== "webhook" || Boolean(rule?.events?.includes("threat_notices")));
     if (!name.trim()) return setErr("Give the rule a name.");
     if (!channel) return setErr("Pick where to send.");
     if (!ev) return setErr("Pick at least one: something right away or a summary.");

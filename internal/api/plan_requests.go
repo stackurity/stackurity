@@ -19,7 +19,7 @@ import (
 // instance administrator sets it) are not counted at all.
 
 // uncountedPrefixes are the paths of what agents and CI send.
-var uncountedPrefixes = []string{"/api/v1/ingest", "/api/v1/kubernetes/report", "/api/v1/collections/", "/api/v1/sbom/import",
+var uncountedPrefixes = []string{"/api/v1/ingest", "/api/v1/kubernetes/report", "/api/v1/collections/", "/api/v1/sbom/import", "/api/v1/code-findings/import",
 	"/api/v1/agent/", "/api/v1/enroll", "/api/v1/ci/"}
 
 // planCapCache keeps each organisation's cap for a minute, so a request

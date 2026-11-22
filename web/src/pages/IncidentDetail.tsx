@@ -131,7 +131,14 @@ function SystemDetail({ inc }: { inc: Incident }) {
             resolves itself once a complete check no longer finds high-severity settings on the asset, or they are dismissed.
           </>
         )}
-        {inc.kind !== "feed" && inc.kind !== "leak" && inc.kind !== "config" && assetId && (
+        {inc.kind === "code" && assetId && (
+          <>
+            See the asset's <Link to={`/assets/${assetId}?tab=code`}>code findings</Link> for each file, its lines and the suggested fix.
+            This incident resolves itself once an import no longer has open critical or high security findings on the asset, its scanner
+            closes them as false positives or fixed, or they are dismissed.
+          </>
+        )}
+        {inc.kind !== "feed" && inc.kind !== "leak" && inc.kind !== "config" && inc.kind !== "code" && assetId && (
           <>
             See the <Link to={`/assets/${assetId}?tab=${inc.kind === "coverage" ? "coverage" : "collections"}`}>asset</Link>. This
             incident resolves itself once collection is healthy again.

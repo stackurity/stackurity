@@ -120,6 +120,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/integrations/pagerduty/cancel":                    "org",
 	"GET /api/v1/notification-options":                              "org",
 	"GET /api/v1/email-recipients":                                  "org",
+	"GET /api/v1/threat-notices":                                    "org",
+	"POST /api/v1/threat-notices/{id}/dismiss":                      "org",
 	"POST /api/v1/email-recipients/resend":                          "org",
 	"POST /api/v1/integrations/teams/install":                       "org",
 	"GET /api/v1/integrations/teams/install/{id}":                   "account",
@@ -181,6 +183,7 @@ var projectScopes = map[string]string{
 	"GET /api/v1/admin/ask":                        "org",
 	"GET /api/v1/admin/ask/feedback/":              "org",
 	"GET /api/v1/admin/ask/feedback/{id}":          "org",
+	"GET /api/v1/admin/ask/feedback/incomplete":    "org",
 	"PATCH /api/v1/admin/ask/feedback/{id}":        "org",
 	"GET /api/v1/admin/ask/review-tokens/":         "org",
 	"POST /api/v1/admin/ask/review-tokens/":        "org",
@@ -207,9 +210,12 @@ var projectScopes = map[string]string{
 	"GET /api/v1/packs/{id}/archive": "global",
 	"GET /api/v1/feeds":              "global",
 	"GET /api/v1/advisories/{key}":   "global",
+	"GET /api/v1/threats":            "global",
 
 	"GET /api/v1/projects":                                         "scoped",
 	"GET /api/v1/projects/{id}":                                    "scoped",
+	"GET /api/v1/projects/{id}/ask-notes":                          "scoped",
+	"PUT /api/v1/projects/{id}/ask-notes":                          "scoped-write",
 	"GET /api/v1/projects/{id}/notifications":                      "scoped",
 	"POST /api/v1/projects/{id}/notifications/routes":              "scoped-write",
 	"PUT /api/v1/projects/{id}/notifications/routes/{rid}":         "scoped-write",
@@ -250,6 +256,11 @@ var projectScopes = map[string]string{
 	"GET /api/v1/assets/{id}/config-findings":                      "scoped",
 	"GET /api/v1/config-findings":                                  "scoped",
 	"GET /api/v1/config-findings/summary":                          "scoped",
+	"GET /api/v1/leaks/{id}/second-checks":                         "scoped",
+	"GET /api/v1/config-findings/{id}/second-checks":               "scoped",
+	"GET /api/v1/assets/{id}/code-findings":                        "scoped",
+	"GET /api/v1/code-findings":                                    "scoped",
+	"GET /api/v1/code-findings/summary":                            "scoped",
 	"GET /api/v1/assets/{id}/remediation":                          "scoped",
 	"GET /api/v1/components":                                       "scoped",
 	"GET /api/v1/components/{id}":                                  "scoped",
@@ -315,6 +326,8 @@ var projectScopes = map[string]string{
 	"POST /api/v1/leaks/{id}/undismiss":                         "scoped-write",
 	"POST /api/v1/config-findings/{id}/dismiss":                 "scoped-write",
 	"POST /api/v1/config-findings/{id}/undismiss":               "scoped-write",
+	"POST /api/v1/code-findings/{id}/dismiss":                   "scoped-write",
+	"POST /api/v1/code-findings/{id}/undismiss":                 "scoped-write",
 	"POST /api/v1/leaks/{id}/assign":                            "scoped-write",
 	"POST /api/v1/leaks/{id}/rotated":                           "scoped-write",
 	"POST /api/v1/leaks/{id}/check-again":                       "scoped-write",
@@ -363,6 +376,7 @@ var projectScopes = map[string]string{
 	"POST /api/v1/ingest":                                     "org",
 	"GET /api/v1/collections/{id}/result":                     "org",
 	"POST /api/v1/sbom/import":                                "org",
+	"POST /api/v1/code-findings/import":                       "org",
 	"GET /api/v1/agent/actions":                               "org",
 	"POST /api/v1/agent/actions/{id}/report":                  "org",
 	"GET /api/v1/remediation/renovate.json":                   "org",
@@ -1617,7 +1631,7 @@ func TestProjectMCP(t *testing.T) {
 		lines = append(lines, string(b))
 		n++
 	}
-	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "get_finding", "find_component",
+	tools := []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "list_code_findings", "threat_check", "list_threat_notices", "get_finding", "find_component",
 		"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 		"account_overview", "integrations_status", "notification_settings"}
 	for _, name := range tools {

@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import { HELP_SLUGS, isNavPath, NAV_PATHS } from "./askRoutes.ts";
+import { HELP_ACTIONS, HELP_SLUGS, isNavPath, NAV_PATHS } from "./askRoutes.ts";
 import { askHref } from "./ask.ts";
 
 test("dashboard pages an answer may link to match exactly", () => {
@@ -72,4 +72,14 @@ test("the prompt lists the same pages", () => {
   const prompt = readFileSync(new URL("../../internal/ask/prompt.go", import.meta.url), "utf8");
   for (const p of NAV_PATHS) assert.ok(prompt.includes(`${p} `) || prompt.includes(`${p},`), `${p} missing from prompt.go`);
   for (const s of HELP_SLUGS) assert.ok(prompt.includes(` ${s},`) || prompt.includes(` ${s}.`), `help ${s} missing from prompt.go`);
+});
+
+test("each Help article's Open button is for a real article and a page the dashboard has", () => {
+  const app = readFileSync(new URL("./App.tsx", import.meta.url), "utf8");
+  for (const [slug, a] of Object.entries(HELP_ACTIONS)) {
+    assert.ok(HELP_SLUGS.includes(slug), `${slug} is not a Help article`);
+    const path = a.to.split("?")[0];
+    const route = path.startsWith("/settings/") ? path.slice("/settings/".length) : path.slice(1);
+    assert.ok(app.includes(`path="${route}"`), `${a.to} (for ${slug}) is not a route in App.tsx`);
+  }
 });

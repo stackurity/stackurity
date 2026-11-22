@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "version": "2026-11-22.1",
+  "description": "Stackurity's curated catalogue of Java web applications deployed in a servlet container (Tomcat, Jetty) whose release the host agent reads from the application's own files, matched against the product's NVD records. Each product's CPE was checked against NVD's CVE API (virtualMatchString) on the verified date. Products not listed are not identified by the agent and are not matched.",
+  "products": [
+    {
+      "id": "apache-roller",
+      "label": "Apache Roller",
+      "cpes": ["cpe:2.3:a:apache:roller"],
+      "coverage_note": "NVD records CVE-2026-82384 (the XML-RPC deserialisation flaw of CVE-2026-129448, in Roller 6.1.5) with no affected versions, so 6.1.5 is not reported as affected by it: Roller 6.1.6 is the release that fixes both",
+      "update": "Deploy Apache Roller 6.1.6 or later from roller.apache.org (6.1.5 is still affected by CVE-2026-82384), keeping the database and roller-custom.properties.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:apache:roller",
+        "https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=cpe:2.3:a:apache:roller",
+        "https://github.com/apache/roller/blob/master/app/src/main/resources-filtered/roller-version.properties",
+        "https://lists.apache.org/thread/lnz4s26tv6hdo03wngtdbpfj4hg4gtds"
+      ],
+      "verified": "2026-11-22",
+      "note": "NVD names Roller under apache:roller only (15 CVEs on the verified date, CVE-2026-129448 analysed: 4.0 up to 6.1.5). The agent reads ro.version from roller-version.properties, which Roller loads from its classpath (WebloggerImpl): in WEB-INF/classes in the 5.2.4 and 6.1.4 release WARs, at the root of WEB-INF/lib/roller-business.jar in 4.0.1 and of WEB-INF/lib/roller-weblogger-business-5.0.4.jar in 5.0.4."
+    }
+  ]
+}

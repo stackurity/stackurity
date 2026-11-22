@@ -8146,6 +8146,92 @@
     }
    }
   },
+  "/projects/{id}/ask-notes": {
+   "get": {
+    "operationId": "get_projects_id_ask_notes",
+    "summary": "A project's notes for Ask Stackurity",
+    "description": "The short text the project's admins wrote about it, which Ask Stackurity reads as background (never as instructions) when a question is about this project. Answer: `notes`, `updated_at`, `max_chars` (2,000), `can_edit`.\n\nRole: viewer on the project",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "viewer on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "put": {
+    "operationId": "put_projects_id_ask_notes",
+    "summary": "Change a project's notes for Ask Stackurity",
+    "description": "`notes`: up to 2,000 characters; an empty string clears them. Admins of the project (an organisation-wide admin, or an admin grant on it), in the dashboard only (not an AI assistant). Audited with the old and new text.\n\nRole: admin on the project",
+    "tags": [
+     "Projects and people"
+    ],
+    "x-stackurity-role": "admin on the project",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/projects/{id}/assets": {
    "delete": {
     "operationId": "delete_projects_id_assets",
@@ -15851,6 +15937,15 @@
       "schema": {
        "type": "string"
       }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
+      "schema": {
+       "type": "string"
+      }
      }
     ],
     "responses": {
@@ -15972,6 +16067,15 @@
       "in": "query",
       "required": false,
       "description": "Page start",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
       "schema": {
        "type": "string"
       }
@@ -16361,6 +16465,45 @@
     }
    }
   },
+  "/leaks/{id}/second-checks": {
+   "get": {
+    "operationId": "get_leaks_id_second_checks",
+    "summary": "Second check verdicts on a leaked key",
+    "description": "Every verdict the independent second check gave the leak (confirmed, likely_false_positive, fixed, could_not_check), newest first, with its reason, the rules' version and what it read; append-only\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/config-findings": {
    "get": {
     "operationId": "get_config_findings",
@@ -16393,7 +16536,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh or ci, comma-separated",
+      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -16421,6 +16564,15 @@
       "in": "query",
       "required": false,
       "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
       "schema": {
        "type": "string"
       }
@@ -16526,7 +16678,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh or ci, comma-separated",
+      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -16545,6 +16697,15 @@
       "in": "query",
       "required": false,
       "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "second_check",
+      "in": "query",
+      "required": false,
+      "description": "Second check verdicts, comma-separated: confirmed, likely_false_positive, fixed, could_not_check or unchecked",
       "schema": {
        "type": "string"
       }
@@ -16648,6 +16809,45 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/config-findings/{id}/second-checks": {
+   "get": {
+    "operationId": "get_config_findings_id_second_checks",
+    "summary": "Second check verdicts on a risky setting",
+    "description": "Every verdict the independent second check gave the config finding, newest first, with its reason, the rules' version and what it read; append-only\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",
@@ -17726,6 +17926,55 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/admin/ask/feedback/incomplete": {
+   "get": {
+    "operationId": "get_admin_ask_feedback_incomplete",
+    "summary": "Refused and incomplete Ask Stackurity answers",
+    "description": "How many Ask Stackurity answers were refused or left incomplete, per day (UTC) and model, across this server's organisations, from the call log: `summary.days` (`answer_calls`, `refusals`, `incomplete`), totals, `summary.by_reason` (`refusal`, `cannot_answer`, `tool_error`, `max_tokens`, `tool_budget`, `too_long`) and `summary.by_refusal_category` from the detailed rows (kept 90 days, from `summary.detail_since`). Counts only, never questions or answers. `since`: a date or RFC 3339 time (default 30 days ago).\n\nRole: instance admin, or a feedback review token",
+    "tags": [
+     "Instance administration"
+    ],
+    "x-stackurity-role": "instance admin, or a feedback review token",
+    "parameters": [
+     {
+      "name": "since",
+      "in": "query",
+      "required": false,
+      "description": "A date (2006-01-02) or an RFC 3339 time",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "workspace_id",
+      "in": "query",
+      "required": false,
+      "description": "One organisation only",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",
@@ -19628,6 +19877,525 @@
     "x-stackurity-role": "a browser session",
     "requestBody": {
      "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/threats": {
+   "get": {
+    "operationId": "get_threats",
+    "summary": "The threat catalogue",
+    "description": "The named threats this server checks for (attacker tools, exploited vulnerabilities, campaigns): the catalogue embedded in the release, merged with the signed threat feed. Each has its rules and vulnerabilities, the connections its check needs with their Help pages, min_version and has_check\n\nRole: viewer",
+    "tags": [
+     "Intelligence"
+    ],
+    "x-stackurity-role": "viewer",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/threat-notices": {
+   "get": {
+    "operationId": "get_threat_notices",
+    "summary": "The organisation's threat notices",
+    "description": "One notice per threat: the verdict (found, covered, needs_connection, upgrade), the evidence as counts, the missing connections with their Help pages, the banner's action, when each channel had it, and whether the caller hid the banner\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/threat-notices/{id}/dismiss": {
+   "post": {
+    "operationId": "post_threat_notices_id_dismiss",
+    "summary": "Hide a threat notice's banner",
+    "description": "Hide the banner of a threat notice for the caller, for its current verdict. It shows again if the threat is later found\n\nRole: security",
+    "tags": [
+     "Notifications"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/import": {
+   "post": {
+    "operationId": "post_code_findings_import",
+    "summary": "Import a code scanner's report",
+    "description": "Import a code scanner's report as code findings of a repository or application: deepsec's JSON export (format=deepsec) or SARIF 2.1.0 (format=sarif), at most 16 MB and 5,000 findings. The asset is asset_id or git_url and must have reported already. Each source replaces its earlier findings on the asset; a complete import resolves the open ones it no longer has, and findings whose own verdict closes them (false positive, fixed, accepted risk, duplicate, suppressed) are stored resolved. A CI job's token imports only for its own repository\n\nRole: collector, engineer+",
+    "tags": [
+     "Agents and uploads"
+    ],
+    "x-stackurity-role": "collector, engineer+",
+    "parameters": [
+     {
+      "name": "format",
+      "in": "query",
+      "required": true,
+      "description": "deepsec or sarif",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "The asset, by id",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "git_url",
+      "in": "query",
+      "required": false,
+      "description": "The repository, by its URL",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "complete",
+      "in": "query",
+      "required": false,
+      "description": "true (the default) or false for a filtered report, which resolves nothing it does not hold",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "model",
+      "in": "query",
+      "required": false,
+      "description": "The AI model that produced the report, up to 128 characters",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": true,
+     "description": "The report",
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings": {
+   "get": {
+    "operationId": "get_code_findings",
+    "summary": "List code findings",
+    "description": "What code-review security scanners (deepsec, tools writing SARIF) found in repositories' source: rule, file and lines, description, recommendation, the source's own verdict, tool, model and run. Security findings first, most severe first. Text is the scanner's, as plain text\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (the default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium, low or info, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "security, bug or other, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "source",
+      "in": "query",
+      "required": false,
+      "description": "One source: deepsec or sarif:<tool>",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/summary": {
+   "get": {
+    "operationId": "get_code_findings_summary",
+    "summary": "Counts of open code findings",
+    "description": "Open code findings by severity and by category, and how many assets have an import at all\n\nRole: viewer",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "asset_id",
+      "in": "query",
+      "required": false,
+      "description": "Limit to one asset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/assets/{id}/code-findings": {
+   "get": {
+    "operationId": "get_assets_id_code_findings",
+    "summary": "List an asset's code findings",
+    "description": "The asset's code findings with the filters of GET /code-findings, and imports: the last import of each source. No import means no report was imported for the asset\n\nRole: viewer",
+    "tags": [
+     "Inventory"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "status",
+      "in": "query",
+      "required": false,
+      "description": "open (the default), resolved or all",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "severity",
+      "in": "query",
+      "required": false,
+      "description": "critical, high, medium, low or info, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "category",
+      "in": "query",
+      "required": false,
+      "description": "security, bug or other, comma-separated",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "source",
+      "in": "query",
+      "required": false,
+      "description": "One source: deepsec or sarif:<tool>",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "description": "Page size",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "description": "Page offset",
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/{id}/dismiss": {
+   "post": {
+    "operationId": "post_code_findings_id_dismiss",
+    "summary": "Dismiss a code finding",
+    "description": "Dismiss a code finding (not a real issue, or accepted), with an optional note. It stays dismissed whatever later imports say\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object"
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/code-findings/{id}/undismiss": {
+   "post": {
+    "operationId": "post_code_findings_id_undismiss",
+    "summary": "Undo a code finding's dismissal",
+    "description": "Undo a dismissal: open again, or resolved by its source's verdict when that closes it. 409 for one that is not dismissed\n\nRole: security",
+    "tags": [
+     "Findings and fixes"
+    ],
+    "x-stackurity-role": "security",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
+    "requestBody": {
+     "required": false,
      "content": {
       "application/json": {
        "schema": {

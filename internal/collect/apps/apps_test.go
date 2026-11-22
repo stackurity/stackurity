@@ -334,3 +334,35 @@ func TestFlutterBuildPackageName(t *testing.T) {
 		t.Errorf("not a Flutter build: %v", a.PackageNames)
 	}
 }
+
+// A release layout's current release is keyed by the application's own
+// directory, however it is reached (the directory, current, the release
+// discovery returns, releases/ served by a web server), so a deploy, which
+// changes the release, keeps the same asset. An old release has no home.
+func TestReleaseLayoutHome(t *testing.T) {
+	tr := newTree(t)
+	tr.file("var/www/ui/releases/20261120184023-5e3735d/composer.lock", `{"packages":[]}`)
+	tr.file("var/www/ui/releases/20261121142525-31944f9/composer.lock", `{"packages":[]}`)
+	tr.file("var/www/ui/releases/20261121142525-31944f9/public/index.php", "")
+	tr.link("var/www/ui/current", "/var/www/ui/releases/20261121142525-31944f9")
+	sc := &Scanner{Root: tr.root}
+	cur := "/var/www/ui/releases/20261121142525-31944f9"
+	for _, dir := range []string{"/var/www/ui", "/var/www/ui/current", cur, "/var/www/ui/releases"} {
+		app := sc.ScanApp(context.Background(), dir)
+		if app.Dir != cur || app.Home != "/var/www/ui" || app.Key() != "/var/www/ui" || app.Name != "ui" {
+			t.Errorf("%s: dir %s home %q key %s name %s", dir, app.Dir, app.Home, app.Key(), app.Name)
+		}
+	}
+	if app := sc.ScanApp(context.Background(), cur+"/public"); app.Home != "/var/www/ui/public" || app.Name != "public" {
+		t.Errorf("document root in the release: home %q name %s", app.Home, app.Name)
+	}
+	old := sc.ScanApp(context.Background(), "/var/www/ui/releases/20261120184023-5e3735d")
+	if old.Home != "" || old.Key() != old.Dir || old.Name != "20261120184023-5e3735d" {
+		t.Errorf("old release: home %q key %s name %s", old.Home, old.Key(), old.Name)
+	}
+	// Without a layout nothing changes.
+	tr.file("srv/shop/package.json", `{"name":"shop"}`)
+	if app := sc.ScanApp(context.Background(), "/srv/shop"); app.Home != "" || app.Key() != "/srv/shop" {
+		t.Errorf("plain app: home %q key %s", app.Home, app.Key())
+	}
+}

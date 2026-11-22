@@ -45,9 +45,17 @@ type ConfigFinding struct {
 	FirstSeen      time.Time  `json:"first_seen"`
 	LastSeen       time.Time  `json:"last_seen"`
 	ResolvedAt     *time.Time `json:"resolved_at"`
+	// The latest second check verdict, as SecondCheck.
+	RecheckVerdict string     `json:"-"`
+	RecheckReason  string     `json:"-"`
+	RecheckChecker string     `json:"-"`
+	RecheckAt      *time.Time `json:"-"`
 	// DocURL is a page that explains the rule and its fix, when there is
 	// one (ConfigRuleDoc).
 	DocURL string `json:"doc_url" db:"-"`
+	// SecondCheck is the latest verdict of the independent second check,
+	// with its reason; nil until it has run.
+	SecondCheck *RecheckVerdict `json:"second_check" db:"-"`
 }
 
 // ConfigRuleDoc is the page that explains a config rule, or "": the rule
@@ -56,7 +64,7 @@ func ConfigRuleDoc(rule string) string { return confcheck.RuleDoc(rule) }
 
 const configCols = `c.id, c.asset_id, a.name, a.kind, c.collector_id, c.fingerprint, c.rule, c.category, c.title, c.severity,
 	c.path, c.line, c.subject, c.why, c.fix, c.status, c.resolution, c.resolution_note, c.resolved_by, c.first_seen, c.last_seen,
-	c.resolved_at`
+	c.resolved_at, c.recheck_verdict, c.recheck_reason, c.recheck_checker, c.recheck_at`
 
 const configFrom = ` FROM config_findings c JOIN assets a ON a.id = c.asset_id`
 
@@ -123,6 +131,9 @@ type ConfigFindingFilter struct {
 	Status   string
 	Severity string
 	Category string
+	// SecondCheck is one verdict or several, comma-separated, or
+	// unchecked for findings not checked yet.
+	SecondCheck string
 	Page
 }
 
@@ -148,9 +159,9 @@ func (f ConfigFindingFilter) where() (*where, error) {
 	if f.Category != "" {
 		for _, c := range strings.Split(f.Category, ",") {
 			switch c {
-			case model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI:
+			case model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool:
 			default:
-				return nil, fmt.Errorf("category must be agent_hook, ssh or ci, or several comma-separated: %w", ErrInvalid)
+				return nil, fmt.Errorf("category must be agent_hook, ssh, ci or attack_tool, or several comma-separated: %w", ErrInvalid)
 			}
 		}
 		w.add("c.category = ANY(?)", strings.Split(f.Category, ","))
@@ -158,13 +169,24 @@ func (f ConfigFindingFilter) where() (*where, error) {
 	if f.AssetID > 0 {
 		w.add("c.asset_id = ?", f.AssetID)
 	}
+	if f.SecondCheck != "" {
+		if err := ValidVerdictFilter(f.SecondCheck); err != nil {
+			return nil, err
+		}
+		verdictCond(w, "c", f.SecondCheck)
+	}
 	return w, nil
 }
 
 func withDoc(fs []ConfigFinding) {
 	for i := range fs {
-		fs[i].DocURL = ConfigRuleDoc(fs[i].Rule)
+		fs[i].fill()
 	}
+}
+
+func (c *ConfigFinding) fill() {
+	c.DocURL = ConfigRuleDoc(c.Rule)
+	c.SecondCheck = latestVerdict(c.RecheckVerdict, c.RecheckReason, c.RecheckChecker, c.RecheckAt)
 }
 
 // ListConfigFindings lists config findings, most severe first.
@@ -207,7 +229,7 @@ func (s *Store) GetConfigFinding(ctx context.Context, id int64) (*ConfigFinding,
 	if errors.Is(err, pgx.ErrNoRows) {
 		return nil, ErrNotFound
 	}
-	c.DocURL = ConfigRuleDoc(c.Rule)
+	c.fill()
 	return &c, err
 }
 
@@ -217,6 +239,10 @@ type ConfigSummary struct {
 	BySeverity    map[string]int64 `json:"by_severity"`
 	ByCategory    map[string]int64 `json:"by_category"`
 	ScannedAssets int64            `json:"scanned_assets"`
+	// LikelyFalsePositive counts open findings the second check found
+	// likely not a risk (commented out, a workflow GitHub never runs, an
+	// action pinned to a commit); they are in the counts above too.
+	LikelyFalsePositive int64 `json:"likely_false_positive"`
 }
 
 // SummariseConfigFindings counts the open findings of one asset, or all.
@@ -225,14 +251,15 @@ func (s *Store) SummariseConfigFindings(ctx context.Context, assetID int64) (Con
 	for _, sev := range configSeverities {
 		out.BySeverity[sev] = 0
 	}
-	for _, c := range []string{model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI} {
+	for _, c := range []string{model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool} {
 		out.ByCategory[c] = 0
 	}
 	w, err := ConfigFindingFilter{AssetID: assetID}.where()
 	if err != nil {
 		return out, err
 	}
-	rows, err := s.Pool.Query(ctx, `SELECT c.severity, c.category, count(*)`+configFrom+w.sql()+andMerged(w)+
+	rows, err := s.Pool.Query(ctx, `SELECT c.severity, c.category, count(*),
+		  count(*) FILTER (WHERE c.recheck_verdict = 'likely_false_positive')`+configFrom+w.sql()+andMerged(w)+
 		` GROUP BY c.severity, c.category`, w.args...)
 	if err != nil {
 		return out, err
@@ -240,10 +267,11 @@ func (s *Store) SummariseConfigFindings(ctx context.Context, assetID int64) (Con
 	defer rows.Close()
 	for rows.Next() {
 		var sev, cat string
-		var n int64
-		if err := rows.Scan(&sev, &cat, &n); err != nil {
+		var n, lfp int64
+		if err := rows.Scan(&sev, &cat, &n, &lfp); err != nil {
 			return out, err
 		}
+		out.LikelyFalsePositive += lfp
 		out.BySeverity[sev] += n
 		out.ByCategory[cat] += n
 	}
@@ -308,13 +336,18 @@ type ConfigScan struct {
 	Reason      string    `json:"reason"`
 	Found       int       `json:"found"`
 	ScannedAt   time.Time `json:"scanned_at"`
+	// CollectorVersion is the version that collector recorded on the
+	// asset's latest complete collection ("" when none).
+	CollectorVersion string `json:"collector_version"`
 }
 
 // ConfigScans returns the last config check of an asset by each collector.
 // None means it was never checked, which is not the same as clean.
 func (s *Store) ConfigScans(ctx context.Context, assetID int64) ([]ConfigScan, error) {
-	rows, err := s.Pool.Query(ctx, `SELECT collector_id, complete, reason, found, scanned_at FROM config_scans
-		WHERE asset_id = $1 ORDER BY collector_id`, assetID)
+	rows, err := s.Pool.Query(ctx, `SELECT s.collector_id, s.complete, s.reason, s.found, s.scanned_at,
+		  COALESCE((SELECT c.collector_version FROM collections c WHERE c.asset_id = s.asset_id AND c.collector_id = s.collector_id
+		    AND c.complete ORDER BY c.received_at DESC, c.id DESC LIMIT 1), '')
+		FROM config_scans s WHERE s.asset_id = $1 ORDER BY s.collector_id`, assetID)
 	if err != nil {
 		return nil, err
 	}
@@ -325,13 +358,15 @@ func (s *Store) ConfigScans(ctx context.Context, assetID int64) ([]ConfigScan, e
 const maxConfigDetail = 10
 
 // configProblems is one incident per asset with open high config
-// findings. Medium, low and info ones are listed, never alerted on.
+// findings. Medium, low and info ones are listed, never alerted on. As for
+// leaks, one the second check found likely not a risk raises no alert.
 func (s *Store) configProblems(ctx context.Context) ([]SystemIncident, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.name, a.kind, a.owner_team_id, a.environment, count(*),
 		  array_agg(DISTINCT c.title), (array_agg(c.path || ':' || c.line ORDER BY c.path, c.line))[1:$1],
 		  (array_agg(c.why ORDER BY c.first_seen, c.id))[1]
 		FROM config_findings c JOIN assets a ON a.id = c.asset_id
 		WHERE c.status = 'open' AND c.severity = 'high' AND a.merged_into IS NULL
+		  AND c.recheck_verdict <> 'likely_false_positive'
 		GROUP BY a.id ORDER BY a.id`, maxConfigDetail)
 	if err != nil {
 		return nil, err

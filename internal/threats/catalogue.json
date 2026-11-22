@@ -1,0 +1,80 @@
+{
+  "schema": 1,
+  "serial": 2,
+  "generated_at": "2026-11-22T00:00:00Z",
+  "threats": [
+    {
+      "id": "artex",
+      "revision": 1,
+      "name": "ARTEX",
+      "aliases": ["artex pro", "artex mx", "artex v2", "scopeweaver", "antifox"],
+      "kind": "attack_tool",
+      "severity": "high",
+      "summary": "ARTEX is an open-source, AI-driven penetration-testing framework (a Go server with a Next.js web console, default port 8787) published on GitHub in July 2026 and taken down on 8 October 2026; copies and forks still circulate. Criminal and state-aligned groups use it to automate intrusions against internet-facing systems, and the FBI warned about it on 13 November 2026. It is not a vulnerability: there is nothing to patch. Two prebuilt Docker Hub images (tomicdd/artex and congdonglinux/artex) were reported to carry a backdoored login handler.",
+      "first_seen": "2026-07-26",
+      "published_at": "2026-11-20",
+      "sources": [
+        "https://www.ic3.gov/CSA/2026/261113.pdf",
+        "https://threatdefence.com/article/artex-agentic-attack-framework-detection-hunting",
+        "https://socprime.com/blog/artex-detection-hunting-the-ai-pentest-framework-turned-attack-platform/"
+      ],
+      "detects": {
+        "config_rules": ["attack-tool-artex", "attack-tool-artex-backdoored-image"],
+        "signal_rules": ["attack-tool-artex-name"]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server looks for an ARTEX console or binary installed or running there",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for ARTEX and for the backdoored tomicdd/artex and congdonglinux/artex images",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a copy of ARTEX or a file that runs its images",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.17"
+    },
+    {
+      "id": "apache-roller-cve-2026-129448",
+      "revision": 1,
+      "name": "Apache Roller XML-RPC deserialisation (CVE-2026-129448)",
+      "aliases": ["cve-2026-129448", "cve-2026-82384", "apache roller xml-rpc", "roller xmlrpc rce"],
+      "kind": "exploited_vuln",
+      "severity": "critical",
+      "summary": "Apache Roller, a Java blog server deployed in Tomcat or another servlet container, deserialises data sent to its XML-RPC endpoint (/roller-services/xmlrpc) before it checks who is asking, so anyone who can reach it can run code on the server. Releases 4.0.0 to 6.1.4 are affected (CVE-2026-129448), and 6.1.5 too (CVE-2026-82384, the same flaw). It is being exploited, and CISA added it to its Known Exploited Vulnerabilities catalogue on 20 November 2026. Upgrade to Roller 6.1.6 or later. Until then, set enabledForExtensions to false in WEB-INF/web.xml or remove the /roller-services/xmlrpc servlet mapping, and restart Roller: turning XML-RPC off in Roller's administration pages is not enough.",
+      "first_seen": "2026-11-17",
+      "published_at": "2026-11-22",
+      "sources": [
+        "https://www.cisa.gov/news-events/alerts/2026/11/20/cisa-adds-four-known-exploited-vulnerabilities-catalog",
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-129448",
+        "https://lists.apache.org/thread/lnz4s26tv6hdo03wngtdbpfj4hg4gtds",
+        "https://lists.apache.org/thread/cc0jck13nb9vvcmzxzwotr6n16mx28z9"
+      ],
+      "detects": {
+        "cves": ["CVE-2026-129448", "CVE-2026-82384"]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server finds Apache Roller deployed in Tomcat or Jetty (an unpacked web application or a .war file) and reads its release from roller-version.properties",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for Apache Roller deployed in a Tomcat or Jetty webapps directory",
+          "help": "/help/container-images"
+        }
+      ],
+      "min_version": "0.20.25"
+    }
+  ]
+}

@@ -46,7 +46,7 @@ A workspace (shown as the organisation in the dashboard) groups its assets into 
 - **Editions.** Routes marked **licensed build** exist only in Stackurity Pro and Enterprise; in the Community build some answer `402` with the plan they need, and the others are not served. Routes marked **Stackurity Cloud** exist only on the hosted service. See [editions.md](editions.md).
 - **`402 plan_required`.** A paid feature the organisation's plan does not include answers `{"error": {"code": "plan_required", "message", "feature", "feature_name", "hosted", "included_in", "plan", "addon", "trial_available", "trial_days", "plans_url"}}`. `message` is a fixed sentence per feature. `feature` is the licence feature (such as `reachability` or `compliance_addon`) and `feature_name` what was asked for (such as `PCI DSS 4.0 evidence`). `included_in` names the plans (Stackurity Cloud, `hosted` true) or licence editions (self-hosted) that include it, smallest first. On Stackurity Cloud, `plan` is the smallest plan that includes an edition feature (`name`, `price` as a decimal in the main unit, `currency`, `interval`) and `addon` an add-on's price on top of the plans in `on`, both in the organisation's currency from the server's plan configuration; self-hosted servers give names only. `trial_available` is true only when the organisation can still start a free trial that includes the feature. `plans_url` is the informational plans page, never a checkout.
 - **Rate limits** answer `429`. Routes that need no sign-in are limited per address.
-- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
+- **The free key.** A self-hosted server without its free key or a licence ([install.md](install.md#the-free-key)) answers `403 key_required` on every route except: `GET /meta`, `GET /openapi.json`, `POST /setup`, everything under `/auth/` and the single sign-on routes, `/admin/license` (with `POST /admin/license/link` and `/admin/license/link/claim`), the email confirmation, unsubscribe and preference routes, `POST /client-errors`, and what agents and uploads use (`POST /enroll`, `POST /ci/token`, `POST /ingest`, `POST /sbom/import`, `POST /code-findings/import`, `GET /collections/{id}/result`, `GET /agent/check`, `/agent/actions`, `GET /remediation/renovate.json`; with an API token also `GET /projects`, `GET /projects/{id}` and `POST /vex/import`). The signed webhooks and callbacks of the Slack, Teams, GitHub and GitLab apps and of AWS Launch Stack are never held back. `/mcp` and the assistants' OAuth endpoints answer `403 key_required` too. An upgraded server gets 30 days first. Stackurity Cloud never answers it.
 
 ## Account
 
@@ -646,7 +646,7 @@ The assistants a person has connected (`/assistants`) and the OAuth consent page
 
 **Who:** anyone
 
-Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `config_findings` means `POST /ingest` stores a batch's `config_findings` ([risky settings](config-checks.md)); collectors send them only to servers that list it. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
+Version, whether first-time setup is required, and `features`: what this server supports that an older one would silently ignore. `upload_project` means `POST /ingest` and `POST /sbom/import` honour `project_id` (0.10); `stackurity` checks it before an upload with `--project`. `app_list` means `POST /ingest` takes a host batch's `apps` (see [ObservationBatch](#observationbatch)); agents send it only to servers that list it (0.14). `host_images` means `POST /ingest` scopes `host-image` identities to their host and takes a host batch's `images`; the agent's `--docker` sends container images only to servers that list it. `kubernetes_report` means [`POST /kubernetes/report`](#post-kubernetesreport) exists; the Kubernetes reporter falls back to `POST /ingest` without it. `leaks` means `POST /ingest` stores a batch's `leaks` ([leaked keys](leaked-keys.md)); collectors send them only to servers that list it. `leak_value_checks` means it takes each leak's `value_check`; collectors send it only to servers that list it. `config_findings` means `POST /ingest` stores a batch's `config_findings` ([risky settings](config-checks.md)); collectors send them only to servers that list it. `code_findings` means [`POST /code-findings/import`](#post-code-findingsimport) exists ([code findings](code-findings.md)); `stackurity import code-findings` checks it before uploading. `reachability` means `POST /ingest` takes observations' `reachability` ([ObservationBatch](#observationbatch)); collectors send it only to servers that list it. `device_login` means a command-line tool can sign in from the browser ([`POST /device/code`](#post-devicecode), [device-login.md](device-login.md)); it is listed only with `STACKURITY_BASE_URL` set. `email_preferences: true` means this server sends bulk email (product updates, vulnerability news), so people have email preferences. `client_errors: true` means the dashboard reports the errors people hit to this server ([`POST /client-errors`](#post-client-errors)); it is absent with `STACKURITY_CLIENT_ERRORS=off`. On Stackurity Cloud, `social` lists the configured sign-in providers (`providers`: `id`, `label`, `start_url`) and, when the GitHub App is set up, `github_install_url`.
 
 ### `GET /openapi.json`
 
@@ -701,7 +701,7 @@ Starts signing in a command-line tool from the browser, the OAuth 2.0 Device Aut
 
 **Who:** anyone (rate limited: 120 a minute per address, answered `slow_down`)
 
-The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts 90 days: it may `POST /ingest` and `POST /sbom/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
+The tool's poll: `grant_type` `urn:ietf:params:oauth:grant-type:device_code`, `device_code` and `client_id`, form-encoded or JSON. Until the person decides, 400 `authorization_pending`; sooner than `interval` seconds after the last poll, 400 `slow_down` with the new, longer `interval`; denied (or the token revoked before it was collected), 400 `access_denied`; past its 10 minutes, 400 `expired_token` (an approved code's token is then revoked); unknown, another client's or already collected, 400 `invalid_grant`. Once approved, the next poll answers 200 `{"access_token", "token_type": "Bearer", "scope": "upload", "expires_in", "token": {"id", "name", "prefix", "expires_at"}, "workspace": {"id", "name", "slug"}, "project", "user": {"email"}, "server_url"}`, once. The token belongs to the person who approved it, has the collector role and lasts 90 days: it may `POST /ingest`, `POST /sbom/import` and `POST /code-findings/import`, read `GET /collections/{id}/result` of its own uploads and `GET /meta`, and nothing else (403), and it works only while that person is an engineer or above in the organisation. Audited as `device.token_collected`.
 
 ### `GET /ci-trusts`
 
@@ -820,6 +820,12 @@ An asset identifier with the scheme `selftest` is reserved for `stackurity selft
 **Who:** collector token, engineer and above
 
 Imports a CycloneDX or SPDX JSON document. Query: `asset_name`, `asset_kind`, `environment`, `project_id` (see [Uploads into a project](#uploads-into-a-project)). A collector token made for a project adds the assets it creates to it. VEX embedded in a CycloneDX SBOM is imported for the asset, for approval ([VEX](#vex)): the answer's `vex` is what [`POST /vex/import`](#post-veximport) would answer; with a collector token it is not imported and `vex_note` says so.
+
+### `POST /code-findings/import`
+
+**Who:** collector token, engineer and above
+
+Imports a code scanner's report as [code findings](code-findings.md) of a repository or application: the body is the report (gzip accepted, at most 16 MB and 5,000 findings). Query: `format` (`deepsec`: the JSON array `deepsec export --format json` writes; `sarif`: SARIF 2.1.0), the asset as `asset_id` or `git_url` (the repository's URL; the asset must have reported already: an import never creates one), `complete` (default `true`; `false` for a filtered report, which then resolves nothing it does not hold) and `model` (the AI model that produced the report, up to 128 characters, kept as provenance). A CI job's token ([keyless CI](#post-citoken)) may import only for its own repository, by `git_url`; a token bound to an asset only for that asset. Each source in the report (`deepsec`, or `sarif:<tool>` per SARIF run) replaces that source's earlier findings on the asset: found ones are added or updated, a complete import resolves the open ones it no longer has as `gone`, and one whose own verdict closes it (deepsec `false-positive`, `fixed`, `accepted-risk`, `duplicate`; a SARIF suppression) is stored resolved as `verdict` and never alerts. The people a deepsec export names (owners, on-call, committers) are not stored. Answers 201 `{"asset_id", "format", "complete", "sources": [{"source", "tool", "found", "open", "closed", "new", "gone", "skipped"}]}`; 400 for a document that is not of the format, 404 for an unknown `git_url`, 413 over the size limit. Audited as `code_findings.import`.
 
 ### `GET /collections/{id}/result`
 
@@ -979,7 +985,13 @@ The asset's [leaked keys](leaked-keys.md), paged, with the filters of [`GET /lea
 
 **Who:** viewer
 
-The asset's [risky settings](config-checks.md), paged, with the filters of [`GET /config-findings`](#get-config-findings), and `scans`: the last config check by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`). No check means the asset's settings were never checked, which is not the same as none found.
+The asset's [risky settings](config-checks.md), paged, with the filters of [`GET /config-findings`](#get-config-findings), and `scans`: the last config check by each collector (`collector_id`, `complete`, `reason`, `found`, `scanned_at`, and `collector_version`: the version that collector recorded on the asset's latest complete collection). No check means the asset's settings were never checked, which is not the same as none found.
+
+### `GET /assets/{id}/code-findings`
+
+**Who:** viewer
+
+The asset's [code findings](code-findings.md), paged, with the filters of [`GET /code-findings`](#get-code-findings), and `imports`: the last import of each source (`source`, `format`, `tool`, `tool_version`, `model`, `run_id`, `complete`, `found`, `imported_at`). No import means no scanner's report was imported for the asset, which is not the same as none found.
 
 ### `GET /assets/{id}/drift`
 
@@ -1193,11 +1205,19 @@ The same action on up to 500 findings (`ids`).
 
 [Leaked keys](leaked-keys.md): keys, tokens and passwords collectors found written in assets' files, most severe first, paged. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `title`, `path`, `line`, `name`, `fingerprint`, `preview`, `severity`, `exposure`, `why` (one line saying why it has its severity and what to do, from its exposure, the kind of asset and the file; alerts, the dashboard and MCP show the same line), `status` (`open` or `resolved`), `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. The value is never stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` (one or several, comma-separated: `critical,high` for what needs action; low and medium are mostly keys kept in configuration files, where they belong), `asset_id`. The list also has `scanned_assets`: how many of the assets you can see were scanned for keys at all. With none, an empty list means nothing was checked yet, not that no keys were found. Each also has its owner (`assignee_user_id`, `assignee_email`, `assignee_team_id`, `assignee_team`, and `asset_owner_team`, the asset's owner team, for when nobody is assigned), `due_at` (when it should be rotated by: 1 day for critical, 7 for high and 30 for medium, or the [risk policy](#get-risk-policy)'s fix days for P1, P2 and P3 when the workspace changed them; none for low), `overdue`, `rotated_at`, `rotated_by`, `rotated_by_name`, `rotation_note` and `state`: `needs_rotation`, `waiting_check` (marked rotated, waiting for a scan), `still_found` (a scan after it was marked rotated still saw the key), `verified_gone` (a complete scan no longer sees it) or `dismissed`. More query: `state` (one of those, or `overdue`; it implies its `status`), `assignee_user`, `assignee_team`, `assignee=none`.
 
+Each also has `value_checker` and `value_signals` (what the collector's value check read in the key while it had it: `placeholder`, `low_entropy`, `test_mode_key`, `known_sample`, `checksum_valid`, `checksum_invalid`; empty from collectors before it) and `second_check`, the latest verdict of the [second check](verification.md#second-check-of-leaked-keys-and-risky-settings): `verdict` (`confirmed`, `likely_false_positive`, `fixed` or `could_not_check`), `reason` (one sentence), `checker` (the rules' version, such as `leaks/1`) and `checked_at`; `null` until it has run. Query `second_check`: one verdict or several, comma-separated, or `unchecked`.
+
 ### `GET /leaks/summary`
 
 **Who:** viewer
 
-Counts of the leaks you can see, with the `asset_id` and `severity` filters of [`GET /leaks`](#get-leaks): `needs_rotation` (open, not marked rotated), `still_found`, `overdue`, `waiting_check`, `verified_gone_30d` (gone in a complete scan in the last 30 days) and `unassigned` (open, with no owner).
+Counts of the leaks you can see, with the `asset_id` and `severity` filters of [`GET /leaks`](#get-leaks): `needs_rotation` (open, not marked rotated), `still_found`, `overdue`, `waiting_check`, `verified_gone_30d` (gone in a complete scan in the last 30 days), `unassigned` (open, with no owner) and `likely_false_positive` (open leaks the second check found likely not real keys; they are in the other counts too).
+
+### `GET /leaks/{id}/second-checks`
+
+**Who:** viewer
+
+Every verdict the [second check](verification.md#second-check-of-leaked-keys-and-risky-settings) gave the leak, newest first, as `items` (`id`, `verdict`, `reason`, `checker`, `checked_at`, and `inputs`: what it read, such as the rule, file, value signals and the last scan; never the value), and `second_check`, the latest. The history is append-only: a verdict is added only when the verdict, its reason or the rules' version changes. `404` for a leak you cannot see.
 
 ### `POST /leaks/{id}/dismiss`
 
@@ -1233,13 +1253,19 @@ Ask for the leak's asset to be scanned again, as [`POST /assets/{id}/check`](#po
 
 **Who:** viewer
 
-[Risky settings](config-checks.md): config findings collectors found in assets' files, most severe first, paged. They cover AI coding-agent hooks and MCP start commands that download and run code, SSH keys and `sshd_config` settings that give root an unrestricted shell, and GitHub Actions workflows that run third-party actions by a tag or branch. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `category` (`agent_hook`, `ssh` or `ci`), `title`, `severity` (`high`, `medium`, `low` or `info`), `path`, `line`, `subject` (what in the file: a hook event and its command with credentials masked, a key's fingerprint and comment, an action reference), `why` (one line), `fix` (one line: the change to make), `doc_url` (a how-to, or empty), `status`, `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. No key material is stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` and `category` (one or several, comma-separated), `asset_id`.
+[Risky settings](config-checks.md): config findings collectors found in assets' files, most severe first, paged. They cover AI coding-agent hooks and MCP start commands that download and run code, SSH keys and `sshd_config` settings that give root an unrestricted shell, and GitHub Actions workflows that run third-party actions by a tag or branch. Each has `asset_id`, `asset_name`, `collector_id`, `rule`, `category` (`agent_hook`, `ssh`, `ci` or `attack_tool`), `title`, `severity` (`high`, `medium`, `low` or `info`), `path`, `line`, `subject` (what in the file: a hook event and its command with credentials masked, a key's fingerprint and comment, an action reference), `why` (one line), `fix` (one line: the change to make), `doc_url` (a how-to, or empty), `status`, `resolution` (`gone` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. No key material is stored. Query: `status` (`open`, the default, `resolved` or `all`), `severity` and `category` (one or several, comma-separated), `asset_id`. Each also has `second_check`, the latest verdict of the [second check](verification.md#second-check-of-leaked-keys-and-risky-settings) (as for [`GET /leaks`](#get-leaks), with rules `config/1`), and query `second_check` filters by it.
 
 ### `GET /config-findings/summary`
 
 **Who:** viewer
 
-Open config findings you can see, with the `asset_id` filter of [`GET /config-findings`](#get-config-findings): `by_severity`, `by_category`, and `scanned_assets` (how many assets were checked at all).
+Open config findings you can see, with the `asset_id` filter of [`GET /config-findings`](#get-config-findings): `by_severity`, `by_category`, `scanned_assets` (how many assets were checked at all) and `likely_false_positive` (open findings the second check found likely not a risk; they are in the other counts too).
+
+### `GET /config-findings/{id}/second-checks`
+
+**Who:** viewer
+
+Every verdict the second check gave the config finding, newest first, as for [`GET /leaks/{id}/second-checks`](#get-leaksidsecond-checks).
 
 ### `POST /config-findings/{id}/dismiss`
 
@@ -1252,6 +1278,30 @@ Dismiss a config finding, with an optional `note` (up to 1,000 characters): a ke
 **Who:** security (on the finding's asset, with a project grant)
 
 Open a dismissed config finding again. `409` for one that is not dismissed.
+
+### `GET /code-findings`
+
+**Who:** viewer
+
+[Code findings](code-findings.md): what code-review security scanners found in repositories' source, imported with [`POST /code-findings/import`](#post-code-findingsimport); security findings first, most severe first, paged. Each has `asset_id`, `asset_name`, `asset_kind`, `source` (`deepsec` or `sarif:<tool>`), `rule`, `category` (`security`; `bug`: a non-security bug, deepsec's `BUG` and `HIGH_BUG`; `other`: a SARIF rule not tagged as security), `title`, `severity` (`critical`, `high`, `medium`, `low` or `info`), `path`, `start_line`, `end_line`, `description`, `recommendation`, `confidence`, `verdict` (the source's own: `true-positive`, `false-positive`, `fixed`, `uncertain`, `accepted-risk`, `duplicate`, `suppressed`, or empty), `verdict_note`, `tool`, `tool_version`, `model`, `run_id`, `status`, `resolution` (`gone`, `verdict` or `dismissed`), `resolution_note`, `first_seen`, `last_seen` and `resolved_at`. Text fields are the scanner's, as plain text. Query: `status` (`open`, the default, `resolved` or `all`), `severity` and `category` (one or several, comma-separated), `source`, `asset_id`.
+
+### `GET /code-findings/summary`
+
+**Who:** viewer
+
+Open code findings you can see, with the `asset_id` filter of [`GET /code-findings`](#get-code-findings): `by_severity`, `by_category`, and `imported_assets` (how many assets have an import at all).
+
+### `POST /code-findings/{id}/dismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Dismiss a code finding, with an optional `note` (up to 1,000 characters): not a real issue, or accepted. It stays dismissed whatever later imports say. Recorded in the activity log.
+
+### `POST /code-findings/{id}/undismiss`
+
+**Who:** security (on the finding's asset, with a project grant)
+
+Undo a dismissal: the finding is open again, or resolved as `verdict` when its source's verdict closes it. `409` for one that is not dismissed.
 
 ### `GET /fix-groups`
 
@@ -1454,6 +1504,18 @@ A project; for admins also its `grants`.
 **Who:** admin
 
 `name`, `description`, `archived` (true archives: grants on it stop giving access and routes limited to it stop matching; false restores).
+
+### `GET /projects/{id}/ask-notes`
+
+**Who:** viewer on the project
+
+The project's notes for Ask Stackurity: a short text its admins write about it ("our payments API; web-3 is a staging box; ignore lab-*"). Ask sends them with a question about this project (the project chosen in the switcher, an open asset of the project, or, for a member with project access only, their projects; at most three), inside the question's context block and marked as written by an organisation administrator. Ask treats them as background, never as instructions. Answer: `project_id`, `notes`, `updated_at`, `max_chars` (2,000) and `can_edit`. 404 when the caller cannot see the project.
+
+### `PUT /projects/{id}/ask-notes`
+
+**Who:** admin on the project
+
+`{"notes"}`: up to 2,000 characters, trimmed; an empty string clears them. An organisation-wide admin or an admin grant on the project; in the dashboard or with an API token, never by an AI assistant. 400 for an archived project. Audited as `project.ask_notes_update`, with `notes` and `previous_notes`.
 
 ### `POST /projects/{id}/assets`
 
@@ -1844,6 +1906,18 @@ Starts Add to Slack for a channel of the project, like `POST /integrations/slack
 **Who:** admin of the project
 
 Starts Add to Teams for a channel of the project, like `POST /integrations/teams/install`, with the same condition.
+
+### `GET /threat-notices`
+
+**Who:** security (organisation-wide)
+
+The organisation's [threat notices](threat-notices.md), newest first: one per threat, with `threat_id`, the threat's `name`, `kind`, `severity`, `summary`, `sources` and `min_version`, the `verdict` now and the `notified_verdict` people were last told (`found`, `covered`, `needs_connection` or `upgrade`), the evidence as counts (`findings`, `assets`, `signals`: findings only named like the threat, which never make it found; `connected` per connection, counting only assets last checked by a collector with the check; `outdated` per connection, those checked by an older one), `missing` and `missing_connections` (each with `label`, `required`, `checks`, `outdated` and its `help` page), the notice in words (`title`, `lines`: the same text as the email), the banner's `action` (`label` and `link`, or null when nothing needs doing), when each channel had it (`banner_at`, `email_at` with `email_result` `sent`, `no_mailer`, `no_recipients` or `failed`, `channels_at` with `channels_queued`), and `dismissed`: whether the caller hid the banner for the current verdict. Members with access to some projects only get 403: a notice speaks about every asset.
+
+### `POST /threat-notices/{id}/dismiss`
+
+**Who:** security (organisation-wide)
+
+Hides the notice's banner for the caller until people are told something new (the threat is found, or found again after a fix); quiet changes of the verdict keep it hidden. Returns 204. Recorded in the activity log.
 
 ### `GET /deliveries`
 
@@ -2545,6 +2619,12 @@ What the log records for the CVEs in `id` (repeat it, or separate IDs with comma
 
 The advisories in a group, by group key or CVE id.
 
+### `GET /threats`
+
+**Who:** viewer
+
+The [threat catalogue](threat-notices.md#the-catalogue) this server checks for: the one embedded in its release, merged with the signed threat feed (per threat, the higher `revision` wins). `schema`, `serial`, `generated_at`, `expires_at` (a feed's; null for the release's own), `server_release` (this server's release, `""` for a development build) and `threats`, each with `id`, `revision`, `name`, `aliases`, `kind` (`attack_tool`, `exploited_vuln`, `campaign` or `practice`), `severity`, `summary`, `first_seen`, `published_at`, `sources`, `detects` (`config_rules`, `cves` and `signal_rules`: weaker rules that are shown but never make it found), `needs` (each `connection`, `required`, `checks` and `help`), `min_version`, `source` (`embedded` or `feed`) and `has_check`: whether this server runs a release with the check. The same in every workspace.
+
 ### `GET /feeds`
 
 **Who:** viewer
@@ -3008,7 +3088,7 @@ Deletes every conversation in the organisation, whoever had it, and answers how 
 
 **Who:** admin
 
-This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`. Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind are kept two years.
+This organisation's Ask Stackurity model calls, newest first: one row per call (an answer's model round or a summary of a long conversation). Fields: `id`, `created_at`, `workspace_id`, `user_id`, `conversation_id` (null once the conversation is deleted), `kind` (`answer` or `summary`), `model`, `prompt_version`, `input_tokens`, `output_tokens`, `cache_read_tokens`, `cache_write_tokens`, `cost_micros`, `latency_ms`, `tool_calls`, `tool_names`, `history_turns_sent`, `summary_used`, `stop_reason`, `error_code` (`canceled`, `timeout`, `unavailable`, `rejected`, `error` or empty), `request_id`, `step_up_reason`, `stepped_from`, `incomplete_reason` (an answer call that ended without a full answer: `refusal`, `cannot_answer` (the answer says it could not find or answer something), `tool_error` (a lookup failed earlier in the answer), `max_tokens`, `tool_budget` (the question used up its lookups), `too_long`; empty otherwise) and `refusal_category` (the provider's category for a refusal). Metadata only: never a question, an answer, tool results or a summary. Query: `since`, `until` (RFC 3339), `limit` (default 1000, at most 10000), `before_id` (next page), `format=csv` (a CSV file of the same columns). Detailed rows are kept 90 days; daily totals per organisation, model and kind (with the number of refusals and of incomplete answers) are kept two years.
 
 ### `GET /api/v1/admin/ask`
 
@@ -3021,6 +3101,12 @@ This organisation's Ask Stackurity model calls, newest first: one row per call (
 **Who:** instance admin, or a feedback review token
 
 Feedback from every organisation, newest first: `items` and `next_before` (pass it as `before` for the next page). Filters: `status` (`new`, `triaged`, `fixed`, `wontfix`), `kind` (`explicit`, `implicit`), `rating`, `category` (a category or a signal), `workspace_id`, `since` (a date or an RFC 3339 time), `prompt_version` (to compare ratings before and after a prompt change), `limit` (1 to 200, default 50). Each row: `id`, `workspace_id`, `user_id`, `conversation_id`, `message_id`, `kind`, `rating`, `category`, `scope`, `text`, `consent`, `snapshot`, `prompt_version`, `model`, `usage_call_id` (the model call that produced the answer, while its call record is kept), `page_path`, `viewport`, `status`, `resolution_notes`, `created_at`, `updated_at`. An organisation's admins never see this.
+
+### `GET /api/v1/admin/ask/feedback/incomplete`
+
+**Who:** instance admin, or a feedback review token
+
+How many Ask Stackurity answers were refused or left incomplete, from the call log, never the text: `since`, `reasons`, and `summary` with `days` (per day (UTC) and model: `answer_calls`, `refusals`, `incomplete`, refusals included), the totals, `by_reason` and `by_refusal_category` (from the detailed rows, kept 90 days, from `detail_since`). Older days come from the daily totals. Query: `since` (a date or an RFC 3339 time; default 30 days ago, at most two years), `workspace_id`. A refused or incomplete answer on a conversation below its plan's model is answered again on the next model up (the retry's call has `step_up_reason` `refusal`, `not_found` or `tool_error`).
 
 ### `GET /api/v1/admin/ask/feedback/{id}`
 
@@ -3038,7 +3124,7 @@ One row, as in the list.
 
 **Who:** instance admin
 
-Makes a feedback review token, for an automated reviewer that reads and triages feedback without an operator's full rights. `{"name", "expires_in_days"}` (0: never; up to 366) answers 201 with `token` and `secret`. The secret starts `stkfr_` and is shown once; only its SHA-256 hash is kept. A review token is not tied to an organisation or a user. It works only on `GET /admin/ask/feedback`, `GET /admin/ask/feedback/{id}` and `PATCH /admin/ask/feedback/{id}`; any other request with it is 403, and `/mcp` refuses it. Audited as `ask.review_token_created`.
+Makes a feedback review token, for an automated reviewer that reads and triages feedback without an operator's full rights. `{"name", "expires_in_days"}` (0: never; up to 366) answers 201 with `token` and `secret`. The secret starts `stkfr_` and is shown once; only its SHA-256 hash is kept. A review token is not tied to an organisation or a user. It works only on `GET /admin/ask/feedback`, `GET /admin/ask/feedback/incomplete`, `GET /admin/ask/feedback/{id}` and `PATCH /admin/ask/feedback/{id}`; any other request with it is 403, and `/mcp` refuses it. Audited as `ask.review_token_created`.
 
 ### `GET /api/v1/admin/ask/review-tokens`
 
@@ -3325,8 +3411,8 @@ The single ingest contract for agents, scanners, SBOM imports and plugins. See [
 - `complete: true` tells the server that this batch is the collector's whole view of the asset. Components missing from it are marked removed, and history is kept. A batch that is not complete still removes what it left out outside the paths it could not read: when every `coverage` item that is not `checked` names an absolute path (`path:/srv/app/tmp`, `lockfile:/srv/app/yarn.lock`, `npm-installed:/srv/app/node_modules`; Composer's `vendor/composer/installed.json` stands for its `vendor` directory), components located at or below those paths are kept and the others are marked removed. When any such item names no path (`walk`, `depth`, `dpkg`, `invalid-entries`), nothing is removed. (Before 0.14 only complete batches removed anything, so an application with one unreadable cache directory kept an upgraded version's old libraries for good; its next collection removes them.)
 - `apps` (optional, host batches only, servers listing the `app_list` feature): `{"dirs": ["/var/www/html/phpmyadmin", ...]}`, every application directory the host's agent reports in this run, at most 1,000. The host's applications (`app-path` assets) not in the list are marked removed: each gets an empty complete collection (its findings resolve as `removed`), a `skipped` coverage note on `app:<dir>` saying why, and `collection_status` `removed`; the result lists them in `apps_removed`. An application that reports again is present again. Agents leave `apps` out when discovery stopped at its limits, so a missing directory is never guessed.
 - `images` (optional, host batches only, servers listing the `host_images` feature): `{"refs": ["postgres:16", "sha256:...", ...]}`, the `host-image` identity of every image the host's running containers use, at most 1,000. The host's images not in the list are marked removed the same way as applications (coverage note on `image:<ref>`, collection by `linux-docker`), and the result lists them in `images_removed`. The agent leaves `images` out when it could not list every running image (Docker unreadable, an image it could not inspect).
-- `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters) and `exposure` (`served`, `world_readable` or empty). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
-- `config_findings` (optional, servers listing the `config_findings` feature): `{"found": [...], "complete": true, "reason": ""}`, the [risky settings](config-checks.md) the collector found, at most 1,000. Each has `rule`, `category` (`agent_hook`, `ssh`, `ci`), `title`, `severity` (`high`, `medium`, `low`, `info`), `path`, `line`, `subject`, `why`, `fix` and `fingerprint` (32 lower-case hex characters, from the rule, file and subject). A finding seen again stays one finding (by asset, collector and fingerprint); when `complete`, the collector's open findings on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed finding stays dismissed. The result counts `config_found` and `config_gone`. Without `config_findings`, findings reported before are kept.
+- `leaks` (optional, servers listing the `leaks` feature): `{"found": [...], "complete": true, "reason": ""}`, the [leaked keys](leaked-keys.md) the collector's key scan found, at most 1,000. Each has `rule`, `title`, `severity` (`critical`, `high`, `medium`, `low`), `path`, `line`, `name` (the setting the value was assigned to), `fingerprint` (32 lower-case hex characters), `preview` (a masked prefix and last four characters), `exposure` (`served`, `world_readable` or empty) and, for servers listing the `leak_value_checks` feature, `value_check` (`checker`, such as `value/1`, and `signals`, each one of `placeholder`, `low_entropy`, `test_mode_key`, `known_sample`, `checksum_valid` and `checksum_invalid`: what the collector's value check read in the value, for the [second check](verification.md#second-check-of-leaked-keys-and-risky-settings)). There is no field for the value. A leak seen again stays one leak (by asset, collector, fingerprint and file); when `complete`, the collector's open leaks on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed leak stays dismissed. The result counts `leaks_found` and `leaks_gone`. Without `leaks`, leaks reported before are kept.
+- `config_findings` (optional, servers listing the `config_findings` feature): `{"found": [...], "complete": true, "reason": ""}`, the [risky settings](config-checks.md) the collector found, at most 1,000. Each has `rule`, `category` (`agent_hook`, `ssh`, `ci`, `attack_tool`; send `attack_tool` only to servers listing the `config_attack_tools` feature), `title`, `severity` (`high`, `medium`, `low`, `info`), `path`, `line`, `subject`, `why`, `fix` and `fingerprint` (32 lower-case hex characters, from the rule, file and subject). A finding seen again stays one finding (by asset, collector and fingerprint); when `complete`, the collector's open findings on the asset missing from `found` are resolved as gone, otherwise `reason` says what was not checked. A dismissed finding stays dismissed. The result counts `config_found` and `config_gone`. Without `config_findings`, findings reported before are kept.
 - `observations[].reachability` (optional, servers listing the `reachability` feature): `{"status": "not_imported", "evidence": ["no import of lodash in 214 source files under src/"]}`. `status` is `reachable`, `not_imported`, `not_running` or `unknown`; every status but `unknown` needs 1 to 8 evidence lines of at most 512 bytes. An observation without it is stored as `unknown`, replacing what an earlier batch said ([reachability.md](reachability.md)).
 - `coverage[].status` is one of `checked`, `skipped`, `failed`, `unsupported`, `partial` or `limited`. `limited` means the file was read in full but its format has a known limit, which `reason` names (a `build.gradle` without dependency locking lists declared versions only): it is listed with the asset's coverage like any other status, but unlike `partial` it does not make the collection `partial`. A package located in a `limited` file is never marked removed for being missing from a later batch, since the format may hide it (a dependency moved to a Gradle version catalog).
 - Limits: 200,000 observations, 64 MiB on the wire, 256 MiB after decompression.
@@ -3510,6 +3596,7 @@ Routes send to channels and filter by SOS only, kinds, environments, owner teams
 | `overdue` | with `escalation` (licensed), at most one message a day when urgent issues pass their fix deadline |
 | `connected` | a new asset's first scan, once |
 | `problems` | collection, feed, coverage and platform problems at `min_priority` or SOS, right away |
+| `threat_notices` | a [threat notice](threat-notices.md), once per threat and again only when it is found (event `threat_notice` in the payload). A route limited to projects or an asset gets only a `found` notice with a finding on its assets. Every older mode with right-away events includes it, and it does not change a route's `mode`. Migration 0118 added it to existing right-away routes except webhook routes. A webhook route has it only when `events` name it: defaults and modes never add it there |
 | `daily_summary` | a daily summary at `summary_time` |
 | `weekly_summary` | a weekly summary on `summary_day` at `summary_time` |
 
@@ -3521,9 +3608,9 @@ Everything sent right away in one evaluation cycle goes in one `urgent` message 
 
 | `mode` | `events` |
 |---|---|
-| `urgent_summary` (default) | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `daily_summary` |
+| `urgent_summary` (default) | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `threat_notices`, `daily_summary` |
 | `urgent_weekly` | the same with `weekly_summary` instead of `daily_summary` |
-| `urgent_only` | `urgent`, `regressed`, `overdue`, `connected`, `problems` |
+| `urgent_only` | `urgent`, `regressed`, `overdue`, `connected`, `problems`, `threat_notices` |
 | `daily` | `daily_summary` |
 | `weekly` | `weekly_summary` |
 
@@ -3619,6 +3706,7 @@ Webhook channels receive each message as JSON. Fields are only ever added, never
 - A route limited to projects (`project_ids`) opens every link in its project (`?project=N`): its only project, or for a route on several the first of them the item's asset is in.
 - Issues that came back after a fix are urgent whatever their priority: the next urgent message on routes with the `regressed` event lists them per asset ("web-1: 3 issues came back after a fix"), once, and summaries count them in their own section rather than as new issues.
 - Summaries also carry `"period": {"from": "...", "to": "..."}`.
+- A [threat notice](threat-notices.md) has `"event": "threat_notice"`, `"kind": "threat"`, `"key": "threat:<id>"`, `title`, `summary` (lines), `recommended_action` (when found), `link` and `link_label`, and `detail` with `threat`, `verdict` (`found`, `covered`, `needs_connection` or `upgrade`), `findings`, `assets` and `signals`. Routes get it with the `threat_notices` event. Webhook routes opt in: a webhook route gets it only when its `events` name `threat_notices` (migration 0118 left existing webhook routes out, and defaults or a `mode` never add it to one).
 
 ### Acting from Slack
 

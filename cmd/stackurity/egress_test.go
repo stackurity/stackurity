@@ -72,6 +72,14 @@ var defaultEgress = []attempt{
 	// release list, up to 30 s after start, then every 12 hours;
 	// STACKURITY_UPDATE_CHECK=off, or STACKURITY_UPDATE_URL for a mirror.
 	{"http", "api.github.com:443"},
+	// The threat feed (internal/threatnotice), turned off by the same
+	// switch, STACKURITY_UPDATE_CHECK=off (or STACKURITY_THREAT_FEED_URL for
+	// a mirror): an anonymous GET of
+	// https://stackurity.ai/threats/feed.signed.json, up to 30 s after
+	// start, then every 6 hours. It dials
+	// through netguard, which resolves the name first, so the attempt is
+	// the name lookup.
+	{"dns", "stackurity.ai"},
 }
 
 // Edition hooks, set by egress_*_test.go files built with that edition's

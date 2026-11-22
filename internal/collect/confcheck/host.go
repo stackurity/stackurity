@@ -12,7 +12,8 @@ import (
 // host): AI coding-agent hooks and MCP start commands in each login
 // account's home, the projects directly under it and appDirs (host paths of
 // the applications the agent reports), and SSH access for root and for CI
-// keys. Nothing is run; files are only read.
+// keys, and known attack tools (attacktools.go). Nothing is run; files are
+// only read.
 func Host(ctx context.Context, root string, appDirs []string) *model.ConfigScan {
 	h := &hostFS{Root: root}
 	accounts := h.accounts()
@@ -20,6 +21,9 @@ func Host(ctx context.Context, root string, appDirs []string) *model.ConfigScan 
 	found = append(found, h.hostHooks(accounts, appDirs)...)
 	if ctx.Err() == nil {
 		found = append(found, h.sshAccess(accounts, h.rootKeyLogins())...)
+	}
+	if ctx.Err() == nil {
+		found = append(found, h.attackTools(accounts, appDirs)...)
 	}
 	out := &model.ConfigScan{Found: dedupe(found), Complete: ctx.Err() == nil && len(h.problems) == 0}
 	if ctx.Err() != nil {
@@ -29,6 +33,10 @@ func Host(ctx context.Context, root string, appDirs []string) *model.ConfigScan 
 	}
 	return out
 }
+
+// Dedupe keeps one finding per fingerprint and bounds the list, most
+// severe first, for collectors outside this package (container images).
+func Dedupe(in []model.ConfigFinding) []model.ConfigFinding { return dedupe(in) }
 
 // dedupe keeps one finding per fingerprint and bounds the list, most
 // severe first.

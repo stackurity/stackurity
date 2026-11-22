@@ -45,6 +45,7 @@ import (
 	"github.com/stackurity/stackurity/internal/secrets"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
+	"github.com/stackurity/stackurity/internal/threatnotice"
 	"github.com/stackurity/stackurity/internal/updates"
 	"github.com/stackurity/stackurity/internal/worker"
 	"github.com/stackurity/stackurity/web"
@@ -127,6 +128,15 @@ func serverCmd() *cobra.Command {
 			}
 			defer st.Pool.Close()
 			st.JobLockTimeout = tm.JobLock
+			// A batch with leaks or risky settings gets its second check as
+			// soon as it is stored, on whichever replica takes the batch, so
+			// the dispatcher reads its verdicts before alerting.
+			rechecker := &secondcheck.Runner{Store: st, Log: log}
+			st.AfterLeakScan = func(ctx context.Context, assetID int64) {
+				if _, err := rechecker.Recheck(ctx, assetID); err != nil && ctx.Err() == nil {
+					log.Warn("second check of leaks and settings after a scan failed; the periodic check retries", "asset", assetID, "err", err)
+				}
+			}
 			if st.SessionIdle, err = sessionIdleTimeout(); err != nil {
 				return err
 			}
@@ -161,6 +171,15 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			threatFeedCfg, err := threatnotice.FeedConfigFromEnv()
+			if err != nil {
+				return err
+			}
+			threatCopyTo, err := threatNoticeCopyTo(trustBadgeCloud, os.Getenv, log)
+			if err != nil {
+				return err
+			}
+			threatCatalogues := threatnotice.NewCatalogues(st)
 			feedbackURL, err := api.FeedbackURLFromEnv()
 			if err != nil {
 				return err
@@ -368,7 +387,7 @@ func serverCmd() *cobra.Command {
 				SecretBox:          box,
 				Packs:              packMgr,
 				Licence:            holder, Gate: gate, LicenceFromEnv: licFromEnv, KeyRequirement: keyReq,
-				Health: checker, UpdateCheck: updateCfg.Enabled,
+				Health: checker, UpdateCheck: updateCfg.Enabled, Threats: threatCatalogues,
 				TrustBadge: trustBadge.On, TrustBadgePurge: trustBadge.Purge, TrustPageBase: trustBadge.PageBase,
 				// Error reports stay in this database (docs/install.md#error-reports).
 				ClientErrors:  clientErrorsOn(),
@@ -443,6 +462,12 @@ func serverCmd() *cobra.Command {
 			// The release check sends nothing about this install (see
 			// internal/updates); when it is off no request is made at all.
 			updates.Register(ctx, w, st, log, updateCfg)
+			// Threat notices (docs/threat-notices.md): the signed feed, off
+			// with the release check, and each organisation's notices.
+			threatnotice.RegisterFeed(ctx, w, st, log, threatFeedCfg)
+			registerThreatNotices(w, &threatnotice.Notifier{Store: st, Catalogues: threatCatalogues, Dispatcher: dispatcher,
+				Mail: srv.AccountMail, BaseURL: srv.BaseURL, Running: updates.Running(version), Cloud: trustBadgeCloud,
+				CopyTo: threatCopyTo, Log: log})
 			// The worker stops when a newer version migrates the database
 			// under this server (watchSchema); the API keeps answering, but
 			// /readyz fails so traffic moves to the new replicas.
@@ -1009,12 +1034,24 @@ func registerJobs(w *worker.Worker, st *store.Store, res secrets.Resolver, dataD
 		if n.Checked > 0 {
 			log.Info("second check", "checked", n.Checked, "agreed", n.Agreed, "disagreed", n.Disagreed, "could_not_check", n.CouldNotCheck)
 		}
+		if err != nil {
+			return err
+		}
+		// Leaked keys and risky settings: verdicts for those not checked
+		// right after their scan was stored, or due again.
+		rs, err := checker.Recheck(ctx, 0)
+		if rs.Checked > 0 {
+			log.Info("second check of leaks and settings", "checked", rs.Checked, "changed", rs.Added, "verdicts", rs.ByVerdict)
+		}
 		return err
 	})
 	w.EveryCollectingWorkspace("second-check", time.Minute, func(ctx context.Context) error {
 		qctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 		defer cancel()
 		waiting, err := st.SecondCheckWaiting(qctx)
+		if err == nil && !waiting {
+			waiting, err = st.RecheckWaiting(qctx)
+		}
 		if err != nil || !waiting {
 			return err
 		}

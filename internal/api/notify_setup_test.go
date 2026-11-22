@@ -315,7 +315,7 @@ func TestRouteEventsAPI(t *testing.T) {
 	// It reads the route back and changes only the mode: the mode wins.
 	body := map[string]any{"name": "old", "channel_id": hook.ID, "enabled": true, "mode": "urgent_only", "events": r.Events}
 	if code := admin.do("PUT", "/api/v1/routes/"+itoa(r.ID), body, &r); code != 200 || r.Mode != "urgent_only" ||
-		!slices.Equal(r.Events, store.EventsForMode("urgent_only")) {
+		!slices.Equal(r.Events, webhookEvents(store.EventsForMode("urgent_only"))) {
 		t.Fatalf("changed mode: %d %+v", code, r)
 	}
 	// Events: a set no older mode matches is "custom".
@@ -443,4 +443,11 @@ func TestRouteKindsIncludePlatform(t *testing.T) {
 		!own.Enabled || !slices.Equal(own.Kinds, []string{"platform", "vulnerability"}) {
 		t.Fatalf("edit from the project's notifications: %d %+v", code, own)
 	}
+}
+
+// webhookEvents is what a webhook route gets for a mode: the mode's events
+// without threat notices, which a webhook only gets when asked for by name
+// (webhookThreatOptIn).
+func webhookEvents(events []string) []string {
+	return slices.DeleteFunc(slices.Clone(events), func(e string) bool { return e == store.EventThreatNotices })
 }

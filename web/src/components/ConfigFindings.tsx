@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link } from "react-router";
+import { Link, useLocation } from "react-router";
 import {
   api,
   type ConfigCategory,
@@ -11,6 +11,8 @@ import { useAuth } from "../auth";
 import { configEmpty, type ConfigViewName } from "../emptyCopy";
 import { useAction, useLoad } from "../hooks";
 import { SeverityBadge } from "./Badge";
+import { SecondCheckCell } from "./SecondCheck";
+import { NOT_FALSE_POSITIVE, falsePositiveSummary } from "../secondCheck";
 import { promptText } from "./ConfirmDialog";
 import { Table, type Column } from "./Table";
 import {
@@ -27,7 +29,8 @@ import {
 /**
  * Risky settings (config findings): AI coding-agent hooks that download and
  * run code, SSH keys and settings that give root an unrestricted shell, and
- * GitHub Actions that run third-party code by a movable tag. Each row says
+ * GitHub Actions that run third-party code by a movable tag, and known
+ * attack tools (ARTEX) found on a server or image. Each row says
  * in one line why it is a risk and what to change in the file.
  */
 
@@ -35,6 +38,7 @@ export const CATEGORY_LABEL: Record<ConfigCategory, string> = {
   agent_hook: "AI agent hooks",
   ssh: "SSH access",
   ci: "GitHub Actions",
+  attack_tool: "Attack tools",
 };
 
 const VIEW_QUERY: Record<
@@ -59,6 +63,10 @@ const VIEW_HINT: Record<ConfigViewName, string> = {
     "Low and information only: third-party actions not pinned to a commit, GitHub's own actions by tag, and root keys with no restriction (normal for an administrator's own key). They never alert.",
   resolved: "Settings a complete check no longer finds, and those dismissed.",
 };
+
+/** What the second check is, under every view. */
+const SECOND_CHECK_HINT =
+  "Each setting also gets a second, independent check that re-reads what was found: a hook command that is commented out, a workflow file GitHub never runs or an action pinned to a commit is a likely false positive. Those are collapsed at the bottom and never alert.";
 
 const LIMIT = 50;
 
@@ -117,6 +125,10 @@ function ConfigTable({
             {CATEGORY_LABEL[f.category] ?? f.category}
           </div>
           {f.subject && <div className="mono small break">{f.subject}</div>}
+          <SecondCheckCell
+            check={f.second_check}
+            historyPath={`/config-findings/${f.id}/second-checks`}
+          />
         </>
       ),
     },
@@ -248,7 +260,9 @@ function SummaryStrip({ s }: { s: ConfigSummary }) {
 export function ConfigFindingsView({ assetId }: { assetId?: number }) {
   const { can } = useAuth();
   const [view, setView] = useState<ConfigViewName>("attention");
-  const [category, setCategory] = useState("");
+  const { search } = useLocation();
+  // A link may choose the kind (?category=attack_tool, from a threat notice).
+  const [category, setCategory] = useState(() => (assetId ? "" : (new URLSearchParams(search).get("category") ?? "")));
   const [offset, setOffset] = useState(0);
   const path = assetId
     ? `/assets/${assetId}/config-findings`
@@ -258,10 +272,22 @@ export function ConfigFindingsView({ assetId }: { assetId?: number }) {
       api.get<ConfigFindingList>(path, {
         ...VIEW_QUERY[view],
         ...(category ? { category } : {}),
+        second_check: NOT_FALSE_POSITIVE,
         limit: LIMIT,
         offset,
       }),
     [path, view, category, offset],
+  );
+  // Likely false positives of the same view, collapsed under the list.
+  const fp = useLoad(
+    () =>
+      api.get<ConfigFindingList>(path, {
+        ...VIEW_QUERY[view],
+        ...(category ? { category } : {}),
+        second_check: "likely_false_positive",
+        limit: LIMIT,
+      }),
+    [path, view, category, res.data],
   );
   const summary = useLoad(
     () =>
@@ -305,6 +331,7 @@ export function ConfigFindingsView({ assetId }: { assetId?: number }) {
         )}
       />
       <p className="hint">{VIEW_HINT[view]}</p>
+      <p className="hint">{SECOND_CHECK_HINT}</p>
       <div className="form-grid">
         <div className="field">
           <label htmlFor="config-category">Kind</label>
@@ -354,6 +381,24 @@ export function ConfigFindingsView({ assetId }: { assetId?: number }) {
             onChange={setOffset}
           />
         </>
+      )}
+      {fp.data && fp.data.total > 0 && (
+        <details className="false-positives">
+          <summary>
+            Likely false positives ({fp.data.total.toLocaleString()})
+          </summary>
+          <p className="hint">
+            {falsePositiveSummary(fp.data.total, "setting")}. They raise no
+            alert. Each says why; dismiss one you have looked at.
+            {fp.data.total > fp.data.items.length &&
+              ` The first ${fp.data.items.length} are shown.`}
+          </p>
+          <ConfigTable
+            items={fp.data.items}
+            showAsset={!assetId}
+            onChanged={res.reload}
+          />
+        </details>
       )}
     </>
   );

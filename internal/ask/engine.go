@@ -42,6 +42,11 @@ type Question struct {
 	Page         *PageRef
 	// Project names the project the person chose ("" : none).
 	Project string
+	// ProjectNotes are the notes administrators wrote about the projects
+	// this question is about (the chosen one, the open asset's, or those
+	// of a person with project access only). They go in the question's
+	// context block, marked as data, never in the system prompt.
+	ProjectNotes []ProjectNote
 	// Model is the organisation's model; Limits its caps.
 	Model          string
 	SpendCapMicros *int64
@@ -194,7 +199,7 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	if q.Page != nil {
 		page, _ = json.Marshal(q.Page)
 	}
-	blocks := []map[string]any{textBlock(contextBlock(e.now(), q.Page, q.Project)), textBlock(q.Text)}
+	blocks := []map[string]any{textBlock(contextBlock(e.now(), q.Page, q.Project, q.ProjectNotes)), textBlock(q.Text)}
 	if secret {
 		blocks = append(blocks, textBlock(secretNote))
 	}
@@ -216,7 +221,9 @@ func (e *Engine) Ask(ctx context.Context, q Question, emit func(Event)) (Outcome
 	// stays there.
 	reason := ""
 	switch {
-	case out.StopReason == "refusal" || SaysNotFound(out.Text):
+	case out.StopReason == "refusal":
+		reason = StepRefusal
+	case SaysNotFound(out.Text):
 		reason = StepNotFound
 	case errs > 0:
 		reason = StepToolError
@@ -262,6 +269,7 @@ func (e *Engine) answer(ctx context.Context, q Question, spec callSpec, base []j
 		prop = &proposer{e: e, q: q, seq: spec.questionSeq}
 	}
 	for round := 1; ; round++ {
+		spec.failedTools = failedTools
 		res, cost, err := e.call(ctx, q, spec, msgs, emit)
 		if err != nil {
 			// A call that ended early is still paid for: the caller
@@ -318,8 +326,16 @@ func (e *Engine) answer(ctx context.Context, q Question, spec callSpec, base []j
 		}
 		if last {
 			out.StopReason = "rounds"
+			reason := store.AskIncompleteToolBudget
 			if prompt > MaxContextTokens {
 				out.StopReason = "too_long"
+				reason = store.AskIncompleteTooLong
+			}
+			// Known only now: the answer this call gave is all there is.
+			if res.CallID > 0 {
+				if err := e.Store.SetAskAPICallIncomplete(sctx, res.CallID, reason); err != nil {
+					e.log().Error("assistant: recording an incomplete answer", "err", err)
+				}
 			}
 			e.markLongChat(sctx, q, out)
 			return failedTools, nil
@@ -363,6 +379,9 @@ type callSpec struct {
 	// the question's seq, which proposals are tied to.
 	propose     bool
 	questionSeq int
+	// failedTools is how many tools failed earlier in this answer: an
+	// answer given after one is recorded as incomplete (tool_error).
+	failedTools int
 }
 
 // call holds spend for one model call, makes it, settles the hold and
@@ -416,7 +435,10 @@ func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []jso
 	} else {
 		e.alerts(sctx, lvl)
 	}
-	e.recordCall(sctx, q, spec, res, cost, e.now().Sub(started), err)
+	id := e.recordCall(sctx, q, spec, res, cost, e.now().Sub(started), err)
+	if res != nil {
+		res.CallID = id
+	}
 	if err != nil {
 		return res, cost, err
 	}
@@ -425,8 +447,9 @@ func (e *Engine) call(ctx context.Context, q Question, spec callSpec, msgs []jso
 
 // recordCall stores one call's metadata (never text) and logs it on one
 // line. It is written with the request, not buffered: a failure to record
-// is logged and does not fail the question.
-func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res *Result, cost int64, latency time.Duration, callErr error) {
+// is logged and does not fail the question. It returns the row's id (0
+// when it was not stored).
+func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res *Result, cost int64, latency time.Duration, callErr error) int64 {
 	uid, cid := q.UserID, q.Conversation.ID
 	c := store.AskAPICall{UserID: &uid, ConversationID: &cid, Kind: spec.kind, Model: spec.model, PromptVersion: PromptVersion,
 		CostMicros: cost, LatencyMS: latency.Milliseconds(), HistoryTurnsSent: spec.historyTurns, SummaryUsed: spec.summaryUsed,
@@ -449,15 +472,44 @@ func (e *Engine) recordCall(ctx context.Context, q Question, spec callSpec, res 
 			c.ToolNames = append(c.ToolNames, t.Name)
 		}
 		c.ToolCalls = len(res.ToolUses)
+		if spec.kind == "answer" && callErr == nil {
+			c.IncompleteReason = incompleteReason(res, spec.failedTools)
+			if c.IncompleteReason == store.AskIncompleteRefusal {
+				c.RefusalCategory = res.RefusalCategory
+			}
+		}
 	}
-	if _, err := e.Store.RecordAskAPICall(ctx, c); err != nil {
+	id, err := e.Store.RecordAskAPICall(ctx, c)
+	if err != nil {
 		e.log().Error("assistant: recording a model call", "err", err)
 	}
 	e.log().Info("ask call", "kind", c.Kind, "model", c.Model, "prompt_version", c.PromptVersion, "conversation", cid,
 		"input_tokens", c.InputTokens, "output_tokens", c.OutputTokens, "cache_read_tokens", c.CacheReadTokens,
 		"cache_write_tokens", c.CacheWriteTokens, "cost_micros", c.CostMicros, "latency_ms", c.LatencyMS,
 		"tool_calls", c.ToolCalls, "tools", strings.Join(c.ToolNames, ","), "history_turns", c.HistoryTurnsSent,
-		"summary_used", c.SummaryUsed, "stop_reason", c.StopReason, "error", c.ErrorCode, "step_up", c.StepUpReason, "stepped_from", c.SteppedFrom)
+		"summary_used", c.SummaryUsed, "stop_reason", c.StopReason, "error", c.ErrorCode, "step_up", c.StepUpReason, "stepped_from", c.SteppedFrom,
+		"incomplete", c.IncompleteReason, "refusal_category", c.RefusalCategory)
+	return id
+}
+
+// incompleteReason says why the answer a call ended with is not a full
+// one ("": it is, or the call asked for tools and the answer goes on):
+// the model declined, the answer was cut short, it says it could not find
+// or answer something, or a tool failed earlier in this answer.
+func incompleteReason(res *Result, failedTools int) string {
+	switch {
+	case res.StopReason == "tool_use" && len(res.ToolUses) > 0:
+		return ""
+	case res.StopReason == "refusal":
+		return store.AskIncompleteRefusal
+	case res.StopReason == "max_tokens":
+		return store.AskIncompleteMaxTokens
+	case SaysCannotAnswer(res.Text):
+		return store.AskIncompleteCannotAnswer
+	case failedTools > 0:
+		return store.AskIncompleteToolError
+	}
+	return ""
 }
 
 // errorCode names how a call failed ("" when it did not).
@@ -615,6 +667,14 @@ func toolLabel(u ToolUse) string {
 		return "Reading asset" + id("asset_id")
 	case "list_findings":
 		return "Listing issues"
+	case "list_risky_settings":
+		return "Listing risky settings"
+	case "list_code_findings":
+		return "Listing code findings"
+	case "threat_check":
+		return "Checking for a named threat"
+	case "list_threat_notices":
+		return "Reading threat notices"
 	case "get_finding", "explain_finding":
 		return "Reading issue" + id("finding_id")
 	case "find_component":
@@ -635,6 +695,10 @@ func toolLabel(u ToolUse) string {
 		return "Preparing the evidence pack link"
 	case "plan_options":
 		return "Reading your plan options"
+	case "read_help":
+		// Not a read of the organisation's data: the panel leaves it out
+		// of "What Ask looked at" (web/src/askAnswer.ts HELP_READ).
+		return "Reading Help"
 	}
 	if u.Name == ConnectTool {
 		return "Preparing a connection"

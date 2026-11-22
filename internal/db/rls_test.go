@@ -39,6 +39,7 @@ var globalTables = map[string]string{
 	"sessions":            "looked up before the workspace is known; carries the active workspace",
 	"workspace_members":   "memberships span workspaces; read by user id",
 	"cve_first_seen":      "public intelligence: when each CVE first reached Stackurity (migration 0089)",
+	"threats_seen":        "public intelligence: threat catalogue entries the server has known, and the operator copy's totals (migration 0118)",
 	// Not FORCEd so that the owner's insert trigger can write it; it has
 	// row-level security with a system-scope SELECT policy only, so the
 	// application role can never change it (TestAuditAppendOnlyForApp).

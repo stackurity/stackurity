@@ -154,15 +154,18 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		// application's old libraries open forever). Rows in a file whose
 		// coverage is "limited" stay: its format cannot show everything, so
 		// a missing entry proves nothing (a scope ends with ":" and the
-		// file's location, as pack and lockfile scopes do).
+		// file's location, as pack and lockfile scopes do). A repository
+		// scan that did not look for copied front-end libraries keeps the
+		// rows another scan found (webAssetsUnchecked).
 		if blind, ok := blindPaths(b); ok {
 			tag, err := tx.Exec(ctx, `UPDATE inventory SET removed_at = $3
 				WHERE asset_id = $1 AND collector_id = $2 AND removed_at IS NULL AND last_collection_id <> $4
 				  AND (cardinality($5::text[]) = 0 OR (location LIKE '/%' AND NOT EXISTS (SELECT 1 FROM unnest($5::text[]) p
 				    WHERE location = p OR starts_with(location, rtrim(p, '/') || '/'))))
 				  AND NOT EXISTS (SELECT 1 FROM unnest($6::text[]) s
-				    WHERE location <> '' AND right(s, length(location) + 1) = ':' || location)`,
-				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind, limitedScopes(b))
+				    WHERE location <> '' AND right(s, length(location) + 1) = ':' || location)
+				  AND NOT ($7 AND COALESCE(evidence->>'source', '') = ANY($8::text[]))`,
+				assetID, b.Collector.ID, b.ObservedAt, res.CollectionID, blind, limitedScopes(b), webAssetsUnchecked(b), webAssetSources)
 			if err != nil {
 				return err
 			}
@@ -224,6 +227,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 			_ = s.recordRefused(ctx, b)
 		}
 		return nil, err
+	}
+	if s.AfterLeakScan != nil && (b.Leaks != nil || b.ConfigFindings != nil) {
+		s.AfterLeakScan(ctx, res.AssetID)
 	}
 	return res, nil
 }
@@ -414,6 +420,21 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 		return 0, false, nil, err
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	if len(ids) == 0 {
+		// A release layout reported by its own directory for the first
+		// time keeps the asset of its release (appadopt.go).
+		pred, err := releasePredecessor(ctx, tx, b)
+		if err != nil {
+			return 0, false, nil, err
+		}
+		if pred != 0 {
+			ids = []int64{pred}
+			if _, err := tx.Exec(ctx, `UPDATE assets SET name = $2 WHERE id = $1 AND NOT name_by_person`, pred, b.Asset.Name); err != nil {
+				return 0, false, nil, err
+			}
+		}
+	}
 
 	attrs, _ := json.Marshal(nonNil(b.Asset.Attributes))
 	var assetID int64

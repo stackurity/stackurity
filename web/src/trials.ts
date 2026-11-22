@@ -67,7 +67,10 @@ export function signInLabel(signIns: string[]): string {
 
 /** Where a sign-up came from, in words ("trust badge of acme"). */
 export function refLabel(ref: string): string {
-  return ref.startsWith("badge-") ? `trust badge of ${ref.slice("badge-".length)}` : ref;
+  if (ref.startsWith("badge-")) return `trust badge of ${ref.slice("badge-".length)}`;
+  // web-<host>: an untagged link on another website (dots shown as '-').
+  if (ref.startsWith("web-")) return `link on ${ref.slice("web-".length)}`;
+  return ref;
 }
 
 export interface TrialCohort {

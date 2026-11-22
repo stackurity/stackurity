@@ -333,3 +333,34 @@ func TestWhyNoTarget(t *testing.T) {
 		}
 	}
 }
+
+// A malicious-package record has no CVSS vector or severity label; before,
+// it was rated unknown and an installed credential stealer ranked like an
+// unrated flaw.
+func TestRateMaliciousPackage(t *testing.T) {
+	var mal Vulnerability
+	_ = json.Unmarshal([]byte(`{"id":"MAL-2026-20101","summary":"Malicious code in agent-framework (PyPI)",
+	  "affected":[{"package":{"ecosystem":"PyPI","name":"agent-framework"},"versions":["1.26.1","1.26.2"]}],
+	  "database_specific":{"malicious-packages-origins":[{"source":"amazon-inspector","versions":["1.26.1"]}]}}`), &mal)
+	if r := Rate(&mal); r.Level != "critical" || r.Source != "malicious_package" {
+		t.Errorf("MAL- record = %+v, want critical from malicious_package", r)
+	}
+	// Recognised by its origins too, under another id (an alias stored first).
+	var ghsa Vulnerability
+	_ = json.Unmarshal([]byte(`{"id":"GHSA-x8qh-82wg-v39h","database_specific":{"malicious-packages-origins":[{"source":"ghsa-malware"}]}}`), &ghsa)
+	if r := Rate(&ghsa); r.Level != "critical" || r.Source != "malicious_package" {
+		t.Errorf("record with origins = %+v", r)
+	}
+	// Ordinary records are untouched.
+	for _, raw := range []string{
+		`{"id":"GHSA-y","database_specific":{"severity":"LOW"}}`,
+		`{"id":"GHSA-z","database_specific":{"malicious-packages-origins":[]}}`,
+		`{"id":"CVE-2026-1","database_specific":"not an object"}`,
+	} {
+		var v Vulnerability
+		_ = json.Unmarshal([]byte(raw), &v)
+		if IsMalicious(&v) {
+			t.Errorf("%s: called malicious", raw)
+		}
+	}
+}
