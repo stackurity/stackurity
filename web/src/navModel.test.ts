@@ -7,10 +7,12 @@ import {
   activeItem,
   groupLabel,
   groupOpen,
+  isAllowed,
   NAV_GROUPS,
   openFor,
   parseNavPrefs,
   rollUp,
+  TABS,
   visibleNav,
   type Access,
 } from "./navModel.ts";
@@ -75,6 +77,11 @@ test("items follow the role checks: no item for a page someone cannot open", () 
   // Admin is for instance administrators only, and its first tab follows the server's offer.
   assert.equal(link(access("admin"), "admin"), undefined);
   assert.equal(link(access(undefined, { instanceAdmin: true }), "admin"), "/admin/workspaces");
+  // Admin → Feedback only where this server runs the feedback queue.
+  const adminTabs = (a: Access) => TABS.admin.tabs.filter((t) => isAllowed(t, a)).map((t) => t.label);
+  assert.ok(!adminTabs(access(undefined, { instanceAdmin: true })).includes("Feedback"));
+  assert.ok(adminTabs(access(undefined, { instanceAdmin: true, feedbackQueue: true })).includes("Feedback"));
+  assert.ok(!adminTabs(access("admin", { feedbackQueue: true })).includes("Feedback"), "customer admins never see it");
 });
 
 test("a group left with no items is not shown", () => {

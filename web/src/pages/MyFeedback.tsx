@@ -1,12 +1,21 @@
-import { useRef } from "react";
+import { useRef, useState } from "react";
 import { api } from "../api";
 import { useAuth } from "../auth";
-import { useLoad } from "../hooks";
+import { useAction, useLoad } from "../hooks";
 import { absTime } from "../format";
-import { feedbackKindLabel, feedbackStatusLabel, feedbackStatusTone, type FeedbackItem, type MyFeedback } from "../feedback";
+import {
+  canReply,
+  commentAuthor,
+  FEEDBACK_REPLY_MAX,
+  feedbackKindLabel,
+  feedbackStatusLabel,
+  feedbackStatusTone,
+  type FeedbackItem,
+  type MyFeedback,
+} from "../feedback";
 import { Badge } from "../components/Badge";
 import { FeedbackDialog, feedbackAvailable, type FeedbackHandle } from "../components/Feedback";
-import { EmptyState, ErrorBox, Loading, PageHeader } from "../components/ui";
+import { EmptyState, ErrorBox, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 
 function sentDate(iso: string): string {
   const d = new Date(iso);
@@ -29,6 +38,72 @@ function Sent({ iso }: { iso: string }) {
     <time dateTime={iso} title={absTime(iso)}>
       {sentDate(iso)}
     </time>
+  );
+}
+
+/**
+ * The conversation on one item: the team's questions and updates (some
+ * written by the automated feedback agent, and labelled so) and the
+ * person's replies, with a reply box while the item is open. Open by
+ * default when the team is waiting for an answer.
+ */
+function Thread({ it, onReplied }: { it: FeedbackItem; onReplied: () => void }) {
+  const thread = it.thread ?? [];
+  const open = canReply(it.status);
+  const act = useAction();
+  const [text, setText] = useState("");
+  const [sent, setSent] = useState(false);
+  if (thread.length === 0 && !open) return null;
+  const id = `reply-${it.ref}`;
+  const waiting = it.status === "needs_info";
+  const send = async () => {
+    const message = text.trim();
+    if (!message) return;
+    if (await act.run(() => api.post(`/feedback/mine/${encodeURIComponent(it.ref)}/reply`, { message }))) {
+      setText("");
+      setSent(true);
+      onReplied();
+    }
+  };
+  return (
+    <details className="feedback-thread" open={waiting || undefined}>
+      <summary>
+        {waiting ? "The team asked you something: answer here" : thread.length > 0 ? `Conversation (${thread.length})` : "Add a detail"}
+      </summary>
+      {thread.length > 0 && (
+        <ol className="feedback-comments">
+          {thread.map((c, i) => (
+            <li key={i} className={`feedback-comment feedback-comment-${c.from === "sender" ? "mine" : "team"}`}>
+              <span className="small muted">
+                {commentAuthor(c.from)}
+                {c.kind === "question" ? " asked" : ""} · <RelativeTime iso={c.at} />
+              </span>
+              <p className="feedback-comment-body">{c.body}</p>
+            </li>
+          ))}
+        </ol>
+      )}
+      {sent && <Notice kind="success">Reply sent to the Stackurity team.</Notice>}
+      {open && (
+        <form
+          className="form feedback-reply"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void send();
+          }}
+        >
+          <div className="field">
+            <label htmlFor={id}>{waiting ? "Your answer" : "Add a detail"}</label>
+            <textarea id={id} rows={3} maxLength={FEEDBACK_REPLY_MAX} value={text} onChange={(e) => setText(e.target.value)} />
+            <span className="hint">The Stackurity team and its feedback agent read it. Don&apos;t include passwords or keys.</span>
+          </div>
+          <button type="submit" className="btn btn-primary btn-sm" disabled={act.pending || !text.trim()}>
+            {act.pending ? "Sending…" : "Send reply"}
+          </button>
+          <ErrorBox error={act.error} title="Could not send the reply" />
+        </form>
+      )}
+    </details>
   );
 }
 
@@ -92,6 +167,7 @@ export function MyFeedbackPage() {
                       {it.summary}
                       {it.attachments > 0 && <span className="muted small"> · {it.attachments === 1 ? "1 attachment" : `${it.attachments} attachments`}</span>}
                       <Note text={it.status_note} />
+                      <Thread it={it} onReplied={r.reload} />
                     </td>
                     <td>
                       <Sent iso={it.created_at} />
@@ -117,6 +193,7 @@ export function MyFeedbackPage() {
                   {it.attachments > 0 && ` · ${it.attachments === 1 ? "1 attachment" : `${it.attachments} attachments`}`}
                 </span>
                 <Note text={it.status_note} />
+                <Thread it={it} onReplied={r.reload} />
               </li>
             ))}
           </ul>

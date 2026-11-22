@@ -357,6 +357,7 @@ func (s *Server) Handler() http.Handler {
 			// The organisation's paid features and how to get the others
 			// (plan_options.go).
 			r.Get("/plan/options", s.planOptions)
+			r.Post("/feedback/mine/{ref}/reply", s.replyFeedback)
 			// The caller's saved views on dashboard pages (saved_views.go).
 			r.Get("/saved-views", s.listSavedViews)
 			r.Post("/saved-views", s.saveView)

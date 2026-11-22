@@ -16,6 +16,7 @@ export function useAccess(): Access {
     billing: Boolean(meta?.billing),
     communityKeys: Boolean(meta?.community_keys),
     trustBadge: Boolean(meta?.trust_badge),
+    feedbackQueue: Boolean(me?.feedback_queue),
   };
 }
 

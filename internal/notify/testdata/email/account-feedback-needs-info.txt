@@ -1,0 +1,22 @@
+Subject: Your Stackurity feedback FB-126: a few questions
+
+Hello,
+
+Thank you for your feedback FB-126. To work on it, we need a few more details:
+
+1. Which page were you on: Fixes or Issues?
+2. Did the filter come back after reloading the page?
+
+Please answer under My feedback (the button below).
+
+The Stackurity team
+
+Answer in My feedback:
+https://app.stackurity.dev/feedback
+
+--
+Stackurity lists the software on your servers and code, and tells you which fixes matter.
+You received this email because you left this address when you sent feedback to the Stackurity team.
+Stackurity Cloud: https://app.stackurity.dev/
+Privacy: https://stackurity.ai/privacy.html
+Support: info@stackurity.ai
