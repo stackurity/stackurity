@@ -593,9 +593,17 @@ func TestOperatorCopy(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	// One copy per threat of the embedded catalogue: neither organisation
-	// has any asset, so each needs a connection for every threat.
-	if len(m.sent) != len(threats.Embedded().Threats) {
+	// One copy per threat of the embedded catalogue that a 0.20.17 server
+	// has the check for: neither organisation has any asset, so each needs
+	// a connection. A threat whose check came later is an "upgrade" notice,
+	// held for a day, so it has no copy yet.
+	want := 0
+	for _, th := range threats.Embedded().Threats {
+		if th.HasCheck("0.20.17") {
+			want++
+		}
+	}
+	if want == 0 || len(m.sent) != want {
 		t.Fatalf("copies: %+v", m.sent)
 	}
 	for _, s := range m.sent {
