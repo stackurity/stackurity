@@ -2,7 +2,6 @@ package intel
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"sort"
 	"strings"
@@ -134,54 +133,14 @@ func (s *Syncer) syncJavaApps(ctx context.Context, feed, cursor string) (*SyncRe
 	if err != nil {
 		return nil, "", err
 	}
-	var cur programsCursor
-	if cursor != "" {
-		_ = json.Unmarshal([]byte(cursor), &cur) // unusable: read everything
+	items := make([]nvdCatalogueProduct, len(prods))
+	for i, p := range prods {
+		items[i] = nvdCatalogueProduct{ID: p.ID, Label: p.Label, Product: p}
 	}
-	next := programsCursor{Catalogue: javaapps.Default().Version(), Programs: map[string]programCursor{}}
-	for id, c := range cur.Programs {
-		next.Programs[id] = c
-	}
-	res := &SyncResult{Packages: map[store.PackageRef]bool{}, Full: true, Ecosystems: map[string]bool{}}
-	var failed []string
-	for _, p := range prods {
-		if ctx.Err() != nil {
-			return nil, "", ctx.Err()
-		}
-		now := s.clock()
-		pc := next.Programs[p.ID]
-		full := pc.Full.IsZero() || now.Sub(pc.Full) >= nvdFullRead || now.Sub(pc.Read) >= nvdIncrMax || cur.Catalogue != next.Catalogue
-		unfixed, err := s.syncProgram(ctx, feed, p, full, pc.Read, now, res)
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil, "", ctx.Err()
-			}
-			s.Log.Warn("Java web application advisories not read", "product", p.ID, "err", err)
-			failed = append(failed, p.Label+": "+err.Error())
-			continue
-		}
-		if full {
-			pc.Unfixed, pc.Full = unfixed, now
-		}
-		pc.Read = now
-		next.Programs[p.ID] = pc
-	}
-	if len(prods) > 0 && len(failed) == len(prods) {
-		return nil, "", fmt.Errorf("no Java web application's advisories could be read: %s", strings.Join(failed, "; "))
-	}
-	if len(failed) > 0 {
-		res.Warning = fmt.Sprintf("advisories of %d Java web applications could not be read and are kept as last read: %s",
-			len(failed), strings.Join(failed, "; "))
-	}
-	// A product's ecosystem is listed once its advisories have been read
-	// completely, so one never read is "not evaluated" rather than clean.
-	for id, pc := range next.Programs {
-		if !pc.Full.IsZero() {
-			res.Ecosystems[javaapps.Ecosystem+":"+id] = true
-		}
-	}
-	b, _ := json.Marshal(next)
-	return res, string(b), nil
+	return s.syncNVDCatalogue(ctx, feed, cursor, nvdCatalogueKind{
+		Ecosystem: javaapps.Ecosystem, Catalogue: javaapps.Default().Version(),
+		LogMsg: "Java web application advisories not read", One: "Java web application", Many: "Java web applications",
+	}, items)
 }
 
 // javaAppComponents is what a Java web application sync re-evaluates: every
