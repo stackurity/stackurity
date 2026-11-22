@@ -90,7 +90,7 @@ func TestGatePolicyChecksStore(t *testing.T) {
 	if id, err := s.AssetByImageDigest(ctx, "ghcr.io/acme/app@sha256:"+strings.Repeat("C0", 32)); err != nil || id != r.AssetID {
 		t.Errorf("by digest: %d %v", id, err)
 	}
-	if _, err := s.AssetByImageDigest(ctx, "sha256:"+strings.Repeat("c1", 32)); err != store.ErrNotFound {
+	if _, err := s.AssetByImageDigest(ctx, "sha256:"+strings.Repeat("c1", 32)); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown digest: %v", err)
 	}
 	rb := model.NewBatch(model.Collector{ID: "test", Version: "1", Method: "scanner"}, model.AssetRef{Kind: model.AssetRepository, Name: "app",
@@ -108,7 +108,7 @@ func TestGatePolicyChecksStore(t *testing.T) {
 			t.Errorf("%s: %d %v", u, id, err)
 		}
 	}
-	if _, err := s.AssetByGitURL(ctx, "https://github.com/acme/lib"); err != store.ErrNotFound {
+	if _, err := s.AssetByGitURL(ctx, "https://github.com/acme/lib"); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown repository: %v", err)
 	}
 }
