@@ -733,6 +733,11 @@ config findings; --no-config-checks turns them off.`,
 			web, webCov, webMore := apps.RepoWebAssets(cmd.Context(), dir, b.Observations, lockfile.GitIgnored(cmd.Context(), dir))
 			b.Observations = append(b.Observations, web...)
 			b.Coverage = lockfile.MergeCoverage([]model.CoverageItem{webCov}, b.Coverage, webMore)
+			// Registry packages the MCP servers configured in the repository
+			// start (npx, uvx, pipx), as components of the repository.
+			mcp, mcpCov := confcheck.RepoMCPPackages(cmd.Context(), dir)
+			b.Observations = append(b.Observations, mcp...)
+			b.Coverage = append(b.Coverage, mcpCov)
 			if !noLeaks {
 				b.Leaks = scanLeaks(cmd.Context(), dir)
 			}
