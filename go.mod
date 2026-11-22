@@ -5,7 +5,7 @@ go 1.27.4
 require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/CycloneDX/cyclonedx-go v0.12.0
-	github.com/anthropics/anthropic-sdk-go/v2 v2.0.0
+	github.com/anthropics/anthropic-sdk-go/v2 v2.9.0
 	github.com/aws/aws-sdk-go-v2 v1.47.8
 	github.com/aws/aws-sdk-go-v2/config v1.33.13
 	github.com/aws/aws-sdk-go-v2/credentials v1.20.13
