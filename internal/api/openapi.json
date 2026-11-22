@@ -8816,6 +8816,68 @@
     }
    }
   },
+  "/reports/closures": {
+   "get": {
+    "operationId": "get_reports_closures",
+    "summary": "Verified-closure proofs for a period, as JSON or CSV (licensed edition)",
+    "description": "Verified-closure proofs for a period (licensed edition: the fix loop): one record per finding closed in it, as GET /findings/{id}/closure returns. `from` and `to` are dates (default the last 30 days, at most a year); `format` is `json` (default) or `csv`\n\nRole: viewer",
+    "tags": [
+     "Reports"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "from",
+      "in": "query",
+      "required": false,
+      "description": "First day (YYYY-MM-DD); default 30 days before `to`",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "to",
+      "in": "query",
+      "required": false,
+      "description": "Last day, inclusive (YYYY-MM-DD); default today",
+      "schema": {
+       "type": "string"
+      }
+     },
+     {
+      "name": "format",
+      "in": "query",
+      "required": false,
+      "description": "json (default) or csv",
+      "schema": {
+       "type": "string",
+       "enum": [
+        "json",
+        "csv"
+       ]
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/reports/outcomes": {
    "get": {
     "operationId": "get_reports_outcomes",

@@ -2669,6 +2669,12 @@ Patch-management evidence for a period (`from`, `to`: dates, `to` inclusive; def
 
 The audit evidence pack for a period (`from`, `to`: dates, `to` inclusive; default the last 90 days, at most a year), mapped to framework controls. `frameworks`: comma-separated `soc2`, `iso27001_2022`, `pci_dss_4_0`, `eu_cra` (default: every one the plan includes; PCI DSS and the CRA need the Compliance add-on, else 402). `format`: `json` (default), `pdf` or `zip`. `label`: the period's name, such as `2026-Q3`. See [Audit evidence pack](#audit-evidence-pack).
 
+### `GET /reports/closures`
+
+**Who:** viewer · licensed build (the fix loop, `fix_loop`; 402 otherwise)
+
+The proof export: the [verified-closure](#verified-closure) record of every finding closed in a period, as [`GET /findings/{id}/closure`](#get-findingsidclosure) returns each, with `policy_days` from the risk policy. `from` and `to` are dates (`to` inclusive; default the last 30 days, at most a year). `format=json` (default) returns `from`, `to` and `closures`; `format=csv` downloads one row per closure (cells that would start a spreadsheet formula are prefixed with `'`).
+
 ### `GET /reports/outcomes`
 
 **Who:** viewer
@@ -3455,7 +3461,7 @@ The `resolution` sentence gives the facts, for example "fixed by remediation pla
 
 #### Verified closure
 
-Each closure records its proof in `resolution_detail`: `from_version` (the version before), `version` and `to_inventory_id` (the row installed after an upgrade), `collection_id`, `method` and `checked_at` (the collection that saw the change), and `plan_id` for a remediation plan. Findings closed before migration 0108 have only the facts above. The dashboard shows a badge on every resolved finding: **Verified fixed** (`remediated`), **Verified removed** (`removed`), **Disappeared (not verified)** (`disappeared`) or **Closed, not a fix** (the rest), and lists the proof on the finding. [`GET /findings/{id}/closure`](#get-findingsidclosure) returns it as one record, the form the paid edition's evidence pack uses.
+Each closure records its proof in `resolution_detail`: `from_version` (the version before), `version` and `to_inventory_id` (the row installed after an upgrade), `collection_id`, `method` and `checked_at` (the collection that saw the change), and `plan_id` for a remediation plan. Findings closed before migration 0108 have only the facts above. The dashboard shows a badge on every resolved finding: **Verified fixed** (`remediated`), **Verified removed** (`removed`), **Disappeared (not verified)** (`disappeared`) or **Closed, not a fix** (the rest), and lists the proof on the finding. [`GET /findings/{id}/closure`](#get-findingsidclosure) returns it as one record, the form the paid edition's evidence pack and proof export use.
 
 The fix loop (paid: the `fix_loop` feature) adds an immediate re-check after a merged pull request or a remediation run, the pull request behind each fix (`fixed_by`), time to fix against the SLA per finding, and the proof export.
 
