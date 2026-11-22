@@ -567,6 +567,10 @@ func TestInvitationRateLimits(t *testing.T) {
 	e.user("admin@x.io", auth.RoleAdmin)
 	admin := e.login("admin@x.io")
 	anon := e.anon()
+	// The limits count in windows aligned to the clock (a minute per
+	// address, an hour per organisation). A run that straddles a boundary
+	// gets a fresh window halfway through and sees one request too many.
+	clearOfWindowEnd(t, time.Minute, 10*time.Second)
 	limited := 0
 	for i := 0; i < 15; i++ {
 		if code := anon.do("POST", "/api/v1/invitations/preview", map[string]string{"token": fmt.Sprintf("inv_guess%d", i)}, nil); code == 429 {
@@ -579,6 +583,7 @@ func TestInvitationRateLimits(t *testing.T) {
 	if code := anon.do("POST", "/api/v1/invitations/accept", map[string]string{"token": "inv_guess", "password": pw}, nil); code != 429 {
 		t.Errorf("accept after the limit: %d", code)
 	}
+	clearOfWindowEnd(t, time.Hour, 30*time.Second)
 	sent := 0
 	for i := 0; i < 35; i++ {
 		if code, _ := invite(t, admin, map[string]any{"email": fmt.Sprintf("p%d@x.io", i), "role": "viewer"}); code == 201 {
@@ -693,5 +698,15 @@ func TestInvitationEmail(t *testing.T) {
 		!strings.Contains(m, "https://stk.example/invite#inv_") || !strings.Contains(m, "invited you to Default with access to the project Shop (View and edit).") ||
 		strings.Contains(m, "ops@x.io") || strings.Contains(m, "—") {
 		t.Errorf("email:\n%s", m)
+	}
+}
+
+// clearOfWindowEnd waits for the next window when fewer than margin is left
+// of the current window of length win (windows are aligned to the Unix epoch,
+// as the rate limiter's are).
+func clearOfWindowEnd(t *testing.T, win, margin time.Duration) {
+	t.Helper()
+	if left := win - time.Duration(time.Now().UnixNano())%win; left < margin {
+		time.Sleep(left + 100*time.Millisecond)
 	}
 }
