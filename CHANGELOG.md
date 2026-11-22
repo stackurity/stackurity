@@ -6,6 +6,17 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.26
+
+### Added
+
+- **MCP servers configured in a repository are listed as its components.** A repository scan (the server's own and `stackurity scan`) reads `.mcp.json`, `.cursor/mcp.json` and `.vscode/mcp.json`, and each server started from a registry becomes an npm or PyPI component of the repository: `npx -y @scope/server@1.4.2`, `pnpm dlx`, `bunx`, `uvx pkg==0.6.1`, `uv tool run`, `pipx run`. The hourly checks then match them against advisories and known-malicious package records like any other dependency. A server whose command pins no version (`npx -y pkg`, `@latest`) runs whatever the registry serves when the client starts, so it is listed with no version ("version not pinned"), never as checked clean. Local paths, addresses and git sources are not registry packages and are not listed; a start command that downloads code from an address is still reported under Risky settings. Coverage shows `mcp:servers`, partial when a configuration file could not be read.
+
+### Fixed
+
+- **PHP and Node.js in container images have a version.** The official `php` and `node` images build the runtime from source into `/usr/local`, which no package owns, and binaries in an image are never run, so these runtimes were reported with no version and their end of life was not evaluated. Their version is now read from the headers installed with them (`include/php/main/php_version.h`, `include/node/node_version.h`), or failing that from the image's `PHP_VERSION` or `NODE_VERSION` for a binary in `/usr/local/bin`, as for Python. The same files are read on a host when running `--version` is refused or gives no version. See [install.md](docs/install.md).
+- **Known-malicious package versions are rated critical.** OSV's malicious-package records (`MAL-` ids, from the OpenSSF malicious-packages data) carry no CVSS vector or severity label, so an installed credential stealer, such as the poisoned `agent-framework` 1.26.1 and 1.26.2 on PyPI (MAL-2026-20101, 17 Nov 2026), was rated `unknown` and ranked like an unrated flaw. They are now `critical`, and the advisory's `severity_source` is `malicious_package`. This applies as records are stored: a malicious-package record already stored keeps its old rating until OSV changes it or the feed is next downloaded in full. See [risk.md](docs/risk.md).
+
 ## 0.20.25
 
 ### Added
