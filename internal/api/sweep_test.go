@@ -400,6 +400,7 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/reports/outcomes":        {class: "list"},
 	"GET /api/v1/reports/evidence":        {class: "list"},
 	"GET /api/v1/reports/evidence-pack":   {class: "list"},
+	"GET /api/v1/reports/closures":        {class: "list"},
 	"GET /api/v1/incidents":               {class: "list", query: "?status=all&team_id={team}&asset_id={asset}"},
 	"GET /api/v1/risk-policy":             {class: "list"},
 	"GET /api/v1/settings/fix-grouping":   {class: "list"},
