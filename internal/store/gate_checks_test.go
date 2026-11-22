@@ -3,6 +3,7 @@ package store_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 
@@ -81,7 +82,7 @@ func TestGatePolicyChecksStore(t *testing.T) {
 	if err != nil || asset != r.AssetID || submitter != nil {
 		t.Errorf("collection asset: %d %v %v", asset, submitter, err)
 	}
-	if _, _, err := s.CollectionAsset(ctx, 99999999); err != store.ErrNotFound {
+	if _, _, err := s.CollectionAsset(ctx, 99999999); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("unknown collection: %v", err)
 	}
 

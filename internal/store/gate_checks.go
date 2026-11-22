@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"time"
 
@@ -163,7 +164,7 @@ func (s *Store) AssetByImageDigest(ctx context.Context, digest string) (int64, e
 // else one that differs only in case, as CI tokens compare them.
 func (s *Store) AssetByGitURL(ctx context.Context, url string) (int64, error) {
 	id, err := s.AssetByIdentifier(ctx, "git-url", url)
-	if err != ErrNotFound {
+	if !errors.Is(err, ErrNotFound) {
 		return id, err
 	}
 	err = s.Pool.QueryRow(ctx, `SELECT COALESCE(a.merged_into, a.id) FROM asset_identifiers i JOIN assets a ON a.id = i.asset_id

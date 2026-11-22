@@ -377,7 +377,7 @@ func (s *Server) resolveGateCheckAsset(r *http.Request, req *gateCheckRequest, r
 	// A collector token naming an asset: only one it reports.
 	if repo := ciRepository(r); repo != "" {
 		own, err := s.Store.AssetByGitURL(ctx, repo)
-		if err == store.ErrNotFound || (err == nil && own != asset) {
+		if errors.Is(err, store.ErrNotFound) || (err == nil && own != asset) {
 			return 0, forbidden("this token was issued to a CI job of " + repo + " and can check only that repository")
 		}
 		return asset, err

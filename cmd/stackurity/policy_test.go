@@ -301,7 +301,7 @@ func TestScanPolicyDecisions(t *testing.T) {
 	// --wait runs out: exit 4 with an enforced policy, else a warning.
 	notReady := &exitError{code: notReadyExitCode, msg: "result not ready"}
 	sp = &scanPolicy{enforced: 1, warn: io.Discard}
-	if err := sp.notReady(notReady); err != notReady {
+	if err := sp.notReady(notReady); !errors.Is(err, notReady) {
 		t.Errorf("not ready, enforced: %v", err)
 	}
 	var w bytes.Buffer
