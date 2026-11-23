@@ -22,7 +22,7 @@ import {
   type Inline,
 } from "../ask";
 import { Card, CheckCard, ErrorBox, RelativeTime } from "./ui";
-import { IconMessage } from "./Icons";
+import { IconSparkles } from "./Icons";
 import { confirmAction } from "./ConfirmDialog";
 import { AskFeedbackForm, AskRate } from "./AskFeedback";
 import { AskLongChat } from "./AskLongChat";
@@ -181,7 +181,7 @@ export function AskButton({ status, onOpen }: { status: AskStatus | undefined; o
   if (!status || status.reason === "not_configured") return null;
   return (
     <button type="button" className="btn btn-sm topbar-ask" onClick={onOpen} aria-haspopup="dialog" title="Ask Stackurity (Alt+K)">
-      <IconMessage size={16} />
+      <IconSparkles size={16} />
       <span className="topbar-ask-label">Ask</span>
     </button>
   );
