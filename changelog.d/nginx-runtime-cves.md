@@ -1,0 +1,7 @@
+### Security
+
+- **nginx's 18 November 2026 vulnerabilities (nginx2root) are matched for nginx.org's packages.** NVD now lists nginx Open Source under a new product name, `f5:nginx_open_source` (39 CVEs, including CVE-2026-123007, -123633, -121810, -123634 and -113425), which the vendor build catalogue did not read, so nginx installed from nginx.org's repository was not matched against them. The catalogue reads it now; the first vendor build sync after the upgrade reads nginx's records again. Distribution packages (Ubuntu, Debian, Alpine) were already matched through their own advisories. See [Vendor builds](docs/compatibility.md#vendor-builds).
+
+### Added
+
+- **nginx found outside a package manager is matched against its vulnerabilities.** A source build in `/usr/local/nginx`, the nginx a container image compiles in (such as an ingress controller's, read from the binary since nothing in an image is run) and Homebrew's nginx are matched by the release they report against nginx Open Source's NVD records, like nginx.org's packages. The agent now reports nginx's edition: NGINX Plus, OpenResty, Tengine and Angie are not matched and say so, and nginx reported by an older agent says to upgrade the agent. The action plan says how to replace such a binary. Other runtimes outside a package manager keep lifecycle only. See [nginx outside a package manager](docs/compatibility.md#nginx-outside-a-package-manager).

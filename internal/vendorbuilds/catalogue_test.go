@@ -173,3 +173,43 @@ func TestParseRejects(t *testing.T) {
 		t.Errorf("valid document: %v", err)
 	}
 }
+
+func TestForRuntime(t *testing.T) {
+	c := Default()
+	p := c.ForRuntime("nginx")
+	if p == nil || p.ID != "nginx" || p.RuntimeEdition != "open-source" || p.RuntimeUpdate == "" {
+		t.Fatalf("nginx runtime: %+v", p)
+	}
+	// NVD names nginx Open Source's 2026 records under f5:nginx_open_source.
+	if !p.OwnsCPE("cpe:2.3:a:f5:nginx_open_source:*:*:*:*:*:*:*:*") {
+		t.Error("f5:nginx_open_source is not read for nginx")
+	}
+	if p.OwnsCPE("cpe:2.3:a:f5:nginx_plus:*:*:*:*:*:*:*:*") {
+		t.Error("NGINX Plus records are read for nginx")
+	}
+	for _, name := range []string{"nodejs", "python", "haproxy", ""} {
+		if c.ForRuntime(name) != nil {
+			t.Errorf("%q is matched as a runtime", name)
+		}
+	}
+}
+
+func TestParseRejectsRuntime(t *testing.T) {
+	base := `{"schema":1,"version":"t","products":[` +
+		`{"id":"x","label":"X","packages":["^deb/x$"],"cpes":["cpe:2.3:a:x:x"],"sources":["s"],"verified":"2026-11-11"@A@},` +
+		`{"id":"y","label":"Y","packages":["^deb/y$"],"cpes":["cpe:2.3:a:y:y"],"sources":["s"],"verified":"2026-11-11"@B@}]}`
+	full := `,"runtime":"x","runtime_edition":"open-source","runtime_update":"u"`
+	for name, r := range map[string]*strings.Replacer{
+		"no edition":    strings.NewReplacer("@A@", `,"runtime":"x","runtime_update":"u"`, "@B@", ""),
+		"edition alone": strings.NewReplacer("@A@", `,"runtime_edition":"open-source"`, "@B@", ""),
+		"bad name":      strings.NewReplacer("@A@", `,"runtime":"X Y","runtime_edition":"e","runtime_update":"u"`, "@B@", ""),
+		"listed twice":  strings.NewReplacer("@A@", full, "@B@", full),
+	} {
+		if _, err := Parse([]byte(r.Replace(base))); err == nil {
+			t.Errorf("%s: parsed", name)
+		}
+	}
+	if _, err := Parse([]byte(strings.NewReplacer("@A@", full, "@B@", "").Replace(base))); err != nil {
+		t.Errorf("valid document: %v", err)
+	}
+}

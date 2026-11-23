@@ -115,9 +115,11 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 			}
 		}
 	}
-	if p.Types["deb"] > 0 || p.Types["rpm"] > 0 {
+	if p.Types["deb"] > 0 || p.Types["rpm"] > 0 || p.Types["generic"] > 0 {
 		// Vendor builds of the curated catalogue (nginx.org's nginx,
-		// NodeSource's nodejs...), read from NVD only for those installed.
+		// NodeSource's nodejs...), and the catalogued runtimes found outside
+		// a package manager (a source-built nginx), read from NVD only for
+		// those installed.
 		vb, err := installedVendorBuilds(ctx, s)
 		if err != nil {
 			return err
