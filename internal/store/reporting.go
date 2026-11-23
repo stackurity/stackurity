@@ -322,9 +322,9 @@ func (s *Store) markStale(ctx context.Context, id int64, staleAfter time.Duratio
 		if len(changed) == 0 {
 			return nil
 		}
-		_, err = tx.Exec(ctx, `INSERT INTO jobs (kind, payload, dedupe_key, run_at)
-			SELECT 'evaluate', jsonb_build_object('asset_id', v), 'evaluate:asset:' || v, now() + interval '5 seconds'
-			FROM unnest($1::bigint[]) AS v
+		_, err = tx.Exec(ctx, `INSERT INTO jobs (workspace_id, kind, payload, dedupe_key, run_at)
+			SELECT a.workspace_id, 'evaluate', jsonb_build_object('asset_id', a.id), 'evaluate:asset:' || a.id, now() + interval '5 seconds'
+			FROM assets a WHERE a.id = ANY($1::bigint[])
 			ON CONFLICT (COALESCE(workspace_id, 0), dedupe_key) WHERE dedupe_key IS NOT NULL AND done_at IS NULL AND failed_at IS NULL
 			DO UPDATE SET requeue = true WHERE jobs.locked_at IS NOT NULL`, changed)
 		return err

@@ -215,8 +215,9 @@ func (s *Store) Ingest(ctx context.Context, b *model.ObservationBatch, tokenID i
 		// Queue re-evaluation of this asset against current intelligence. A
 		// short delay lets several batches for one asset share one run; a run
 		// already in progress may not see this batch, so it is asked to repeat.
-		_, err = tx.Exec(ctx, `INSERT INTO jobs (kind, payload, dedupe_key, run_at)
-			VALUES ('evaluate', jsonb_build_object('asset_id', $1::bigint), 'evaluate:asset:' || $1::bigint, now() + interval '5 seconds')
+		_, err = tx.Exec(ctx, `INSERT INTO jobs (workspace_id, kind, payload, dedupe_key, run_at)
+			SELECT a.workspace_id, 'evaluate', jsonb_build_object('asset_id', a.id), 'evaluate:asset:' || a.id, now() + interval '5 seconds'
+			FROM assets a WHERE a.id = $1::bigint
 			ON CONFLICT (COALESCE(workspace_id, 0), dedupe_key) WHERE dedupe_key IS NOT NULL AND done_at IS NULL AND failed_at IS NULL
 			DO UPDATE SET requeue = true WHERE jobs.locked_at IS NOT NULL`, assetID)
 		return err

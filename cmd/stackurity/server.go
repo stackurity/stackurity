@@ -1742,6 +1742,21 @@ func evaluateJob(ctx context.Context, st *store.Store, eval *intel.Evaluator, lo
 	if err := json.Unmarshal(payload, &p); err != nil {
 		return err
 	}
+	// An evaluation always runs in one workspace. A job queued without one
+	// would run in the worker's system scope and fail writing findings
+	// (issue #539): an asset's job runs in the asset's workspace, any other
+	// fails with a message that says why.
+	if _, ok := tenant.Workspace(ctx); !ok {
+		if p.AssetID == 0 {
+			return errors.New("this evaluation job has no organisation, so it cannot run; the next scheduled evaluation covers its work")
+		}
+		ws, err := st.AssetWorkspace(ctx, p.AssetID)
+		if err != nil {
+			return fmt.Errorf("this evaluation job has no organisation and its asset %d was not found: %w", p.AssetID, err)
+		}
+		log.Warn("evaluation job queued without an organisation; running it in its asset's", "asset", p.AssetID, "workspace", ws)
+		ctx = tenant.WithWorkspace(ctx, ws)
+	}
 	run := store.EvaluationRun{Trigger: store.RunFeedSync, StartedAt: time.Now()}
 	switch {
 	case p.All:

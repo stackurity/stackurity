@@ -10,6 +10,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/stackurity/stackurity/internal/tenant"
 	"github.com/stackurity/stackurity/internal/version"
 )
 
@@ -287,6 +288,15 @@ func (s *Store) ListAssets(ctx context.Context, f AssetFilter) ([]Asset, int64, 
 func (s *Store) GetAsset(ctx context.Context, id int64) (*Asset, error) {
 	a, err := scanAsset(s.Pool.QueryRow(ctx, `SELECT `+assetCols+` FROM assets a LEFT JOIN teams t ON t.id = a.owner_team_id WHERE a.id = $1`, id))
 	return a, notFound(err)
+}
+
+// AssetWorkspace returns the workspace an asset belongs to. It reads in
+// system scope: it is for platform work (a job queued without a workspace)
+// that must find out which workspace to run in.
+func (s *Store) AssetWorkspace(ctx context.Context, id int64) (int64, error) {
+	var ws int64
+	err := s.Pool.QueryRow(tenant.System(ctx), `SELECT workspace_id FROM assets WHERE id = $1`, id).Scan(&ws)
+	return ws, notFound(err)
 }
 
 // Nullable distinguishes a JSON field that is absent (no change) from one

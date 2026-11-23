@@ -117,13 +117,15 @@ func (s *Store) Claim(ctx context.Context, worker string) (*Job, error) {
 }
 
 // CompleteJob marks a job done, or schedules it again at once when a request
-// arrived while it was running (see requeue in migration 0006).
+// arrived while it was running (see requeue in migration 0006). The error of
+// an earlier failed attempt is cleared: a job that succeeded on a retry must
+// not show that error as if it were still failing (issue #539).
 func (s *Store) CompleteJob(ctx context.Context, id int64) error {
 	_, err := s.Pool.Exec(ctx, `UPDATE jobs SET
 		done_at = CASE WHEN requeue THEN NULL ELSE now() END,
 		run_at = CASE WHEN requeue THEN now() ELSE run_at END,
 		attempts = CASE WHEN requeue THEN 0 ELSE attempts END,
-		requeue = false, locked_by = NULL, locked_at = NULL
+		requeue = false, last_error = '', locked_by = NULL, locked_at = NULL
 		WHERE id = $1`, id)
 	return err
 }
