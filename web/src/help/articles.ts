@@ -1540,16 +1540,16 @@ jobs:
     title: "Threat notices",
     section: "Daily work",
     summary: "What Stackurity tells you when a new attack, attacker tool or exploited vulnerability appears, and what to do about it.",
-    keywords: "threat notice artex attack tool exploited vulnerability kev campaign banner found covered connect upgrade feed",
+    keywords: "threat notice artex nginx2root attack tool exploited disclosed vulnerability kev campaign banner found covered connect upgrade feed",
     body: [
       {
-        p: "When a new attack, attacker tool or actively exploited vulnerability appears, Stackurity adds a check for it and tells each organisation once what it means for them. Administrators and the security team see a **banner** and get **one email**; the organisation's notification rules that send **Threat notices** (Slack, Teams, email) get a message too. You don't have to ask: notices go out on their own.",
+        p: "When a new attack, attacker tool or actively exploited vulnerability appears (or a critical vulnerability that attackers are expected to target, such as nginx2root), Stackurity adds a check for it and tells each organisation once what it means for them. Administrators and the security team see a **banner** and get **one email**; the organisation's notification rules that send **Threat notices** (Slack, Teams, email) get a message too. You don't have to ask: notices go out on their own.",
       },
       {
         table: [
           ["The notice says", "What it means", "What to do"],
-          ["Found", "The threat's checks found it on your assets.", "Press **See findings**. For an attacker tool, find out who installed it and why; if nobody in your organisation did, treat the asset as compromised."],
-          ["Covered", "It is being used against systems on the public internet. Your connected assets are checked and nothing was found.", "Nothing. The notice may name another connection that would check more of your estate."],
+          ["Found", "The threat's checks found it on your assets.", "Press **See findings**. For a vulnerability, apply the fix on those assets, internet-facing ones first. For an attacker tool, find out who installed it and why; if nobody in your organisation did, treat the asset as compromised."],
+          ["Covered", "Your connected assets are checked for it and nothing was found.", "Nothing. The notice may name another connection that would check more of your estate."],
           ["Needs a connection", "Stackurity can check for it, but needs something from you: the agent on your servers, Docker access through the agent, your repositories, a cloud account.", "Press **Connect** for the Help page that sets it up. Once connected, the check runs on its own."],
           ["Upgrade", "Self-hosted only: this server is older than the release that has the check.", "Upgrade to the latest version ([Backups and upgrades](help:backups-upgrades)). Stackurity Cloud always runs the latest version."],
         ],

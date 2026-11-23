@@ -44,7 +44,7 @@ The threats are a versioned JSON catalogue, [`internal/threats/catalogue.json`](
 | Field | |
 |---|---|
 | `id`, `name`, `aliases` | The threat's names; `threat_check` matches any, ignoring case |
-| `kind` | `attack_tool`, `exploited_vuln`, `campaign` or `practice` |
+| `kind` | `attack_tool`, `exploited_vuln`, `disclosed_vuln` (a critical vulnerability with a fix out, not known to be exploited yet), `campaign` or `practice` |
 | `severity` | `critical`, `high`, `medium` or `low` |
 | `summary`, `first_seen`, `published_at`, `sources` | What it is, when it was first seen in the wild, when Stackurity added it, and https sources |
 | `detects` | `config_rules` (risky-settings rule ids), `cves` (CVE or GHSA ids: exploited vulnerabilities reuse the normal findings) and `signal_rules` (weaker rules, shown but never `found`) |
@@ -76,7 +76,7 @@ go run ./tools/threatfeed sign --key ~/.config/stackurity/threat-feed-signing.ke
 go run ./tools/threatfeed verify --signed path/to/threats/feed.signed.json
 ```
 
-`sign` checks that the feed parses as a catalogue this build reads, sets its `generated_at` and `expires_at` (`--valid-for`, 90 days by default), rewrites `feed.json` (the readable copy) and writes `feed.signed.json` next to it, after checking the signature against the embedded keys. Re-sign before the expiry even when nothing changed. To publish a threat: add it to the feed with the next `serial` and a `revision`, and its check's `min_version`; add it to `catalogue.json` in the release that ships the check. To rotate the key, embed the new public key in a release (`genkey` refuses to overwrite a key file), wait until servers run it, then sign with the new key; remove the old public key in a later release.
+`sign` checks that the feed parses as a catalogue this build reads, sets its `generated_at` and `expires_at` (`--valid-for`, 90 days by default), rewrites `feed.json` (the readable copy) and writes `feed.signed.json` next to it, after checking the signature against the embedded keys. Re-sign before the expiry even when nothing changed. To publish a threat: add it to the feed with the next `serial` and a `revision`, and its check's `min_version`; add it to `catalogue.json` in the release that ships the check. A server refuses a whole feed that has a `kind` its release does not know (and keeps the last good one), so a threat of a kind new in a release (such as `disclosed_vuln`, new in 0.20.28) ships only in that release's `catalogue.json` and stays out of the feed until older servers have upgraded. To rotate the key, embed the new public key in a release (`genkey` refuses to overwrite a key file), wait until servers run it, then sign with the new key; remove the old public key in a later release.
 
 ## The operator's copy
 

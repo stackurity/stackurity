@@ -107,8 +107,13 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 	m := Message{Event: EventThreatNotice, Kind: "threat", Key: "threat:" + t.ID, At: at,
 		Detail: map[string]any{"threat": t.ID, "verdict": f.Verdict, "findings": f.Findings, "assets": f.Assets, "signals": f.Signals}}
 	inTheWild := t.Name + " is being used against systems on the public internet."
-	if t.Kind == threats.KindExploitedVuln {
+	switch t.Kind {
+	case threats.KindExploitedVuln:
 		inTheWild = t.Name + " is being exploited against systems on the public internet."
+	case threats.KindDisclosedVuln:
+		// Not exploited yet, as far as anyone has reported: say so rather
+		// than borrow the in-the-wild wording.
+		inTheWild = t.Name + " is a newly disclosed vulnerability with a fix available. It is not known to be exploited yet, but attackers are expected to target systems on the public internet."
 	}
 	switch f.Verdict {
 	case threats.Found:
@@ -119,8 +124,11 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		}
 		m.Summary = []string{inTheWild, found}
 		m.Action = "Open the findings, find out who installed it and why, and remove it. If nobody in your organisation put it there, treat the asset as compromised."
-		if t.Kind == threats.KindExploitedVuln {
+		switch t.Kind {
+		case threats.KindExploitedVuln:
 			m.Action = "Open the findings and apply the fix on these assets first: this vulnerability is being exploited now."
+		case threats.KindDisclosedVuln:
+			m.Action = "Open the findings and apply the fix on these assets, internet-facing ones first, before attacks start."
 		}
 		m.Link, m.LinkLabel = absURL(base, ThreatFindingsPath(t)), "See findings"
 	case threats.Covered:

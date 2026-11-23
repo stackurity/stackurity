@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "serial": 2,
-  "generated_at": "2026-11-22T00:00:00Z",
+  "serial": 3,
+  "generated_at": "2026-11-23T00:00:00Z",
   "threats": [
     {
       "id": "artex",
@@ -75,6 +75,44 @@
         }
       ],
       "min_version": "0.20.25"
+    },
+    {
+      "id": "nginx2root",
+      "revision": 1,
+      "name": "nginx2root (nginx memory-corruption bugs fixed in 1.31.9 and 1.30.7)",
+      "aliases": ["nginx2root", "cve-2026-123007", "cve-2026-123633", "cve-2026-121810", "cve-2026-123634", "cve-2026-113425", "nginx http/2 flow control"],
+      "kind": "disclosed_vuln",
+      "severity": "critical",
+      "summary": "nginx2root is the name researchers gave five memory-corruption bugs in nginx, disclosed on 18 November 2026. Each can crash an nginx worker, and the researchers say they can be used to run commands on the server as the nginx worker: CVE-2026-123007 (HTTP/2 flow control, nginx 1.9.5 to 1.31.8, any listener with HTTP/2 on), CVE-2026-123633 (HTTP/2 use-after-free, 1.19.7 to 1.31.8, HTTP/2 with proxy_pass), CVE-2026-121810 (HTTP/3 use-after-free, 1.25.0 to 1.31.8, HTTP/3 with proxy_pass), CVE-2026-123634 (resolver use-after-free, 0.6.18 to 1.31.8, a resolver with proxy_pass using variables plus mirror or SSI subrequests) and CVE-2026-113425 (mail proxy use-after-free, 0.5.33 to 1.31.8, mail proxy with auth_http). They are fixed in nginx 1.31.9 and 1.30.7, and in nginx Plus 37.0.8.1 and 37.3.0.1; Linux distributions backport the fixes and keep the old version number, so compare the full package version with your distribution's advisory. Restart nginx after upgrading: a reload keeps the old binary running. As of 19 November there were no reports of exploitation; a public proof of concept exists for CVE-2026-123007. Until you can upgrade, turn off what you don't need: http2 off; (or remove http2 from listen on nginx older than 1.25.1), http3 off; or remove QUIC listeners, point proxy_pass at fixed upstream groups instead of variables, and keep mail listeners on trusted networks. The same researchers chained these with a separate, still unfixed Linux kernel bug in SCTP to become root from the nginx worker: on servers that don't use SCTP, add the line install sctp /bin/false to a file in /etc/modprobe.d/ (it does not unload a module that is already loaded).",
+      "first_seen": "2026-11-18",
+      "published_at": "2026-11-23",
+      "sources": [
+        "https://blog.cloudflare.com/nginx2root",
+        "https://nginx.org/en/security_advisories.html",
+        "https://my.f5.com/manage/s/article/K000163926"
+      ],
+      "detects": {
+        "cves": ["CVE-2026-123007", "CVE-2026-123633", "CVE-2026-121810", "CVE-2026-123634", "CVE-2026-113425"]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server reads nginx installed from your distribution's packages or nginx.org's, and nginx built from source or installed by hand, and matches its version against the five vulnerabilities (with your distribution's backported fixes taken into account); it also flags, under Risky settings, servers where the SCTP kernel module can be loaded",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for nginx packages with these vulnerabilities",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "kubernetes",
+          "checks": "the images your cluster's workloads run, including ingress controllers, are checked for nginx packages with these vulnerabilities",
+          "help": "/help/kubernetes"
+        }
+      ],
+      "min_version": "0.20.28"
     }
   ]
 }

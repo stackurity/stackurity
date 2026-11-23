@@ -37,6 +37,7 @@ const Schema = 1
 const (
 	KindAttackTool    = "attack_tool"    // an attacker or penetration-testing tool used against systems
 	KindExploitedVuln = "exploited_vuln" // a vulnerability exploited in the wild (KEV-style)
+	KindDisclosedVuln = "disclosed_vuln" // a critical vulnerability with a fix out, not known to be exploited yet
 	KindCampaign      = "campaign"       // a named campaign
 	KindPractice      = "practice"       // an unsafe practice attackers rely on
 )
@@ -219,7 +220,7 @@ func (t *Threat) validate() error {
 		return errors.New("revision must be 1 or more")
 	case t.Name == "" || len(t.Name) > maxShort:
 		return errors.New("name is empty or too long")
-	case !slices.Contains([]string{KindAttackTool, KindExploitedVuln, KindCampaign, KindPractice}, t.Kind):
+	case !slices.Contains([]string{KindAttackTool, KindExploitedVuln, KindDisclosedVuln, KindCampaign, KindPractice}, t.Kind):
 		return fmt.Errorf("unknown kind %q", t.Kind)
 	case !slices.Contains([]string{"critical", "high", "medium", "low"}, t.Severity):
 		return fmt.Errorf("unknown severity %q", t.Severity)

@@ -4699,7 +4699,7 @@ export interface ThreatNotice {
   id: number;
   threat_id: string;
   name: string;
-  kind: "attack_tool" | "exploited_vuln" | "campaign" | "practice";
+  kind: "attack_tool" | "exploited_vuln" | "disclosed_vuln" | "campaign" | "practice";
   severity: string;
   summary: string;
   sources: string[];
