@@ -4391,6 +4391,16 @@ export function getActiveProject(): number {
   return activeProject;
 }
 
+/**
+ * Called when the server refuses the switcher's project (archived, or not
+ * in this organisation after switching in another tab), so the switcher can
+ * drop back to all projects and reload its list (#540).
+ */
+let onProjectUnknown: ((id: number) => void) | null = null;
+export function setProjectUnknownHandler(fn: ((id: number) => void) | null) {
+  onProjectUnknown = fn;
+}
+
 /** Called on any 401 so the app can drop back to the login screen. */
 let onUnauthorized: (() => void) | null = null;
 export function setUnauthorizedHandler(fn: (() => void) | null) {
@@ -4427,6 +4437,15 @@ async function request<T>(method: string, path: string, body?: unknown, opts?: {
     });
   } catch {
     throw new ApiError(0, "network", "Could not reach the Stackurity server. Check that it is running.");
+  }
+  // The project this request chose is not one the server lets us see: the
+  // switcher's choice is stale. The server refused it before running the
+  // handler, so asking again across all projects is safe for any method.
+  const unknownProject = res.status === 404 ? Number(res.headers.get("X-Stackurity-Project-Unknown") ?? 0) : 0;
+  if (unknownProject > 0 && headers["X-Stackurity-Project"] === String(unknownProject)) {
+    if (activeProject === unknownProject) activeProject = 0;
+    onProjectUnknown?.(unknownProject);
+    return request<T>(method, path, body, { ...opts, allProjects: true });
   }
   if (res.status === 204) return undefined as T;
   let data: unknown = null;

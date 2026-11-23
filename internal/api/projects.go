@@ -369,6 +369,11 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 				return
 			}
 			if !ok {
+				// The header names the refused project, so the dashboard can
+				// tell a stale switcher choice (archived, or another
+				// organisation's project after switching in another tab)
+				// from a missing record, and drop back to all projects.
+				w.Header().Set(projectUnknownHeader, strconv.FormatInt(p.Project, 10))
 				writeError(w, 404, "not_found", "no such project")
 				return
 			}
@@ -382,6 +387,10 @@ func (s *Server) projectGate(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
 }
+
+// projectUnknownHeader is set on the 404 a request gets when the project it
+// chose (X-Stackurity-Project or project_id) is not one the caller can see.
+const projectUnknownHeader = "X-Stackurity-Project-Unknown"
 
 // requestedProject reads the project chosen in the switcher: the
 // X-Stackurity-Project header (the dashboard) or the project_id query
