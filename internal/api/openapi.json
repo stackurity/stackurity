@@ -16758,7 +16758,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
+      "description": "agent_hook, ssh, ci, attack_tool or kernel, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -16900,7 +16900,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
+      "description": "agent_hook, ssh, ci, attack_tool or kernel, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -22182,6 +22182,10 @@
      "invite_only": {
       "type": "boolean",
       "description": "People join by invitation: POST /users is refused."
+     },
+     "passkey_offer": {
+      "type": "boolean",
+      "description": "Signed in with a password in the last five minutes, no passkey yet, and the server can use them: the dashboard offers to add one, and POST /auth/mfa/passkeys/begin needs no password meanwhile."
      }
     }
    },

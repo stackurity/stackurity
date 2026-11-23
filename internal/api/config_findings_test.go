@@ -106,4 +106,21 @@ func TestConfigFindingsAPI(t *testing.T) {
 		tools.Items[0].Rule != confcheck.RuleAttackToolArtexBackdoor || tools.Items[0].DocURL != confcheck.AttackToolsDoc {
 		t.Errorf("attack tools: %d %+v", code, tools)
 	}
+
+	// Kernel modules (SCTP, nginx2root): a category of their own too.
+	if !slices.Contains(meta.Features, api.FeatureConfigKernel) {
+		t.Errorf("meta features lack %s: %v", api.FeatureConfigKernel, meta.Features)
+	}
+	sctp := model.ConfigFinding{Rule: confcheck.RuleKernelSCTP, Category: model.ConfigKernel, Title: "SCTP kernel module can be used to become root",
+		Severity: "low", Path: "/lib/modules/6.8.0-49-generic/kernel/net/sctp/sctp.ko.zst", Subject: "sctp loadable in kernel 6.8.0-49-generic",
+		Why: "loadable", Fix: "install sctp /bin/false",
+		Fingerprint: confcheck.Fingerprint(confcheck.RuleKernelSCTP, "/lib/modules/6.8.0-49-generic/kernel/net/sctp/sctp.ko.zst", "sctp loadable in kernel 6.8.0-49-generic")}
+	if r := send("web-1", sctp); r.ConfigFound != 1 {
+		t.Errorf("ingest kernel: %+v", r)
+	}
+	var kern listed
+	if code := eng.do("GET", "/api/v1/config-findings?category=kernel", nil, &kern); code != 200 || len(kern.Items) != 1 ||
+		kern.Items[0].Rule != confcheck.RuleKernelSCTP || kern.Items[0].DocURL != confcheck.KernelModulesDoc {
+		t.Errorf("kernel: %d %+v", code, kern)
+	}
 }

@@ -58,6 +58,8 @@ var runtimeProbes = []runtimeProbe{
 var runtimeDirs = []string{
 	"/usr/local/bin", "/usr/local/sbin", "/usr/bin", "/usr/sbin", "/bin", "/sbin",
 	"/usr/local/*/bin", "/opt/*/bin", "/opt/*/*/bin",
+	// nginx's own build installs to this prefix by default.
+	"/usr/local/nginx/sbin",
 	"/root/.nvm/versions/node/*/bin", "/home/*/.nvm/versions/node/*/bin", "/usr/local/nvm/versions/node/*/bin",
 	"/root/.pyenv/versions/*/bin", "/home/*/.pyenv/versions/*/bin",
 }
@@ -312,6 +314,8 @@ func (c *Collector) probeRuntime(ctx context.Context, cand *runtimeCandidate) mo
 			fv, ok = c.pythonVersionFromFiles(cand.resolved)
 		case "php", "nodejs":
 			fv, ok = c.headerVersionFromFiles(cand.probe.product, cand.resolved)
+		case "nginx":
+			fv, ok = c.nginxVersionFromBinary(cand.resolved)
 		}
 		if ok {
 			set(cand.probe.product, fv.version, fv.confidence, fv.how)
@@ -336,6 +340,9 @@ func (c *Collector) probeRuntime(ctx context.Context, cand *runtimeCandidate) mo
 			product = "mariadb" // older MariaDB installs ship the server as mysqld
 		}
 		set(product, string(m[1]), model.ConfidenceConfirmed, "version-output")
+		if product == "nginx" {
+			o.Evidence["edition"] = nginxEdition(out)
+		}
 		return o
 	}
 	if err != nil {

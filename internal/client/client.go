@@ -252,6 +252,12 @@ const FeatureCodeFindings = "code_findings"
 // (model.ConfigScan.WithoutCategory) for a server that does not list it.
 const FeatureConfigAttackTools = "config_attack_tools"
 
+// FeatureConfigKernel, in Meta.Features, means the server takes config
+// findings of category kernel (the SCTP module). Older servers refuse the
+// whole batch over an unknown category, so collectors drop them for a
+// server that does not list it.
+const FeatureConfigKernel = "config_kernel"
+
 // FeatureReachability, in Meta.Features, means the server takes
 // observations' reachability. Older servers refuse the field.
 const FeatureReachability = "reachability"

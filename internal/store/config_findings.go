@@ -159,9 +159,9 @@ func (f ConfigFindingFilter) where() (*where, error) {
 	if f.Category != "" {
 		for _, c := range strings.Split(f.Category, ",") {
 			switch c {
-			case model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool:
+			case model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool, model.ConfigKernel:
 			default:
-				return nil, fmt.Errorf("category must be agent_hook, ssh, ci or attack_tool, or several comma-separated: %w", ErrInvalid)
+				return nil, fmt.Errorf("category must be agent_hook, ssh, ci, attack_tool or kernel, or several comma-separated: %w", ErrInvalid)
 			}
 		}
 		w.add("c.category = ANY(?)", strings.Split(f.Category, ","))
@@ -251,7 +251,7 @@ func (s *Store) SummariseConfigFindings(ctx context.Context, assetID int64) (Con
 	for _, sev := range configSeverities {
 		out.BySeverity[sev] = 0
 	}
-	for _, c := range []string{model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool} {
+	for _, c := range []string{model.ConfigAgentHook, model.ConfigSSH, model.ConfigCI, model.ConfigAttackTool, model.ConfigKernel} {
 		out.ByCategory[c] = 0
 	}
 	w, err := ConfigFindingFilter{AssetID: assetID}.where()

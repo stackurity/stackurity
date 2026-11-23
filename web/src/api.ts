@@ -691,6 +691,8 @@ export interface Me {
   license_key?: LicenseKeyStatus;
   /** People join by invitation only (Stackurity Cloud): Add user is refused, Invite is offered. */
   invite_only?: boolean;
+  /** Just signed in with a password and no passkey yet: offer to add one (no password needed for a few minutes). */
+  passkey_offer?: boolean;
 }
 
 export interface SSORequired {
@@ -2550,7 +2552,7 @@ export const INCIDENT_KINDS = ["vulnerability", "end_of_life", "leak", "config",
 export const SYSTEM_INCIDENT_KINDS = ["leak", "config", "code", "feed", "collection", "coverage", "platform"];
 
 /** Which part of a server or repository a risky setting is in. */
-export type ConfigCategory = "agent_hook" | "ssh" | "ci" | "attack_tool";
+export type ConfigCategory = "agent_hook" | "ssh" | "ci" | "attack_tool" | "kernel";
 
 /**
  * A risky setting found in a file (GET /config-findings): an AI coding-agent

@@ -185,6 +185,9 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		notEvaluated := func(reason string) { rc.State, rc.Reason = store.CoverageNotEvaluated, reason }
 		t, ok := osv.TargetFor(r.Purl, r.Version, r.Evidence)
 		vendor := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version)
+		// A runtime found outside a package manager that the vendor build
+		// catalogue lists (nginx): matched like the vendor's packages.
+		runtimeVP, runtimeWhy := runtimePlan(e.vendorCatalogue(), r)
 		switch {
 		case isWindowsOS(r):
 			// Its build is evaluated against Windows updates below, with
@@ -203,6 +206,14 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			unsupported(macOSNoUpdates)
 		case r.Type == "generic" && r.Evidence["kind"] == "operating-system":
 			// The OS itself is covered by lifecycle, its packages by the distro feed.
+		case runtimeVP != nil:
+			found, err := e.evaluateVendorBuild(ctx, r, runtimeVP, feedState, vendorAdvs, vendorUnfixed, &rc)
+			if err != nil {
+				return nil, err
+			}
+			want = append(want, found...)
+		case runtimeWhy != "":
+			unsupported(runtimeWhy)
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime" && r.Evidence["install"] == "homebrew":
 			unsupported("runtime installed by Homebrew: lifecycle is tracked, vulnerabilities are not matched (no vulnerability source lists Homebrew's builds)")
 		case r.Type == "generic" && r.Evidence["kind"] == "runtime":

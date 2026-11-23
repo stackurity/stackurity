@@ -351,7 +351,12 @@ func (s *Server) beginPasskeyRegistration(w http.ResponseWriter, r *http.Request
 		return
 	}
 	wa := s.passkeysOrUnavailable(w)
-	if wa == nil || !s.mayChangeFactors(w, r, u) || !s.recheckPassword(w, r, u, req.Password) {
+	if wa == nil || !s.mayChangeFactors(w, r, u) {
+		return
+	}
+	// Right after a password sign-in (the dashboard's "Sign in with Touch ID
+	// or Face ID next time" offer) the password is not asked again.
+	if !s.passwordRecheckSkippable(r, req.Password) && !s.recheckPassword(w, r, u, req.Password) {
 		return
 	}
 	pu, err := s.loadPasskeyUser(r, u, true)

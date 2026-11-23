@@ -560,6 +560,12 @@ func describeProgramUpdate(g *Group) {
 		if p := javaapps.Default().Product(id); p != nil && p.Update != "" {
 			g.Action += " " + p.Update
 		}
+	} else if id, runtime := strings.CutPrefix(g.extra["program"], "runtime:"); runtime {
+		// A runtime found outside a package manager that the vendor build
+		// catalogue matches (a source-built nginx).
+		if p := vendorbuilds.Default().Product(id); p != nil && p.RuntimeUpdate != "" {
+			g.Action += " " + p.RuntimeUpdate
+		}
 	} else if id, vendor := strings.CutPrefix(g.extra["program"], "vendor:"); vendor {
 		// A vendor build: its findings' versions are upstream releases.
 		if p := vendorbuilds.Default().Product(id); p != nil && p.Update != "" {
