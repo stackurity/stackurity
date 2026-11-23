@@ -691,6 +691,8 @@ export interface Me {
   license_key?: LicenseKeyStatus;
   /** People join by invitation only (Stackurity Cloud): Add user is refused, Invite is offered. */
   invite_only?: boolean;
+  /** Just signed in with a password and no passkey yet: offer to add one (no password needed for a few minutes). */
+  passkey_offer?: boolean;
 }
 
 export interface SSORequired {
