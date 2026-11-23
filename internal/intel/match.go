@@ -455,8 +455,10 @@ type groupMatch struct {
 	ecosystems []string
 	exploited  bool
 	// fixFrom is the Ubuntu USN whose fixed version replaced the "no fix"
-	// of the group's UBUNTU-CVE record (ubuntuUSNFixes).
-	fixFrom string
+	// of the group's UBUNTU-CVE record (ubuntuUSNFixes); fixFromNotices,
+	// that the USN was read from ubuntu.com, not OSV (FeedUbuntuNotices).
+	fixFrom        string
+	fixFromNotices bool
 	// lined: a record matched on a version line it has a fix for;
 	// unlisted: one matched only because the version is on none of the
 	// lines its advisory lists fixes for (osv.UnlistedLine).
@@ -529,6 +531,11 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 	usnFixes := ubuntuUSNFixes(t, advs, fipsBuild, cmp)
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
+			continue
+		}
+		// A notice read from ubuntu.com before OSV carries it is a fix
+		// source for ubuntuUSNFixes only: it never opens a finding itself.
+		if a.Feed == FeedUbuntuNotices {
 			continue
 		}
 		recordChannel := ""
@@ -613,7 +620,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			// Cited as a source so the record giving the fix is shown, and
 			// the independent second check reads it too.
 			g.ids = appendUnique(g.ids, usn.id)
-			g.fixFrom = usn.id
+			g.fixFrom, g.fixFromNotices = usn.id, usn.notices
 		}
 		g.ranges = appendUnique(g.ranges, a.ID+": "+m.Range)
 		g.ecosystems = appendUnique(g.ecosystems, a.Ecosystem)
@@ -758,6 +765,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
 		if g.fixFrom != "" && !requiresPro {
 			ev["match"].(map[string]any)["fix_from"] = g.fixFrom
+			if g.fixFromNotices {
+				ev["match"].(map[string]any)["fix_from_source"] = "ubuntu.com"
+			}
 		}
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {
 			ev["not_running_kernel"] = true
@@ -774,8 +784,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 }
 
 // usnFix is a fixed version an Ubuntu security notice (USN) lists for a
-// release and source package, and the notice's id.
-type usnFix struct{ id, fixed string }
+// release and source package, and the notice's id; notices: the USN was
+// read from ubuntu.com because OSV does not carry it yet.
+type usnFix struct {
+	id, fixed string
+	notices   bool
+}
 
 // ubuntuUSNFixes maps each CVE group key to the fixed version the free
 // channel's USN records list for the target's release and source package
@@ -823,7 +837,7 @@ func ubuntuUSNFixes(t osv.Target, advs []store.AdvisoryMatch, fipsBuild bool, cm
 					continue
 				}
 			}
-			out[cve] = usnFix{id: a.ID, fixed: fixed}
+			out[cve] = usnFix{id: a.ID, fixed: fixed, notices: a.Feed == FeedUbuntuNotices}
 		}
 	}
 	return out

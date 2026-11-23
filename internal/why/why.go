@@ -315,6 +315,9 @@ func Build(in Input, now time.Time) Explanation {
 			// The UBUNTU-CVE record listed no fix; the USN for the same
 			// release and package did (intel.ubuntuUSNFixes).
 			note := fmt.Sprintf("; Ubuntu's CVE record lists no fix yet, so the fixed version comes from %s", ff)
+			if str(m, "fix_from_source") == "ubuntu.com" {
+				note += " (Ubuntu's notice on ubuntu.com, not yet in OSV)"
+			}
 			e.Rule.Text += note
 			verdict += note
 		}

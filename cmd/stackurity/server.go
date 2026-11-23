@@ -1436,6 +1436,7 @@ func intelConfig(dataDir string) (intel.Config, []string) {
 	cfg.NpmRegistry = env("STACKURITY_NPM_REGISTRY", cfg.NpmRegistry)
 	cfg.AmazonLinuxURL = env("STACKURITY_AMAZON_LINUX_URL", cfg.AmazonLinuxURL)
 	cfg.OracleLinuxURL = env("STACKURITY_ORACLE_LINUX_URL", cfg.OracleLinuxURL)
+	cfg.UbuntuNoticesURL = env("STACKURITY_UBUNTU_NOTICES_URL", cfg.UbuntuNoticesURL)
 	cfg.PackagistURL = env("STACKURITY_PACKAGIST_URL", cfg.PackagistURL)
 	cfg.PyPIURL = env("STACKURITY_PYPI_URL", cfg.PyPIURL)
 	if w := intel.ResolveWordPressOrg(&cfg, os.Getenv("STACKURITY_WORDPRESS_ORG_URL"),

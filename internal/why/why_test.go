@@ -323,3 +323,17 @@ func TestFixFromUSN(t *testing.T) {
 		t.Errorf("fix from USN: %s / %s", e.Sentence, e.Rule.Text)
 	}
 }
+
+// A fix from a notice read on ubuntu.com (not yet in OSV) says so.
+func TestFixFromUbuntuNotice(t *testing.T) {
+	in := vuln(map[string]any{"matched_ranges": []any{"UBUNTU-CVE-2026-125283: < 1.18.0-6ubuntu14.24 (fix from USN-9182-1)"},
+		"comparator": "debian", "target_ecosystem": "Ubuntu:22.04", "osv_package": "nginx", "feed": "osv:Ubuntu",
+		"match": map[string]any{"rule": "range", "record": "UBUNTU-CVE-2026-125283", "fix_from": "USN-9182-1", "fix_from_source": "ubuntu.com"}})
+	in.Finding.ComponentType, in.Finding.AssetKind = "deb", "host"
+	in.Finding.Version, in.Finding.FixedVersion = "1.18.0-6ubuntu14.23", "1.18.0-6ubuntu14.24"
+	in.Finding.Sources = []string{"UBUNTU-CVE-2026-125283", "USN-9182-1"}
+	e := Build(in, now)
+	if !strings.Contains(e.Sentence, "comes from USN-9182-1 (Ubuntu's notice on ubuntu.com, not yet in OSV)") {
+		t.Errorf("fix from ubuntu.com notice: %s", e.Sentence)
+	}
+}

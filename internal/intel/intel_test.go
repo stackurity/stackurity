@@ -94,6 +94,7 @@ func setup(t *testing.T) (*store.Store, *Syncer, *Evaluator, *upstream) {
 	cfg.NpmRegistry, cfg.PackagistURL = srv.URL+"/npm", srv.URL+"/packagist"
 	cfg.AmazonLinuxURL = srv.URL + "/al"
 	cfg.OracleLinuxURL = srv.URL + "/oval"
+	cfg.UbuntuNoticesURL = srv.URL + "/usn/notices.json"
 	cfg.MSRCURL = srv.URL + "/msrc"
 	cfg.EPSSURL = srv.URL + "/epss_scores-current.csv.gz"
 	cfg.WorkDir = t.TempDir()

@@ -181,6 +181,8 @@ func (s *Syncer) Sync(ctx context.Context, name string) (*SyncResult, error) {
 		res, err = s.syncAmazonLinux(ctx, name)
 	case name == FeedOracleLinux:
 		res, err = s.syncOracleLinux(ctx, name)
+	case name == FeedUbuntuNotices:
+		res, cursor, err = s.syncUbuntuNotices(ctx, name, feed.Cursor)
 	case name == FeedMSRC:
 		res, cursor, err = s.syncMSRC(ctx, name, feed.Cursor)
 	case name == FeedWindowsPrograms:

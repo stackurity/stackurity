@@ -414,7 +414,11 @@ func feedProblems(feeds []store.Feed, now time.Time, enabled bool) []Problem {
 		if !f.Enabled {
 			continue
 		}
-		if f.LastSuccess != nil && f.Kind == "vulnerability" {
+		// A supplementary feed (Ubuntu's notices, "notices:Ubuntu") adds
+		// fixes to another feed's records: it is not vulnerability data of
+		// its own, and while it is stale matching still uses the main feed.
+		supplementary := strings.HasPrefix(f.Name, "notices:")
+		if f.LastSuccess != nil && f.Kind == "vulnerability" && !supplementary {
 			synced = true
 		}
 		if f.LastAttempt != nil {
@@ -433,7 +437,7 @@ func feedProblems(feeds []store.Feed, now time.Time, enabled bool) []Problem {
 				"Findings evaluated while it is stale are marked as such.",
 			Docs: docsNetwork}
 		sev := Warning
-		if f.Kind == "vulnerability" {
+		if f.Kind == "vulnerability" && !supplementary {
 			sev = Critical
 		}
 		switch {

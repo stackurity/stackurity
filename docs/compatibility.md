@@ -216,6 +216,16 @@ checked against a vendor's index (MongoDB Enterprise, `gitlab-ee`, PGDG and
 RHEL `postgresql-server`, HashiCorp rpm packages), and Amazon Corretto 8
 installed as `java-1.8.0-amazon-corretto-jdk` is read as line 8.
 
+### Ubuntu notices not yet in OSV
+
+Ubuntu's data comes from OSV (`osv:Ubuntu`): one record per CVE (`UBUNTU-CVE-…`) and one per Ubuntu Security Notice (`USN-…`). Both can lag ubuntu.com. A per-CVE record can say "all versions, no fix" for days after the notice that fixed the CVE, and a notice can take days to reach OSV at all (USN-9182-1, published on 20 November 2026, was in neither OSV nor Canonical's OSV export three days later).
+
+- When a USN in the same free channel, for the same release and source package, names the CVE record and lists a fix, the matcher uses that fix instead of "no fix": the finding closes if it is installed, and otherwise shows the USN's fixed version and cites the USN.
+- The feed `notices:Ubuntu` (created when an Ubuntu host or image is in inventory) reads ubuntu.com's list of notices every 3 hours, newest first, and stores the notices OSV does not have yet, in the same form. Only the free channels are read: each release's source packages, for LTS and interim releases. Ubuntu Pro (ESM) and FIPS fixes are not, as the matcher never takes a fix from them in place of "no fix".
+- These records are a fix source only. They never open a finding of their own, so a notice read from ubuntu.com can only supply the fixed version of a CVE an OSV record already reports. The explanation says so: "the fixed version comes from USN-9182-1 (Ubuntu's notice on ubuntu.com, not yet in OSV)", and the evidence has `match.fix_from_source: ubuntu.com`.
+- When OSV delivers the notice, its record replaces this feed's copy (the feed never writes over a record another feed stored), and the finding keeps one entry per CVE.
+- If ubuntu.com cannot be reached, matching is as it would be without the feed, and Platform health shows a warning (not a critical problem). See [Network](network.md#intelligence-feeds) for what is requested.
+
 ### Packages from vendor repositories
 
 Debian, Ubuntu and RHEL-family advisories describe the distribution's own

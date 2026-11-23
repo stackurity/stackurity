@@ -148,6 +148,15 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 			if err := ensure(VulnFeed(eco), "vulnerability", refresh, stale); err != nil {
 				return err
 			}
+			if eco == "Ubuntu" {
+				// Ubuntu's notices, for the days OSV lags them: a fix source
+				// only (ubuntunotices.go). It is never a release's coverage
+				// (VulnFeed stays osv:Ubuntu), so a stale copy is no gap in
+				// matching, and Platform health shows it as a warning.
+				if err := ensure(FeedUbuntuNotices, "vulnerability", 3*time.Hour, 48*time.Hour); err != nil {
+					return err
+				}
+			}
 		}
 	}
 	return nil
@@ -197,8 +206,13 @@ func componentsToEvaluate(ctx context.Context, s *store.Store, feed string, res 
 		return vendorComponents(ctx, s, res)
 	case feed == FeedJavaApps:
 		return javaAppComponents(ctx, s, res)
-	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux:
+	case strings.HasPrefix(feed, "osv:") || feed == FeedAmazonLinux || feed == FeedOracleLinux || feed == FeedUbuntuNotices:
 		base, _ := feedEcosystem(feed)
+		if feed == FeedUbuntuNotices {
+			// Not a vulnerability feed of its own (feedEcosystem), but the
+			// fixes it stores apply to Ubuntu's packages.
+			base = "Ubuntu"
+		}
 		types := purlTypesFor(base)
 		if len(types) == 0 {
 			return nil, nil

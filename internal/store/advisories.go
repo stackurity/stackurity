@@ -184,6 +184,24 @@ func (r *advisoryRecord) contentHash() string {
 	return hex.EncodeToString(h.Sum(nil)[:16])
 }
 
+// AdvisoryFeeds returns the feed that stored each of ids, for those stored.
+func (s *Store) AdvisoryFeeds(ctx context.Context, ids []string) (map[string]string, error) {
+	rows, err := s.Pool.Query(ctx, `SELECT id, feed FROM advisories WHERE id = ANY($1)`, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var id, feed string
+		if err := rows.Scan(&id, &feed); err != nil {
+			return nil, err
+		}
+		out[id] = feed
+	}
+	return out, rows.Err()
+}
+
 // UpsertAdvisories stores OSV records and returns how many changed.
 //
 // Only what changed is written. A record whose content hash equals the
