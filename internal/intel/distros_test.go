@@ -226,3 +226,59 @@ func TestUbuntuFIPSChannels(t *testing.T) {
 		t.Errorf("a regular build takes the free fix: %+v", fs)
 	}
 }
+
+// OSV kept Ubuntu's per-CVE records at "no fix" after the USN that fixed
+// them (23 Nov 2026: UBUNTU-CVE-2026-118899 vs USN-9159-1). The USN's fix,
+// read through the stored "upstream" ids, decides; a CVE with no USN stays.
+func TestUbuntuUSNFixOverridesStaleCVERecord(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	deb := func(ver string) model.Observation {
+		return confirmed("pkg:deb/ubuntu/nginx-core@"+ver+"?distro=ubuntu-22.04&upstream=nginx", nil)
+	}
+	fixedHost := ingest(t, st, model.AssetHost, "fixed", true, deb("1.18.0-6ubuntu14.24"))
+	oldHost := ingest(t, st, model.AssetHost, "old", true, deb("1.18.0-6ubuntu14.22"))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	noFix := func(cve string) string {
+		return `{"id":"UBUNTU-` + cve + `","modified":"2026-11-19T15:16:06Z","upstream":["` + cve + `"],"affected":[
+		 {"package":{"ecosystem":"Ubuntu:22.04:LTS","name":"nginx"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}]},
+		 {"package":{"ecosystem":"Ubuntu:24.04:LTS","name":"nginx"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}]}]}`
+	}
+	up.set("/osv/Ubuntu/all.zip", zipOf(t, map[string]string{
+		"UBUNTU-CVE-2026-118899.json": noFix("CVE-2026-118899"),
+		"UBUNTU-CVE-2026-125283.json": noFix("CVE-2026-125283"),
+		"USN-9159-1.json": `{"id":"USN-9159-1","modified":"2026-11-19T15:16:06Z","summary":"nginx vulnerabilities",
+		 "upstream":["UBUNTU-CVE-2026-118899"],"affected":[
+		 {"package":{"ecosystem":"Ubuntu:22.04:LTS","name":"nginx"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"},{"fixed":"1.18.0-6ubuntu14.23"}]}]}]}`,
+	}))
+	if _, err := sy.Sync(ctx, "osv:Ubuntu"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	keys := func(asset int64) map[string]store.Finding {
+		fs, _, err := st.ListFindings(ctx, store.FindingFilter{AssetID: asset})
+		if err != nil {
+			t.Fatal(err)
+		}
+		out := map[string]store.Finding{}
+		for _, f := range fs {
+			out[f.Key] = f
+		}
+		return out
+	}
+	got := keys(fixedHost)
+	if _, ok := got["CVE-2026-118899"]; ok {
+		t.Errorf("14.24 has USN-9159-1's fix: CVE-2026-118899 must not be open: %+v", got)
+	}
+	if f, ok := got["CVE-2026-125283"]; !ok || f.FixedVersion != "" {
+		t.Errorf("no USN lists CVE-2026-125283: it stays open with no fix: %+v", got)
+	}
+	got = keys(oldHost)
+	if f, ok := got["CVE-2026-118899"]; !ok || f.FixedVersion != "1.18.0-6ubuntu14.23" || !strings.Contains(string(f.Evidence), `"fix_from": "USN-9159-1"`) {
+		t.Errorf("14.22 is before the USN fix: want CVE-2026-118899 open, fixed in 14.23 from USN-9159-1: %+v", got["CVE-2026-118899"])
+	}
+}

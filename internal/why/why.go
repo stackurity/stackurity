@@ -311,6 +311,13 @@ func Build(in Input, now time.Time) Explanation {
 				strings.Join(strs(ev["matched_ranges"]), "; "), cmpText)
 			verdict = fmt.Sprintf("matched %s", record)
 		}
+		if ff := str(m, "fix_from"); ff != "" {
+			// The UBUNTU-CVE record listed no fix; the USN for the same
+			// release and package did (intel.ubuntuUSNFixes).
+			note := fmt.Sprintf("; Ubuntu's CVE record lists no fix yet, so the fixed version comes from %s", ff)
+			e.Rule.Text += note
+			verdict += note
+		}
 		fix := "; no fixed version is listed"
 		sub := str(ev, "requires_subscription")
 		backport := m["backport"] == true

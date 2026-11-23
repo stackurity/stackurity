@@ -307,3 +307,19 @@ func TestMissingSigningKey(t *testing.T) {
 		}
 	}
 }
+
+// Ubuntu's CVE record listed no fix; the USN for the same release and
+// package did, and the explanation says where the fixed version came from.
+func TestFixFromUSN(t *testing.T) {
+	in := vuln(map[string]any{"matched_ranges": []any{"UBUNTU-CVE-2026-118899: < 1.18.0-6ubuntu14.23 (fix from USN-9159-1)"},
+		"comparator": "debian", "target_ecosystem": "Ubuntu:22.04", "osv_package": "nginx", "feed": "osv:Ubuntu",
+		"match": map[string]any{"rule": "range", "record": "UBUNTU-CVE-2026-118899", "fix_from": "USN-9159-1"}})
+	in.Finding.ComponentType, in.Finding.AssetKind = "deb", "host"
+	in.Finding.Version, in.Finding.FixedVersion = "1.18.0-6ubuntu14.22", "1.18.0-6ubuntu14.23"
+	in.Finding.Sources = []string{"UBUNTU-CVE-2026-118899", "USN-9159-1"}
+	e := Build(in, now)
+	if !strings.Contains(e.Sentence, "Ubuntu's CVE record lists no fix yet, so the fixed version comes from USN-9159-1") ||
+		!strings.Contains(e.Sentence, "fixed in 1.18.0-6ubuntu14.23") || !strings.Contains(e.Rule.Text, "USN-9159-1") {
+		t.Errorf("fix from USN: %s / %s", e.Sentence, e.Rule.Text)
+	}
+}
