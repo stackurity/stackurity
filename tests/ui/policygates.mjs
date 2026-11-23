@@ -169,6 +169,9 @@ for (const width of [1280, 390]) {
   // Fixes → Policy violations
   await page.goto(base + "/fixes/policy-violations");
   await page.getByRole("heading", { name: "Policy violations" }).waitFor();
+  // The heading renders before the list loads: wait for the list, or a slow
+  // CI runner reads the page while it is still a skeleton.
+  await page.getByText("3 violations on 2 assets").waitFor().catch(() => {});
   const vt = await page.locator("main, #main").first().innerText();
   ok(vt.includes("3 violations on 2 assets"), `${tag} the violations page counts them`);
   ok(vt.includes("known to be exploited") && vt.includes("openssl 3.0.2"), `${tag} a violation shows its reason and component`);
