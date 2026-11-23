@@ -454,6 +454,9 @@ type groupMatch struct {
 	ranges     []string
 	ecosystems []string
 	exploited  bool
+	// fixFrom is the Ubuntu USN whose fixed version replaced the "no fix"
+	// of the group's UBUNTU-CVE record (ubuntuUSNFixes).
+	fixFrom string
 	// lined: a record matched on a version line it has a fix for;
 	// unlisted: one matched only because the version is on none of the
 	// lines its advisory lists fixes for (osv.UnlistedLine).
@@ -523,6 +526,7 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			arch = pu.Qualifiers.Map()["arch"]
 		}
 	}
+	usnFixes := ubuntuUSNFixes(t, advs, fipsBuild, cmp)
 	for _, a := range advs {
 		if a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) {
 			continue
@@ -567,6 +571,24 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			parseFailures++
 			continue
 		}
+		// Ubuntu's per-CVE record can lag its security notice: OSV kept
+		// UBUNTU-CVE records at "all versions, no fix" for days after the
+		// USN that fixed them was published. The USN's fix for the same
+		// release and source package decides then.
+		var usn usnFix
+		if !pro && m.Affected && m.FixedVersion == "" && !m.Exact && strings.HasPrefix(a.ID, "UBUNTU-CVE-") {
+			if f, ok := usnFixes[a.GroupKey]; ok {
+				if c, cerr := cmp(t.Version, f.fixed); cerr == nil {
+					usn = f
+					if c >= 0 {
+						m.Affected = false // the USN's fix is installed
+					} else {
+						m.FixedVersion = f.fixed
+						m.Range = "< " + f.fixed + " (fix from " + f.id + ")"
+					}
+				}
+			}
+		}
 		if !pro {
 			freeChecked[a.GroupKey] = true
 		}
@@ -587,6 +609,12 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			order = append(order, a.GroupKey)
 		}
 		g.ids = appendUnique(g.ids, a.ID)
+		if usn.id != "" {
+			// Cited as a source so the record giving the fix is shown, and
+			// the independent second check reads it too.
+			g.ids = appendUnique(g.ids, usn.id)
+			g.fixFrom = usn.id
+		}
 		g.ranges = appendUnique(g.ranges, a.ID+": "+m.Range)
 		g.ecosystems = appendUnique(g.ecosystems, a.Ecosystem)
 		if osv.LevelRank(a.SeverityLevel) > osv.LevelRank(g.severity) {
@@ -728,6 +756,9 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 			ev["advisory_signing_keys"] = g.keys
 		}
 		ev["match"] = matchExplanation(r, t, rec, fixed, ambiguous)
+		if g.fixFrom != "" && !requiresPro {
+			ev["match"].(map[string]any)["fix_from"] = g.fixFrom
+		}
 		if pu, err := packageurl.FromString(r.Purl); err == nil && osv.KernelNotRunning(r.Type, pu.Name, r.Version, r.RunningKernel) {
 			ev["not_running_kernel"] = true
 			ev["running_kernel"] = r.RunningKernel
@@ -740,6 +771,62 @@ func matchAdvisories(r store.EvalRow, t osv.Target, advs []store.AdvisoryMatch, 
 		})
 	}
 	return out, perr
+}
+
+// usnFix is a fixed version an Ubuntu security notice (USN) lists for a
+// release and source package, and the notice's id.
+type usnFix struct{ id, fixed string }
+
+// ubuntuUSNFixes maps each CVE group key to the fixed version the free
+// channel's USN records list for the target's release and source package
+// (advs holds this package's records only). A USN names the UBUNTU-CVE
+// records it fixes in "upstream". Several USNs for one CVE (a regression
+// fix) give the highest version. Pro, ESM and FIPS channels are left to the
+// existing rules: only a USN in the same free channel counts.
+func ubuntuUSNFixes(t osv.Target, advs []store.AdvisoryMatch, fipsBuild bool, cmp version.Comparator) map[string]usnFix {
+	if !strings.HasPrefix(t.Ecosystem, "Ubuntu:") || fipsBuild {
+		return nil
+	}
+	var out map[string]usnFix
+	for _, a := range advs {
+		if !strings.HasPrefix(a.ID, "USN-") || a.Withdrawn != nil || !osv.MatchEcosystem(a.Ecosystem, t.Ecosystem) ||
+			(a.Affected.Package.Name != "" && a.Affected.Package.Name != t.Name) ||
+			osv.FIPSChannel(a.Ecosystem) || osv.SubscriptionFor(a.Ecosystem, t) != "" {
+			continue
+		}
+		fixed := ""
+		for _, r := range a.Affected.Ranges {
+			for _, e := range r.Events {
+				if e.Fixed == "" {
+					continue
+				}
+				if fixed == "" {
+					fixed = e.Fixed
+				} else if c, err := cmp(e.Fixed, fixed); err == nil && c > 0 {
+					fixed = e.Fixed
+				}
+			}
+		}
+		if fixed == "" {
+			continue
+		}
+		for _, u := range a.Upstream {
+			cve, ok := strings.CutPrefix(u, "UBUNTU-")
+			if !ok || !strings.HasPrefix(cve, "CVE-") {
+				continue
+			}
+			if out == nil {
+				out = map[string]usnFix{}
+			}
+			if cur, ok := out[cve]; ok {
+				if c, err := cmp(fixed, cur.fixed); err != nil || c <= 0 {
+					continue
+				}
+			}
+			out[cve] = usnFix{id: a.ID, fixed: fixed}
+		}
+	}
+	return out
 }
 
 // matchExplanation is the compact record of the rule that produced a

@@ -171,6 +171,9 @@ type AdvisoryMatch struct {
 	Feed           string
 	Ecosystem      string
 	Affected       osv.Affected
+	// Upstream is the record's OSV "upstream" ids: for an Ubuntu USN, the
+	// UBUNTU-CVE records it fixes.
+	Upstream []string
 }
 
 // affectedJoin and affectedColumn read a package row's affected entry: from
@@ -194,7 +197,7 @@ const (
 // not reorder them: the same stored data gives the same evidence.
 func (s *Store) AdvisoriesFor(ctx context.Context, base, name, target string) ([]AdvisoryMatch, error) {
 	rows, err := s.Pool.Query(ctx, `SELECT a.id, a.group_key, a.aliases, a.summary, a.severity_level, a.severity_score,
-		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, `+affectedColumn+`
+		a.withdrawn, a.known_exploited, a.feed, p.ecosystem, `+affectedColumn+`, a.upstream
 		FROM advisory_packages p JOIN advisories a ON a.id = p.advisory_id
 		`+affectedJoin+`
 		WHERE p.base_ecosystem = $1 AND p.name = $2
@@ -208,7 +211,7 @@ func (s *Store) AdvisoriesFor(ctx context.Context, base, name, target string) ([
 		var m AdvisoryMatch
 		var aff []byte
 		if err := rows.Scan(&m.ID, &m.GroupKey, &m.Aliases, &m.Summary, &m.SeverityLevel, &m.SeverityScore,
-			&m.Withdrawn, &m.KnownExploited, &m.Feed, &m.Ecosystem, &aff); err != nil {
+			&m.Withdrawn, &m.KnownExploited, &m.Feed, &m.Ecosystem, &aff, &m.Upstream); err != nil {
 			return nil, err
 		}
 		if target != "" && !osv.MatchEcosystem(m.Ecosystem, target) {
