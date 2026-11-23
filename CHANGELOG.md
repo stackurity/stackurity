@@ -6,6 +6,25 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.28
+
+### Security
+
+- **nginx's 18 November 2026 vulnerabilities (nginx2root) are matched for nginx.org's packages.** NVD now lists nginx Open Source under a new product name, `f5:nginx_open_source` (39 CVEs, including CVE-2026-123007, -123633, -121810, -123634 and -113425), which the vendor build catalogue did not read, so nginx installed from nginx.org's repository was not matched against them. The catalogue reads it now; the first vendor build sync after the upgrade reads nginx's records again. Distribution packages (Ubuntu, Debian, Alpine) were already matched through their own advisories. See [Vendor builds](docs/compatibility.md#vendor-builds).
+- **SAML sign-in library updated.** `github.com/crewjam/saml` 0.5.1 → 0.5.2 (licensed edition's SAML sign-in), which reads `NameID` only from the SAML assertion namespace and rejects assertions without a Subject, Conditions or bearer confirmation: [GO-2026-6909](https://osv.dev/vulnerability/GO-2026-6909). Stackurity already refused foreign-namespace `NameID`s itself. `github.com/beevik/etree` 1.7.0 → 1.8.1 comes with it.
+
+### Added
+
+- **Risky settings: kernel modules, SCTP first (nginx2root).** The agent now reports, on Linux servers, when the SCTP kernel module is loaded or built in (medium) or can be loaded (low). In November 2026 a use-after-free in the kernel's SCTP code, which has no CVE or fix yet, was the step that turned the nginx2root nginx bugs into root. The finding gives the `install sctp /bin/false` line that stops it. It is a new category, `kernel`, under **Security → Risky settings**. Agents send it only to servers that list `config_kernel` in `GET /meta`. See [Risky settings](docs/config-checks.md#kernel-modules).
+- **nginx found outside a package manager is matched against its vulnerabilities.** A source build in `/usr/local/nginx`, the nginx a container image compiles in (such as an ingress controller's, read from the binary since nothing in an image is run) and Homebrew's nginx are matched by the release they report against nginx Open Source's NVD records, like nginx.org's packages. The agent now reports nginx's edition: NGINX Plus, OpenResty, Tengine and Angie are not matched and say so, and nginx reported by an older agent says to upgrade the agent. The action plan says how to replace such a binary. Other runtimes outside a package manager keep lifecycle only. See [nginx outside a package manager](docs/compatibility.md#nginx-outside-a-package-manager).
+- **Offer a passkey right after a password sign-in.** Someone who signs in with a password and has no passkey now sees **Sign in with Touch ID next time** (Face ID on an iPhone, Windows Hello on Windows, the fingerprint or face on Android) before the dashboard. **Add passkey** asks the device for the fingerprint or face and saves the passkey, with no second password: for five minutes after a password sign-in, `POST /auth/mfa/passkeys/begin` accepts no password from that session (after that, and for every other kind of sign-in, it is asked as before). The first passkey shows the recovery codes, as on **Your account**. **Not now** hides the offer in that browser for 30 days. It is not shown on devices without a built-in fingerprint or face unlock, on servers where passkeys cannot work, to accounts that already have a passkey, or before what an organisation's two-factor policy asks first. `GET /auth/me` says `passkey_offer: true` while it applies. See [Two-factor sign-in](docs/install.md#two-factor-sign-in).
+- **Threat notice: nginx2root.** The threat catalogue lists nginx2root, five nginx memory-corruption bugs disclosed on 18 November 2026 (CVE-2026-123007, CVE-2026-123633, CVE-2026-121810, CVE-2026-123634, CVE-2026-113425; fixed in nginx 1.31.9 and 1.30.7). Organisations get a threat notice saying whether their nginx has them, is checked and clear, or which connection is needed to check it, and `threat_check` answers for it. It is found by its CVEs on the normal findings. See [Threat notices](docs/threat-notices.md).
+- **A new threat kind, `disclosed_vuln`:** a critical vulnerability with a fix out that is not known to be exploited yet. Its notices say so, instead of saying it is being exploited, and ask for the fix on internet-facing assets first. See [the catalogue](docs/threat-notices.md#the-catalogue).
+
+### Upgrading
+
+- Migration `0125_config_kernel` widens the `config_findings` category check to allow `kernel`. Additive. Agents send kernel findings only to servers that list `config_kernel` in `GET /meta`, so older servers keep taking their batches. After this migration an older image refuses to start against the database (newer schema), so a rollback restores the pre-upgrade database dump, as for earlier migration releases.
+
 ## 0.20.27
 
 ### Added
