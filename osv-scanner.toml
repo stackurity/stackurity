@@ -3,11 +3,11 @@
 
 [[IgnoredVulns]]
 id = "GO-2026-6909"
-ignoreUntil = 2027-01-31
-reason = """github.com/crewjam/saml through 0.5.1 (used by SAML sign-in in the licensed edition), no fixed
-version. (1) Nil-pointer panic on a signed assertion without Issuer: only with ExpectedIDPEntityID set,
-which Stackurity never sets, and sso.SAMLProvider.Parse recovers from panics and rejects. (2) Subject.NameID
-read by local name, so a NameID in a foreign namespace could stand in for saml:NameID: Parse refuses any
-Subject with a NameID outside the SAML assertion namespace (stackurity-pro, TestSAMLXMLAttacks), and it
-needed a signature by the organisation's own identity provider anyway. Re-check when crewjam/saml releases
-a fix or before the expiry."""
+ignoreUntil = 2026-12-23
+reason = """github.com/crewjam/saml: fixed upstream and upgraded to v0.5.2 (security-auto-2026-11-23), but the
+OSV / Go vulnerability database record still lists every version as affected (no fixed version), so the
+scanner keeps matching it. v0.5.2 tags Subject.NameID and Response.NameID with the SAML assertion namespace
+(part 2); part 1 (nil Issuer with ExpectedIDPEntityID) does not apply to crewjam/saml, whose Assertion.Issuer
+is a value and which has no ExpectedIDPEntityID. Stackurity's own guard stays: sso.SAMLProvider.Parse refuses
+a NameID outside the assertion namespace (stackurity-pro, TestSAMLXMLAttacks). Delete this entry as soon as
+the record names a fixed version; re-checked daily by the security routine."""
