@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stackurity/stackurity/internal/model"
+	"github.com/stackurity/stackurity/internal/osv"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/tenant"
 )
@@ -280,5 +283,89 @@ func TestUbuntuUSNFixOverridesStaleCVERecord(t *testing.T) {
 	got = keys(oldHost)
 	if f, ok := got["CVE-2026-118899"]; !ok || f.FixedVersion != "1.18.0-6ubuntu14.23" || !strings.Contains(string(f.Evidence), `"fix_from": "USN-9159-1"`) {
 		t.Errorf("14.22 is before the USN fix: want CVE-2026-118899 open, fixed in 14.23 from USN-9159-1: %+v", got["CVE-2026-118899"])
+	}
+}
+
+// USN-9182-1 was on ubuntu.com but not in OSV: the notices feed gives its
+// fix to the stale UBUNTU-CVE-2026-125283 record, and when OSV delivers the
+// same notice later the CVE stays one finding.
+func TestUbuntuNoticesFeedFixesStaleCVEEndToEnd(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, up := setup(t)
+	sy.now = func() time.Time { return time.Date(2026, 11, 23, 10, 0, 0, 0, time.UTC) }
+	deb := func(ver string) model.Observation {
+		return confirmed("pkg:deb/ubuntu/nginx-core@"+ver+"?distro=ubuntu-22.04&upstream=nginx", nil)
+	}
+	fixedHost := ingest(t, st, model.AssetHost, "fixed", true, deb("1.18.0-6ubuntu14.24"))
+	oldHost := ingest(t, st, model.AssetHost, "old", true, deb("1.18.0-6ubuntu14.23"))
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.GetFeed(ctx, FeedUbuntuNotices); err != nil {
+		t.Fatalf("an Ubuntu host in inventory creates the notices feed: %v", err)
+	}
+	up.set("/osv/Ubuntu/all.zip", zipOf(t, map[string]string{
+		"UBUNTU-CVE-2026-125283.json": `{"id":"UBUNTU-CVE-2026-125283","modified":"2026-11-19T15:16:08Z","upstream":["CVE-2026-125283"],"affected":[
+		 {"package":{"ecosystem":"Ubuntu:22.04:LTS","name":"nginx"},"ranges":[{"type":"ECOSYSTEM","events":[{"introduced":"0"}]}]}]}`,
+	}))
+	notice, err := os.ReadFile("testdata/ubuntu-notices/USN-9182-1.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	up.set("/usn/notices.json", `{"notices":[`+string(notice)+`],"offset":0,"limit":20,"total_results":1}`)
+	for _, f := range []string{"osv:Ubuntu", FeedUbuntuNotices} {
+		if _, err := sy.Sync(ctx, f); err != nil {
+			t.Fatalf("%s: %v", f, err)
+		}
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	findings := func(asset int64) []store.Finding {
+		fs, _, err := st.ListFindings(ctx, store.FindingFilter{AssetID: asset})
+		if err != nil {
+			t.Fatal(err)
+		}
+		return fs
+	}
+	byKey := func(fs []store.Finding) map[string][]store.Finding {
+		out := map[string][]store.Finding{}
+		for _, f := range fs {
+			out[f.Key] = append(out[f.Key], f)
+		}
+		return out
+	}
+	if got := byKey(findings(fixedHost)); len(got["CVE-2026-125283"]) != 0 || len(got["USN-9182-1"]) != 0 {
+		t.Errorf("14.24 has USN-9182-1's fix: want neither the CVE nor the notice open: %v", got)
+	}
+	got := byKey(findings(oldHost))
+	f := got["CVE-2026-125283"]
+	if len(f) != 1 || f[0].FixedVersion != "1.18.0-6ubuntu14.24" ||
+		!strings.Contains(string(f[0].Evidence), `"fix_from": "USN-9182-1"`) || !strings.Contains(string(f[0].Evidence), `"fix_from_source": "ubuntu.com"`) {
+		t.Fatalf("14.23: want CVE-2026-125283 open once, fixed in 14.24 from ubuntu.com's USN-9182-1: %+v", f)
+	}
+	if len(got["USN-9182-1"]) != 0 {
+		t.Errorf("a notice read from ubuntu.com must not open a finding of its own: %+v", got["USN-9182-1"])
+	}
+
+	// OSV delivers USN-9182-1: its record replaces the notices feed's copy,
+	// and the CVE is still one finding with the same fix.
+	osvUSN := &osv.Vulnerability{ID: "USN-9182-1", Modified: time.Date(2026, 11, 24, 0, 0, 0, 0, time.UTC), Summary: "nginx vulnerabilities",
+		Upstream: []string{"UBUNTU-CVE-2026-123640", "UBUNTU-CVE-2026-125283", "UBUNTU-CVE-2026-118899"},
+		Affected: []osv.Affected{{Package: osv.Package{Ecosystem: "Ubuntu:22.04:LTS", Name: "nginx"},
+			Ranges: []osv.Range{{Type: "ECOSYSTEM", Events: []osv.Event{{Introduced: "0"}, {Fixed: "1.18.0-6ubuntu14.24"}}}}}}}
+	if _, err := st.UpsertAdvisories(ctx, "osv:Ubuntu", []*osv.Vulnerability{osvUSN}); err != nil {
+		t.Fatal(err)
+	}
+	if feeds, err := st.AdvisoryFeeds(ctx, []string{"USN-9182-1"}); err != nil || feeds["USN-9182-1"] != "osv:Ubuntu" {
+		t.Fatalf("OSV's copy wins: %v %v", feeds, err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	got = byKey(findings(oldHost))
+	if f := got["CVE-2026-125283"]; len(f) != 1 || f[0].FixedVersion != "1.18.0-6ubuntu14.24" ||
+		strings.Contains(string(f[0].Evidence), `"fix_from_source"`) {
+		t.Errorf("after OSV: the CVE is one finding, its fix from OSV's USN-9182-1 (no ubuntu.com note): %+v", f)
 	}
 }

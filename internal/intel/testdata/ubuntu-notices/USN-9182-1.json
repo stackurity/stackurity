@@ -1,0 +1,164 @@
+{
+ "id": "USN-9182-1",
+ "type": "USN",
+ "is_hidden": false,
+ "title": "nginx vulnerabilities",
+ "summary": "Several security issues were fixed in nginx.",
+ "published": "2026-11-20T03:15:31.773953",
+ "cves_ids": [
+  "CVE-2026-123640",
+  "CVE-2026-125283",
+  "CVE-2026-118899"
+ ],
+ "releases": [
+  {
+   "codename": "stonking",
+   "version": "26.10",
+   "support_tag": ""
+  },
+  {
+   "codename": "resolute",
+   "version": "26.04",
+   "support_tag": "LTS"
+  },
+  {
+   "codename": "noble",
+   "version": "24.04",
+   "support_tag": "LTS"
+  },
+  {
+   "codename": "jammy",
+   "version": "22.04",
+   "support_tag": "LTS"
+  },
+  {
+   "codename": "focal",
+   "version": "20.04",
+   "support_tag": "ESM"
+  },
+  {
+   "codename": "bionic",
+   "version": "18.04",
+   "support_tag": "ESM"
+  },
+  {
+   "codename": "xenial",
+   "version": "16.04",
+   "support_tag": "ESM"
+  },
+  {
+   "codename": "trusty",
+   "version": "14.04",
+   "support_tag": "ESM"
+  }
+ ],
+ "related_notices": [
+  "USN-9159-1"
+ ],
+ "release_packages": {
+  "bionic": [
+   {
+    "name": "nginx",
+    "version": "1.14.0-0ubuntu1.11+esm7",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-auth-pam",
+    "version": "1.14.0-0ubuntu1.11+esm7",
+    "is_source": false,
+    "pocket": "esm-infra"
+   }
+  ],
+  "focal": [
+   {
+    "name": "nginx",
+    "version": "1.18.0-0ubuntu1.7+esm6",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-auth-pam",
+    "version": "1.18.0-0ubuntu1.7+esm6",
+    "is_source": false,
+    "pocket": "esm-infra"
+   }
+  ],
+  "jammy": [
+   {
+    "name": "nginx",
+    "version": "1.18.0-6ubuntu14.24",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-auth-pam",
+    "version": "1.18.0-6ubuntu14.24",
+    "is_source": false,
+    "pocket": "security"
+   }
+  ],
+  "noble": [
+   {
+    "name": "nginx",
+    "version": "1.24.0-2ubuntu7.21",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-geoip",
+    "version": "1.24.0-2ubuntu7.21",
+    "is_source": false,
+    "pocket": "security"
+   }
+  ],
+  "resolute": [
+   {
+    "name": "nginx",
+    "version": "1.28.3-2ubuntu1.14",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-geoip",
+    "version": "1.28.3-2ubuntu1.14",
+    "is_source": false,
+    "pocket": "security"
+   }
+  ],
+  "stonking": [
+   {
+    "name": "nginx",
+    "version": "1.30.4-7ubuntu1.3",
+    "is_source": true
+   },
+   {
+    "name": "libnginx-mod-http-geoip",
+    "version": "1.30.4-7ubuntu1.3",
+    "is_source": false,
+    "pocket": "security"
+   }
+  ],
+  "trusty": [
+   {
+    "name": "nginx",
+    "version": "1.4.6-1ubuntu3.9+esm11",
+    "is_source": true
+   },
+   {
+    "name": "nginx",
+    "version": "1.4.6-1ubuntu3.9+esm11",
+    "is_source": false,
+    "pocket": "esm-infra-legacy"
+   }
+  ],
+  "xenial": [
+   {
+    "name": "nginx",
+    "version": "1.10.3-0ubuntu0.16.04.5+esm12",
+    "is_source": true
+   },
+   {
+    "name": "nginx",
+    "version": "1.10.3-0ubuntu0.16.04.5+esm12",
+    "is_source": false,
+    "pocket": "esm-infra-legacy"
+   }
+  ]
+ }
+}

@@ -17,23 +17,26 @@ import (
 // Config holds source locations so installations can point at mirrors or
 // offline copies (FR-05).
 type Config struct {
-	OSVBaseURL      string // https://storage.googleapis.com/osv-vulnerabilities
-	KEVURL          string
-	EPSSURL         string // https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
-	EndOfLifeURL    string // https://endoflife.date/api/v1/products/full
-	NpmRegistry     string // https://registry.npmjs.org
-	PackagistURL    string // https://repo.packagist.org
-	AmazonLinuxURL  string // https://cdn.amazonlinux.com
-	OracleLinuxURL  string // https://linux.oracle.com/security/oval (ELSA OVAL files)
-	PyPIURL         string // https://pypi.org
-	GoProxyURL      string // https://proxy.golang.org
-	CratesIndexURL  string // https://index.crates.io (the sparse index)
-	RubyGemsURL     string // https://rubygems.org
-	NuGetURL        string // https://api.nuget.org/v3/registration5-gz-semver2
-	MavenURL        string // https://repo1.maven.org/maven2
-	PubURL          string // https://pub.dev
-	HexURL          string // https://hex.pm
-	WordPressOrgURL string // https://api.wordpress.org (plugin and theme info)
+	OSVBaseURL     string // https://storage.googleapis.com/osv-vulnerabilities
+	KEVURL         string
+	EPSSURL        string // https://epss.empiricalsecurity.com/epss_scores-current.csv.gz
+	EndOfLifeURL   string // https://endoflife.date/api/v1/products/full
+	NpmRegistry    string // https://registry.npmjs.org
+	PackagistURL   string // https://repo.packagist.org
+	AmazonLinuxURL string // https://cdn.amazonlinux.com
+	OracleLinuxURL string // https://linux.oracle.com/security/oval (ELSA OVAL files)
+	// UbuntuNoticesURL lists Ubuntu Security Notices, newest first
+	// (limit, offset and order are added).
+	UbuntuNoticesURL string // https://ubuntu.com/security/notices.json
+	PyPIURL          string // https://pypi.org
+	GoProxyURL       string // https://proxy.golang.org
+	CratesIndexURL   string // https://index.crates.io (the sparse index)
+	RubyGemsURL      string // https://rubygems.org
+	NuGetURL         string // https://api.nuget.org/v3/registration5-gz-semver2
+	MavenURL         string // https://repo1.maven.org/maven2
+	PubURL           string // https://pub.dev
+	HexURL           string // https://hex.pm
+	WordPressOrgURL  string // https://api.wordpress.org (plugin and theme info)
 	// wordpress.org's public plugin and theme slugs: the Subversion
 	// repositories' root listings.
 	WordPressPluginsListURL string // https://plugins.svn.wordpress.org/
@@ -64,6 +67,7 @@ func DefaultConfig() Config {
 		PackagistURL:            "https://repo.packagist.org",
 		AmazonLinuxURL:          "https://cdn.amazonlinux.com",
 		OracleLinuxURL:          "https://linux.oracle.com/security/oval",
+		UbuntuNoticesURL:        "https://ubuntu.com/security/notices.json",
 		PyPIURL:                 "https://pypi.org",
 		GoProxyURL:              "https://proxy.golang.org",
 		CratesIndexURL:          "https://index.crates.io",
@@ -103,7 +107,7 @@ func (c Config) Sources(feed string) []string {
 		return []string{c.NVDURL}
 	}
 	u := map[string]string{
-		FeedAmazonLinux: c.AmazonLinuxURL, FeedOracleLinux: c.OracleLinuxURL, FeedMSRC: c.MSRCURL,
+		FeedAmazonLinux: c.AmazonLinuxURL, FeedOracleLinux: c.OracleLinuxURL, FeedMSRC: c.MSRCURL, FeedUbuntuNotices: c.UbuntuNoticesURL,
 		FeedKEV: c.KEVURL, FeedEPSS: c.EPSSURL, FeedEndOfLife: c.EndOfLifeURL,
 		FeedNpm: c.NpmRegistry, FeedPackagist: c.PackagistURL, FeedPyPI: c.PyPIURL, FeedGo: c.GoProxyURL,
 		FeedCrates: c.CratesIndexURL, FeedRubyGems: c.RubyGemsURL, FeedNuGet: c.NuGetURL, FeedMaven: c.MavenURL,
