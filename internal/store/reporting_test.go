@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -718,5 +719,54 @@ func TestReportingTitleNumber(t *testing.T) {
 		if got := store.ReportingTitle(c.cause, c.kind, list(c.n, "demo-web-1"), since, c.apps, now); got != c.want {
 			t.Errorf("%s %s n=%d apps=%d:\n got %q\nwant %q", c.cause, c.kind, c.n, c.apps, got, c.want)
 		}
+	}
+}
+
+// An evaluation job queued from platform (system) scope belongs to its
+// asset's workspace: with no workspace it would run in the worker's system
+// scope and fail writing findings (issue #539). A job that succeeds on a
+// retry no longer shows the earlier attempt's error.
+func TestEvaluateJobTakesAssetWorkspace(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	s := store.New(testdb.New(t))
+	host := appHost(t, s, ctx, "web-539", nil)
+	if _, err := s.Pool.Exec(ctx, `DELETE FROM jobs WHERE kind = 'evaluate'`); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.Pool.Exec(ctx, `UPDATE assets SET last_seen = now() - interval '49 hours' WHERE id = $1`, host); err != nil {
+		t.Fatal(err)
+	}
+	sys := tenant.System(context.Background())
+	if n, err := s.MarkStaleAssets(sys, 0); err != nil || n != 1 {
+		t.Fatalf("mark stale: %d %v", n, err)
+	}
+	var id int64
+	var ws *int64
+	if err := s.Pool.QueryRow(sys, `SELECT id, workspace_id FROM jobs WHERE kind = 'evaluate' AND dedupe_key = $1`,
+		fmt.Sprintf("evaluate:asset:%d", host)).Scan(&id, &ws); err != nil {
+		t.Fatal(err)
+	}
+	if ws == nil || *ws != tenant.DefaultWorkspace {
+		t.Errorf("job workspace %v, want %d", ws, tenant.DefaultWorkspace)
+	}
+	if got, err := s.AssetWorkspace(context.Background(), host); err != nil || got != tenant.DefaultWorkspace {
+		t.Errorf("AssetWorkspace = %d, %v", got, err)
+	}
+	if _, err := s.AssetWorkspace(context.Background(), host+1000); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("AssetWorkspace of a missing asset: %v", err)
+	}
+
+	if err := s.FailJob(sys, &store.Job{ID: id, Attempts: 1, MaxAttempts: 5}, errors.New("first attempt failed")); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.CompleteJob(sys, id); err != nil {
+		t.Fatal(err)
+	}
+	var lastErr string
+	if err := s.Pool.QueryRow(sys, `SELECT last_error FROM jobs WHERE id = $1`, id).Scan(&lastErr); err != nil {
+		t.Fatal(err)
+	}
+	if lastErr != "" {
+		t.Errorf("done job keeps last_error %q", lastErr)
 	}
 }
