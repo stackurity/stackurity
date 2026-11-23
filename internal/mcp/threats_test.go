@@ -247,8 +247,34 @@ func TestThreatCheckOlderServer(t *testing.T) {
 	api = estate()
 	api.configStatus = 400
 	api.findings = []tFinding{{ID: 1, Asset: 1, Severity: "critical", KEV: true}}
-	if out := check(t, api, "artex"); out["verdict"] != "exposed" || out["checked"] != false {
-		t.Errorf("exposed without checks: %v", out)
+	out = check(t, api, "artex")
+	if out["verdict"] != "not_checked" || out["checked"] != false {
+		t.Errorf("unrun checks come before exposure: %v", out)
+	}
+	if len(out["exposed_assets"].([]any)) != 1 {
+		t.Errorf("exposure is still listed when the checks did not run: %v", out["exposed_assets"])
+	}
+}
+
+// A vulnerability threat is decided by its own CVEs: other critical or
+// known-exploited findings on internet-facing assets are listed as context
+// and never make it "exposed".
+func TestThreatCheckVulnExposureIsContext(t *testing.T) {
+	api := estate()
+	api.findings = []tFinding{{ID: 1, Asset: 1, Severity: "critical", KEV: true}}
+	out := check(t, api, "nginx2root")
+	if out["verdict"] == "exposed" || out["verdict"] == "found" {
+		t.Fatalf("verdict: %v", out["verdict"])
+	}
+	if len(out["exposed_assets"].([]any)) != 1 {
+		t.Errorf("exposed assets still listed: %v", out["exposed_assets"])
+	}
+	if note, _ := out["exposure_note"].(string); !strings.HasPrefix(note, "context only") {
+		t.Errorf("exposure_note: %q", note)
+	}
+	// An attack tool with the same estate is exposed.
+	if out := check(t, api, "artex"); out["verdict"] != "exposed" {
+		t.Errorf("attack tool verdict: %v", out["verdict"])
 	}
 }
 
