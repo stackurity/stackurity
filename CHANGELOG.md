@@ -6,6 +6,21 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.28
+
+### Security
+
+- **SAML sign-in library updated.** `github.com/crewjam/saml` 0.5.1 → 0.5.2 (licensed edition's SAML sign-in), which reads `NameID` only from the SAML assertion namespace and rejects assertions without a Subject, Conditions or bearer confirmation: [GO-2026-6909](https://osv.dev/vulnerability/GO-2026-6909). Stackurity already refused foreign-namespace `NameID`s itself. `github.com/beevik/etree` 1.7.0 → 1.8.1 comes with it.
+
+### Added
+
+- **Risky settings: kernel modules, SCTP first (nginx2root).** The agent now reports, on Linux servers, when the SCTP kernel module is loaded or built in (medium) or can be loaded (low). In November 2026 a use-after-free in the kernel's SCTP code, which has no CVE or fix yet, was the step that turned the nginx2root nginx bugs into root. The finding gives the `install sctp /bin/false` line that stops it. It is a new category, `kernel`, under **Security → Risky settings**. Agents send it only to servers that list `config_kernel` in `GET /meta`. See [Risky settings](docs/config-checks.md#kernel-modules).
+- **Offer a passkey right after a password sign-in.** Someone who signs in with a password and has no passkey now sees **Sign in with Touch ID next time** (Face ID on an iPhone, Windows Hello on Windows, the fingerprint or face on Android) before the dashboard. **Add passkey** asks the device for the fingerprint or face and saves the passkey, with no second password: for five minutes after a password sign-in, `POST /auth/mfa/passkeys/begin` accepts no password from that session (after that, and for every other kind of sign-in, it is asked as before). The first passkey shows the recovery codes, as on **Your account**. **Not now** hides the offer in that browser for 30 days. It is not shown on devices without a built-in fingerprint or face unlock, on servers where passkeys cannot work, to accounts that already have a passkey, or before what an organisation's two-factor policy asks first. `GET /auth/me` says `passkey_offer: true` while it applies. See [Two-factor sign-in](docs/install.md#two-factor-sign-in).
+
+### Upgrading
+
+- Migration `0125_config_kernel` widens the `config_findings` category check to allow `kernel`. Additive. Agents send kernel findings only to servers that list `config_kernel` in `GET /meta`, so older servers keep taking their batches. After this migration an older image refuses to start against the database (newer schema), so a rollback restores the pre-upgrade database dump, as for earlier migration releases.
+
 ## 0.20.27
 
 ### Added
