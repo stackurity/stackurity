@@ -1,0 +1,4 @@
+### Added
+
+- **Threat notice: nginx2root.** The threat catalogue lists nginx2root, five nginx memory-corruption bugs disclosed on 18 November 2026 (CVE-2026-123007, CVE-2026-123633, CVE-2026-121810, CVE-2026-123634, CVE-2026-113425; fixed in nginx 1.31.9 and 1.30.7). Organisations get a threat notice saying whether their nginx has them, is checked and clear, or which connection is needed to check it, and `threat_check` answers for it. It is found by its CVEs on the normal findings. See [Threat notices](docs/threat-notices.md).
+- **A new threat kind, `disclosed_vuln`:** a critical vulnerability with a fix out that is not known to be exploited yet. Its notices say so, instead of saying it is being exploited, and ask for the fix on internet-facing assets first. See [the catalogue](docs/threat-notices.md#the-catalogue).

@@ -30,6 +30,12 @@ func TestEmbedded(t *testing.T) {
 		t.Errorf("ARTEX rules = %v / %v, want %v and the name rule as a signal (internal/collect/confcheck/attacktools.go)",
 			a.Detects.ConfigRules, a.Detects.SignalRules, want)
 	}
+	n, ok := c.Find("CVE-2026-123007")
+	if !ok || n.ID != "nginx2root" || n.Kind != KindDisclosedVuln || len(n.Detects.CVEs) != 5 || len(n.Detects.ConfigRules) != 0 {
+		// Only the CVEs make it found: a loadable SCTP module is a risky
+		// setting of its own, not a sign that nginx2root is there.
+		t.Errorf("Find(CVE-2026-123007) = %+v, %v", n, ok)
+	}
 	if c.ExpiresAt != nil {
 		t.Error("the embedded catalogue never expires")
 	}
