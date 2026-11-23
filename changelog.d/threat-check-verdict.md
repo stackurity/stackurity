@@ -1,3 +1,0 @@
-### Fixed
-
-- **`threat_check` no longer says "exposed" when it could not check.** When a threat's checks have not run (for example, servers whose agent is older than the release with the check), the verdict is now `not_checked` instead of `exposed`. For a threat defined by its own vulnerabilities (exploited or disclosed CVEs, such as nginx2root), other critical or known-exploited findings on internet-facing assets are still listed, marked as context in the new `exposure_note`, but no longer make the verdict `exposed`; only open findings of the threat's CVEs decide it. Attack tools, campaigns and practices keep `exposed`. See [AI assistants](docs/ai-assistants.md).

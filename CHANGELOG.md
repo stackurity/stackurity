@@ -6,6 +6,17 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.29
+
+### Fixed
+
+- **Ask and Feedback no longer share an icon.** Ask Stackurity now uses a sparkles icon in the top bar and on the Overview page, and Feedback keeps the speech bubble, so the two buttons are easy to tell apart on a phone, where only their icons show.
+- **An evaluation job could fail with `null value in column "workspace_id" of relation "findings"`.** A per-asset evaluation job could be queued without its organisation and then run in the worker's platform scope, where saving findings fails. Each such job now takes the organisation from its asset, and an evaluation job that has none runs in its asset's organisation or fails with a clear message. ([#539](https://github.com/stackurity/stackurity/issues/539))
+- **Settings, Jobs no longer shows an old error on a job that succeeded.** A job that failed an attempt and then succeeded on a retry kept the earlier error next to "done"; it is now cleared when the job completes.
+- **No more "No such project" errors after the chosen project goes away.** When the project chosen in the switcher was archived, or belonged to another organisation after switching in another tab, every page showed `404 not_found` until a reload. The dashboard now drops back to all projects, reloads the switcher's list and loads the page. The API marks this 404 with an `X-Stackurity-Project-Unknown` header ([API](docs/api.md), #540).
+- **`threat_check` no longer says "exposed" when it could not check.** When a threat's checks have not run (for example, servers whose agent is older than the release with the check), the verdict is now `not_checked` instead of `exposed`. For a threat defined by its own vulnerabilities (exploited or disclosed CVEs, such as nginx2root), other critical or known-exploited findings on internet-facing assets are still listed, marked as context in the new `exposure_note`, but no longer make the verdict `exposed`; only open findings of the threat's CVEs decide it. Attack tools, campaigns and practices keep `exposed`. See [AI assistants](docs/ai-assistants.md).
+- **Ubuntu packages are no longer reported unfixed when a security notice has fixed them.** OSV's per-CVE Ubuntu records (`UBUNTU-CVE-…`) can keep saying "all versions, no fix" for days after the Ubuntu Security Notice (USN) that fixes the CVE is out. In November 2026, hosts on nginx `1.18.0-6ubuntu14.24` kept open "no fix" findings for CVE-2026-118899 and CVE-2026-123640 although USN-9159-1 fixed both in `14.23`. When a USN in the same free channel, for the same release and source package, names the CVE record and lists a fix, the matcher now uses that fix. If it is installed, the finding closes at the next evaluation. If it is not, the finding shows the USN's fixed version, cites the USN as a source, and its explanation says the fix came from the USN. Ubuntu Pro, ESM and FIPS channels follow the existing rules. A CVE whose USN has not reached OSV yet stays open with "no fix".
+
 ## 0.20.28
 
 ### Security
