@@ -81,10 +81,24 @@ type Product struct {
 	// source is known not to cover.
 	CoverageNote string `json:"coverage_note,omitempty"`
 	// Update says how the product is usually updated, for the action plan.
-	Update   string   `json:"update,omitempty"`
-	Sources  []string `json:"sources"`
-	Verified string   `json:"verified"`
-	Note     string   `json:"note,omitempty"`
+	Update string `json:"update,omitempty"`
+	// Runtime is the product name the agent reports the product under when
+	// it finds the binary outside a package manager (pkg:generic/<runtime>,
+	// evidence kind "runtime": a source build in /usr/local/nginx, a binary
+	// copied into a container image, a Homebrew keg). Such a binary is the
+	// upstream release it prints, so it is matched against the same NVD
+	// records; "" when it is not matched.
+	Runtime string `json:"runtime,omitempty"`
+	// RuntimeEdition is the edition evidence a binary found outside a
+	// package manager must carry to be matched ("open-source" for nginx, not
+	// NGINX Plus or OpenResty, which have releases of their own). Homebrew
+	// builds the open-source edition and is not asked.
+	RuntimeEdition string `json:"runtime_edition,omitempty"`
+	// RuntimeUpdate says how such a binary is usually updated.
+	RuntimeUpdate string   `json:"runtime_update,omitempty"`
+	Sources       []string `json:"sources"`
+	Verified      string   `json:"verified"`
+	Note          string   `json:"note,omitempty"`
 
 	packages []*regexp.Regexp
 	version  *regexp.Regexp
@@ -98,8 +112,9 @@ var (
 
 // Catalogue is a parsed, validated document.
 type Catalogue struct {
-	doc  Document
-	byID map[string]*Product
+	doc       Document
+	byID      map[string]*Product
+	byRuntime map[string]*Product
 }
 
 func compileAnchored(what, p string) (*regexp.Regexp, error) {
@@ -127,7 +142,7 @@ func Parse(b []byte) (*Catalogue, error) {
 	if d.Version == "" {
 		return nil, errors.New("vendor build catalogue: no version")
 	}
-	c := &Catalogue{doc: d, byID: map[string]*Product{}}
+	c := &Catalogue{doc: d, byID: map[string]*Product{}, byRuntime: map[string]*Product{}}
 	cpes := map[string]string{}
 	for i := range c.doc.Products {
 		p := &c.doc.Products[i]
@@ -177,6 +192,20 @@ func Parse(b []byte) (*Catalogue, error) {
 				return nil, fail(fmt.Errorf("CPE %s is also the source of %s", cpe, prev))
 			}
 			cpes[cpe] = p.ID
+		}
+		if p.Runtime != "" {
+			if !idPattern.MatchString(p.Runtime) {
+				return nil, fail(fmt.Errorf("runtime %q is not lower-case words joined by hyphens", p.Runtime))
+			}
+			if prev := c.byRuntime[p.Runtime]; prev != nil {
+				return nil, fail(fmt.Errorf("runtime %s is also listed for %s", p.Runtime, prev.ID))
+			}
+			if p.RuntimeEdition == "" || p.RuntimeUpdate == "" {
+				return nil, fail(errors.New("a runtime needs runtime_edition and runtime_update"))
+			}
+			c.byRuntime[p.Runtime] = p
+		} else if p.RuntimeEdition != "" || p.RuntimeUpdate != "" {
+			return nil, fail(errors.New("runtime_edition and runtime_update need a runtime"))
 		}
 		c.byID[p.ID] = p
 	}
@@ -229,6 +258,10 @@ func (c *Catalogue) Products() []*Product {
 
 // Product returns the product with an id, or nil.
 func (c *Catalogue) Product(id string) *Product { return c.byID[id] }
+
+// ForRuntime returns the product a runtime found outside a package manager
+// (pkg:generic/<name>) is matched as, or nil.
+func (c *Catalogue) ForRuntime(name string) *Product { return c.byRuntime[strings.ToLower(name)] }
 
 // Identify returns the product a package of a purl type ("deb", "rpm") and
 // name belongs to, and the rank of the pattern it matched (lower is where

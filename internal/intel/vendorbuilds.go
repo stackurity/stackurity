@@ -33,6 +33,10 @@ type vendorPlan struct {
 	rep     bool
 	repName string
 	rank    int
+	// install is set for a runtime found outside a package manager
+	// (runtimebuilds.go): "unmanaged" or "homebrew"; repo is "" then.
+	install string
+	binary  string // the runtime's binary, when the agent said
 }
 
 // vendorCandidate reports whether a row is a package the vendor build
@@ -139,6 +143,9 @@ func (e *Evaluator) evaluateVendorBuild(ctx context.Context, r store.EvalRow, vp
 	p := vp.product
 	feed, configured := feeds[FeedVendorBuilds]
 	switch {
+	case vp.verr != nil && vp.install != "":
+		rc.State, rc.Reason = store.CoverageUnsupported, runtimeNotMatched+": "+vp.verr.Error()
+		return nil, nil
 	case vp.verr != nil:
 		// Not the user's to fix: an edition or pre-release the catalogue
 		// does not read.
@@ -174,7 +181,19 @@ func (e *Evaluator) evaluateVendorBuild(ctx context.Context, r store.EvalRow, vp
 	}
 	rc.Feed = feed.Name
 	rc.FeedCursor, rc.FeedLastSuccess, rc.FeedRead = feed.Cursor, feed.LastSuccess, true
-	notes := []string{fmt.Sprintf("built by %s: matched as %s %s against NVD's records for %s", vp.repo, p.Label, vp.version, p.Label)}
+	var notes []string
+	switch vp.install {
+	case "":
+		notes = append(notes, fmt.Sprintf("built by %s: matched as %s %s against NVD's records for %s", vp.repo, p.Label, vp.version, p.Label))
+	case "homebrew":
+		notes = append(notes, fmt.Sprintf("installed by Homebrew, which builds the upstream release: matched as %s %s against NVD's records for %s", p.Label, vp.version, p.Label))
+	default:
+		where := ""
+		if vp.binary != "" {
+			where = " (" + vp.binary + ")"
+		}
+		notes = append(notes, fmt.Sprintf("installed outside a package manager%s: matched as %s %s, the release it reports, against NVD's records for %s; a build with fixes patched in by hand still matches its release", where, p.Label, vp.version, p.Label))
+	}
 	if n := unfixed[p.ID]; n > 0 {
 		cves := fmt.Sprintf("%d CVEs", n)
 		if n == 1 {
@@ -192,13 +211,20 @@ func (e *Evaluator) evaluateVendorBuild(ctx context.Context, r store.EvalRow, vp
 		// (fixplan ProgramUpdate); "vendor:" keeps the ids apart from the
 		// Windows program catalogue's.
 		ev["program"] = VendorProgramKey(p.ID)
+		if vp.install != "" {
+			ev["program"] = RuntimeProgramKey(p.ID)
+		}
 		ev["program_label"] = p.Label
 		ev["program_version"] = vp.version
 		if line := p.Line(vp.version); line != "" {
 			ev["program_line"] = line
 		}
 		ev["vendor_build"] = p.ID
-		ev["vendor_repository"] = vp.repo
+		if vp.install != "" {
+			ev["runtime_install"] = vp.install
+		} else {
+			ev["vendor_repository"] = vp.repo
+		}
 		ev["vendor_catalogue_version"] = e.vendorCatalogue().Version()
 	}
 	return found, nil
@@ -237,8 +263,11 @@ func installedVendorBuilds(ctx context.Context, st *store.Store) ([]*vendorbuild
 		seen[p.ID] = true
 		out = append(out, p)
 	}
-	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
-	return out, nil
+	rt, err := installedRuntimeBuilds(ctx, st)
+	if err != nil {
+		return nil, err
+	}
+	return mergeProducts(out, rt), nil
 }
 
 // syncVendorBuilds reads, for each catalogued product installed as a vendor
@@ -278,6 +307,16 @@ func vendorComponents(ctx context.Context, st *store.Store, res *SyncResult) ([]
 		if p != nil && (res.All || res.Packages[store.PackageRef{BaseEcosystem: vendorbuilds.Ecosystem, Name: p.ID}]) {
 			seen[r.ComponentID] = true
 			out = append(out, r.ComponentID)
+		}
+	}
+	rt, err := runtimeBuildComponents(ctx, st, res)
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range rt {
+		if !seen[id] {
+			seen[id] = true
+			out = append(out, id)
 		}
 	}
 	return out, nil
