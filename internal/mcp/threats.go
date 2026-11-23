@@ -175,11 +175,14 @@ func init() {
 			"possible: findings only named like it, which never count as found; the internet-facing (or possibly " +
 			"internet-facing) assets with active known-exploited or critical findings, which such attacks try first; coverage: " +
 			"which connections its checks need, how many servers ran the checks and how many did not, which connections are " +
-			"missing, with the Help page that sets each up; data_gaps; and a verdict: found (the tool was found), exposed (not " +
-			"found, but internet-facing assets have known-exploited or critical findings; when checked is false nothing was " +
-			"looked for, so it is not a sign the tool is absent), not_checked (the checks did not run), partial (checks ran, but " +
-			"some servers were not checked or not everything could be read) or covered (every connected server was checked, " +
-			"nothing found, no such exposure). An unknown name returns the threats it knows.",
+			"missing, with the Help page that sets each up; data_gaps; exposure_note (whether exposed_assets bear on the verdict); " +
+			"and a verdict, decided in this order: found (the tool, or an open finding of the threat's vulnerabilities, was " +
+			"found), not_checked (the checks did not run, or a required connection is missing: nothing was looked for, so it is " +
+			"not a sign the threat is absent), exposed (attack tools, campaigns and practices only: not found, but " +
+			"internet-facing assets have known-exploited or critical findings; for a vulnerability threat those assets are " +
+			"context and never set the verdict), partial (checks ran, but some servers were not checked or not everything " +
+			"could be read) or covered (every connected server was checked, nothing found, no such exposure). An unknown name " +
+			"returns the threats it knows.",
 		schema: obj(map[string]any{
 			"threat": str("The threat's name, e.g. ARTEX"),
 		}, "threat"),
@@ -338,8 +341,26 @@ func runThreatCheck(ctx context.Context, api API, a map[string]any) (any, error)
 	return map[string]any{"threat": t.ID, "name": t.Name, "kind": t.Kind, "severity": t.Severity, "summary": t.Summary,
 		"first_seen": t.FirstSeen, "sources": t.Sources, "min_version": t.MinVersion, "note": dataNote, "found": found,
 		"possible": possible, "coverage": coverage, "checked": checked,
-		"exposed_assets": list, "data_gaps": r.gaps,
-		"verdict": decideVerdict(len(found) > 0, len(list) > 0, checked, requiredMissing, r.truncated || hc.unchecked > 0)}, nil
+		"exposed_assets": list, "exposure_note": exposureNote(t), "data_gaps": r.gaps,
+		"verdict": decideVerdict(len(found) > 0, exposureCounts(t) && len(list) > 0, checked, requiredMissing,
+			r.truncated || hc.unchecked > 0)}, nil
+}
+
+// exposureCounts says whether weak internet-facing assets bear on t's
+// verdict. An attack tool, campaign or practice goes after whatever is weak,
+// so such assets make the organisation exposed to it. A threat defined by
+// its own CVEs is found by open findings of those CVEs; other critical or
+// known-exploited findings say nothing about it.
+func exposureCounts(t serverThreat) bool {
+	return t.Kind != threats.KindExploitedVuln && t.Kind != threats.KindDisclosedVuln
+}
+
+func exposureNote(t serverThreat) string {
+	if exposureCounts(t) {
+		return "internet-facing assets with known-exploited or critical findings, which this kind of attack tries first"
+	}
+	return "context only: internet-facing assets with other known-exploited or critical findings; they do not affect " +
+		"this threat's verdict, which only its own vulnerabilities decide"
 }
 
 // readThreatFindings reads the open findings of t's config rules (found)
@@ -612,15 +633,16 @@ func exposedBefore(a, b *exposedAsset) bool {
 }
 
 // decideVerdict: covered only when every part was read and every connected
-// server ran the checks.
+// server ran the checks. When the checks did not run, the verdict says so
+// before anything else: "exposed" next to unrun checks read as a finding.
 func decideVerdict(found, exposed, checked, requiredMissing, incomplete bool) string {
 	switch {
 	case found:
 		return "found"
-	case exposed:
-		return "exposed"
 	case !checked || requiredMissing:
 		return "not_checked"
+	case exposed:
+		return "exposed"
 	case incomplete:
 		return "partial"
 	}
