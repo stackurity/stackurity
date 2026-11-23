@@ -43,7 +43,7 @@ import {
   IconHelp,
   IconInbox,
   IconIssues,
-  IconMessage,
+  IconSparkles,
   IconShield,
   IconSignalOff,
   IconTrend,
@@ -695,7 +695,7 @@ function AskStartBlock({ admin, status }: { admin: boolean; status: AskStatus | 
     return (
       <Block
         id="dash-ask"
-        icon={<IconMessage />}
+        icon={<IconSparkles />}
         title="Ask Stackurity"
         description="An AI assistant that answers what to fix first, what needs attention and how to set things up, with links to the pages and changes you can apply in one click."
         className="dash-band dash-ask"
@@ -710,7 +710,7 @@ function AskStartBlock({ admin, status }: { admin: boolean; status: AskStatus | 
   return (
     <Block
       id="dash-ask"
-      icon={<IconMessage />}
+      icon={<IconSparkles />}
       title="Ask Stackurity"
       description="The quickest way to get going: ask what to fix first, what needs attention, or how to set something up. Answers link to the pages, and can propose changes you apply in one click."
       className="dash-band dash-ask"
