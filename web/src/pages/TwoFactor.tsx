@@ -779,7 +779,7 @@ function Enrol({ onCancel, onDone }: { onCancel: () => void; onDone: (codes: str
   );
 }
 
-function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
+export function RecoveryCodes({ codes, onDone }: { codes: string[]; onDone: () => void }) {
   const text = codes.join("\n");
   return (
     <>

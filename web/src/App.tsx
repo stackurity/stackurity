@@ -1,4 +1,4 @@
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useCallback, useState, type ReactNode } from "react";
 import { Link, Navigate, Route, Routes, useLocation, useParams } from "react-router";
 import type { UserRole } from "./api";
 import { useAuth } from "./auth";
@@ -6,6 +6,8 @@ import { Layout } from "./components/Layout";
 import { ErrorBox, Loading } from "./components/ui";
 import { LoginPage, SetupPage } from "./pages/Login";
 import { MfaEnrolmentPage, MfaStepUpPage } from "./pages/TwoFactor";
+import { PasskeyOfferPage } from "./pages/PasskeyOffer";
+import { passkeyOfferSnoozed } from "./passkeyOffer";
 import { ChangeTemporaryPasswordPage, ForgotPasswordPage, ResetPasswordPage } from "./pages/Password";
 import { AcceptInvitePage } from "./pages/AcceptInvite";
 import { SlackLinkPage } from "./pages/SlackLink";
@@ -156,6 +158,10 @@ function slackCallbackNeedsSession(): boolean {
 export function App() {
   const { state, refresh } = useAuth();
   const { pathname } = useLocation();
+  // The passkey offer after a password sign-in, once answered (or skipped
+  // on a device without a fingerprint or face unlock).
+  const [passkeyOfferDone, setPasskeyOfferDone] = useState(false);
+  const endPasskeyOffer = useCallback(() => setPasskeyOfferDone(true), []);
 
   // An invitation link works signed in or not, before any other page.
   if (pathname === "/invite" && (state.phase === "login" || state.phase === "ready")) return <AcceptInvitePage />;
@@ -250,6 +256,12 @@ export function App() {
   // A self-hosted server without its key waits for one (agents and scans
   // keep sending data meanwhile).
   if (state.phase === "ready" && state.me.license_key?.state === "required") return <KeyStepPage status={state.me.license_key} />;
+
+  // Just signed in with a password and no passkey yet: offer Touch ID /
+  // Face ID next time, then go on to the page that was asked for. Flows
+  // above (approving a device, a server's key) are not interrupted.
+  if (state.phase === "ready" && state.me.passkey_offer && !passkeyOfferDone && !passkeyOfferSnoozed(state.me.user?.id ?? 0))
+    return <PasskeyOfferPage onDone={endPasskeyOffer} />;
 
   switch (state.phase) {
     case "loading":

@@ -303,6 +303,11 @@ func (s *Server) me(w http.ResponseWriter, r *http.Request) {
 	if p.SSORequired != nil {
 		out["sso_required"] = p.SSORequired
 	}
+	// Just signed in with a password and no passkey yet: the dashboard
+	// offers to add one (passkey_offer.go).
+	if s.passkeyOffer(r) {
+		out["passkey_offer"] = true
+	}
 	// Whether this self-hosted server has its key (absent on Stackurity
 	// Cloud): the dashboard asks for it, or shows administrators the days
 	// left of an upgrade's grace period.
