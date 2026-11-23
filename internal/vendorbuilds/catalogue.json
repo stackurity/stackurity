@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-12.1",
+  "version": "2026-11-23.1",
   "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
   "products": [
     {
@@ -243,6 +243,23 @@
       ],
       "verified": "2026-11-12",
       "note": "Docker's build of containerd carries the upstream release (2.4.2-4~ubuntu.24.04~noble, 2.4.2-4.el9 are containerd 2.4.2); NVD names it under linuxfoundation:containerd (22 CVEs). The distributions' own containerd package is not listed: its advisories apply."
+    },
+    {
+      "id": "puppet",
+      "label": "Puppet agent",
+      "packages": ["^deb/puppet-agent$", "^rpm/puppet-agent$"],
+      "cpes": ["cpe:2.3:a:puppet:puppet"],
+      "coverage_note": "Puppet Server runs the Ruby code of puppet-agent, which is what NVD's records for Puppet describe; the puppetserver package's own version, Puppet Enterprise and OpenVox (openvox-agent, openvox-server) are not read.",
+      "update": "Puppet's public repository ends at puppet-agent 8.10.0, so later fixes are not in it: move to Puppet Core (Perforce's licensed builds) or OpenVox (Vox Pupuli's builds), then restart puppetserver on the Puppet servers.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:puppet:puppet",
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-115731",
+        "https://apt.puppet.com/dists/jammy/puppet8/binary-amd64/Packages",
+        "https://apt.puppet.com/dists/bookworm/puppet8/binary-amd64/Packages",
+        "https://yum.puppet.com/puppet8/el/9/x86_64/"
+      ],
+      "verified": "2026-11-23",
+      "note": "Puppet's builds carry the release with the target after the revision (8.10.0-1jammy, 8.10.0-1bookworm, 8.10.0-1.el9 are Puppet 8.10.0). NVD names Puppet under puppet:puppet (43 CVEs; 3 configurations with sw_edition enterprise, not read). CVE-2026-115731 (report deserialisation code execution on Puppet Server, in CISA's KEV catalogue since 17 November 2026) affects 8.0.0 to 8.22.1 and 9.0.0 to 9.1.2. Ubuntu's and Debian's own puppet-agent (8.4.0-1, 8.10.0-5+deb13u1) are not listed: their advisories apply."
     }
   ]
 }

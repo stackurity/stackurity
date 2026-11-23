@@ -251,6 +251,7 @@ upstream version against the upstream product's NVD records (feed
 | HashiCorp Vault, Consul, Nomad, Terraform | `vault`, `consul`, `nomad`, `terraform` | `hashicorp:<product>` |
 | Docker Engine (download.docker.com) | `docker-ce`, `docker-ce-cli`, `docker-ce-rootless-extras` | `docker:engine` (29 and later), `mobyproject:moby` (up to 28), `docker:docker` (with `community`) |
 | containerd (download.docker.com) | `containerd.io` | `linuxfoundation:containerd` |
+| Puppet agent (apt.puppet.com, yum.puppet.com) | `puppet-agent` | `puppet:puppet` (Puppet Server runs this code) |
 
 - A product installed as several packages at one version (`php8.3-common` and
   `php8.3-fpm`) is reported once, on its first listed package; the others'
