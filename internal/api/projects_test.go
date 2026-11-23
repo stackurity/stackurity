@@ -1223,6 +1223,18 @@ func TestProjectAccessRules(t *testing.T) {
 	if code := get(sessionMember("bad", o.admin, map[string]string{"X-Stackurity-Project": "999999"}), "/api/v1/assets", nil); code != 404 {
 		t.Errorf("unknown project: %d, want 404", code)
 	}
+	// The 404 names the refused project, so the dashboard can drop a stale
+	// switcher choice (#540); a missing record has no such header.
+	unknown := o.admin.req("GET", "/api/v1/assets", nil, map[string]string{"X-Stackurity-Project": "999999"})
+	unknown.Body.Close()
+	if got := unknown.Header.Get("X-Stackurity-Project-Unknown"); got != "999999" {
+		t.Errorf("unknown project: X-Stackurity-Project-Unknown = %q, want 999999", got)
+	}
+	missing := o.admin.req("GET", "/api/v1/assets/999999", nil, nil)
+	missing.Body.Close()
+	if missing.StatusCode != 404 || missing.Header.Get("X-Stackurity-Project-Unknown") != "" {
+		t.Errorf("missing asset: %d, X-Stackurity-Project-Unknown = %q, want 404 and no header", missing.StatusCode, missing.Header.Get("X-Stackurity-Project-Unknown"))
+	}
 	if code := get(sessionMember("bad", o.admin, map[string]string{"X-Stackurity-Project": "abc"}), "/api/v1/assets", nil); code != 400 {
 		t.Errorf("invalid project: %d, want 400", code)
 	}

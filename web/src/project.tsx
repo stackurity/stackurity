@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useLocation, useNavigate } from "react-router";
-import { api, setActiveProject, type Project } from "./api";
+import { api, setActiveProject, setProjectUnknownHandler, type Project } from "./api";
 import { useAuth } from "./auth";
 
 /**
@@ -27,7 +27,7 @@ function fromURL(search: string): number | null {
 }
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const { me } = useAuth();
+  const { me, refresh } = useAuth();
   const { pathname, search, hash } = useLocation();
   const navigate = useNavigate();
   const projects = useMemo(() => me?.projects ?? [], [me]);
@@ -48,6 +48,17 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setProjectId(0);
     }
   }, [known, projectId]);
+
+  // The server refused the chosen project (archived, or another
+  // organisation's after switching in another tab): back to all projects,
+  // and reload the list so the switcher stops offering it (#540).
+  useEffect(() => {
+    setProjectUnknownHandler((id) => {
+      setProjectId((cur) => (cur === id ? 0 : cur));
+      void refresh();
+    });
+    return () => setProjectUnknownHandler(null);
+  }, [refresh]);
 
   // A link with ?project= switches to it.
   useEffect(() => {
