@@ -34,6 +34,10 @@ const FeatureConfigFindings = "config_findings"
 // /ingest takes config findings of category attack_tool.
 const FeatureConfigAttackTools = "config_attack_tools"
 
+// FeatureConfigKernel, in GET /meta's features, says that POST /ingest
+// takes config findings of category kernel.
+const FeatureConfigKernel = "config_kernel"
+
 // FeatureReachability, in GET /meta's features, says that POST /ingest
 // accepts and stores observations' reachability (model.Reachability).
 // Collectors send it only to servers that list it: older servers reject

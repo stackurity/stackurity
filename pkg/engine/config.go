@@ -118,10 +118,17 @@ const FeatureConfigAttackTools = client.FeatureConfigAttackTools
 // ConfigAttackTool is the category of attack tool findings.
 const ConfigAttackTool = model.ConfigAttackTool
 
+// FeatureConfigKernel is the server feature that says it takes config
+// findings of category kernel (ConfigKernel).
+const FeatureConfigKernel = client.FeatureConfigKernel
+
+// ConfigKernel is the category of kernel module findings.
+const ConfigKernel = model.ConfigKernel
+
 // ConfigForServer drops from s what a server does not take, given its GET
 // /meta features (has reports whether one is listed): every config finding
 // without FeatureConfigFindings, attack tool findings without
-// FeatureConfigAttackTools. Batches from image, archive and repository
+// FeatureConfigAttackTools, kernel findings without FeatureConfigKernel. Batches from image, archive and repository
 // scans carry attack tool findings, and an older server refuses the whole
 // batch over an unknown category, so call this before every upload. It
 // returns the scan to send, nil for none.
@@ -131,6 +138,9 @@ func ConfigForServer(s *ConfigScan, has func(feature string) bool) *ConfigScan {
 	}
 	if !has(FeatureConfigAttackTools) {
 		s.WithoutCategory(ConfigAttackTool)
+	}
+	if !has(FeatureConfigKernel) {
+		s.WithoutCategory(ConfigKernel)
 	}
 	return s
 }

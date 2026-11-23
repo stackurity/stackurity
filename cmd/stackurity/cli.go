@@ -219,7 +219,7 @@ func remotePacks(cl *client.Client) func(ctx context.Context) ([]lockfile.Extens
 
 // serverTakes is what GET /meta says the server accepts from the agent.
 type serverTakes struct {
-	appList, hostImages, leaks, leakValueChecks, configFindings, attackTools, reachability bool
+	appList, hostImages, leaks, leakValueChecks, configFindings, attackTools, kernel, reachability bool
 }
 
 // forServer drops from the agent's batches what the server does not take:
@@ -240,6 +240,9 @@ func forServer(bs []*model.ObservationBatch, t serverTakes) []*model.Observation
 		}
 		if !t.attackTools {
 			b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
+		}
+		if !t.kernel {
+			b.ConfigFindings.WithoutCategory(model.ConfigKernel)
 		}
 		if !t.reachability {
 			b.StripReachability()
@@ -422,7 +425,7 @@ host; see docs/install.md.`,
 			var takes serverTakes
 			if m, err := cl.Meta(ctx); err == nil {
 				takes = serverTakes{appList: m.Has(client.FeatureAppList), hostImages: m.Has(client.FeatureHostImages),
-					leaks: m.Has(client.FeatureLeaks), leakValueChecks: m.Has(client.FeatureLeakValueChecks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools),
+					leaks: m.Has(client.FeatureLeaks), leakValueChecks: m.Has(client.FeatureLeakValueChecks), configFindings: m.Has(client.FeatureConfigFindings), attackTools: m.Has(client.FeatureConfigAttackTools), kernel: m.Has(client.FeatureConfigKernel),
 					reachability: m.Has(client.FeatureReachability)}
 			}
 			if opts.docker != nil && !takes.hostImages {
@@ -786,8 +789,13 @@ config findings; --no-config-checks turns them off.`,
 				if m, err := cl.Meta(cmd.Context()); err != nil || !m.Has(client.FeatureConfigFindings) {
 					fmt.Fprintln(os.Stderr, "warning: the server does not take config findings (Stackurity 0.21 or later is needed); they are not sent")
 					b.ConfigFindings = nil
-				} else if !m.Has(client.FeatureConfigAttackTools) {
-					b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
+				} else {
+					if !m.Has(client.FeatureConfigAttackTools) {
+						b.ConfigFindings.WithoutCategory(model.ConfigAttackTool)
+					}
+					if !m.Has(client.FeatureConfigKernel) {
+						b.ConfigFindings.WithoutCategory(model.ConfigKernel)
+					}
 				}
 			}
 			r, err := cl.Ingest(cmd.Context(), b)

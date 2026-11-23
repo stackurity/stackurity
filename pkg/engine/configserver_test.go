@@ -31,6 +31,15 @@ func TestConfigForServer(t *testing.T) {
 	if s := ConfigForServer(mk(), has(FeatureConfigFindings, FeatureConfigAttackTools)); len(s.Found) != 2 {
 		t.Errorf("current server: %+v", s.Found)
 	}
+	kern := func() *ConfigScan {
+		return &ConfigScan{Complete: true, Found: []model.ConfigFinding{{Rule: confcheck.RuleKernelSCTP, Category: ConfigKernel}}}
+	}
+	if s := ConfigForServer(kern(), has(FeatureConfigFindings, FeatureConfigAttackTools)); len(s.Found) != 0 {
+		t.Errorf("server without config_kernel: %+v", s.Found)
+	}
+	if s := ConfigForServer(kern(), has(FeatureConfigFindings, FeatureConfigKernel)); len(s.Found) != 1 {
+		t.Errorf("server with config_kernel: %+v", s.Found)
+	}
 	if ConfigForServer(nil, has(FeatureConfigFindings)) != nil {
 		t.Error("nil scan")
 	}

@@ -27,7 +27,7 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	// batch may list its application directories (apps.dirs);
 	// "kubernetes_report" means POST /kubernetes/report exists;
 	// "gate_policies" means POST /gate-policies/check exists.
-	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks, FeatureReachability, FeatureConfigFindings, FeatureConfigAttackTools, FeatureLeakValueChecks, FeatureCodeFindings, FeatureGatePolicies}
+	features := []string{FeatureUploadProject, FeatureAppList, FeatureHostImages, FeatureKubernetesReport, FeatureLeaks, FeatureReachability, FeatureConfigFindings, FeatureConfigAttackTools, FeatureConfigKernel, FeatureLeakValueChecks, FeatureCodeFindings, FeatureGatePolicies}
 	// "device_login": a command-line tool can sign in from the browser
 	// (POST /device/code and /device/token, device_login.go).
 	if s.BaseURL != "" {

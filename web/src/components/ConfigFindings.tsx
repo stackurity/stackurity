@@ -30,7 +30,8 @@ import {
  * Risky settings (config findings): AI coding-agent hooks that download and
  * run code, SSH keys and settings that give root an unrestricted shell, and
  * GitHub Actions that run third-party code by a movable tag, and known
- * attack tools (ARTEX) found on a server or image. Each row says
+ * attack tools (ARTEX) found on a server or image, and kernel modules
+ * (SCTP) that let local code become root. Each row says
  * in one line why it is a risk and what to change in the file.
  */
 
@@ -39,6 +40,7 @@ export const CATEGORY_LABEL: Record<ConfigCategory, string> = {
   ssh: "SSH access",
   ci: "GitHub Actions",
   attack_tool: "Attack tools",
+  kernel: "Kernel modules",
 };
 
 const VIEW_QUERY: Record<

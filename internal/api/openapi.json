@@ -16758,7 +16758,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
+      "description": "agent_hook, ssh, ci, attack_tool or kernel, comma-separated",
       "schema": {
        "type": "string"
       }
@@ -16900,7 +16900,7 @@
       "name": "category",
       "in": "query",
       "required": false,
-      "description": "agent_hook, ssh, ci or attack_tool, comma-separated",
+      "description": "agent_hook, ssh, ci, attack_tool or kernel, comma-separated",
       "schema": {
        "type": "string"
       }

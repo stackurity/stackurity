@@ -8,7 +8,7 @@ These findings appear under **Security → Risky settings** and on each asset's 
 
 | Where | Checked by | What |
 |---|---|---|
-| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access; attack tools |
+| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access; attack tools; kernel modules |
 | Container images | the agent with `--docker`, and image archives | attack tools |
 | Repositories | repository integrations (GitHub, GitLab, Git URLs), `stackurity scan DIR` and the standalone scanner | GitHub Actions workflows; agent hooks and MCP servers checked into the repository; attack tools |
 
@@ -96,6 +96,40 @@ It skips other folders whose names start with `.`, and it never walks deeper. It
 If you run the tool yourself for authorised testing, dismiss the finding with a note. Keep its console off the internet; its default port is 8787.
 
 Agents send attack tool findings only to servers that list `config_attack_tools` in `GET /meta`. An older server gets the other findings as before.
+
+### Kernel modules
+
+Some kernel bugs let a program that already runs on a server, as any user, become root. When the bug has no fix yet, or no CVE to match against the kernel package, what can be checked is whether the vulnerable part of the kernel can be used at all.
+
+The first module covered is **SCTP**. In November 2026 Xint used a use-after-free in the Linux kernel's SCTP send path, present since Linux 4.15 (2018), as the last step of **nginx2root**. The earlier steps were memory-corruption bugs in nginx (fixed in nginx 1.31.9 and 1.30.7) that run commands as the nginx worker. The SCTP step then turned that into root, including from inside a Docker container. As of 23 November 2026 the kernel bug has no CVE and no fix. Most servers never use SCTP, which is a network protocol used mainly in telecoms.
+
+The kernel loads the SCTP module by itself when any program opens an SCTP socket, so a module that is merely installed is enough for the attack.
+
+| Severity | Rule | When |
+|---|---|---|
+| medium | `kernel-sctp-loadable` | The SCTP module is loaded in the running kernel (`/proc/modules` or `/sys/module/sctp`), or SCTP is built into the kernel (`modules.builtin`). A modprobe setting cannot turn off a built-in module, and does not unload a module that is already loaded. |
+| low | `kernel-sctp-loadable` | The module is installed for the running kernel (`/lib/modules/<release>/kernel/net/sctp/`, or `/usr/lib/modules`) and nothing stops it loading. |
+
+Loading counts as stopped by any of:
+
+- an `install sctp /bin/false` line (or `/bin/true`, any path) in a `*.conf` file in `/etc/modprobe.d`, `/run/modprobe.d`, `/usr/local/lib/modprobe.d`, `/usr/lib/modprobe.d` or `/lib/modprobe.d`, where a file in an earlier directory hides a file of the same name in a later one, as modprobe does;
+- `module_blacklist=sctp` on the kernel command line;
+- `/proc/sys/kernel/modules_disabled` set to `1`.
+
+`blacklist sctp` alone does not count. It only stops loading by alias, not the kernel's own load when a program asks for an SCTP socket.
+
+To stop it, unless something on the server uses SCTP:
+
+```sh
+echo "install sctp /bin/false" | sudo tee /etc/modprobe.d/disable-sctp.conf
+sudo rmmod sctp   # only if it is loaded; fails while something uses it, then restart the server
+```
+
+This removes only the root step. Upgrading nginx is still the fix for the nginx bugs; see your vulnerability findings for nginx. Remove the line once your distribution ships a kernel with the fix.
+
+The check reads `/proc/sys/kernel/osrelease`, `/proc/modules`, `/proc/cmdline`, `/proc/sys/kernel/modules_disabled`, `/sys/module`, the running kernel's module tree and the modprobe.d files. Nothing is run. When the running kernel's release cannot be read, for example on a mounted root without `/proc`, nothing is reported. Medium and low findings never alert.
+
+Agents send kernel findings only to servers that list `config_kernel` in `GET /meta`. An older server gets the other findings as before.
 
 ## Second check
 
