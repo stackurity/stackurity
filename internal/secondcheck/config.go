@@ -135,6 +135,11 @@ func checkConfig(in store.ConfigRecheckInput) Verdict {
 			return couldNot("Nothing was stored to say what matched.")
 		}
 		return confirmed(in.Subject + " still matched the tool at the last scan.")
+	case "kernel":
+		if in.Subject == "" {
+			return couldNot("Nothing was stored to say what the kernel's state was.")
+		}
+		return confirmed("At the last scan: " + in.Subject + ".")
 	}
 	return couldNot("The second check has no rule for " + in.Rule + " yet.")
 }

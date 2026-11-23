@@ -123,7 +123,8 @@ func init() {
 			"coding agent's hook or MCP server start command that downloads and runs code), ssh (SSH keys or sshd settings that " +
 			"give root an unrestricted shell), ci (GitHub Actions run by a movable tag, or pull_request_target checking out " +
 			"untrusted code) and attack_tool (an attacker or penetration-testing tool, such as ARTEX, found installed, running, " +
-			"in an image or in a repository). Each has the asset, rule, title, severity (high, medium, low, info), file and line, " +
+			"in an image or in a repository) and kernel (a kernel module that lets code already running on a server become root, " +
+			"such as SCTP, the root step of nginx2root). Each has the asset, rule, title, severity (high, medium, low, info), file and line, " +
 			"subject, why (one line) and fix (the change to make), status and first and last seen, and second_check: the " +
 			"independent second check's verdict (confirmed; likely_false_positive: commented out, a workflow GitHub never runs, " +
 			"an action pinned to a commit; fixed; could_not_check), its one-sentence reason and the rules' version, or null " +
@@ -131,7 +132,7 @@ func init() {
 			"when that asset's config checks last ran and whether they were complete: none means its files were never checked.",
 		schema: obj(map[string]any{
 			"asset_id":     num("Limit to one asset"),
-			"category":     str("Comma-separated: agent_hook, ssh, ci, attack_tool"),
+			"category":     str("Comma-separated: agent_hook, ssh, ci, attack_tool, kernel"),
 			"severity":     str("Comma-separated: high, medium, low, info"),
 			"status":       str("open (the default), resolved (gone or dismissed) or all"),
 			"second_check": str(secondCheckArg),

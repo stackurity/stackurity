@@ -59,6 +59,8 @@ func RuleDoc(rule string) string {
 		return "https://securitylab.github.com/resources/github-actions-preventing-pwn-requests/"
 	case RuleAttackToolArtex, RuleAttackToolArtexBackdoor:
 		return AttackToolsDoc
+	case RuleKernelSCTP:
+		return KernelModulesDoc
 	}
 	return ""
 }

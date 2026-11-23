@@ -13,7 +13,7 @@ type ConfigFinding struct {
 	// Rule is a stable id (agent-hook-remote-exec, ssh-root-key-ci, ...).
 	Rule string `json:"rule"`
 	// Category groups rules for the dashboard: ConfigAgentHook,
-	// ConfigSSH, ConfigCI or ConfigAttackTool.
+	// ConfigSSH, ConfigCI, ConfigAttackTool or ConfigKernel.
 	Category string `json:"category"`
 	// Title is shown: "Claude Code hook downloads and runs code".
 	Title    string `json:"title"`
@@ -43,6 +43,9 @@ const (
 	// ConfigAttackTool is an attacker's tool found on the asset (ARTEX):
 	// a binary built from it, an image of it, or a copy of its source.
 	ConfigAttackTool = "attack_tool"
+	// ConfigKernel is a kernel setting or module that lets code already
+	// running on a server become root (the SCTP module, nginx2root).
+	ConfigKernel = "kernel"
 )
 
 // ConfigScan is what a collector's configuration checks found. Nil on a
@@ -100,7 +103,7 @@ func (s *ConfigScan) validate(add func(string, ...any)) {
 			return
 		}
 		switch f.Category {
-		case ConfigAgentHook, ConfigSSH, ConfigCI, ConfigAttackTool:
+		case ConfigAgentHook, ConfigSSH, ConfigCI, ConfigAttackTool, ConfigKernel:
 		default:
 			add("config_findings.found[%d].category %q is not valid", i, f.Category)
 			return
