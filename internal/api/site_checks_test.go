@@ -194,3 +194,64 @@ func TestPublicSiteCheck(t *testing.T) {
 		t.Errorf("teaser: %d %s", code, body)
 	}
 }
+
+// TestRunWebsiteCheckThroughMCP: run_website_check through /mcp with a
+// personal token runs a check only after its preview's confirm code, and
+// applies the API's own rules: a plan that runs checks from the dashboard
+// only and a used-up allowance are refused with the plan line, and an
+// address the API refuses never reaches it.
+func TestRunWebsiteCheckThroughMCP(t *testing.T) {
+	o := newOrgWith(t, func(s *api.Server) {})
+	withBaseURL(o.e)
+	o.e.api.SetSiteCheckClient(siteOnLoopback(t))
+	seedJQueryAdvisory(t, o.e)
+	var tok struct{ Secret string }
+	if code := o.admin.do("POST", "/api/v1/tokens", map[string]any{"name": "assistant", "role": "engineer"}, &tok); code != 201 {
+		t.Fatalf("token: %d", code)
+	}
+	run := func(args map[string]any) (map[string]any, string) {
+		t.Helper()
+		text, isErr := callMCPTool(t, o.e, tok.Secret, "run_website_check", args)
+		if isErr {
+			return nil, text
+		}
+		var out map[string]any
+		if err := json.Unmarshal([]byte(text), &out); err != nil {
+			t.Fatalf("%s", text)
+		}
+		return out, ""
+	}
+	checks := func() int {
+		var list struct{ Items []store.SiteCheck }
+		o.admin.do("GET", "/api/v1/site-checks", nil, &list)
+		return len(list.Items)
+	}
+
+	setPlanLimits(t, o.e, store.PlanLimits{NextPlan: "Team", SiteChecksPerMonth: one(10), NoSiteCheckAPI: true})
+	if _, msg := run(map[string]any{"url": "shop.example.com"}); !strings.Contains(msg, "from an assistant or API token is not included") ||
+		!strings.Contains(msg, "the Team plan") {
+		t.Errorf("dashboard-only plan: %q", msg)
+	}
+
+	setPlanLimits(t, o.e, store.PlanLimits{NextPlan: "Team", SiteChecksPerMonth: one(1)})
+	pv, msg := run(map[string]any{"url": "shop.example.com"})
+	if pv == nil || pv["status"] != "preview" || checks() != 0 {
+		t.Fatalf("preview: %v %s", pv, msg)
+	}
+	done, msg := run(map[string]any{"url": "shop.example.com", "confirm": pv["confirm"]})
+	if done == nil || done["status"] != "done" || checks() != 1 {
+		t.Fatalf("confirmed: %v %s", done, msg)
+	}
+	res := done["result"].(map[string]any)
+	if res["check_id"] == nil || res["host"] != "shop.example.com" || res["known_exploited"] != 1.0 {
+		t.Errorf("result: %v", res)
+	}
+	if _, msg := run(map[string]any{"url": "shop.example.com"}); !strings.Contains(msg, "used all 1 website checks") {
+		t.Errorf("allowance used up: %q", msg)
+	}
+
+	setPlanLimits(t, o.e, store.PlanLimits{})
+	if _, msg := run(map[string]any{"url": "http://127.0.0.1/", "confirm": "000000000000"}); !strings.Contains(msg, "not a public website address") || checks() != 1 {
+		t.Errorf("loopback address: %q", msg)
+	}
+}

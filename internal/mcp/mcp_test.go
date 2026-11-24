@@ -80,7 +80,7 @@ func TestProtocol(t *testing.T) {
 		t.Errorf("initialize = %v", init)
 	}
 	tl := res[1]["result"].(map[string]any)["tools"].([]any)
-	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 25 || len(writeTools) != 11 {
+	if len(tl) != len(readTools)+len(writeTools) || len(readTools) != 25 || len(writeTools) != 12 {
 		t.Errorf("tools = %d", len(tl))
 	}
 	for i, x := range tl {
@@ -114,7 +114,7 @@ func TestProtocol(t *testing.T) {
 			t.Errorf("%s is not marked destructive", n)
 		}
 	}
-	if !hints["invite_to_project"][1] || hints["create_project"][1] || hints["search"][0] {
+	if !hints["invite_to_project"][1] || !hints["run_website_check"][1] || hints["run_website_check"][0] || hints["create_project"][1] || hints["search"][0] {
 		t.Errorf("hints = %v", hints)
 	}
 	call := res[2]["result"].(map[string]any)
@@ -277,6 +277,7 @@ func TestWriteToolsNeedConfirmation(t *testing.T) {
 		"check_again":                {"fix_group": "9:package_upgrade:1"},
 		"invite_to_project":          {"email": "new@x.io", "project_id": 3.0, "role": "viewer"},
 		"set_notification_enabled":   {"target": "channel", "id": 1.0, "enabled": false},
+		"run_website_check":          {"url": "shop.example.com"},
 	}
 	if len(cases) != len(writeTools) {
 		t.Fatalf("a write tool has no case here")
