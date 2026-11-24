@@ -22,6 +22,7 @@ export const NAV_PATHS: readonly string[] = [
   // Activity and reports
   "/incidents",
   "/audit",
+  "/website-check",
   // Integrations
   "/integrations",
   "/integrations/sources",
@@ -87,6 +88,7 @@ export const HELP_SLUGS: readonly string[] = [
   "evidence-pack",
   "evidence-report",
   "remediation-outcomes",
+  "website-check",
   "remediation-overview",
   "remediation-policy",
   "enable-host-remediation",

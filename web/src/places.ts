@@ -46,6 +46,8 @@ const PLACES: Record<string, string> = {
   "reports and audit": "/outcomes",
   "reports > outcomes": "/outcomes",
   "reports > evidence report": "/reports",
+  "reports > website check": "/website-check",
+  "website check": "/website-check",
   "audit log": "/audit",
   // Administration
   integrations: "/integrations",

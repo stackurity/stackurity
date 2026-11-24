@@ -529,5 +529,14 @@
   "where": "",
   "keywords": "backup restore pg_dump upgrade migrate rollback",
   "text": "Backup:\n```\ndocker compose exec -T postgres pg_dump -U stackurity -Fc stackurity > stackurity-$(date +%F).dump\n```\n\nRestore into a fresh install:\n```\ndocker compose up -d postgres\ndocker compose exec -T postgres pg_restore -U stackurity -d stackurity --clean --if-exists < stackurity-2026-10-23.dump\ndocker compose up -d\n```\n\n## Upgrading\n\n1. Take a backup.\n2. `git pull`, then `docker compose up -d --build` (or change `STACKURITY_IMAGE`).\n3. Migrations run automatically at start-up. Downgrades aren't supported: to roll back, restore the backup taken before the upgrade.\n4. Upgrade agents by replacing `/usr/local/bin/stackurity` and restarting the service.\n\nSchedule a nightly `pg_dump` (for example from cron) and keep at least two weeks of copies; test a restore now and then."
+ },
+ {
+  "id": "website-check",
+  "title": "Website check",
+  "section": "Daily work",
+  "summary": "See what a public website shows from the outside: server software, the libraries it loads, their vulnerabilities and end of life.",
+  "where": "Reports › Website check",
+  "keywords": "website check domain scan external outside headers server nginx apache php wordpress jquery bootstrap javascript library tls certificate hsts csp",
+  "text": "**Reports ▸ Website check** visits a public website once, like a browser, and lists what it shows anyone: the web server and language versions in its headers, its website platform (WordPress, Drupal and others), and the JavaScript and CSS libraries its page loads. Each version is matched to known vulnerabilities, with whether they are exploited in the wild and the version that fixes them, and to end-of-life dates. The report also shows the TLS certificate and which browser protection headers the site sends.\n\n## What a check does\n\n- It loads the page you enter and the first bytes of up to 20 scripts and stylesheets that page links to. Nothing else is requested: no port scans, no hidden paths, no attacks.\n- Only public websites on the standard ports: IP addresses, internal names and private addresses are refused.\n- What a site hides cannot be found: a server that does not name its version, or a library bundled without its banner. A distribution that patches an older version (Ubuntu's nginx, for example) can show issues it has already fixed.\n\n## Plans\n\nOn Stackurity Cloud each plan includes a number of checks a month, shown under **Settings ▸ Usage**; a check that could not run does not count. Running checks with an API token needs a plan with API access. Engineers and above can run checks; everyone can open earlier reports."
  }
 ]

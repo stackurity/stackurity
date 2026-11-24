@@ -267,7 +267,8 @@ func installedVendorBuilds(ctx context.Context, st *store.Store) ([]*vendorbuild
 	if err != nil {
 		return nil, err
 	}
-	return mergeProducts(out, rt), nil
+	// Read for the website check too (SiteCheckProducts), installed or not.
+	return mergeProducts(mergeProducts(out, rt), siteCheckVendorBuilds()), nil
 }
 
 // syncVendorBuilds reads, for each catalogued product installed as a vendor

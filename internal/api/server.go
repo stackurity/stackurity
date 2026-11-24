@@ -156,6 +156,14 @@ type Server struct {
 	// /.well-known/openai-apps-challenge, for OpenAI's domain check when an
 	// app is submitted (STACKURITY_OPENAI_APPS_CHALLENGE); empty answers 404.
 	OpenAIAppsChallenge string
+	// SiteChecksOff turns website checks off (STACKURITY_SITE_CHECKS=off).
+	// SiteCheckPublicKey is the key the website's public page sends to
+	// POST /api/v1/public/site-check (STACKURITY_SITE_CHECK_PUBLIC_KEY);
+	// empty answers 404 there. site_checks.go.
+	SiteChecksOff      bool
+	SiteCheckPublicKey string
+	// siteCheckClient replaces the guarded client in tests.
+	siteCheckClient *http.Client
 	// ClientMetadataHTTP fetches OAuth client ID metadata documents; nil
 	// uses a client through the outbound address guard. Tests set it.
 	ClientMetadataHTTP *http.Client
@@ -302,6 +310,8 @@ func (s *Server) Handler() http.Handler {
 			r.Get("/", s.publicCVEs)
 			r.Get("/recent", s.recentCVEs)
 		})
+		// The website's public website check (site_checks.go): its key only.
+		r.Post("/public/site-check", s.publicSiteCheck)
 		// Error reports from the dashboard, signed in or not (client_errors.go).
 		r.Post("/client-errors", s.clientErrors)
 		r.Post("/setup", s.setup)
@@ -518,9 +528,16 @@ func (s *Server) Handler() http.Handler {
 				r.Get("/tokens", s.listTokens)
 				r.Post("/tokens", s.createToken)
 				r.Delete("/tokens/{id}", s.revokeToken)
+				if !s.SiteChecksOff {
+					r.Get("/site-checks", s.listSiteChecks)
+					r.Get("/site-checks/{id}", s.getSiteCheck)
+				}
 			})
 			r.Group(func(r chi.Router) {
 				r.Use(requireRole(auth.RoleEngineer))
+				if !s.SiteChecksOff {
+					r.Post("/site-checks", s.createSiteCheck)
+				}
 				r.Patch("/assets/{id}", s.updateAsset)
 				r.Post("/assets/{id}/relations", s.addRelation)
 				r.Delete("/assets/{id}/relations", s.deleteRelation)
