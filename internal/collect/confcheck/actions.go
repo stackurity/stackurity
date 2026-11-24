@@ -61,6 +61,8 @@ func RuleDoc(rule string) string {
 		return AttackToolsDoc
 	case RuleKernelSCTP:
 		return KernelModulesDoc
+	case RuleShirudoNotLoaded, RuleShirudoLSMOff:
+		return ShirudoDoc
 	}
 	return ""
 }
