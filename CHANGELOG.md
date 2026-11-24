@@ -6,6 +6,26 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.31
+
+### Security
+
+- **Stackurity refuses to run behind a connection pooler in transaction mode.** The database role and each organisation's scope are set once per database connection, so a pooler that moves connections between PostgreSQL sessions (PgBouncer `pool_mode = transaction`, for example) could run a query with another request's scope, with none, or as the login role, and workspaces would not be isolated. Every command that uses the database now checks this when it starts and refuses with a message that says how to fix it, and `stackurity doctor` has a new `pooler` check. A pooler in session mode, or a direct connection, works as before. See [Connection poolers](docs/operations.md#connection-poolers). ([#539](https://github.com/stackurity/stackurity/issues/539), [#540](https://github.com/stackurity/stackurity/issues/540))
+
+### Added
+
+- **Website check.** Enter a domain and see what the website shows anyone who visits it: server and framework versions from its headers, the JavaScript and CSS libraries its page loads, its TLS and browser protection headers, each version matched to stored vulnerabilities (with CISA known-exploited flags and fixed versions) and end-of-life data. One browser-like visit, nothing probed; only public addresses on ports 80 and 443. In the dashboard under Reports > Website check, and through `POST /api/v1/site-checks`. On Stackurity Cloud, each plan includes a number of checks a month. See [Website check](docs/website-check.md).
+
+### Fixed
+
+- **No two menu entries share an icon any more.** Code findings now has its own code-file icon (Risky settings keeps the checked file). In Settings, Policy gates has a gate icon and Trust badge a badge icon (Risk policy keeps the shield). In Needs your attention on the Overview page, overdue issues show a clock with an alert (due today keeps the plain clock) and an incomplete check shows a dashed circle (not reporting keeps the no-signal icon). This matters most on a phone, where some menus show icons with little or no text.
+
+### Upgrading
+
+- If `STACKURITY_DATABASE_URL` points at a pooler in transaction or statement mode, switch it to session mode or connect straight to PostgreSQL before upgrading: the server will not start behind it.
+- Migration `0126_site_checks` adds the `site_checks` table and lets `plan_allowances` hold `site_checks`.
+- While website checks are on (the default; `STACKURITY_SITE_CHECKS=off` turns them off), nginx and PHP are read from NVD even when no asset runs them: two more products in the vendor builds sync.
+
 ## 0.20.30
 
 ### Fixed
