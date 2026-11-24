@@ -35,6 +35,7 @@ import (
 	"github.com/stackurity/stackurity/internal/packs"
 	"github.com/stackurity/stackurity/internal/plugins"
 	"github.com/stackurity/stackurity/internal/secrets"
+	"github.com/stackurity/stackurity/internal/sitecheck"
 	"github.com/stackurity/stackurity/internal/store"
 	"github.com/stackurity/stackurity/internal/threats"
 )
@@ -162,8 +163,9 @@ type Server struct {
 	// empty answers 404 there. site_checks.go.
 	SiteChecksOff      bool
 	SiteCheckPublicKey string
-	// siteCheckClient replaces the guarded client in tests.
-	siteCheckClient *http.Client
+	// siteCheckTest adjusts each website check in tests: an httptest
+	// client instead of the guarded one, and no TLS probe or DNS lookups.
+	siteCheckTest func(*sitecheck.Checker)
 	// ClientMetadataHTTP fetches OAuth client ID metadata documents; nil
 	// uses a client through the outbound address guard. Tests set it.
 	ClientMetadataHTTP *http.Client

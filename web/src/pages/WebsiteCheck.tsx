@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ApiError, siteChecks, type SiteCheck, type SiteCheckReport, type SiteCheckSoftware } from "../api";
+import { ApiError, siteChecks, type SiteCheck, type SiteCheckFinding, type SiteCheckReport, type SiteCheckSoftware } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { absTime, plural, relTime } from "../format";
@@ -58,11 +58,11 @@ export function WebsiteCheckPage() {
     <>
       <PageHeader
         title="Website check"
-        sub="See what a public website shows anyone who visits it: its server software, the JavaScript libraries it loads and their versions, with known vulnerabilities and end of life."
+        sub="See what a public website shows anyone who visits it: its server software, the JavaScript libraries it loads and their versions, with known vulnerabilities and end of life, plus leaked keys, cookie and form settings, outdated TLS and missing email records."
         help="website-check"
       />
       {canAct("engineer") ? (
-        <Card title="Check a website" description="One visit, like a browser: the page and the scripts it loads. Nothing is scanned or probed.">
+        <Card title="Check a website" description="One visit, like a browser: the page and the scripts it loads, one TLS handshake and the domain's email records. Nothing is scanned or probed.">
           <form className="inline-form" onSubmit={run}>
             <label className="sr-only" htmlFor="site-url">
               Website address
@@ -124,6 +124,11 @@ function ReportView({ report }: { report: SiteCheckReport }) {
           <li>
             <span className="muted">Protection headers missing</span> <strong>{s.headers_missing}</strong>
           </li>
+          {s.findings !== undefined && (
+            <li>
+              <span className="muted">Other problems</span> <strong>{s.findings}</strong>
+            </li>
+          )}
         </ul>
         {report.tls ? (
           <p className="small">
@@ -145,6 +150,8 @@ function ReportView({ report }: { report: SiteCheckReport }) {
         )}
       </Card>
 
+      {report.findings && <FindingsCard findings={report.findings} />}
+
       {report.software.length === 0 ? (
         <Card title="Software">
           <p className="muted">The site does not name its server software, and its page loads no library Stackurity recognises.</p>
@@ -164,6 +171,38 @@ function ReportView({ report }: { report: SiteCheckReport }) {
         </ul>
       </Card>
     </>
+  );
+}
+
+function FindingsCard({ findings }: { findings: SiteCheckFinding[] }) {
+  return (
+    <Card
+      title="Other problems"
+      description="What the page's code, cookies and forms show, whether the server still accepts TLS 1.0 or 1.1, and the domain's SPF and DMARC email records."
+    >
+      {findings.length === 0 ? (
+        <p className="muted">None found: no keys in the page's code, cookies and forms are set safely, and the email records are in place.</p>
+      ) : (
+        <ul className="plain-list">
+          {findings.map((f) => (
+            <li key={f.id}>
+              <SeverityBadge severity={f.severity} /> <strong>{f.title}</strong> <span className="muted small">{f.category}</span>
+              <div className="small">{f.detail}</div>
+              <div className="small">
+                <strong>Fix:</strong> {f.fix}
+              </div>
+              {f.where && f.where.length > 0 && (
+                <ul className="small muted">
+                  {f.where.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+    </Card>
   );
 }
 

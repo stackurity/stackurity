@@ -7,10 +7,18 @@ The website check shows what a public website gives away to anyone who visits it
 - For each: its **vulnerabilities** for that version (with whether CISA lists them as known exploited, and the version that fixes them) and whether its release line has reached **end of life**.
 - **TLS**: protocol version, certificate issuer and how many days it has left.
 - **Browser protection headers** the page does or does not send (Strict-Transport-Security, Content-Security-Policy, X-Content-Type-Options, clickjacking protection, Referrer-Policy).
+- **WordPress plugins** the page loads files from, with the version in their `?ver=` parameter. There is no stored vulnerability data for plugins; the report says so.
+- **Other problems**, worst first, each with what to do about it:
+  - **Leaked keys** in the page's inline scripts and in the first bytes of the site's own scripts (the same rules as [leaked keys](leaked-keys.md)). Only a masked preview is shown, never the key.
+  - **Cookies** without Secure (on an https site), and session cookies without HttpOnly or SameSite.
+  - **Mixed content** (an https page loading scripts, frames or images over http), and **password forms** on an http page or posting to an http address.
+  - **Files from public CDNs without an integrity check** (Subresource Integrity), and a **directory listing**.
+  - **TLS 1.0 or 1.1 still accepted** alongside newer versions.
+  - **Email records**: no SPF record or one ending in `+all`, and no DMARC record or one with `p=none`. Skipped for a site on a hosting platform's domain (`app.herokuapp.com`), which has no email records of its own.
 
 ## What a check does, and does not do
 
-A check is one browser-like visit. It requests the page you asked for (following up to five redirects), then the first 16 KB of up to 20 of the scripts and stylesheets that page links to. That is all: no port scans, no paths the page does not link, no login attempts, no payloads. Requests say who they are from: `Mozilla/5.0 (compatible; StackurityWebsiteCheck/1.0; +https://stackurity.ai/website-check)`.
+A check is one browser-like visit. It requests the page you asked for (following up to five redirects), then the first 16 KB of up to 20 of the scripts and stylesheets that page links to. For an https site it also opens one TLS connection offering only TLS 1.0 and 1.1, to see whether the server still accepts them (certificates are verified as usual), and it looks up the domain's SPF and DMARC records in DNS. That is all: no port scans, no paths the page does not link, no login attempts, no payloads. Requests say who they are from: `Mozilla/5.0 (compatible; StackurityWebsiteCheck/1.0; +https://stackurity.ai/website-check)`.
 
 Only public websites are checked: http or https on ports 80 and 443, by name. IP addresses, `localhost`, `.local` and `.internal` names, other ports and addresses with a user name are refused, and every connection is checked again on the address actually dialled, so a name that resolves to a private, loopback, link-local or cloud metadata address is refused too (whatever `STACKURITY_PRIVATE_TARGETS` allows for other outbound requests). A check gives up after 30 seconds.
 

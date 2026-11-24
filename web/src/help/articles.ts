@@ -2422,15 +2422,16 @@ docker compose up -d`,
     section: "Daily work",
     summary: "See what a public website shows from the outside: server software, the libraries it loads, their vulnerabilities and end of life.",
     where: ["Reports", "Website check"],
-    keywords: "website check domain scan external outside headers server nginx apache php wordpress jquery bootstrap javascript library tls certificate hsts csp",
+    keywords: "website check domain scan external outside headers server nginx apache php wordpress jquery bootstrap javascript library tls certificate hsts csp leaked key secret cookie secure httponly mixed content sri spf dmarc email",
     body: [
       {
-        p: "**Reports ▸ Website check** visits a public website once, like a browser, and lists what it shows anyone: the web server and language versions in its headers, its website platform (WordPress, Drupal and others), and the JavaScript and CSS libraries its page loads. Each version is matched to known vulnerabilities, with whether they are exploited in the wild and the version that fixes them, and to end-of-life dates. The report also shows the TLS certificate and which browser protection headers the site sends.",
+        p: "**Reports ▸ Website check** visits a public website once, like a browser, and lists what it shows anyone: the web server and language versions in its headers, its website platform (WordPress, Drupal and others), and the JavaScript and CSS libraries its page loads. Each version is matched to known vulnerabilities, with whether they are exploited in the wild and the version that fixes them, and to end-of-life dates. The report also shows the TLS certificate, which browser protection headers the site sends, and other problems with what to do about each: keys left in the page's code, cookies and password forms that are not set safely, mixed content, files from public CDNs without an integrity check, TLS 1.0 or 1.1 still accepted, and missing SPF or DMARC email records.",
       },
       { h: "What a check does", id: "what" },
       {
         list: [
-          "It loads the page you enter and the first bytes of up to 20 scripts and stylesheets that page links to. Nothing else is requested: no port scans, no hidden paths, no attacks.",
+          "It loads the page you enter and the first bytes of up to 20 scripts and stylesheets that page links to, makes one TLS connection to see whether TLS 1.0 or 1.1 is still accepted, and looks up the domain's SPF and DMARC records. Nothing else is requested: no port scans, no hidden paths, no attacks.",
+          "A key found in the page's code is shown masked, never in full.",
           "Only public websites on the standard ports: IP addresses, internal names and private addresses are refused.",
           "What a site hides cannot be found: a server that does not name its version, or a library bundled without its banner. A distribution that patches an older version (Ubuntu's nginx, for example) can show issues it has already fixed.",
         ],

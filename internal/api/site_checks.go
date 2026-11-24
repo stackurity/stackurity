@@ -66,7 +66,10 @@ func (s *Server) runSiteCheck(ctx context.Context, target string) (*sitecheck.Re
 	if err != nil {
 		return nil, err
 	}
-	c := &sitecheck.Checker{Intel: in, Client: s.siteCheckClient}
+	c := &sitecheck.Checker{Intel: in}
+	if s.siteCheckTest != nil {
+		s.siteCheckTest(c)
+	}
 	return c.Check(ctx, u)
 }
 

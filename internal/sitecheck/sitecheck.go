@@ -5,8 +5,9 @@
 //
 // A check is passive: one GET of the page asked for (following up to five
 // redirects), then the first few kilobytes of up to MaxScripts of the
-// scripts and stylesheets it loads. Nothing else is requested: no ports, no
-// paths that are not linked, no payloads. Every connection goes through a
+// scripts and stylesheets it loads, one TLS handshake offering only TLS
+// 1.0/1.1 (findings.go) and the domain's SPF and DMARC records. Nothing
+// else is requested: no ports, no paths that are not linked, no payloads. Every connection goes through a
 // netguard policy that refuses private, loopback, link-local and metadata
 // addresses whatever the server's own setting, checked again on the address
 // dialled (DNS rebinding). Only ports 80 and 443.
@@ -63,7 +64,11 @@ type Report struct {
 	Software []Software `json:"software"`
 	// Headers lists browser protections the page does or does not send.
 	Headers []HeaderCheck `json:"headers"`
-	Summary Summary       `json:"summary"`
+	// Findings are problems that are not a software version: leaked keys
+	// in the page's code, cookie and form settings, mixed content, TLS 1.0
+	// or 1.1 still accepted, missing SPF or DMARC records. Worst first.
+	Findings []Finding `json:"findings"`
+	Summary  Summary   `json:"summary"`
 	// Notes say what the check could not do (a script that did not load).
 	Notes []string `json:"notes"`
 }
@@ -84,7 +89,8 @@ type TLSInfo struct {
 type Software struct {
 	Name    string `json:"name"`
 	Version string `json:"version"`
-	// Kind: server (web server, language runtime), cms, library.
+	// Kind: server (web server, language runtime), cms, plugin (a
+	// WordPress plugin), library.
 	Kind string `json:"kind"`
 	// Where says how it was seen: "Server header", "page generator tag",
 	// or the script's address.
@@ -141,6 +147,8 @@ type Summary struct {
 	EndOfLife      int `json:"end_of_life"`
 	// HeadersMissing counts HeaderCheck entries not present.
 	HeadersMissing int `json:"headers_missing"`
+	// Findings counts Report.Findings.
+	Findings int `json:"findings"`
 }
 
 // Intel answers what the stored data says about one piece of software.
@@ -160,6 +168,11 @@ type Checker struct {
 	Client *http.Client
 	// Now is for tests.
 	Now func() time.Time
+	// DNS answers the SPF and DMARC lookups; nil uses the system resolver.
+	DNS Resolver
+	// OldTLS reports whether the site accepts TLS 1.0 or 1.1; nil makes one
+	// TLS handshake offering only those (tests replace it).
+	OldTLS func(ctx context.Context, site *url.URL) bool
 }
 
 // Target normalises what someone typed ("example.com", "https://example.com/shop")
@@ -250,7 +263,7 @@ func (c *Checker) Check(ctx context.Context, target *url.URL) (*Report, error) {
 		client = guardedClient()
 	}
 	r := &Report{URL: target.String(), Host: strings.ToLower(target.Hostname()), CheckedAt: now().UTC(),
-		Software: []Software{}, Headers: []HeaderCheck{}, Notes: []string{}}
+		Software: []Software{}, Headers: []HeaderCheck{}, Findings: []Finding{}, Notes: []string{}}
 
 	resp, body, err := get(ctx, client, target.String(), maxPageBytes, false)
 	if err != nil {
@@ -267,14 +280,18 @@ func (c *Checker) Check(ctx context.Context, target *url.URL) (*Report, error) {
 		r.Notes = append(r.Notes, "the page was served over plain http, without encryption")
 	}
 
+	final := resp.Request.URL
+	page := parsePage(final, body)
 	found := newFound()
 	fromHeaders(resp.Header, found)
 	fromGenerator(body, found)
 	for _, m := range apps.ParsePage(body) {
 		found.add(Software{Name: m[0], Version: m[1], Kind: "library", Where: m[2], Ecosystem: "npm", Package: m[0]})
 	}
-	c.fromScripts(ctx, client, resp.Request.URL, body, found, r)
-	r.Headers = headerChecks(resp.Header, resp.Request.URL.Scheme == "https")
+	wordpressPlugins(final, page, found)
+	heads := c.fromScripts(ctx, client, final, body, found, r)
+	r.Headers = headerChecks(resp.Header, final.Scheme == "https")
+	r.Findings = append(r.Findings, c.findings(ctx, final, resp.Header, page, heads)...)
 
 	for _, sw := range found.list() {
 		if c.Intel != nil {
@@ -284,14 +301,16 @@ func (c *Checker) Check(ctx context.Context, target *url.URL) (*Report, error) {
 					return nil, err
 				}
 				sw.Issues, sw.Coverage = issues, coverage
-			} else {
+			} else if sw.Coverage == "" {
 				sw.Coverage = "no vulnerability data for " + sw.Name + "; its end of life is checked"
 			}
-			eol, err := c.Intel.EndOfLife(ctx, sw)
-			if err != nil {
-				return nil, err
+			if sw.Kind != "plugin" { // plugins have no end-of-life data
+				eol, err := c.Intel.EndOfLife(ctx, sw)
+				if err != nil {
+					return nil, err
+				}
+				sw.EndOfLife = eol
 			}
-			sw.EndOfLife = eol
 		}
 		if sw.Issues == nil {
 			sw.Issues = []Issue{}
@@ -373,7 +392,7 @@ func (f *found) list() []Software {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	out := append([]Software(nil), f.items...)
-	order := map[string]int{"server": 0, "cms": 1, "library": 2}
+	order := map[string]int{"server": 0, "cms": 1, "plugin": 2, "library": 3}
 	sort.SliceStable(out, func(i, j int) bool {
 		if order[out[i].Kind] != order[out[j].Kind] {
 			return order[out[i].Kind] < order[out[j].Kind]
@@ -471,8 +490,8 @@ var hrefAttr = regexp.MustCompile(`(?is)\bhref\s*=\s*["']([^"']+)["']`)
 
 // fromScripts reads the first bytes of the scripts and stylesheets the
 // page loads (not those already known from their CDN address) for a
-// version banner.
-func (c *Checker) fromScripts(ctx context.Context, client *http.Client, base *url.URL, body []byte, f *found, r *Report) {
+// version banner, and returns what it read (for the leaked-key check).
+func (c *Checker) fromScripts(ctx context.Context, client *http.Client, base *url.URL, body []byte, f *found, r *Report) []fetched {
 	var refs []string
 	for _, m := range scriptSrc.FindAllSubmatch(body, -1) {
 		refs = append(refs, string(m[1]))
@@ -507,6 +526,7 @@ func (c *Checker) fromScripts(ctx context.Context, client *http.Client, base *ur
 	sem := make(chan struct{}, 4)
 	var mu sync.Mutex
 	failed := 0
+	var heads []fetched
 	for _, u := range todo {
 		wg.Add(1)
 		go func(u *url.URL) {
@@ -523,12 +543,17 @@ func (c *Checker) fromScripts(ctx context.Context, client *http.Client, base *ur
 			for _, m := range apps.ParseBanner(path.Base(u.Path), head) {
 				f.add(Software{Name: m[0], Version: m[1], Kind: "library", Where: u.String(), Ecosystem: "npm", Package: m[0]})
 			}
+			mu.Lock()
+			heads = append(heads, fetched{url: u, head: head})
+			mu.Unlock()
 		}(u)
 	}
 	wg.Wait()
 	if failed > 0 {
 		r.Notes = append(r.Notes, fmt.Sprintf("%d of the page's scripts and stylesheets could not be loaded", failed))
 	}
+	sort.Slice(heads, func(i, j int) bool { return heads[i].url.String() < heads[j].url.String() })
+	return heads
 }
 
 // headerChecks lists the browser protections a page should send.
@@ -599,6 +624,7 @@ func summarise(r *Report) Summary {
 			s.HeadersMissing++
 		}
 	}
+	s.Findings = len(r.Findings)
 	return s
 }
 

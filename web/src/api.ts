@@ -4765,7 +4765,7 @@ export interface SiteCheckIssue {
 export interface SiteCheckSoftware {
   name: string;
   version: string;
-  kind: "server" | "cms" | "library";
+  kind: "server" | "cms" | "plugin" | "library";
   where: string;
   ecosystem?: string;
   package?: string;
@@ -4773,6 +4773,15 @@ export interface SiteCheckSoftware {
   issues: SiteCheckIssue[];
   end_of_life: { product: string; cycle: string; ended: boolean; eol_date?: string; latest?: string; link?: string } | null;
   coverage?: string;
+}
+export interface SiteCheckFinding {
+  id: string;
+  severity: "critical" | "high" | "medium" | "low";
+  category: string;
+  title: string;
+  detail: string;
+  fix: string;
+  where?: string[];
 }
 export interface SiteCheckReport {
   url: string;
@@ -4783,7 +4792,18 @@ export interface SiteCheckReport {
   tls: { version: string; issuer: string; subject: string; not_after: string; days_left: number; outdated: boolean } | null;
   software: SiteCheckSoftware[];
   headers: { name: string; present: boolean; advice?: string }[];
-  summary: { software: number; issues: number; critical: number; high: number; known_exploited: number; end_of_life: number; headers_missing: number };
+  /** Absent on reports stored before findings were added. */
+  findings?: SiteCheckFinding[];
+  summary: {
+    software: number;
+    issues: number;
+    critical: number;
+    high: number;
+    known_exploited: number;
+    end_of_life: number;
+    headers_missing: number;
+    findings?: number;
+  };
   notes: string[];
 }
 export interface SiteCheck {
