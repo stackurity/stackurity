@@ -8,15 +8,7 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## 0.20.32
 
-### Added
-
-- **Agent tokens in Admin → Feedback.** Instance administrators can now create the feedback agent's and the virus scanner's tokens in the dashboard. Each token is shown once, with the command to save it. The card also shows when each token expires and was last used, and revokes tokens. Before this, the only way was an API call. See [Feedback queue](docs/feedback-queue.md#the-feedback-agent).
-
-### Changed
-
-- The dependency scan's exception for [GO-2026-6909](https://osv.dev/vulnerability/GO-2026-6909) (github.com/crewjam/saml) is removed: the advisory now names v0.5.2 as the fixed version, which Stackurity has used since 0.20.29, so the scanner no longer needs telling.
-
-## 0.20.31
+0.20.31 was tagged but never published (its release checks failed); its changes are listed here.
 
 ### Security
 
@@ -25,6 +17,11 @@ Each release's section is published as its GitHub release notes, and a tag witho
 ### Added
 
 - **Website check.** Enter a domain and see what the website shows anyone who visits it: server and framework versions from its headers, the JavaScript and CSS libraries its page loads, its TLS and browser protection headers, each version matched to stored vulnerabilities (with CISA known-exploited flags and fixed versions) and end-of-life data. One browser-like visit, nothing probed; only public addresses on ports 80 and 443. In the dashboard under Reports > Website check, and through `POST /api/v1/site-checks`. On Stackurity Cloud, each plan includes a number of checks a month. See [Website check](docs/website-check.md).
+- **Agent tokens in Admin → Feedback.** Instance administrators can now create the feedback agent's and the virus scanner's tokens in the dashboard. Each token is shown once, with the command to save it. The card also shows when each token expires and was last used, and revokes tokens. Before this, the only way was an API call. See [Feedback queue](docs/feedback-queue.md#the-feedback-agent).
+
+### Changed
+
+- The dependency scan's exception for [GO-2026-6909](https://osv.dev/vulnerability/GO-2026-6909) (github.com/crewjam/saml) is removed: the advisory now names v0.5.2 as the fixed version, which Stackurity has used since 0.20.29, so the scanner no longer needs telling.
 
 ### Fixed
 
