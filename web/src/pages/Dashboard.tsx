@@ -40,9 +40,11 @@ import {
   IconActionPlan,
   IconCheckCircle,
   IconClock,
+  IconClockAlert,
   IconHelp,
   IconInbox,
   IconIssues,
+  IconPartial,
   IconSparkles,
   IconShield,
   IconSignalOff,
@@ -240,11 +242,11 @@ function UnfiledAssets() {
 
 const NEED_ICONS: Record<NeedKind, ReactNode> = {
   sos: <IconIssues />,
-  overdue: <IconClock />,
+  overdue: <IconClockAlert />,
   due: <IconClock />,
   reporting: <IconSignalOff />,
   approval: <IconInbox />,
-  incomplete: <IconSignalOff />,
+  incomplete: <IconPartial />,
   policy: <IconShield />,
 };
 

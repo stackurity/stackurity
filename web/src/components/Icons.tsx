@@ -320,6 +320,56 @@ export const IconDocument = (p: P) => (
     <path d="m9 15 2 2 4-4" />
   </Svg>
 );
+/** Lucide: file-code. Code findings (Risky settings keeps IconDocument). */
+export const IconCode = (p: P) => (
+  <Svg {...p}>
+    <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
+    <path d="M14 2v5a1 1 0 0 0 1 1h5" />
+    <path d="M10 12.5 8 15l2 2.5" />
+    <path d="m14 12.5 2 2.5-2 2.5" />
+  </Svg>
+);
+/** Lucide: fence. Policy gates (Risk policy keeps IconShield). */
+export const IconGate = (p: P) => (
+  <Svg {...p}>
+    <path d="M4 3 2 5v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z" />
+    <path d="M6 8h4" />
+    <path d="M6 18h4" />
+    <path d="m12 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z" />
+    <path d="M14 8h4" />
+    <path d="M14 18h4" />
+    <path d="m20 3-2 2v15c0 .6.4 1 1 1h2c.6 0 1-.4 1-1V5Z" />
+  </Svg>
+);
+/** Lucide: badge-check. Trust badge. */
+export const IconBadge = (p: P) => (
+  <Svg {...p}>
+    <path d="M3.85 8.62a4 4 0 0 1 4.78-4.77 4 4 0 0 1 6.74 0 4 4 0 0 1 4.78 4.78 4 4 0 0 1 0 6.74 4 4 0 0 1-4.77 4.78 4 4 0 0 1-6.75 0 4 4 0 0 1-4.78-4.77 4 4 0 0 1 0-6.76Z" />
+    <path d="m16 9-5.5 5.5L8 12" />
+  </Svg>
+);
+/** Lucide: clock-alert. Overdue (due today keeps IconClock). */
+export const IconClockAlert = (p: P) => (
+  <Svg {...p}>
+    <path d="M12 6v6l4 2" />
+    <path d="M20 12v5" />
+    <path d="M20 21h.01" />
+    <path d="M21.25 8.2A10 10 0 1 0 16 21.16" />
+  </Svg>
+);
+/** Lucide: circle-dashed. An incomplete check (not reporting keeps IconSignalOff). */
+export const IconPartial = (p: P) => (
+  <Svg {...p}>
+    <path d="M10.1 2.182a10 10 0 0 1 3.8 0" />
+    <path d="M13.9 21.818a10 10 0 0 1-3.8 0" />
+    <path d="M17.609 3.721a10 10 0 0 1 2.69 2.7" />
+    <path d="M2.182 13.9a10 10 0 0 1 0-3.8" />
+    <path d="M20.279 17.609a10 10 0 0 1-2.7 2.69" />
+    <path d="M21.818 10.1a10 10 0 0 1 0 3.8" />
+    <path d="M3.721 6.391a10 10 0 0 1 2.7-2.69" />
+    <path d="M6.391 20.279a10 10 0 0 1-2.69-2.7" />
+  </Svg>
+);
 /** Lucide: gauge */
 export const IconGauge = (p: P) => (
   <Svg {...p}>
