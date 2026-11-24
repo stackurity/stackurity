@@ -31,7 +31,7 @@ export function sectionOf(path: string): Section {
   if (under(path, "/fixes", "/action-plan", "/findings", "/remediation")) return "fixes";
   if (under(path, "/assets", "/components", "/coverage", "/intelligence", "/projects", "/project-notifications")) return "assets";
   if (under(path, "/activity", "/incidents", "/checks", "/approvals")) return "activity";
-  if (under(path, "/outcomes", "/reports", "/audit")) return "reports";
+  if (under(path, "/outcomes", "/reports", "/audit", "/website-check")) return "reports";
   if (under(path, "/integrations")) return "integrations";
   if (under(path, "/people")) return "people";
   if (under(path, "/admin", "/updates")) return "admin";
@@ -142,6 +142,7 @@ export const TABS: Record<Tabbed, { label: string; tabs: TabLink[] }> = {
     tabs: [
       { to: "/outcomes", label: "Outcomes" },
       { to: "/reports", label: "Evidence report" },
+      { to: "/website-check", label: "Website check" },
       { to: "/audit", label: "Audit log" },
     ],
   },

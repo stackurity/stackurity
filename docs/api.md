@@ -2821,6 +2821,36 @@ The enabled [stack packs](packs.md) (`installed`) and, in a workspace, `suggesti
 
 Downloads an enabled pack, for clients that run it themselves (`stackurity scan`, the agent); they check its signature first.
 
+## Website checks
+
+[Website checks](website-check.md): what a public website shows anyone who visits it (server and framework versions from its headers, the libraries its page loads, TLS, browser protection headers), matched to the stored vulnerability, known-exploited and end-of-life data. One browser-like visit; nothing is probed. Every run is audited (`site_check.run`).
+
+### `POST /site-checks`
+
+**Who:** engineer. With an API token only on a plan that includes API access for website checks.
+
+Body: `url`, a domain (`example.com`) or an http(s) address on port 80 or 443. Runs the check, stores it and answers `201` with the stored check (below) and its `report`: `url`, `final_url`, `host`, `checked_at`, `status`, `tls` (`version`, `issuer`, `subject`, `not_after`, `days_left`, `outdated`; null over http), `software` (each with `name`, `version`, `kind` `server`, `cms` or `library`, `where`, `ecosystem`, `package`, `lifecycle`, `issues` each with `id`, `aliases`, `summary`, `severity`, `score`, `known_exploited`, `fixed_in`, `end_of_life` with `product`, `cycle`, `ended`, `eol_date`, `latest`, `link`, and `coverage` when its vulnerabilities could not be checked), `headers` (`name`, `present`, `advice`), `summary` (`software`, `issues`, `critical`, `high`, `known_exploited`, `end_of_life`, `headers_missing`) and `notes`.
+
+`400 bad_target` for an address that is not a public website (an IP address, `localhost`, `.local`/`.internal`, another port, a user name); `422 site_unreachable` when the site does not answer in 30 seconds, does not resolve, points to a private address or has a certificate browsers reject; `402 plan_limit` when the plan's `site_checks_per_month` are used up, or for an API token on a plan with `no_site_check_api` (a check that could not run gives its place back); `429` beyond 10 checks a minute for the organisation.
+
+### `GET /site-checks`
+
+**Who:** viewer
+
+The organisation's checks, newest first, paged (`limit`, `offset`): `id`, `url`, `final_url`, `host`, `issues`, `known_exploited`, `end_of_life`, `created_by_name`, `via_api` and `created_at`, without reports.
+
+### `GET /site-checks/{id}`
+
+**Who:** viewer
+
+One check, as in the list, with its `report`.
+
+### `POST /public/site-check`
+
+**Who:** the stackurity.ai website, with the key in `X-Site-Check-Key` (`STACKURITY_SITE_CHECK_PUBLIC_KEY`); 404 without it, with another, or when none is set
+
+For the public page: runs a check and answers the summary only (`url`, `host`, `checked_at`, `summary`, `software` each with `name`, `version`, `kind`, `issues` (a count) and `end_of_life`, `worst` (`id`, `severity`, `score`, `known_exploited`) with `worst_in`, and `tls`). Nothing is stored. The website applies its own Turnstile check and one check a day per visitor; the server caps the endpoint at 3,000 checks a day in all.
+
 ## Reports
 
 ### `GET /reports/evidence`
@@ -2863,7 +2893,7 @@ The organisation's paid features: `edition`, `included` and `not_included` (each
 
 **Who:** viewer (organisation-wide)
 
-[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not), `report_mode` (`full` or `trial`) and `plan`: the [plan limits](asset-limits.md#plan-limits) and their use (`plan`, `next_plan`, `rules` with `used` and `limit` per kind, `members`, `allowed_channel_kinds`, `read_only_projects`, `sbom_imports`, `check_again_cooldown_seconds`, `api_requests_per_hour`, `history_days`, `inactive_pause_days`), or null when there are none.
+[Monitored assets](asset-limits.md) against the organisation's limits: `monitored`, `limit` (null: none), `at_limit`, `by_kind`, `stale`, `workloads` (not counted), `refused` and `refused_recently`; `projects`, `project_limit`, `projects_at_limit`; `read_only` (`since`, `reason`; null when not), `report_mode` (`full` or `trial`) and `plan`: the [plan limits](asset-limits.md#plan-limits) and their use (`plan`, `next_plan`, `rules` with `used` and `limit` per kind, `members`, `allowed_channel_kinds`, `read_only_projects`, `sbom_imports`, `site_checks` and `site_check_api`, `check_again_cooldown_seconds`, `api_requests_per_hour`, `history_days`, `inactive_pause_days`), or null when there are none.
 
 ## Automatic fixes
 

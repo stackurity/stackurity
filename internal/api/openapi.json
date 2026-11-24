@@ -4692,6 +4692,55 @@
     }
    }
   },
+  "/public/site-check": {
+   "post": {
+    "operationId": "post_public_site_check",
+    "summary": "Website check summary for the public page",
+    "description": "Website checks (docs/website-check.md): what a public website shows from the outside, read like one browser visit (headers, the scripts and stylesheets its page loads, TLS), matched to stored vulnerabilities, CISA KEV and end-of-life data. Nothing is probed. For the stackurity.ai website's public page, which calls it from its own server after its Turnstile check and per-visitor limit: needs the key in `X-Site-Check-Key` (STACKURITY_SITE_CHECK_PUBLIC_KEY; 404 without it or when unset). Answers the summary only (`summary`, each `software` with its issue count and end of life, the `worst` issue's id and severity, `tls`); nothing is stored.\n\nRole: none (the website's key)",
+    "tags": [
+     "Reports"
+    ],
+    "x-stackurity-role": "none (the website's key)",
+    "security": [],
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "url"
+        ],
+        "properties": {
+         "url": {
+          "type": "string",
+          "description": "A domain (example.com) or an http(s) address on port 80 or 443"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
   "/saved-views": {
    "get": {
     "operationId": "get_saved_views",
@@ -9598,6 +9647,138 @@
       }
      }
     },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/site-checks": {
+   "get": {
+    "operationId": "get_site_checks",
+    "summary": "The organisation's website checks",
+    "description": "Website checks (docs/website-check.md): what a public website shows from the outside, read like one browser visit (headers, the scripts and stylesheets its page loads, TLS), matched to stored vulnerabilities, CISA KEV and end-of-life data. Nothing is probed. Newest first, without their reports: `url`, `final_url`, `host`, `issues`, `known_exploited`, `end_of_life`, `created_by_name`, `via_api`, `created_at`.\n\nRole: viewer",
+    "tags": [
+     "Reports"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "limit",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     },
+     {
+      "name": "offset",
+      "in": "query",
+      "required": false,
+      "schema": {
+       "type": "integer"
+      }
+     }
+    ],
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   },
+   "post": {
+    "operationId": "post_site_checks",
+    "summary": "Check a website",
+    "description": "Website checks (docs/website-check.md): what a public website shows from the outside, read like one browser visit (headers, the scripts and stylesheets its page loads, TLS), matched to stored vulnerabilities, CISA KEV and end-of-life data. Nothing is probed. Runs a check of `url` and stores it; answers 201 with the stored check and its `report` (`software` each with `issues`, `end_of_life` and `coverage`; `tls`; `headers`; `summary`; `notes`). Takes one of the plan's website checks a month (402 `plan_limit` when used up; given back if the check fails). With an API token only on plans that include API access (402 `plan_limit` otherwise). 400 `bad_target` for an address that is not a public website (an IP address, localhost, another port); 422 `site_unreachable` when the site does not answer or its certificate is refused. 10 a minute per organisation.\n\nRole: engineer",
+    "tags": [
+     "Reports"
+    ],
+    "x-stackurity-role": "engineer",
+    "requestBody": {
+     "required": true,
+     "content": {
+      "application/json": {
+       "schema": {
+        "type": "object",
+        "required": [
+         "url"
+        ],
+        "properties": {
+         "url": {
+          "type": "string",
+          "description": "A domain (example.com) or an http(s) address on port 80 or 443"
+         }
+        }
+       }
+      }
+     }
+    },
+    "responses": {
+     "2XX": {
+      "description": "Success",
+      "content": {
+       "application/json": {
+        "schema": {
+         "type": "object"
+        }
+       }
+      }
+     },
+     "4XX": {
+      "$ref": "#/components/responses/Error"
+     },
+     "5XX": {
+      "$ref": "#/components/responses/Error"
+     }
+    }
+   }
+  },
+  "/site-checks/{id}": {
+   "get": {
+    "operationId": "get_site_checks_id",
+    "summary": "A website check with its report",
+    "description": "Website checks (docs/website-check.md): what a public website shows from the outside, read like one browser visit (headers, the scripts and stylesheets its page loads, TLS), matched to stored vulnerabilities, CISA KEV and end-of-life data. Nothing is probed. One stored check with its full `report`.\n\nRole: viewer",
+    "tags": [
+     "Reports"
+    ],
+    "x-stackurity-role": "viewer",
+    "parameters": [
+     {
+      "name": "id",
+      "in": "path",
+      "required": true,
+      "schema": {
+       "type": "string"
+      }
+     }
+    ],
     "responses": {
      "2XX": {
       "description": "Success",

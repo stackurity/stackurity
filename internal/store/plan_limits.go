@@ -35,6 +35,11 @@ const (
 	LimitMembers = "members"
 	// LimitSBOMImports is sbom_imports_per_month.
 	LimitSBOMImports = "sbom_imports"
+	// LimitSiteChecks is site_checks_per_month.
+	LimitSiteChecks = "site_checks"
+	// LimitSiteCheckAPI is the refusal of a website check asked for with an
+	// API token on a plan without no_site_check_api unset.
+	LimitSiteCheckAPI = "site_check_api"
 	// LimitChannelKind is the refusal of a kind of channel the plan does
 	// not include.
 	LimitChannelKind = "channel_kind"
@@ -74,6 +79,12 @@ type PlanLimits struct {
 	// SBOMImportsPerMonth caps SBOM imports a calendar month (UTC); nil:
 	// no cap.
 	SBOMImportsPerMonth *int64 `json:"sbom_imports_per_month,omitempty"`
+	// SiteChecksPerMonth caps website checks a calendar month (UTC); nil:
+	// no cap.
+	SiteChecksPerMonth *int64 `json:"site_checks_per_month,omitempty"`
+	// NoSiteCheckAPI: website checks only from the dashboard, not with an
+	// API token. Unset (self-hosted, and plans with API access): both.
+	NoSiteCheckAPI bool `json:"no_site_check_api,omitempty"`
 	// HistoryDays is how far back resolved issues, past inventory and
 	// resolved incidents are shown (data is kept; open issues and current
 	// inventory are always shown); 0: everything.
@@ -87,6 +98,7 @@ type PlanLimits struct {
 func (l PlanLimits) Empty() bool {
 	return len(l.RuleLimits) == 0 && l.MaxMembers == nil && l.AllowedChannelKinds == nil && !l.OverLimitReadOnly &&
 		l.Plan == "" && l.NextPlan == "" && l.CheckCooldownSeconds == 0 && l.APIRequestsPerHour == 0 && l.SBOMImportsPerMonth == nil &&
+		l.SiteChecksPerMonth == nil && !l.NoSiteCheckAPI &&
 		l.HistoryDays == 0 && l.InactivePauseDays == 0
 }
 
@@ -112,6 +124,9 @@ func (l PlanLimits) validate() error {
 	}
 	if l.SBOMImportsPerMonth != nil && (*l.SBOMImportsPerMonth < 0 || *l.SBOMImportsPerMonth > 100_000_000) {
 		return fmt.Errorf("sbom_imports_per_month must be between 0 and 100000000: %w", ErrInvalid)
+	}
+	if l.SiteChecksPerMonth != nil && (*l.SiteChecksPerMonth < 0 || *l.SiteChecksPerMonth > 100_000_000) {
+		return fmt.Errorf("site_checks_per_month must be between 0 and 100000000: %w", ErrInvalid)
 	}
 	if l.HistoryDays < 0 || l.HistoryDays > 36500 {
 		return fmt.Errorf("history_days must be between 0 and 36500: %w", ErrInvalid)
@@ -147,6 +162,7 @@ var limitNames = map[string]string{
 	LimitAlertRules: "alert rules", LimitChannels: "notification channels", LimitOwnerRules: "owner rules",
 	LimitCITrusts: "CI trusts", LimitVEXSources: "VEX sources", LimitAPITokens: "API tokens", LimitTeams: "teams",
 	LimitMembers: "members (pending invitations count too)", LimitSBOMImports: "SBOM imports a month",
+	LimitSiteChecks: "website checks a month",
 }
 
 func (e *PlanLimitError) Error() string {
@@ -154,8 +170,18 @@ func (e *PlanLimitError) Error() string {
 	if e.NextPlan != "" {
 		upgrade = "Upgrade to " + e.NextPlan + " for more."
 	}
-	if e.Kind == LimitChannelKind {
+	switch e.Kind {
+	case LimitChannelKind:
 		return fmt.Sprintf("your plan does not include %s channels. %s", channelKindName(e.ChannelKind), upgrade)
+	case LimitSiteChecks:
+		return fmt.Sprintf("your plan allows %d website checks a month and this organisation has used them all; "+
+			"more are available on the 1st (UTC), and earlier reports stay open. %s", e.Limit, upgrade)
+	case LimitSiteCheckAPI:
+		u := "Upgrade your plan to run them with an API token."
+		if e.NextPlan != "" {
+			u = "Upgrade to " + e.NextPlan + " to run them with an API token."
+		}
+		return "your plan includes website checks from the dashboard, not through the API. " + u
 	}
 	name := limitNames[e.Kind]
 	if name == "" {
@@ -260,6 +286,10 @@ type PlanUsage struct {
 	ReadOnlyProjects []int64 `json:"read_only_projects"`
 	// SBOMImports this calendar month (UTC) against the allowance.
 	SBOMImports LimitUsage `json:"sbom_imports"`
+	// SiteChecks this calendar month (UTC) against the allowance, and
+	// whether API tokens may ask for them.
+	SiteChecks   LimitUsage `json:"site_checks"`
+	SiteCheckAPI bool       `json:"site_check_api"`
 	// CheckCooldownSeconds and APIRequestsPerHour are the plan's (0: none).
 	CheckCooldownSeconds int64 `json:"check_again_cooldown_seconds"`
 	APIRequestsPerHour   int64 `json:"api_requests_per_hour"`
@@ -307,8 +337,12 @@ func (s *Store) planUsage(ctx context.Context, ws int64) (*PlanUsage, error) {
 	u.Members.Limit = l.MaxMembers
 	u.CheckCooldownSeconds, u.APIRequestsPerHour, u.SBOMImports.Limit = l.CheckCooldownSeconds, l.APIRequestsPerHour, l.SBOMImportsPerMonth
 	u.HistoryDays, u.InactivePauseDays = l.HistoryDays, l.InactivePauseDays
-	if err := s.Pool.QueryRow(sys, `SELECT COALESCE((SELECT used FROM plan_allowances WHERE workspace_id = $1 AND kind = 'sbom_imports'
-		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date), 0)`, ws).Scan(&u.SBOMImports.Used); err != nil {
+	u.SiteChecks.Limit, u.SiteCheckAPI = l.SiteChecksPerMonth, !l.NoSiteCheckAPI
+	if err := s.Pool.QueryRow(sys, `SELECT
+		COALESCE((SELECT used FROM plan_allowances WHERE workspace_id = $1 AND kind = 'sbom_imports'
+		  AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date), 0),
+		COALESCE((SELECT used FROM plan_allowances WHERE workspace_id = $1 AND kind = 'site_checks'
+		  AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date), 0)`, ws).Scan(&u.SBOMImports.Used, &u.SiteChecks.Used); err != nil {
 		return nil, err
 	}
 	if u.ReadOnlyProjects, err = readOnlyProjects(sys, s.Pool, ws); err != nil {
@@ -448,37 +482,73 @@ func (s *Store) PlanRoom(ctx context.Context, kind, channelKind string) error {
 // allowance it does nothing. GiveBackSBOMImport returns one whose import
 // failed.
 func (s *Store) TakeSBOMImport(ctx context.Context) error {
+	return s.takeAllowance(ctx, LimitSBOMImports, func(l PlanLimits) *int64 { return l.SBOMImportsPerMonth })
+}
+
+// GiveBackSBOMImport returns an SBOM import TakeSBOMImport took.
+func (s *Store) GiveBackSBOMImport(ctx context.Context) error {
+	return s.giveBackAllowance(ctx, LimitSBOMImports)
+}
+
+// TakeSiteCheck takes one of the current workspace's website checks this
+// month, like TakeSBOMImport; GiveBackSiteCheck returns one that failed.
+func (s *Store) TakeSiteCheck(ctx context.Context) error {
+	return s.takeAllowance(ctx, LimitSiteChecks, func(l PlanLimits) *int64 { return l.SiteChecksPerMonth })
+}
+
+// GiveBackSiteCheck returns a website check TakeSiteCheck took.
+func (s *Store) GiveBackSiteCheck(ctx context.Context) error {
+	return s.giveBackAllowance(ctx, LimitSiteChecks)
+}
+
+// SiteCheckAPIAllowed reports whether the current workspace's plan lets
+// API tokens ask for website checks (true without a plan).
+func (s *Store) SiteCheckAPIAllowed(ctx context.Context) (allowed bool, nextPlan string, err error) {
+	ws, ok := tenant.Workspace(ctx)
+	if !ok {
+		return true, "", nil
+	}
+	l, err := planLimits(tenant.System(ctx), s.Pool, ws)
+	if err != nil {
+		return false, "", err
+	}
+	return !l.NoSiteCheckAPI, l.NextPlan, nil
+}
+
+// takeAllowance takes one of kind's monthly allowance (plan_allowances)
+// for the current workspace; limit reads the cap from the plan (nil: none).
+func (s *Store) takeAllowance(ctx context.Context, kind string, limit func(PlanLimits) *int64) error {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return nil
 	}
 	sys := tenant.System(ctx)
 	l, err := planLimits(sys, s.Pool, ws)
-	if err != nil || l.SBOMImportsPerMonth == nil {
+	if err != nil || limit(l) == nil {
 		return err
 	}
+	max := *limit(l)
 	var used int64
 	err = s.Pool.QueryRow(sys, `INSERT INTO plan_allowances AS a (workspace_id, kind, period_start, used)
-		VALUES ($1, 'sbom_imports', date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1)
+		VALUES ($1, $3, date_trunc('month', now() AT TIME ZONE 'UTC')::date, 1)
 		ON CONFLICT (workspace_id, kind, period_start) DO UPDATE SET used = a.used + 1 WHERE a.used < $2
-		RETURNING used`, ws, *l.SBOMImportsPerMonth).Scan(&used)
-	if errors.Is(err, pgx.ErrNoRows) || err == nil && used > *l.SBOMImportsPerMonth {
+		RETURNING used`, ws, max, kind).Scan(&used)
+	if errors.Is(err, pgx.ErrNoRows) || err == nil && used > max {
 		if err == nil {
-			_ = s.GiveBackSBOMImport(ctx)
+			_ = s.giveBackAllowance(ctx, kind)
 		}
-		return &PlanLimitError{Kind: LimitSBOMImports, Limit: *l.SBOMImportsPerMonth, Used: *l.SBOMImportsPerMonth, NextPlan: l.NextPlan}
+		return &PlanLimitError{Kind: kind, Limit: max, Used: max, NextPlan: l.NextPlan}
 	}
 	return err
 }
 
-// GiveBackSBOMImport returns an SBOM import TakeSBOMImport took.
-func (s *Store) GiveBackSBOMImport(ctx context.Context) error {
+func (s *Store) giveBackAllowance(ctx context.Context, kind string) error {
 	ws, ok := tenant.Workspace(ctx)
 	if !ok {
 		return nil
 	}
-	_, err := s.Pool.Exec(tenant.System(ctx), `UPDATE plan_allowances SET used = used - 1 WHERE workspace_id = $1 AND kind = 'sbom_imports'
-		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date AND used > 0`, ws)
+	_, err := s.Pool.Exec(tenant.System(ctx), `UPDATE plan_allowances SET used = used - 1 WHERE workspace_id = $1 AND kind = $2
+		AND period_start = date_trunc('month', now() AT TIME ZONE 'UTC')::date AND used > 0`, ws, kind)
 	return err
 }
 

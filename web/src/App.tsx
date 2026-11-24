@@ -54,6 +54,7 @@ import { ApprovalsPage } from "./pages/Approvals";
 import { ChecksPage } from "./pages/Checks";
 import { ReportsPage } from "./pages/Reports";
 import { OutcomesPage } from "./pages/Outcomes";
+import { WebsiteCheckPage } from "./pages/WebsiteCheck";
 import { UsersPage } from "./pages/settings/Users";
 import { SecretsPage } from "./pages/settings/Secrets";
 import { WorkspacesPage } from "./pages/admin/Workspaces";
@@ -434,6 +435,7 @@ export function App() {
         <Route path="coverage" element={<CoveragePage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="outcomes" element={<OutcomesPage />} />
+        <Route path="website-check" element={<WebsiteCheckPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="checks" element={<ChecksPage />} />
         <Route path="approvals" element={<ApprovalsPage />} />

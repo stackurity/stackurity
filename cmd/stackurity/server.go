@@ -92,6 +92,13 @@ func openStore(ctx context.Context) (*store.Store, error) {
 		pool.Close()
 		return nil, err
 	}
+	// Nor will any run behind a pooler that moves connections between
+	// PostgreSQL sessions (transaction mode): the role and workspace scope
+	// are set per connection, so isolation would not hold (#539, #540).
+	if err := db.CheckSessionPinned(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	st := store.New(pool)
 	st.StaleAfter = staleAfterSetting()
 	return st, nil
@@ -358,6 +365,16 @@ func serverCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			// Website checks (docs/website-check.md): on unless turned off;
+			// the public endpoint only with a key (the website's).
+			siteChecksOff := os.Getenv("STACKURITY_SITE_CHECKS") == "off"
+			siteCheckKey, err := envOrFile("STACKURITY_SITE_CHECK_PUBLIC_KEY")
+			if err != nil {
+				return err
+			}
+			if !siteChecksOff {
+				intel.SiteCheckProducts = []string{"nginx", "php"}
+			}
 			trustedProxies, err := api.ParseTrustedProxies(os.Getenv("STACKURITY_TRUSTED_PROXIES"))
 			if err != nil {
 				return err
@@ -373,8 +390,9 @@ func serverCmd() *cobra.Command {
 			}
 			srv := &api.Server{
 				OpenAIAppsChallenge: challenge,
-				Pro:                 proCfg,
-				Dispatcher:          dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner, Cloud: cloud,
+				SiteChecksOff:       siteChecksOff, SiteCheckPublicKey: siteCheckKey,
+				Pro:        proCfg,
+				Dispatcher: dispatcher, AllowHTTPWebhooks: allowHTTPHooks, Plugins: pluginRunner, Cloud: cloud,
 				Store: st, Log: log, Secrets: res, Version: version, SetupToken: setupToken,
 				BaseURL: os.Getenv("STACKURITY_BASE_URL"), AgentDir: os.Getenv("STACKURITY_AGENT_DIR"),
 				CIAudience:         strings.TrimSpace(os.Getenv("STACKURITY_CI_AUDIENCE")),

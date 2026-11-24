@@ -761,3 +761,16 @@ func firstNonEmpty(a, b string) string {
 	}
 	return b
 }
+
+// ParsePage returns the libraries a web page loads from the CDNs
+// parseCDNURL reads, as parseTemplate does for an HTML template: npm name,
+// exact version and the address. Used by the website check
+// (internal/sitecheck), which reads a page over the network.
+func ParsePage(html []byte) [][3]string { return parseTemplate("page.html", html) }
+
+// ParseCDNURL is parseCDNURL, for a script address found on a page.
+func ParseCDNURL(raw string) (name, version string, ok bool) { return parseCDNURL(raw) }
+
+// ParseBanner is parseBanner: the libraries whose banner is in head, the
+// first bytes of the script or stylesheet called name.
+func ParseBanner(name string, head []byte) [][2]string { return parseBanner(name, head) }

@@ -459,6 +459,10 @@ export interface PlanUsage {
   read_only_projects: number[];
   /** SBOM imports this calendar month (UTC). */
   sbom_imports: LimitUsage;
+  /** Website checks this calendar month (UTC). */
+  site_checks?: LimitUsage;
+  /** Whether API tokens may run website checks. */
+  site_check_api?: boolean;
   /** Seconds between two Check agains on one asset; 0: any time. */
   check_again_cooldown_seconds: number;
   /** The organisation's API requests an hour; 0: no cap. */
@@ -4747,3 +4751,58 @@ export interface ThreatNotice {
   /** You hid the banner for the current verdict. */
   dismissed: boolean;
 }
+
+// Website checks (docs/website-check.md).
+export interface SiteCheckIssue {
+  id: string;
+  aliases?: string[];
+  summary?: string;
+  severity: string;
+  score?: number;
+  known_exploited: boolean;
+  fixed_in?: string;
+}
+export interface SiteCheckSoftware {
+  name: string;
+  version: string;
+  kind: "server" | "cms" | "library";
+  where: string;
+  ecosystem?: string;
+  package?: string;
+  lifecycle?: string;
+  issues: SiteCheckIssue[];
+  end_of_life: { product: string; cycle: string; ended: boolean; eol_date?: string; latest?: string; link?: string } | null;
+  coverage?: string;
+}
+export interface SiteCheckReport {
+  url: string;
+  final_url: string;
+  host: string;
+  checked_at: string;
+  status: number;
+  tls: { version: string; issuer: string; subject: string; not_after: string; days_left: number; outdated: boolean } | null;
+  software: SiteCheckSoftware[];
+  headers: { name: string; present: boolean; advice?: string }[];
+  summary: { software: number; issues: number; critical: number; high: number; known_exploited: number; end_of_life: number; headers_missing: number };
+  notes: string[];
+}
+export interface SiteCheck {
+  id: number;
+  url: string;
+  final_url: string;
+  host: string;
+  issues: number;
+  known_exploited: number;
+  end_of_life: number;
+  created_by_name: string;
+  via_api: boolean;
+  created_at: string;
+}
+export interface SiteCheckWithReport extends SiteCheck {
+  report: SiteCheckReport;
+}
+export const siteChecks = {
+  list: () => api.get<{ items: SiteCheck[]; total: number }>("/site-checks", { limit: "50" }),
+  get: (id: number) => api.get<SiteCheckWithReport>(`/site-checks/${id}`),
+  run: (url: string) => api.post<SiteCheckWithReport>("/site-checks", { url }),
+};
