@@ -50,7 +50,7 @@ Once the release is published:
 go run ./tools/release next v0.15.0
 ```
 
-adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. `releaselint` fails the first pull request that adds something under `## Unreleased` or in `changelog.d/` until this is merged.
+adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. Feature pull requests do not wait for it: until it is merged, `releaselint` holds them to the release before (the newest cannot be added before its GitHub release is published), and `tools/release prepare` adds the newest to the next release's pull request in any case, where `releaselint` runs with the tag.
 
 ### 6. Feedback: `/feedback release`
 
