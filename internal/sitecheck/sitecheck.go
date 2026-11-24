@@ -75,7 +75,8 @@ type TLSInfo struct {
 	Subject  string    `json:"subject"`
 	NotAfter time.Time `json:"not_after"`
 	DaysLeft int       `json:"days_left"`
-	// Outdated: TLS 1.0 or 1.1 was negotiated.
+	// Outdated: TLS 1.0 or 1.1 was negotiated (the check does not offer
+	// them, so a site that needs them fails with a message instead).
 	Outdated bool `json:"outdated"`
 }
 
@@ -221,10 +222,10 @@ func guardedClient() *http.Client {
 		MaxIdleConnsPerHost:   4,
 		IdleConnTimeout:       10 * time.Second,
 		DisableCompression:    false,
-		// Certificates are verified: a site with a broken certificate is a
-		// finding (see check), not something to look past.
-		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS10},
-		Proxy:           nil,
+		// Certificates are verified and TLS 1.2 is the minimum (Go's
+		// default): a broken certificate or a site that offers only TLS
+		// 1.0 or 1.1 is reported (describeFetchError), not looked past.
+		Proxy: nil,
 	}
 	return &http.Client{Transport: tr, Timeout: fetchTimeout, CheckRedirect: checkRedirect}
 }
@@ -313,6 +314,9 @@ func describeFetchError(target *url.URL, err error) error {
 		return fmt.Errorf("%w: %s does not resolve (no DNS record)", ErrTarget, target.Hostname())
 	case errors.Is(err, context.DeadlineExceeded):
 		return fmt.Errorf("%s did not answer in time", target.Hostname())
+	}
+	if strings.Contains(err.Error(), "protocol version") {
+		return fmt.Errorf("%s offers only outdated TLS (1.0 or 1.1), which browsers no longer accept", target.Hostname())
 	}
 	var cert *tls.CertificateVerificationError
 	if errors.As(err, &cert) {
