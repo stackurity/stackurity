@@ -3,8 +3,6 @@ package sitecheck
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
-	"errors"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,7 +16,6 @@ import (
 	"golang.org/x/net/publicsuffix"
 
 	"github.com/stackurity/stackurity/internal/collect/leaks"
-	"github.com/stackurity/stackurity/internal/netguard"
 )
 
 // Finding is a problem the check saw that is not a software version:
@@ -230,29 +227,6 @@ func (c *Checker) findings(ctx context.Context, final *url.URL, h http.Header, p
 	c.emailFindings(ctx, fl, final)
 	sort.SliceStable(fl.items, func(i, j int) bool { return rank(fl.items[i].Severity) < rank(fl.items[j].Severity) })
 	return fl.items
-}
-
-// acceptsOldTLS offers the site TLS 1.0 and 1.1 only, through the same
-// guarded dialer as every other connection. Certificates are still
-// verified: the server picks the protocol version before its certificate is
-// checked, so a verification error also means it agreed to the old version.
-func acceptsOldTLS(ctx context.Context, u *url.URL) bool {
-	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
-	defer cancel()
-	port := u.Port()
-	if port == "" {
-		port = "443"
-	}
-	conn, err := netguard.Policy{}.DialContext(ctx, "tcp", net.JoinHostPort(u.Hostname(), port))
-	if err != nil {
-		return false
-	}
-	defer conn.Close()
-	tc := tls.Client(conn, &tls.Config{ServerName: u.Hostname(), MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS11}) //nolint:gosec // whether old versions are accepted is what is checked
-	_ = tc.SetDeadline(time.Now().Add(8 * time.Second))
-	err = tc.HandshakeContext(ctx)
-	var verr *tls.CertificateVerificationError
-	return err == nil || errors.As(err, &verr)
 }
 
 // leakFindings looks for keys in the page's inline scripts and in the
