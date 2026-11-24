@@ -1,0 +1,3 @@
+### Fixed
+
+- **Two servers with the same hostname are no longer merged into one.** Host agents send the machine's ID and its hostname, and the server matched a report on either, so a second machine named like an existing one reported into that machine's asset: it never showed in its own project, and the two inventories overwrote each other. The machine ID now decides and the hostname is only a fallback, for agents that send no machine ID and assets created before they did. Machines merged this way get their own asset back on their next report, and the asset stays with the machine it had first. A reinstalled machine with a new machine ID now appears as a new asset, and the old one goes stale. See [ObservationBatch](docs/api.md#observationbatch) (#565).
