@@ -44,7 +44,9 @@ func init() {
 		description: "One website check's full report (docs/website-check.md): the software the site shows (server, website " +
 			"platform and JavaScript/CSS libraries, each with version, where it was seen, its issues with severity, " +
 			"known_exploited and fixed_in, its end of life, and coverage when its vulnerabilities could not be checked), TLS, " +
-			"the browser protection headers sent or missing, a summary and notes. Get ids from list_website_checks.",
+			"the browser protection headers sent or missing, findings (leaked keys shown masked, cookie and password-form settings, " +
+			"mixed content, CDN files without integrity checks, TLS 1.0/1.1 accepted, SPF and DMARC; each with severity, detail, " +
+			"fix and where), a summary and notes. Get ids from list_website_checks.",
 		schema: obj(map[string]any{"id": num("The check's id")}, "id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			id, ok := intArg(a["id"])
