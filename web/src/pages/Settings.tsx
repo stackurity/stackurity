@@ -4,7 +4,7 @@ import { SETTINGS_GROUPS, type SettingsEntry } from "../navModel";
 import { useAuth } from "../auth";
 import { PageHeader } from "../components/ui";
 import { ProBadge, ProNotice } from "../components/ProNotice";
-import { IconCard, IconClock, IconDocument, IconGauge, IconLayers, IconPeople, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
+import { IconBadge, IconCard, IconClock, IconDocument, IconGate, IconGauge, IconLayers, IconPeople, IconRemediation, IconShield, IconSignIn } from "../components/Icons";
 import { ProjectChatAppsCard } from "../components/ScopeNotifications";
 import { PoliciesTab } from "./Remediation";
 
@@ -14,12 +14,12 @@ const ICONS: Record<string, ReactNode> = {
   "/settings/risk-policy": <IconShield />,
   "/settings/fix-grouping": <IconLayers />,
   "/settings/vex": <IconDocument />,
-  "/settings/policy-gates": <IconShield />,
+  "/settings/policy-gates": <IconGate />,
   "/settings/automatic-fixes": <IconRemediation />,
   "/settings/project-permissions": <IconPeople />,
   "/settings/usage": <IconGauge />,
   "/settings/billing": <IconCard />,
-  "/settings/trust-badge": <IconShield />,
+  "/settings/trust-badge": <IconBadge />,
   "/settings/sso": <IconSignIn />,
   "/settings/jobs": <IconClock />,
 };
