@@ -1,3 +1,0 @@
-### Added
-
-- **Website check: other problems and WordPress plugins.** The website check report now also lists the WordPress plugins the page loads files from (with their `?ver=` version) and other problems, worst first, each with its fix: leaked keys in the page's code (shown masked), cookies without Secure, HttpOnly or SameSite, mixed content, password forms on or posting to http, files from public CDNs without an integrity check, directory listings, TLS 1.0/1.1 still accepted, and missing or permissive SPF and DMARC records. Still one browser-like visit: the only additions are one TLS handshake offering TLS 1.0/1.1 and two DNS lookups. See [Website check](docs/website-check.md).
