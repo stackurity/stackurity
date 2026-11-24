@@ -467,7 +467,11 @@ func checkReach(ctx context.Context, feeds []store.Feed, cfg Config) []Result {
 			defer func() { <-sem }()
 			u, _ := url.Parse(h)
 			r := Result{Check: "reach:" + u.Host, Status: Pass, Docs: "docs/network.md"}
-			used := strings.Join(t.feeds, ", ")
+			// Sorted here: the feeds come in the database's collation order,
+			// which differs between servers.
+			feeds := append([]string(nil), t.feeds...)
+			sort.Strings(feeds)
+			used := strings.Join(feeds, ", ")
 			code, err := probe(ctx, client, t.url)
 			switch {
 			case err != nil:
