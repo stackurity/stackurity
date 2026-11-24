@@ -3,6 +3,7 @@ package webscan
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -87,9 +88,14 @@ func acceptsOldTLS(ctx context.Context, host, port string) bool {
 		return false
 	}
 	defer conn.Close()
-	tc := tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS11, InsecureSkipVerify: true}) //nolint:gosec // only probing which versions the server accepts
+	// Certificates are still verified. The server picks the protocol version
+	// before its certificate is checked, so a verification error also means
+	// it agreed to TLS 1.0/1.1 (an expired certificate is reported separately).
+	tc := tls.Client(conn, &tls.Config{ServerName: host, MinVersion: tls.VersionTLS10, MaxVersion: tls.VersionTLS11}) //nolint:gosec // probing whether old versions are accepted is the point
 	_ = tc.SetDeadline(time.Now().Add(8 * time.Second))
-	return tc.HandshakeContext(ctx) == nil
+	err = tc.HandshakeContext(ctx)
+	var verr *tls.CertificateVerificationError
+	return err == nil || errors.As(err, &verr)
 }
 
 // ---- Email (SPF, DMARC) -------------------------------------------------

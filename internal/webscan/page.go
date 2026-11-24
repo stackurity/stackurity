@@ -43,7 +43,11 @@ func parsePage(base *url.URL, body []byte) *page {
 	var cur *form
 	resolve := func(s string) *url.URL {
 		s = strings.TrimSpace(s)
-		if s == "" || strings.HasPrefix(s, "data:") || strings.HasPrefix(s, "javascript:") || strings.HasPrefix(s, "#") {
+		// Only http(s) addresses are kept (checked again after parsing);
+		// this just skips the common non-address values early.
+		ls := strings.ToLower(s)
+		if s == "" || strings.HasPrefix(s, "#") || strings.HasPrefix(ls, "data:") ||
+			strings.HasPrefix(ls, "javascript:") || strings.HasPrefix(ls, "vbscript:") {
 			return nil
 		}
 		u, err := base.Parse(s)
