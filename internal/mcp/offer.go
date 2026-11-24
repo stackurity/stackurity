@@ -101,6 +101,11 @@ func errorText(ctx context.Context, err error) string {
 	if errors.As(err, &ae) && ae.Status == 402 && ae.Code == "plan_required" && ae.Offer != nil && ae.Offer.FeatureName != "" {
 		return offerLine(ae.Offer, clientFrom(ctx).OpenAI())
 	}
+	// A refusal a tool words itself, without an offer (a plan's monthly
+	// allowance used up: run_website_check).
+	if errors.As(err, &ae) && ae.Status == 402 && ae.Code == "plan_required" && ae.Offer == nil && ae.Message != "" {
+		return ae.Message
+	}
 	return err.Error()
 }
 

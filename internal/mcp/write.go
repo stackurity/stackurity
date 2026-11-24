@@ -67,7 +67,8 @@ const (
 
 // writeTools are listed after the read-only tools, in this order.
 var writeTools = []string{"create_project", "rename_project", "add_assets_to_project", "remove_assets_from_project",
-	"create_enrollment", "assign", "snooze", "ignore", "check_again", "invite_to_project", "set_notification_enabled"}
+	"create_enrollment", "assign", "snooze", "ignore", "check_again", "invite_to_project", "set_notification_enabled",
+	"run_website_check"}
 
 func confirmCode(name string, a map[string]any, key string) string {
 	args := map[string]any{}

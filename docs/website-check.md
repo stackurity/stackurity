@@ -38,6 +38,8 @@ Libraries are matched against the stored OSV advisories for npm, nginx and PHP a
 | `GET /api/v1/site-checks` | The organisation's checks, newest first, without reports |
 | `GET /api/v1/site-checks/{id}` | One check with its report |
 
+AI assistants connected to Stackurity run checks with the `run_website_check` tool, and read them with `list_website_checks` and `website_check_report` ([AI assistants](ai-assistants.md)). An assistant's connection counts as API access for the plan.
+
 Errors: `400 bad_target` (not a public website address), `422 site_unreachable` (the site did not answer, does not resolve, or its certificate is refused), `402 plan_limit` (see below), `429` (more than 10 checks a minute for one organisation).
 
 ## Plans
