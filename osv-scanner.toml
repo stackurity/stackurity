@@ -1,13 +1,2 @@
 # Documented exceptions for the dependency scan in .github/workflows/security.yml.
 # Every entry needs a reason and an expiry so it is reviewed again.
-
-[[IgnoredVulns]]
-id = "GO-2026-6909"
-ignoreUntil = 2026-12-23
-reason = """github.com/crewjam/saml: fixed upstream and upgraded to v0.5.2 (security-auto-2026-11-23), but the
-OSV / Go vulnerability database record still lists every version as affected (no fixed version), so the
-scanner keeps matching it. v0.5.2 tags Subject.NameID and Response.NameID with the SAML assertion namespace
-(part 2); part 1 (nil Issuer with ExpectedIDPEntityID) does not apply to crewjam/saml, whose Assertion.Issuer
-is a value and which has no ExpectedIDPEntityID. Stackurity's own guard stays: sso.SAMLProvider.Parse refuses
-a NameID outside the assertion namespace (stackurity-pro, TestSAMLXMLAttacks). Delete this entry as soon as
-the record names a fixed version; re-checked daily by the security routine."""
