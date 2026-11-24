@@ -11,6 +11,7 @@ import { IssueLinks } from "../components/IssueLinks";
 import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
 import { LEAK_VIEW_QUERY, LeaksTable } from "../components/Leaks";
+import { NOT_FALSE_POSITIVE } from "../secondCheck";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { INCIDENT_KIND_LABEL } from "./Incidents";
 import { fixedVersionRows, fixLines, lineComponents } from "../incidentFix";
@@ -183,7 +184,7 @@ export function IncidentLeaks({ assetId, leaks, onChanged }: { assetId: number; 
 }
 
 function IncidentLeaksLoader({ assetId, onChanged }: { assetId: number; onChanged: () => void }) {
-  const res = useLoad(() => api.get<LeakList>(`/assets/${assetId}/leaks`, { ...LEAK_VIEW_QUERY.action, limit: 50 }), [assetId]);
+  const res = useLoad(() => api.get<LeakList>(`/assets/${assetId}/leaks`, { ...LEAK_VIEW_QUERY.action, second_check: NOT_FALSE_POSITIVE, limit: 50 }), [assetId]);
   if (res.error) return <ErrorBox error={res.error} title="Could not load the leaked keys" />;
   if (!res.data) return <Loading />;
   return (
