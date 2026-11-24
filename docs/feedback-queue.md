@@ -107,7 +107,7 @@ A daily job, `feedback-retention`:
 - A daily sweep also removes attachment files with no item (left by a crash between writing a file and storing its item).
 - Intake is limited per sender address (30 items an hour, 10 with attachments), 300 items an hour in all, and 8 uploads at once; status checks 120 an hour per address.
 - Instance administrators use `/api/v1/admin/feedback` (see [api.md](api.md#feedback-queue)).
-- For the automated triage agent, an instance administrator creates a token with `POST /api/v1/admin/feedback-tokens` (`stkfb_…`, at most 90 days).
+- For the automated triage agent, an instance administrator creates a token in **Admin → Feedback → Agent tokens** (or `POST /api/v1/admin/feedback-tokens`; `stkfb_…`, at most 90 days). The same card lists the tokens with when each expires and was last used, and revokes them.
 - The token reads items and attachments and writes status and notes. Every other route refuses it, including the token routes themselves.
 - The `/feedback` project skill (`.claude/skills/feedback/SKILL.md`) uses it:
   - `/feedback review` classifies new items;
@@ -146,7 +146,7 @@ new item ──▶ agent (claude -p in a fresh worktree of origin/main)
 
 **Install on the Mac (owner):**
 
-1. Create a triage token in the dashboard's API (`POST /api/v1/admin/feedback-tokens` with `{"name":"feedback-agent","days":90}`) and save it with mode 0600 in `~/.config/stackurity/feedback-agent-token`. It expires after 90 days at most: renew it before then.
+1. Create a triage token in **Admin → Feedback → Agent tokens** (Used by: Feedback agent, 90 days; or `POST /api/v1/admin/feedback-tokens` with `{"name":"feedback-agent","days":90}`) and save it with mode 0600 in `~/.config/stackurity/feedback-agent-token`. It expires after 90 days at most: renew it before then.
 2. Optional: a Slack incoming webhook URL in `~/.config/stackurity/feedback-agent-slack-webhook` (0600), and `FEEDBACK_AGENT_CLAUDE_TOKEN_FILE` with a token from `claude setup-token` if the `claude` sign-in is not available to launchd.
 3. `go build -o ~/.local/bin/stackurity-feedback-agent ./tools/feedback-agent` from an up-to-date clone.
 4. Try one item without writing anything: `stackurity-feedback-agent -dry-run -item FB-123`.
