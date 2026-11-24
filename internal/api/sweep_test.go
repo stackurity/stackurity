@@ -69,6 +69,8 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/openapi.json":       {class: "public"},
 	"GET /api/v1/public/cves/":       {class: "public"},
 	"GET /api/v1/public/cves/recent": {class: "public"},
+	// The website's public website check: its key only, no workspace.
+	"POST /api/v1/public/site-check": {class: "public"},
 	// The trust badge's public image and trust data (trust_badge.go).
 	"GET /badge/{file}":                    {class: "public"},
 	"GET /api/v1/public/trust/":            {class: "public"},
@@ -177,6 +179,10 @@ var routeRules = map[string]routeRule{
 	"GET /api/v1/notification-options": {class: "list"},
 	"GET /api/v1/email-recipients":     {class: "list"},
 	"GET /api/v1/threat-notices":       {class: "list"},
+	"GET /api/v1/site-checks":          {class: "list"},
+	// Runs a check over the network; the check is stored in the caller's
+	// workspace (TestSiteChecks), and opening it is swept below.
+	"POST /api/v1/site-checks": {class: "skip"},
 	// Connect PagerDuty: a state or session of A's (or a guessed one) is
 	// refused in B; B's connect starts in B (pagerduty_app_test.go).
 	"POST /api/v1/integrations/pagerduty/connect": {class: "create", body: func(*tenantFx) any { return map[string]string{"return_to": "/settings/integrations"} }},
@@ -478,6 +484,7 @@ var routeRules = map[string]routeRule{
 	"POST /api/v1/config-findings/{id}/dismiss":                 {class: "object", obj: id("configfinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
 	"POST /api/v1/config-findings/{id}/undismiss":               {class: "object", obj: id("configfinding")},
 	"POST /api/v1/threat-notices/{id}/dismiss":                  {class: "object", obj: id("threatnotice")},
+	"GET /api/v1/site-checks/{id}":                              {class: "object", obj: id("sitecheck")},
 	"GET /api/v1/assets/{id}/code-findings":                     {class: "object", obj: id("asset")},
 	"POST /api/v1/code-findings/{id}/dismiss":                   {class: "object", obj: id("codefinding"), body: func(*tenantFx) any { return map[string]any{"note": "sweep"} }},
 	"POST /api/v1/code-findings/{id}/undismiss":                 {class: "object", obj: id("codefinding")},
@@ -825,6 +832,13 @@ func (e *env) tenant(t *testing.T, ws int64, tag string, admin *session) *tenant
 		t.Fatalf("%s threat notice: %v", tag, err)
 	}
 	set("threatnotice", notice.ID)
+	// And a stored website check.
+	sc, err := e.st.AddSiteCheck(ctx, store.SiteCheck{URL: "https://" + tag + ".example.com/", Host: tag + ".example.com",
+		Report: json.RawMessage(`{"host":"` + tag + `.example.com"}`)}, 0, 0)
+	if err != nil {
+		t.Fatalf("%s site check: %v", tag, err)
+	}
+	set("sitecheck", sc.ID)
 	// And a code finding imported from a scanner's report.
 	rep, err := codefindings.Parse(codefindings.FormatDeepsec, []byte(f.codeDoc()))
 	if err != nil {

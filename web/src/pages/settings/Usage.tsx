@@ -158,6 +158,7 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
     plan.read_only_projects.length === 0 &&
     !plan.allowed_channel_kinds &&
     plan.sbom_imports.limit === null &&
+    (plan.site_checks?.limit ?? null) === null &&
     !plan.check_again_cooldown_seconds &&
     !plan.api_requests_per_hour &&
     !plan.history_days &&
@@ -174,6 +175,9 @@ function PlanUsageCard({ plan }: { plan: PlanUsage }) {
         return <UsageMeter key={k} used={u.used} limit={u.limit} noun={PLAN_LIMIT_WORDS[k]} />;
       })}
       {plan.sbom_imports.limit !== null && <UsageMeter used={plan.sbom_imports.used} limit={plan.sbom_imports.limit} noun="SBOM imports this month" />}
+      {plan.site_checks && plan.site_checks.limit !== null && (
+        <UsageMeter used={plan.site_checks.used} limit={plan.site_checks.limit} noun="website checks this month" />
+      )}
       {(plan.check_again_cooldown_seconds > 0 || plan.api_requests_per_hour > 0 || plan.history_days > 0 || plan.inactive_pause_days > 0) && (
         <p className="small">
           {plan.check_again_cooldown_seconds > 0 && <>Check again: once every {cooldownWords(plan.check_again_cooldown_seconds)} for each asset. </>}

@@ -931,7 +931,7 @@ type findingVEX struct {
 
 // readTools and writeTools are listed in this order (a stable order lets
 // clients cache the list).
-var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "list_code_findings", "threat_check", "list_threat_notices", "get_finding", "find_component",
+var readTools = []string{"search", "list_assets", "action_plan", "asset_stack", "list_findings", "list_leaks", "list_risky_settings", "list_code_findings", "threat_check", "list_threat_notices", "list_website_checks", "website_check_report", "get_finding", "find_component",
 	"explain_finding", "upgrade_recommendation", "remediation_plan", "verify_since", "updates_available",
 	"account_overview", "integrations_status", "notification_settings", "evidence_pack", "plan_options", "read_help"}
 
@@ -948,6 +948,8 @@ var readTitles = map[string]string{
 	"list_code_findings":     "List code findings",
 	"threat_check":           "Check a named threat",
 	"list_threat_notices":    "List threat notices",
+	"list_website_checks":    "List website checks",
+	"website_check_report":   "Website check report",
 	"get_finding":            "Get an issue",
 	"find_component":         "Find a package",
 	"explain_finding":        "Explain an issue's priority",

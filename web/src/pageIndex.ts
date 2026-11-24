@@ -58,6 +58,7 @@ export const KEYWORDS: Record<string, string> = {
   "/outcomes": "remediation outcomes mttr metrics",
   "/reports": "evidence pack soc 2 iso 27001 pci cra compliance audit export pdf",
   "/audit": "activity log history who changed",
+  "/website-check": "website scan domain headers javascript libraries jquery tls outside external",
   "/integrations": "connect github gitlab jira slack teams pagerduty aws azure gcp kubernetes webhook email",
   "/integrations/deliveries": "notifications sent webhook log failed",
   "/integrations/secrets": "credentials stored keys",

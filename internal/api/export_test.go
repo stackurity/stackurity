@@ -107,3 +107,7 @@ func SetGateDeploy(on bool) (restore func()) {
 	gateDeployAllowed = func(*Server, *http.Request, int64) bool { return on }
 	return func() { gateDeployAllowed = old }
 }
+
+// SetSiteCheckClient makes website checks use c (an httptest server's
+// client routed to it) instead of the guarded one, which refuses loopback.
+func (s *Server) SetSiteCheckClient(c *http.Client) { s.siteCheckClient = c }
