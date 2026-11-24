@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link, useParams } from "react-router";
-import { api, SYSTEM_INCIDENT_KINDS, type Delivery, type Incident, type IncidentResponse } from "../api";
+import { api, SYSTEM_INCIDENT_KINDS, type Delivery, type Incident, type IncidentResponse, type Leak, type LeakList } from "../api";
 import { useAuth } from "../auth";
 import { useAction, useLoad } from "../hooks";
 import { humanize } from "../format";
@@ -10,6 +10,8 @@ import { countOwners, OwnerSplit } from "../components/Owners";
 import { IssueLinks } from "../components/IssueLinks";
 import { Table, type Column } from "../components/Table";
 import { FindingActions } from "../components/Workflow";
+import { LEAK_VIEW_QUERY, LeaksTable } from "../components/Leaks";
+import { NOT_FALSE_POSITIVE } from "../secondCheck";
 import { Card, ErrorBox, KeyValues, Loading, Notice, PageHeader, RelativeTime } from "../components/ui";
 import { INCIDENT_KIND_LABEL } from "./Incidents";
 import { fixedVersionRows, fixLines, lineComponents } from "../incidentFix";
@@ -153,6 +155,47 @@ function SystemDetail({ inc }: { inc: Incident }) {
         {inc.kind !== "feed" && inc.kind !== "platform" && !assetId && "This incident resolves itself once the problem is gone."}
       </p>
     </Card>
+  );
+}
+
+/**
+ * The open critical and high leaked keys a leak incident is about, with each
+ * key's actions (Assign, Mark as rotated, Check again, Dismiss), so people
+ * act from the incident instead of finding the asset's Leaked keys tab.
+ */
+export function IncidentLeaks({ assetId, leaks, onChanged }: { assetId: number; leaks: Leak[]; onChanged: () => void }) {
+  return (
+    <section aria-labelledby="il-title">
+      <h2 className="section-title" id="il-title">
+        Leaked keys in this incident ({leaks.length})
+      </h2>
+      <p className="hint section-hint">
+        Use each key's Actions menu: mark it as rotated once you have revoked it and issued a new one, Check again to ask for a new scan,
+        assign it to someone, or dismiss a test key kept on purpose. All of the asset's keys are on its{" "}
+        <Link to={`/assets/${assetId}?tab=leaks`}>leaked keys</Link> tab.
+      </p>
+      {leaks.length === 0 ? (
+        <p className="muted">No open critical or high leaked keys on this asset.</p>
+      ) : (
+        <LeaksTable leaks={leaks} showAsset={false} onChanged={onChanged} />
+      )}
+    </section>
+  );
+}
+
+function IncidentLeaksLoader({ assetId, onChanged }: { assetId: number; onChanged: () => void }) {
+  const res = useLoad(() => api.get<LeakList>(`/assets/${assetId}/leaks`, { ...LEAK_VIEW_QUERY.action, second_check: NOT_FALSE_POSITIVE, limit: 50 }), [assetId]);
+  if (res.error) return <ErrorBox error={res.error} title="Could not load the leaked keys" />;
+  if (!res.data) return <Loading />;
+  return (
+    <IncidentLeaks
+      assetId={assetId}
+      leaks={res.data.items ?? []}
+      onChanged={() => {
+        res.reload();
+        onChanged();
+      }}
+    />
   );
 }
 
@@ -320,6 +363,10 @@ export function IncidentDetailPage() {
           {findings.length > 0 && <OwnerSplit owners={countOwners(findings)} />}
           {findings.length === 0 ? <p className="muted">No findings are linked to this incident.</p> : <FindingsTable rows={findings} />}
         </section>
+      )}
+
+      {inc.kind === "leak" && inc.status === "open" && typeof d.asset_id === "number" && (
+        <IncidentLeaksLoader assetId={d.asset_id} onChanged={res.reload} />
       )}
 
       {res.data.deliveries && <Deliveries items={res.data.deliveries} onRetried={res.reload} />}
