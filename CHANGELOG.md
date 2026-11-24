@@ -6,6 +6,16 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.35
+
+### Added
+
+- **Act on leaked keys from their incident.** A leaked-key incident's page now lists its open critical and high keys under **Leaked keys in this incident**, each with an Actions menu: Assign, Mark as rotated, Check again and Dismiss, as on the asset's Leaked keys tab. Before, the page only linked to the asset. See [Leaked keys](docs/leaked-keys.md).
+
+### Changed
+
+- **Clearer AI assistant tool descriptions.** The MCP tools whose jobs sit close together (what to fix first, the change list per asset, the version to upgrade to, search, where a package is installed, a finding's record and its reasoning, snooze and ignore) now say exactly what each takes and returns, so assistants pick the right one. No tool was renamed and results are unchanged. Descriptions no longer name other tools, as Claude's connector directory requires. See [AI assistants](docs/ai-assistants.md).
+
 ## 0.20.34
 
 ### Added
