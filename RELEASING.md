@@ -37,7 +37,7 @@ Then it runs what the release workflow runs before it publishes anything: `tools
 Merge when CI is green. Tag the merge commit (the tag must be on `main`). The release workflow refuses to publish unless:
 
 - `tools/changelog` finds the tag's section and `releaselint` passes with the tag,
-- every earlier release in the upgrade matrix upgrades, restores from backup and rolls back cleanly to the new build (`tools/release-checks/upgrade.sh`), and the workspace isolation suite passes,
+- the newest release of each database schema in the upgrade matrix upgrades, restores from backup and rolls back cleanly to the new build (`tools/release-checks/upgrade.sh`; releases with the same migrations upgrade through the same steps, so `tools/release-checks/select.sh` picks one of each), and the workspace isolation suite passes. Pull requests that change no migration and nothing in `tools/release-checks/` test only the oldest and the two newest releases,
 - `govulncheck`, `npm audit` and an image scan find no fixable HIGH or CRITICAL vulnerability.
 
 Then it publishes the binaries with signed checksums, the images on GHCR and Docker Hub (signed, with SBOM and provenance), the Helm charts, and the release notes from CHANGELOG.md, and tells the Homebrew tap, the website and the licensed-edition image build.
@@ -50,7 +50,7 @@ Once the release is published:
 go run ./tools/release next v0.15.0
 ```
 
-adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. `releaselint` fails the first pull request that adds something under `## Unreleased` or in `changelog.d/` until this is merged.
+adds it to the upgrade matrix and opens a small pull request, so every later release is tested as an upgrade from it. Feature pull requests do not wait for it: until it is merged, `releaselint` holds them to the release before (the newest cannot be added before its GitHub release is published), and `tools/release prepare` adds the newest to the next release's pull request in any case, where `releaselint` runs with the tag.
 
 ### 6. Feedback: `/feedback release`
 

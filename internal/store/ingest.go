@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 
 	"github.com/jackc/pgx/v5"
@@ -400,6 +401,93 @@ func writeRelations(ctx context.Context, tx pgx.Tx, assetID int64, b *model.Obse
 	return rows.Err()
 }
 
+// machineSchemes are the identifiers a host agent reads from the machine
+// itself. They tell machines apart; the hostname, which agents send next to
+// them, does not: two machines can share one (#565).
+var machineSchemes = map[string]bool{"machine-id": true, "macos-platform-uuid": true, "windows-machine-guid": true}
+
+// matchIdentifiers returns the assets a batch's identifiers point at,
+// oldest first. The hostname only counts when the batch has no machine
+// identifier, or for an asset that has none of its own (one created before
+// its agent sent one): an asset with another machine's identifier is a
+// different machine with the same name, and the batch gets its own asset.
+//
+// It also undoes merges made that way before this rule: when the batch's
+// machine identifier was added to an asset after another identifier of the
+// same scheme, the batch's machine was folded into that asset by hostname.
+// Its identifier is removed there, so the batch gets its own asset and the
+// asset keeps the machine it had first.
+func matchIdentifiers(ctx context.Context, tx pgx.Tx, idents []model.Identifier) ([]int64, error) {
+	var strongS, strongV []string
+	var hostname, machineScheme, machineValue string
+	for _, id := range idents {
+		switch {
+		case id.Scheme == "hostname":
+			hostname = id.Value
+			continue
+		case machineSchemes[id.Scheme] && machineScheme == "":
+			machineScheme, machineValue = id.Scheme, id.Value
+		}
+		strongS, strongV = append(strongS, id.Scheme), append(strongV, id.Value)
+	}
+
+	if machineScheme != "" {
+		// Folded in by hostname earlier: an older identifier of the same
+		// scheme on the asset that holds this one.
+		if _, err := tx.Exec(ctx, `DELETE FROM asset_identifiers mine
+			WHERE mine.scheme = $1 AND mine.value = $2 AND EXISTS (
+			  SELECT 1 FROM asset_identifiers other
+			  WHERE other.asset_id = mine.asset_id AND other.scheme = mine.scheme AND other.value <> mine.value
+			    AND other.first_seen < mine.first_seen)`, machineScheme, machineValue); err != nil {
+			return nil, err
+		}
+	}
+
+	query := func(schemes, values []string, onlyWithoutMachine bool) ([]int64, error) {
+		rows, err := tx.Query(ctx, `SELECT DISTINCT COALESCE(a.merged_into, a.id)
+			FROM asset_identifiers ai JOIN assets a ON a.id = ai.asset_id
+			JOIN unnest($1::text[], $2::text[]) AS x(scheme, value) ON x.scheme = ai.scheme AND x.value = ai.value
+			WHERE NOT $3 OR NOT EXISTS (
+			  SELECT 1 FROM asset_identifiers m WHERE m.asset_id = ai.asset_id AND m.scheme = $4)`,
+			schemes, values, onlyWithoutMachine, machineScheme)
+		if err != nil {
+			return nil, err
+		}
+		ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
+		if err != nil {
+			return nil, err
+		}
+		sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+		return ids, nil
+	}
+
+	var ids []int64
+	if len(strongS) > 0 {
+		var err error
+		if ids, err = query(strongS, strongV, false); err != nil {
+			return nil, err
+		}
+	}
+	if hostname == "" {
+		return ids, nil
+	}
+	// The hostname adds assets that have no machine identifier (the same
+	// machine before its agent sent one: a conflict to merge when the
+	// identifiers also matched another asset), or all of them for a batch
+	// without one.
+	byName, err := query([]string{"hostname"}, []string{hostname}, machineScheme != "")
+	if err != nil {
+		return nil, err
+	}
+	for _, id := range byName {
+		if !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	return ids, nil
+}
+
 // resolveAsset maps batch identifiers to one asset, creating it if needed.
 // When identifiers point at several assets the oldest wins and a conflict
 // is recorded for an administrator.
@@ -409,18 +497,10 @@ func resolveAsset(ctx context.Context, tx pgx.Tx, b *model.ObservationBatch) (in
 	for i, id := range b.Asset.Identifiers {
 		schemes[i], values[i] = id.Scheme, id.Value
 	}
-	rows, err := tx.Query(ctx, `SELECT DISTINCT COALESCE(a.merged_into, a.id)
-		FROM asset_identifiers ai JOIN assets a ON a.id = ai.asset_id
-		JOIN unnest($1::text[], $2::text[]) AS x(scheme, value) ON x.scheme = ai.scheme AND x.value = ai.value`,
-		schemes, values)
+	ids, err := matchIdentifiers(ctx, tx, b.Asset.Identifiers)
 	if err != nil {
 		return 0, false, nil, err
 	}
-	ids, err := pgx.CollectRows(rows, pgx.RowTo[int64])
-	if err != nil {
-		return 0, false, nil, err
-	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
 	if len(ids) == 0 {
 		// A release layout reported by its own directory for the first
