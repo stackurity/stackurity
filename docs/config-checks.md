@@ -144,7 +144,7 @@ To see why, run `shirudo status` and `shirudo upatch list` as root, then `system
 
 `/run/shirudo/bpffs` can be listed only by root. When the agent does not run as root, nothing is reported and the check is marked as not complete ("cannot be listed"), never as fine. On a mounted root (`--root`) or a container image nothing is reported, because `/run` belongs to a running boot. Servers that do not use Shirudo (no archived micropatches) are not affected. Nothing is run, and the micropatch files are not opened, only listed.
 
-Stackurity does not yet mark a vulnerability as mitigated by a micropatch: what a micropatch fixes is recorded on Shirudo's package server (the `fixes` list of a Beefile), not on the server. To record one, ignore the finding with the reason **Mitigated**, name the micropatch in the mitigation note, and choose **Until a fix ships**.
+Stackurity does not yet mark a vulnerability as mitigated by a micropatch: what a micropatch fixes is recorded on Shirudo's package server (the `fixes` list of a Beefile), not on the server. To record one, ignore the finding with the reason **Mitigated**, name the micropatch in the mitigation note, and set an end date (the planned upgrade), or **Until a fix ships** when the vendor has no fix yet.
 
 Both rules are high, so each server with one opens a **Risky setting** incident (see [Alerts](#alerts)): a server that relied on a micropatch is exposed again, which is worth waking someone for. Shirudo findings use the kernel category, so agents send them only to servers that list `config_kernel` in `GET /meta`.
 
