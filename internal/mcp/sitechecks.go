@@ -19,8 +19,8 @@ func init() {
 	tools["list_website_checks"] = tool{
 		description: "The organisation's website checks (docs/website-check.md), newest first: each check of a public website " +
 			"(what its headers and page show from the outside, matched to vulnerabilities, CISA known-exploited flags and end of " +
-			"life) with id, host, url, the counts of issues, known_exploited and end_of_life, who ran it and when. Use " +
-			"website_check_report with an id for the software found and each issue.",
+			"life) with id, host, url, the counts of issues, known_exploited and end_of_life, who ran it and when. A " +
+			"check's id fetches its full report: the software found and each issue.",
 		schema: obj(map[string]any{"limit": num("At most this many (default 20, max 100)")}),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			limit := 20
@@ -46,7 +46,7 @@ func init() {
 			"known_exploited and fixed_in, its end of life, and coverage when its vulnerabilities could not be checked), TLS, " +
 			"the browser protection headers sent or missing, findings (leaked keys shown masked, cookie and password-form settings, " +
 			"mixed content, CDN files without integrity checks, TLS 1.0/1.1 accepted, SPF and DMARC; each with severity, detail, " +
-			"fix and where), a summary and notes. Get ids from list_website_checks.",
+			"fix and where), a summary and notes. Takes a check id from the list of website checks.",
 		schema: obj(map[string]any{"id": num("The check's id")}, "id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			id, ok := intArg(a["id"])

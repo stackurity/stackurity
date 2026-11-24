@@ -581,7 +581,7 @@ func init() {
 		}},
 	}
 	tools["assign"] = tool{
-		description: "Assign issues (findings) to a person: by finding_ids, or every open issue of a fix (fix_group). " +
+		description: "Assign open findings (issues) to a person to fix: by finding_ids, or every open issue of a fix (fix_group). " +
 			"assignee is \"me\", a user id, or an email from the people directory. Needs engineer on the issues' assets. " +
 			"Without confirm it only previews.",
 		schema: obj(with(issueTarget, map[string]any{
@@ -607,8 +607,8 @@ func init() {
 		}},
 	}
 	tools["snooze"] = tool{
-		description: "Snooze issues until a date, or until a free fix exists (until_fix): they leave the to-do lists and come " +
-			"back by themselves. Needs the security role. Without confirm it only previews.",
+		description: "Snooze open findings (issues) for a while: until a date, or until a free fix exists (until_fix). They leave " +
+			"the to-do lists and come back by themselves; no reason or approval is recorded. Needs the security role. Without confirm it only previews.",
 		schema: obj(with(issueTarget, map[string]any{
 			"until":     str("Snooze until this date (2026-12-31), at most the organisation's exception limit ahead"),
 			"until_fix": map[string]any{"type": "boolean", "description": "Snooze until a free fixed version exists instead of a date"},
@@ -649,7 +649,7 @@ func init() {
 		}},
 	}
 	tools["ignore"] = tool{
-		description: "Ignore issues with a reason and an expiry, on their asset or on every asset. With the security role " +
+		description: "Ignore open findings (issues) as accepted: with a reason and an expiry, on their asset or on every asset. With the security role " +
 			"(on the issues' assets) the issues are ignored at once; otherwise a request is filed for a security or admin " +
 			"user to approve, and nothing changes until then. The preview says which. Without confirm it only previews.",
 		schema: obj(with(issueTarget, map[string]any{
@@ -726,7 +726,7 @@ func init() {
 		}},
 	}
 	tools["check_again"] = tool{
-		description: "Check again: ask for a fresh report of a fix (fix_group) or a whole asset (asset_id) from its agent, or a " +
+		description: "Rescan to confirm a fix: ask for a fresh report of a fix (fix_group) or a whole asset (asset_id) from its agent, or a " +
 			"server-side scan, to confirm a fix. Issues close by themselves when the fresh report no longer has them. " +
 			"Needs engineer on the asset. Without confirm it only previews.",
 		schema: obj(map[string]any{

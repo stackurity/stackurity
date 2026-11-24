@@ -112,8 +112,8 @@ func init() {
 			"(min_priority, P1 the most urgent; new_issues_min_priority for new issues), sos_only, the asset kinds, environments, projects " +
 			"and teams it is limited to (empty: all), resolved notices, summary time and day, quiet hours, timezone and the hourly cap. " +
 			"A rule sends only when it and its channel are both enabled. possible_duplicates lists enabled Slack or Teams channels in the " +
-			"same place that enabled rules send the same events to, which may post each message twice (set_notification_enabled turns " +
-			"one off). project_chat_apps says whether project admins may connect their own Slack or Teams. Use it for 'are we notified about critical issues' (critical findings are usually P1 or P2).",
+			"same place that enabled rules send the same events to, which may post each message twice (either can be turned " +
+			"off). project_chat_apps says whether project admins may connect their own Slack or Teams. Use it for 'are we notified about critical issues' (critical findings are usually P1 or P2).",
 		schema: obj(map[string]any{}),
 		run:    notificationSettings,
 	}

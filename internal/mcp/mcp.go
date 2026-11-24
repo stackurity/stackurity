@@ -304,10 +304,11 @@ func num(desc string) map[string]any { return map[string]any{"type": "integer", 
 
 var tools = map[string]tool{
 	"search": {
-		description: "Search everything in the workspace at once: a vulnerability id (CVE, GHSA, DSA, USN, RHSA...), a package " +
+		description: "Look up a name or id when you do not know what kind of thing it is, across the whole workspace: a vulnerability id (CVE, GHSA, DSA, USN, RHSA...), a package " +
 			"(lodash, lodash@4.17.20, 'openssl 3.0.2', a purl), a host name, machine id, repository URL, image reference or " +
 			"digest, a team, words from a finding's title, or (for engineers and above) a workspace member's name or email. " +
-			"Results are grouped by type, exact matches first, with the affected assets for each.",
+			"Results are grouped by type, exact matches first, with the affected assets for each. Returns matches only: no ranking of " +
+			"what to fix and no full finding details.",
 		schema: obj(map[string]any{
 			"query": str("What to look for, at least 2 characters"),
 			"limit": num("At most this many results per type (default 10, max 50)"),
@@ -334,7 +335,7 @@ var tools = map[string]tool{
 			"collection_status removed means an application is gone from its host. reporting one_off means " +
 			"it was scanned once and its results are as of as_of; stale means a server or scheduled scan stopped reporting.",
 		schema: obj(map[string]any{
-			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}},
+			"kind":        map[string]any{"type": "string", "enum": []string{"host", "application", "repository", "image", "managed_service", "sbom", "cluster", "workload"}, "description": "Only assets of this kind"},
 			"query":       str("Name contains this text"),
 			"environment": str("Environment label, e.g. production"),
 		}),
@@ -416,8 +417,8 @@ var tools = map[string]tool{
 		},
 	},
 	"action_plan": {
-		description: "What to fix, grouped into concrete actions (upgrade X to version Y, move off an end-of-life runtime), " +
-			"ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
+		description: "What to fix first across the organisation (or one asset): deduplicated actions (upgrade X to version Y, " +
+			"move off an end-of-life runtime), ordered by urgency, with how many findings each action clears. For package upgrades, target_version is the version " +
 			"to move to (the title names it), to_version the lowest version that fixes them all. The same fix in several places is " +
 			"one action listing each place (asset, app_dir, its own group_id and finding count) under places. Omit asset_id for every asset; " +
 			"with limit, only the most urgent actions across them (10 to 15 answers \"what should I fix first\").",
@@ -444,7 +445,8 @@ var tools = map[string]tool{
 		},
 	},
 	"list_findings": {
-		description: "Open vulnerability and end-of-life findings, most urgent first, with the installed and fixed versions (source_fix: " +
+		description: "The open findings themselves, one per vulnerability or end-of-life issue on an asset, most urgent first, " +
+			"filterable by asset, severity, priority, text, known exploited, EPSS and reachability, with the installed and fixed versions (source_fix: " +
 			"the fixed version is the Debian/Ubuntu source package's, and source_fix.action says which package to upgrade) and " +
 			"FIRST's EPSS (epss: the probability, 0 to 1, that the CVE is exploited in the next 30 days; epss_cve: the CVE it is for, " +
 			"the highest-scored when the advisory covers several), and vex: the latest " +
@@ -548,7 +550,7 @@ var tools = map[string]tool{
 		},
 	},
 	"get_finding": {
-		description: "One finding in full: advisory text, evidence, where the component was found, workflow state, the latest " +
+		description: "One finding's full record by finding_id: advisory text, evidence, where the component was found, workflow state, the latest " +
 			"VEX statement about it (finding.vex) and history.",
 		schema: obj(map[string]any{"finding_id": num("The id of a finding, as list_findings and asset_stack return it")}, "finding_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
@@ -567,7 +569,7 @@ var tools = map[string]tool{
 		},
 	},
 	"asset_stack": {
-		description: "Everything an asset relies on (for an application: its hosts, repository, images and dependencies; for a host: " +
+		description: "For one asset_id, everything that asset relies on (for an application: its hosts, repository, images and dependencies; for a host: " +
 			"the applications on it) with open findings grouped by layer: web server, OS, runtime, data store, libraries.",
 		schema: obj(map[string]any{"asset_id": num("Asset id")}, "asset_id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
@@ -597,8 +599,9 @@ var tools = map[string]tool{
 		},
 	},
 	"find_component": {
-		description: "Where a package, library or runtime is installed, and at which versions (e.g. 'openssl', 'lodash', 'nodejs').",
-		schema:      obj(map[string]any{"name": str("Component name or part of it")}, "name"),
+		description: "Where one package, library or runtime is installed: each asset that has it and the versions installed there " +
+			"(e.g. 'openssl', 'lodash', 'nodejs'). Inventory only: no findings and no upgrade advice.",
+		schema: obj(map[string]any{"name": str("Component name or part of it")}, "name"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			name, _ := a["name"].(string)
 			if strings.TrimSpace(name) == "" {
@@ -646,7 +649,7 @@ var tools = map[string]tool{
 // return structured data with the ids, versions and sources they rest on.
 func init() {
 	tools["explain_finding"] = tool{
-		description: "Why a finding matched and why it has its priority, with citations. why.sentence says in one sentence which " +
+		description: "For one finding_id, the reasoning behind it: why it matched and why it has its priority, with citations. why.sentence says in one sentence which " +
 			"installed version (from which file or collector, seen when) is in which advisory range under which version rules, from " +
 			"which source refreshed when, and the fix; why also gives the evidence state (confirmed, needs_validation, stale, " +
 			"rejected), the missing information that would resolve a finding that is not confirmed, and the independent second " +
@@ -673,7 +676,7 @@ func init() {
 		},
 	}
 	tools["upgrade_recommendation"] = tool{
-		description: "Which version to upgrade a component to, from stored advisory, registry release and end-of-life data only: " +
+		description: "For one component or one finding: which version to upgrade to and why, from stored advisory, registry release and end-of-life data only: " +
 			"installed version, minimum fixed version, recommended version (the newest stable release in the same major line at or " +
 			"above the fix), change type, whether a major upgrade is needed, withdrawn versions, release-line support and the " +
 			"reasons. When data is missing it says so instead of guessing. Give finding_id for one installed copy, or component_id " +
@@ -696,8 +699,8 @@ func init() {
 		},
 	}
 	tools["remediation_plan"] = tool{
-		description: "Open findings grouped into actions per asset and package (security updates, package upgrades, end-of-life " +
-			"moves), most urgent first, each with the installed version, the minimum fixed version, the recommended version, the " +
+		description: "The change list per asset: for each asset (or one asset_id) and package, the change to make (security update, " +
+			"package upgrade, end-of-life move), most urgent first; a fix needed on several assets appears once per asset, each with the installed version, the minimum fixed version, the recommended version, the " +
 			"change type and how many findings it clears. Omit asset_id for every asset.",
 		schema: obj(map[string]any{
 			"asset_id": num("Limit to one asset"),
@@ -816,7 +819,7 @@ func init() {
 		},
 	}
 	tools["verify_since"] = tool{
-		description: "What changed since a time, e.g. when a fix was deployed: findings resolved since then and why (cause: " +
+		description: "Before and after: what changed since a time, e.g. when a fix was deployed: findings resolved since then and why (cause: " +
 			"upgraded, remediation, removed; or, with nothing changed on the asset, advisory_withdrawn, advisory_changed, superseded " +
 			"(upgraded but still affected), not_evaluated), with counts_as_remediation per finding and the totals remediated and " +
 			"closed_not_remediation; findings that existed then and are still open; and when each asset last sent a complete " +
