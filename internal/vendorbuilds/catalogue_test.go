@@ -40,6 +40,8 @@ func TestIdentify(t *testing.T) {
 		{"deb", "docker-ce-rootless-extras", "docker-engine", 4},
 		{"deb", "containerd.io", "containerd", 0},
 		{"rpm", "containerd.io", "containerd", 1},
+		{"deb", "puppet-agent", "puppet", 0},
+		{"rpm", "puppet-agent", "puppet", 1},
 		// Not the product's own version, or not listed.
 		{"deb", "php8.3-redis", "", 0},
 		{"deb", "php8.3-xdebug", "", 0},
@@ -51,6 +53,9 @@ func TestIdentify(t *testing.T) {
 		{"deb", "containerdXio", "", 0},
 		{"deb", "docker-compose-plugin", "", 0},
 		{"deb", "docker-buildx-plugin", "", 0},
+		{"deb", "puppetserver", "", 0},
+		{"deb", "openvox-agent", "", 0},
+		{"rpm", "puppet", "", 0},
 	} {
 		p, rank := c.Identify(tc.typ, tc.name)
 		got := ""
@@ -82,6 +87,9 @@ func TestUpstreamVersion(t *testing.T) {
 		{"docker-engine", "29.9.3-1.el9", "29.9.3"},
 		{"containerd", "2.4.2-3~ubuntu.24.04~noble", "2.4.2"},
 		{"containerd", "2.4.2-4.el9", "2.4.2"},
+		{"puppet", "8.10.0-1jammy", "8.10.0"},
+		{"puppet", "8.10.0-1bookworm", "8.10.0"},
+		{"puppet", "8.10.0-1.el9", "8.10.0"},
 		// Editions and pre-releases are not read.
 		{"consul", "1.20.1+ent-1", ""},
 		{"vault", "1.18.1+ent-1", ""},
@@ -101,7 +109,7 @@ func TestNamePattern(t *testing.T) {
 	re := regexp.MustCompile("(?i)" + c.NamePattern())
 	for _, n := range []string{"nginx", "nodejs", "postgresql-16", "postgresql16-server", "php8.3-common", "php83-php-fpm",
 		"libapache2-mod-php8.1", "MariaDB-server", "mysql-community-server", "vault", "terraform",
-		"docker-ce", "docker-ce-cli", "containerd.io"} {
+		"docker-ce", "docker-ce-cli", "containerd.io", "puppet-agent"} {
 		if !re.MatchString(n) {
 			t.Errorf("NamePattern does not select %s", n)
 		}

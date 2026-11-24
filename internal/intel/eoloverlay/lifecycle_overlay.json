@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-12.1",
+  "version": "2026-11-23.1",
   "description": "Stackurity's lifecycle mappings on top of endoflife.date. Every product entry was checked against the vendor's or distribution's own package index (sources) on the date given. endoflife.date's own identifiers win unless an entry sets override.",
   "namespace_families": [
     {
@@ -356,6 +356,38 @@
         "https://packages.gitlab.com/gitlab/gitlab-ce/el/9/x86_64/repodata/repomd.xml"
       ],
       "verified": "2026-10-28"
+    },
+    {
+      "product": "puppet",
+      "purls": [
+        "pkg:deb/*/puppet-agent"
+      ],
+      "vendor_builds": [
+        {
+          "repository": "Puppet's repository (apt.puppet.com)",
+          "version": "^(\\d+:)?\\d+(\\.\\d+)+-\\d+[a-z]+$"
+        }
+      ],
+      "sources": [
+        "https://apt.puppet.com/dists/jammy/puppet8/binary-amd64/Packages",
+        "https://apt.puppet.com/dists/bookworm/puppet8/binary-amd64/Packages",
+        "http://archive.ubuntu.com/ubuntu/dists/noble/universe/binary-amd64/Packages.xz",
+        "http://deb.debian.org/debian/dists/trixie/main/binary-amd64/Packages.xz"
+      ],
+      "verified": "2026-11-23",
+      "note": "Puppet's builds end in the target release's codename (8.10.0-1jammy, 8.10.0-1bookworm); Ubuntu's and Debian's own builds do not (8.4.0-1, 8.10.0-5+deb13u1)."
+    },
+    {
+      "product": "puppet",
+      "purls": [
+        "pkg:rpm/*/puppet-agent"
+      ],
+      "vendor_only": "Puppet's repository (yum.puppet.com)",
+      "sources": [
+        "https://yum.puppet.com/puppet8/el/9/x86_64/"
+      ],
+      "verified": "2026-11-23",
+      "note": "puppet-agent 8.10.0-1.el9; the distributions package Puppet as puppet, not puppet-agent."
     },
     {
       "product": "jenkins",

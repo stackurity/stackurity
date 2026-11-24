@@ -145,3 +145,35 @@ func TestHashiCorpDistroBuilds(t *testing.T) {
 		}
 	}
 }
+
+// TestPuppetAgentBuilds: Ubuntu and Debian ship their own puppet-agent, so
+// only Puppet's version form (the target release after the revision) marks
+// a build from apt.puppet.com; on RPM distributions puppet-agent is only
+// Puppet's.
+func TestPuppetAgentBuilds(t *testing.T) {
+	o := Default()
+	for _, c := range []struct {
+		key, version string
+		vendor       bool
+	}{
+		{"pkg:deb/ubuntu/puppet-agent", "8.10.0-1jammy", true},
+		{"pkg:deb/ubuntu/puppet-agent", "7.34.0-1noble", true},
+		{"pkg:deb/debian/puppet-agent", "8.10.0-1bookworm", true},
+		{"pkg:rpm/redhat/puppet-agent", "8.10.0-1.el9", true},
+		{"pkg:deb/ubuntu/puppet-agent", "8.4.0-1", false},          // Ubuntu 24.04
+		{"pkg:deb/debian/puppet-agent", "8.10.0-5+deb13u1", false}, // Debian 13 security
+		{"pkg:deb/debian/puppet-agent", "7.23.0-1", false},         // Debian 12
+		{"pkg:deb/ubuntu/puppet-agent", "8.4.0-1ubuntu0.1", false}, // an Ubuntu update
+	} {
+		repo, ok := o.VendorBuild(c.key, c.version)
+		if ok != c.vendor {
+			t.Errorf("%s %s: vendor build %v (%q), want %v", c.key, c.version, ok, repo, c.vendor)
+		}
+		if ok && !strings.HasPrefix(repo, "Puppet's repository") {
+			t.Errorf("%s %s: repository %q", c.key, c.version, repo)
+		}
+	}
+	if m, ok := o.Product("pkg:deb/ubuntu/puppet-agent", nil); !ok || m.Product != "puppet" {
+		t.Errorf("puppet-agent: %+v %v, want puppet", m, ok)
+	}
+}
