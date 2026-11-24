@@ -163,3 +163,81 @@ func TestRuntimeBuilds(t *testing.T) {
 		t.Errorf("runtime nginx group %+v", g)
 	}
 }
+
+// A PHP found outside a package manager (the official php images build PHP
+// from php.net's source into /usr/local, a source build, a Homebrew keg) is
+// matched by the release it reports against PHP's NVD records, with no
+// edition asked: PHP has none. The record is CVE-2026-109618's as NVD
+// publishes it (fixed in 8.2.35, 8.3.36, 8.4.27 and 8.5.12).
+func TestRuntimeBuildsPHP(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, _, nvd := setupPrograms(t)
+
+	php := func(version, binary, detectedBy, install string) model.Observation {
+		return model.Observation{Purl: "pkg:generic/php@" + version, Version: version, Location: binary, Scope: "runtime",
+			Confidence: model.ConfidenceConfirmed, Evidence: map[string]string{"kind": "runtime", "install": install, "binary": binary, "detected_by": detectedBy}}
+	}
+	hosts := map[string]int64{}
+	for name, o := range map[string]model.Observation{
+		"image-8.3.35":    php("8.3.35", "/usr/local/bin/php", "header", "unmanaged"),
+		"image-8.3.36":    php("8.3.36", "/usr/local/bin/php", "header", "unmanaged"),
+		"source-8.5.11":   php("8.5.11", "/opt/php/bin/php", "version-output", "unmanaged"),
+		"homebrew-8.4.26": php("8.4.26", "", "", "homebrew"),
+	} {
+		hosts[name] = ingest(t, st, model.AssetHost, name, true, osRow("debian", "12"), o)
+	}
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := st.GetFeed(ctx, FeedVendorBuilds); err != nil || f.Kind != "vulnerability" {
+		t.Fatalf("a PHP runtime must create the %s feed: %+v %v", FeedVendorBuilds, f, err)
+	}
+	rng := func(start, end string) nvdCPEMatch {
+		return nvdCPEMatch{Vulnerable: true, Criteria: "cpe:2.3:a:php:php:*:*:*:*:*:*:*:*", VersionStartIncluding: start, VersionEndExcluding: end}
+	}
+	nvd.extra["cpe:2.3:a:php:php"] = []nvdWrapped{nvdCVEWith("CVE-2026-109618", nvdConfig{Nodes: []nvdNode{{Operator: "OR",
+		CPEMatch: []nvdCPEMatch{rng("7.3.0", "8.2.35"), rng("8.3.0", "8.3.36"), rng("8.4.0", "8.4.27"), rng("8.5.0", "8.5.12")}}}})}
+	if res, err := sy.Sync(ctx, FeedVendorBuilds); err != nil || res.Warning != "" {
+		t.Fatalf("sync: %+v %v", res, err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]struct{ finding, words string }{
+		"image-8.3.35":    {"CVE-2026-109618@8.3.36", "matched as PHP 8.3.35"},
+		"image-8.3.36":    {"", "matched as PHP 8.3.36"},
+		"source-8.5.11":   {"CVE-2026-109618@8.5.12", "matched as PHP 8.5.11"},
+		"homebrew-8.4.26": {"CVE-2026-109618@8.4.27", "installed by Homebrew"},
+	} {
+		var got []string
+		for _, f := range allFindings(t, st, ctx, hosts[name]) {
+			if f.Kind == "vulnerability" {
+				got = append(got, f.Key+"@"+f.FixedVersion)
+			}
+		}
+		if strings.Join(got, " ") != want.finding {
+			t.Errorf("%s: findings %q, want %q", name, got, want.finding)
+		}
+		var row store.InventoryRow
+		for purl, r := range rowCoverage(t, ctx, st, hosts[name]) {
+			if strings.HasPrefix(purl, "pkg:generic/php") {
+				row = r
+			}
+		}
+		if row.Coverage != store.CoverageEvaluated || !strings.Contains(row.CoverageReason, want.words) {
+			t.Errorf("%s: coverage %s %q, want evaluated with %q", name, row.Coverage, row.CoverageReason, want.words)
+		}
+	}
+	if _, err := planner.Rebuild(ctx, st, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := st.ListFixGroups(ctx, store.FixGroupFilter{AssetID: hosts["image-8.3.35"], Kind: fixplan.ProgramUpdate})
+	if err != nil || len(raw) != 1 {
+		t.Fatalf("fix groups %d %v", len(raw), err)
+	}
+	var g fixplan.Group
+	_ = json.Unmarshal(raw[0], &g)
+	if g.Title != "Update PHP 8.3 to 8.3.36" || !strings.Contains(g.Action, "not installed by a package manager") {
+		t.Errorf("runtime PHP group %+v", g)
+	}
+}

@@ -200,7 +200,7 @@ func TestParseRejectsRuntime(t *testing.T) {
 		`{"id":"y","label":"Y","packages":["^deb/y$"],"cpes":["cpe:2.3:a:y:y"],"sources":["s"],"verified":"2026-11-11"@B@}]}`
 	full := `,"runtime":"x","runtime_edition":"open-source","runtime_update":"u"`
 	for name, r := range map[string]*strings.Replacer{
-		"no edition":    strings.NewReplacer("@A@", `,"runtime":"x","runtime_update":"u"`, "@B@", ""),
+		"no update":     strings.NewReplacer("@A@", `,"runtime":"x","runtime_edition":"open-source"`, "@B@", ""),
 		"edition alone": strings.NewReplacer("@A@", `,"runtime_edition":"open-source"`, "@B@", ""),
 		"bad name":      strings.NewReplacer("@A@", `,"runtime":"X Y","runtime_edition":"e","runtime_update":"u"`, "@B@", ""),
 		"listed twice":  strings.NewReplacer("@A@", full, "@B@", full),
@@ -211,5 +211,27 @@ func TestParseRejectsRuntime(t *testing.T) {
 	}
 	if _, err := Parse([]byte(strings.NewReplacer("@A@", full, "@B@", "").Replace(base))); err != nil {
 		t.Errorf("valid document: %v", err)
+	}
+	// A product with no other editions needs no runtime_edition.
+	if _, err := Parse([]byte(strings.NewReplacer("@A@", `,"runtime":"x","runtime_update":"u"`, "@B@", "").Replace(base))); err != nil {
+		t.Errorf("runtime without an edition: %v", err)
+	}
+}
+
+func TestForRuntimePHP(t *testing.T) {
+	c := Default()
+	p := c.ForRuntime("php")
+	if p == nil || p.ID != "php" || p.RuntimeEdition != "" || p.RuntimeUpdate == "" {
+		t.Fatalf("php runtime: %+v", p)
+	}
+	if !p.OwnsCPE("cpe:2.3:a:php:php:*:*:*:*:*:*:*:*") {
+		t.Error("php:php is not read for PHP")
+	}
+	// The release the official php images and php -v print.
+	if v, ok := p.SourceVersion("8.3.35"); !ok || v != "8.3.35" {
+		t.Errorf("SourceVersion(8.3.35) = %q %v", v, ok)
+	}
+	if line := p.Line("8.3.35"); line != "8.3" {
+		t.Errorf("Line(8.3.35) = %q, want 8.3", line)
 	}
 }

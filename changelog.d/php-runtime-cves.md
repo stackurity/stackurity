@@ -1,0 +1,3 @@
+### Added
+
+- **PHP found outside a package manager is matched against its vulnerabilities.** The PHP the official `php` container images build into `/usr/local`, a source build and Homebrew's PHP were reported with their version and end of life only. They are now matched by the release they report against PHP's NVD records, like Ondřej Surý's and Remi's packages, through the vendor build catalogue's runtime fields (as nginx in 0.20.28). PHP has no separate editions, so agents of every version are matched. The action plan says "Update PHP 8.3 to 8.3.36" and how to replace such a PHP. CVEs NVD has not analysed yet are matched once it does. See [PHP outside a package manager](docs/compatibility.md#php-outside-a-package-manager).
