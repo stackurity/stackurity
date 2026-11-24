@@ -109,6 +109,16 @@ func checkDatabase(ctx context.Context, st *store.Store) []Result {
 	out := []Result{{Check: "database", Status: Pass,
 		Title: fmt.Sprintf("PostgreSQL %s answers, connected as %s", version, user)}}
 
+	pin := Result{Check: "pooler", Status: Pass, Title: "Each database connection keeps its PostgreSQL session (no pooler in transaction mode)",
+		Docs: "docs/operations.md#connection-poolers"}
+	if err := db.CheckSessionPinned(ctx, st.Pool); errors.Is(err, db.ErrSessionNotPinned) {
+		pin.Status, pin.Title, pin.Detail = Fail, "A connection pooler in transaction mode sits in front of PostgreSQL", err.Error()
+		pin.Next = "Set the pooler to session mode (PgBouncer pool_mode=session), or point STACKURITY_DATABASE_URL straight at PostgreSQL. The server refuses to start until then."
+	} else if err != nil {
+		pin.Status, pin.Title, pin.Detail = Warn, "Could not check whether a connection pooler is in front of PostgreSQL", err.Error()
+	}
+	out = append(out, pin)
+
 	iso := Result{Check: "isolation", Status: Pass, Title: "Row-level security applies to the server's connections (workspaces are isolated)",
 		Docs: "docs/install.md#workspaces"}
 	err := db.CheckIsolation(ctx, st.Pool)

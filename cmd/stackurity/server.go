@@ -92,6 +92,13 @@ func openStore(ctx context.Context) (*store.Store, error) {
 		pool.Close()
 		return nil, err
 	}
+	// Nor will any run behind a pooler that moves connections between
+	// PostgreSQL sessions (transaction mode): the role and workspace scope
+	// are set per connection, so isolation would not hold (#539, #540).
+	if err := db.CheckSessionPinned(ctx, pool); err != nil {
+		pool.Close()
+		return nil, err
+	}
 	st := store.New(pool)
 	st.StaleAfter = staleAfterSetting()
 	return st, nil
