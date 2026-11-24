@@ -133,7 +133,7 @@ Agents send kernel findings only to servers that list `config_kernel` in `GET /m
 
 ### Shirudo micropatches
 
-[Shirudo](https://docs.shirudo.dev) is an open-source runtime, published by OpenAI and Cisco (Isovalent) in November 2026, that loads signed BPF micropatches ("upatches") into a running Linux kernel. A micropatch blocks an exploit while the real fix is tested and rolled out. A server that relies on one is exposed again if the micropatch stops being loaded, for example after a restart where `shirudo.service` did not run, and nothing else tells you: the vulnerability findings were there all along.
+[Shirudo](https://docs.shirudo.dev) is an open-source runtime, published by OpenAI and Cisco in November 2026, that loads signed BPF micropatches ("upatches") into a running Linux kernel. A micropatch blocks an exploit while the real fix is tested and rolled out. A server that relies on one is exposed again if the micropatch stops being loaded, for example after a restart where `shirudo.service` did not run, and nothing else tells you: the vulnerability findings were there all along.
 
 | Severity | Rule | When |
 |---|---|---|
