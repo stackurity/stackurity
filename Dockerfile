@@ -17,14 +17,20 @@ FROM scratch AS pro
 FROM --platform=$BUILDPLATFORM golang:1.27.4-alpine AS build
 WORKDIR /src
 COPY go.mod go.sum ./
-RUN go mod download
+# Cache mounts keep Go's module and build caches between builds on the same
+# builder (they are not part of the image). Without them every image build
+# compiled the server eight times from scratch: about 34 minutes on the Mac.
+RUN --mount=type=cache,target=/go/pkg/mod go mod download
 COPY . .
 COPY --from=web /src/web/dist ./web/dist
 ARG VERSION=dev
 ARG EDITION=community
 ARG EE_TAGS=ee
 ARG TARGETARCH
-RUN --mount=type=bind,from=pro,target=/pro set -e; FLAGS=""; \
+RUN --mount=type=bind,from=pro,target=/pro \
+    --mount=type=cache,target=/go/pkg/mod \
+    --mount=type=cache,target=/root/.cache/go-build \
+    set -e; FLAGS=""; \
     if [ "$EDITION" = ee ]; then go run ./tools/eeoverlay -pro /pro > /tmp/ee.json; FLAGS="-tags $EE_TAGS -overlay /tmp/ee.json"; fi; \
     export GOOS=linux GOARCH=${TARGETARCH:-amd64}; \
     CGO_ENABLED=0 go build $FLAGS -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o /out/stackurity ./cmd/stackurity; \
@@ -59,7 +65,8 @@ ARG SYFT_VERSION=1.57.0
 ARG SYFT_DEPS="golang.org/x/net@v0.62.0 github.com/andybalholm/brotli@v1.2.8 golang.org/x/crypto@v0.58.1-0.20261009181718-2f1f834330b2"
 ARG TARGETARCH
 WORKDIR /syft
-RUN go mod init syft-build \
+RUN --mount=type=cache,target=/go/pkg/mod --mount=type=cache,target=/root/.cache/go-build \
+    go mod init syft-build \
  && go get github.com/anchore/syft/cmd/syft@v${SYFT_VERSION} ${SYFT_DEPS} \
  && CGO_ENABLED=0 GOOS=linux GOARCH=${TARGETARCH:-amd64} go build -trimpath \
       -ldflags "-s -w -X main.version=${SYFT_VERSION}" -o /usr/local/bin/syft github.com/anchore/syft/cmd/syft

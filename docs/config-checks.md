@@ -8,7 +8,7 @@ These findings appear under **Security → Risky settings** and on each asset's 
 
 | Where | Checked by | What |
 |---|---|---|
-| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access; attack tools; kernel modules |
+| Servers (Linux) | the agent | AI coding-agent hooks and MCP start commands; SSH access; attack tools; kernel modules; Shirudo micropatches |
 | Container images | the agent with `--docker`, and image archives | attack tools |
 | Repositories | repository integrations (GitHub, GitLab, Git URLs), `stackurity scan DIR` and the standalone scanner | GitHub Actions workflows; agent hooks and MCP servers checked into the repository; attack tools |
 
@@ -130,6 +130,23 @@ This removes only the root step. Upgrading nginx is still the fix for the nginx 
 The check reads `/proc/sys/kernel/osrelease`, `/proc/modules`, `/proc/cmdline`, `/proc/sys/kernel/modules_disabled`, `/sys/module`, the running kernel's module tree and the modprobe.d files. Nothing is run. When the running kernel's release cannot be read, for example on a mounted root without `/proc`, nothing is reported. Medium and low findings never alert.
 
 Agents send kernel findings only to servers that list `config_kernel` in `GET /meta`. An older server gets the other findings as before.
+
+### Shirudo micropatches
+
+[Shirudo](https://docs.shirudo.dev) is an open-source runtime, published by OpenAI and Cisco in November 2026, that loads signed BPF micropatches ("upatches") into a running Linux kernel. A micropatch blocks an exploit while the real fix is tested and rolled out. A server that relies on one is exposed again if the micropatch stops being loaded, for example after a restart where `shirudo.service` did not run, and nothing else tells you: the vulnerability findings were there all along.
+
+| Severity | Rule | When |
+|---|---|---|
+| high | `shirudo-upatch-not-loaded` | A micropatch is archived in `/var/lib/shirudo/upatches/<name>.upatch` (Shirudo restores these at every boot) but has no pin directory under `/run/shirudo/bpffs/upatches/`, so it is not loaded in the running kernel. One finding per micropatch. |
+| high | `shirudo-enforcement-off` | Micropatches are archived but `/run/shirudo/bpffs/lsm_link` is missing: Shirudo's LSM is not attached, so BPF loading is not restricted to signed loaders. When `/run/shirudo/bpffs` does not exist at all, Shirudo did not run this boot and every archived micropatch is reported too. |
+
+To see why, run `shirudo status` and `shirudo upatch list` as root, then `systemctl restart shirudo.service` or load the micropatch again. Once the vulnerable package has been upgraded, unload and remove the micropatch instead.
+
+`/run/shirudo/bpffs` can be listed only by root. When the agent does not run as root, nothing is reported and the check is marked as not complete ("cannot be listed"), never as fine. On a mounted root (`--root`) or a container image nothing is reported, because `/run` belongs to a running boot. Servers that do not use Shirudo (no archived micropatches) are not affected. Nothing is run, and the micropatch files are not opened, only listed.
+
+Stackurity does not yet mark a vulnerability as mitigated by a micropatch: what a micropatch fixes is recorded on Shirudo's package server (the `fixes` list of a Beefile), not on the server. To record one, ignore the finding with the reason **Mitigated**, name the micropatch in the mitigation note, and set an end date (the planned upgrade), or **Until a fix ships** when the vendor has no fix yet.
+
+Both rules are high, so each server with one opens a **Risky setting** incident (see [Alerts](#alerts)): a server that relied on a micropatch is exposed again, which is worth waking someone for. Shirudo findings use the kernel category, so agents send them only to servers that list `config_kernel` in `GET /meta`.
 
 ## Second check
 

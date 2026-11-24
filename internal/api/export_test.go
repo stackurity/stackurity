@@ -2,9 +2,12 @@ package api
 
 import (
 	"context"
+	"net"
 	"net/http"
+	"net/url"
 	"time"
 
+	"github.com/stackurity/stackurity/internal/sitecheck"
 	"github.com/stackurity/stackurity/internal/store"
 )
 
@@ -109,5 +112,19 @@ func SetGateDeploy(on bool) (restore func()) {
 }
 
 // SetSiteCheckClient makes website checks use c (an httptest server's
-// client routed to it) instead of the guarded one, which refuses loopback.
-func (s *Server) SetSiteCheckClient(c *http.Client) { s.siteCheckClient = c }
+// client routed to it) instead of the guarded one, which refuses loopback,
+// and skips the TLS 1.0/1.1 probe and the SPF/DMARC lookups, which would
+// reach the real network.
+func (s *Server) SetSiteCheckClient(c *http.Client) {
+	s.siteCheckTest = func(ch *sitecheck.Checker) {
+		ch.Client = c
+		ch.DNS = noDNS{}
+		ch.OldTLS = func(context.Context, *url.URL) bool { return false }
+	}
+}
+
+// noDNS answers every lookup with no records.
+type noDNS struct{}
+
+func (noDNS) LookupTXT(context.Context, string) ([]string, error) { return nil, nil }
+func (noDNS) LookupMX(context.Context, string) ([]*net.MX, error) { return nil, nil }

@@ -118,6 +118,13 @@ func TestUpgradeMatrixHasOneSource(t *testing.T) {
 // tools/release puts above a release, and no fragments),
 // the change is a release that renamed Unreleased to its version and cannot
 // be in the matrix before it is published, so the version before it must be.
+//
+// A feature pull request (entries, no STACKURITY_RELEASE_TAG) is held to the
+// release before the newest one: the newest cannot be added until its
+// GitHub release is published (about 40 minutes after the tag), and
+// `tools/release prepare` adds it to the next release's pull request anyway,
+// where this test runs with the tag. Requiring it here blocked every
+// feature pull request in that window (23 Nov 2026).
 func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
 	changelog := read(t, "CHANGELOG.md")
 	versions := regexp.MustCompile(`(?m)^## (\d+\.\d+\.\d+)\s*$`).FindAllStringSubmatch(changelog, -1)
@@ -128,6 +135,8 @@ func TestUpgradeMatrixHasNewestRelease(t *testing.T) {
 	published := 0
 	if !hasUnreleasedEntries(changelog) && len(frags) == 0 {
 		published = 1
+	} else if os.Getenv("STACKURITY_RELEASE_TAG") == "" {
+		published = 1 // a feature pull request: see above
 	}
 	if len(versions) <= published {
 		return // nothing published yet to upgrade from

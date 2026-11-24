@@ -13,7 +13,8 @@ import (
 // account's home, the projects directly under it and appDirs (host paths of
 // the applications the agent reports), and SSH access for root and for CI
 // keys, known attack tools (attacktools.go), and kernel modules that turn
-// local code into root (kernel.go). Nothing is run; files are
+// local code into root (kernel.go), and Shirudo micropatches that are
+// archived but not loaded (shirudo.go). Nothing is run; files are
 // only read.
 func Host(ctx context.Context, root string, appDirs []string) *model.ConfigScan {
 	h := &hostFS{Root: root}
@@ -28,6 +29,7 @@ func Host(ctx context.Context, root string, appDirs []string) *model.ConfigScan 
 	}
 	if ctx.Err() == nil {
 		found = append(found, h.kernelModules()...)
+		found = append(found, h.shirudo()...)
 	}
 	out := &model.ConfigScan{Found: dedupe(found), Complete: ctx.Err() == nil && len(h.problems) == 0}
 	if ctx.Err() != nil {

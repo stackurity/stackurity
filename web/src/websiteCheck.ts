@@ -7,6 +7,8 @@ export function kindLabel(kind: SiteCheckSoftware["kind"]): string {
       return "Web server or runtime";
     case "cms":
       return "Website platform";
+    case "plugin":
+      return "WordPress plugin";
     default:
       return "JavaScript or CSS library";
   }

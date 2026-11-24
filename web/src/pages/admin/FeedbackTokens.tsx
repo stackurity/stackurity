@@ -4,7 +4,7 @@ import { useAction, useLoad } from "../../hooks";
 import { Badge } from "../../components/Badge";
 import { Table, type Column } from "../../components/Table";
 import { TableSkeleton } from "../../components/Skeleton";
-import { Card, Code, CopyBox, ErrorBox, RelativeTime } from "../../components/ui";
+import { Card, CardFooter, ChoiceCards, Code, CopyBox, EmptyState, ErrorBox, RelativeTime, SettingRow } from "../../components/ui";
 import { confirmAction } from "../../components/ConfirmDialog";
 import { FEEDBACK_TOKEN_SCOPES, feedbackTokenState, type FeedbackToken } from "../../feedbackTokens";
 
@@ -69,52 +69,60 @@ export function FeedbackTokens() {
   const scope = created ? FEEDBACK_TOKEN_SCOPES.find((s) => s.id === created.info.scope) : undefined;
 
   return (
-    <Card
-      id="agent-tokens"
-      title="Agent tokens"
-      description="The feedback agent and the virus scanner sign in with these. They can only work on the feedback queue, never on workspaces, and last 90 days at most: renew before they expire."
-    >
-      {created && (
-        <div className="alert alert-warn secret-reveal" role="alert">
-          <p>
-            <strong>Copy this token now.</strong> It is shown only once. Save it with mode 0600 in {scope ? <Code>{scope.file}</Code> : "its token file"}; if
-            it is lost, revoke it and create another.
-          </p>
-          <CopyBox value={created.token} label={`Secret for token ${created.info.name}`} />
-          {created.info.scope === "triage" && (
-            <p className="small">
-              On the Mac: <Code>pbpaste &gt; ~/.config/stackurity/feedback-agent-token &amp;&amp; chmod 600 ~/.config/stackurity/feedback-agent-token</Code>.
-              The agent picks it up on its next run, within ten minutes.
+    <>
+      <Card
+        id="agent-tokens"
+        title="Agent tokens"
+        description="The feedback agent and the virus scanner sign in with these. They only reach the feedback queue, never a workspace, and last 90 days at most."
+      >
+        {created && (
+          <div className="alert alert-warn secret-reveal" role="alert">
+            <p>
+              <strong>Copy this token now.</strong> It is shown only once. If it is lost, revoke it and create another.
             </p>
-          )}
-          <button type="button" className="btn btn-sm" onClick={() => setCreated(null)}>
-            I have stored it
-          </button>
-        </div>
-      )}
+            <CopyBox value={created.token} label={`Secret for token ${created.info.name}`} />
+            <p className="small">
+              {created.info.scope === "triage" ? (
+                <>
+                  Then, on the Mac, run <Code>pbpaste &gt; ~/.config/stackurity/feedback-agent-token &amp;&amp; chmod 600 ~/.config/stackurity/feedback-agent-token</Code>.
+                  The agent picks it up on its next run, within ten minutes.
+                </>
+              ) : (
+                <>Save it with mode 0600 in {scope ? scope.file : "its token file"}.</>
+              )}
+            </p>
+            <button type="button" className="btn btn-sm" onClick={() => setCreated(null)}>
+              I have stored it
+            </button>
+          </div>
+        )}
+        <ErrorBox error={act.error} title="Revoke failed" />
+        <ErrorBox error={res.error} title="Could not load agent tokens" />
+        {!res.data && !res.error && <TableSkeleton label="Loading agent tokens…" />}
+        {res.data && all.length > 0 && (
+          <div className="filters">
+            <label className="check">
+              <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Show revoked and expired
+            </label>
+          </div>
+        )}
+        {res.data && rows.length === 0 && (
+          <EmptyState title={all.length === 0 ? "No agent tokens yet." : "No active agent tokens."}>
+            The feedback agent needs a token before it can work on the queue. Create one below.
+          </EmptyState>
+        )}
+        {rows.length > 0 && (
+          <Table caption="Agent tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />
+        )}
+      </Card>
       <CreateFeedbackToken
         onCreated={(c) => {
           setCreated(c);
           res.reload();
+          document.getElementById("agent-tokens")?.scrollIntoView({ behavior: "smooth", block: "start" });
         }}
       />
-      <ErrorBox error={act.error} title="Revoke failed" />
-      <ErrorBox error={res.error} title="Could not load agent tokens" />
-      {!res.data && !res.error && <TableSkeleton label="Loading agent tokens…" />}
-      {res.data && all.length > 0 && (
-        <div className="filters">
-          <label className="check">
-            <input type="checkbox" checked={showOld} onChange={(e) => setShowOld(e.target.checked)} /> Show revoked and expired
-          </label>
-        </div>
-      )}
-      {res.data && rows.length === 0 && (
-        <p className="muted small">{all.length === 0 ? "No agent tokens yet. The feedback agent needs one before it can work on the queue." : "No active agent tokens."}</p>
-      )}
-      {rows.length > 0 && (
-        <Table caption="Agent tokens" columns={columns} rows={rows} rowKey={(t) => t.id} rowClassName={(t) => (t.revoked_at ? "row-removed" : undefined)} />
-      )}
-    </Card>
+    </>
   );
 }
 
@@ -129,34 +137,45 @@ function CreateFeedbackToken({ onCreated }: { onCreated: (c: Created) => void })
     if (c) onCreated(c);
   };
   return (
-    <form className="inline-form" onSubmit={submit} aria-label="Create an agent token">
-      <label>
-        Name
-        <input value={name} onChange={(e) => setName(e.target.value)} maxLength={100} required />
-      </label>
-      <label>
-        Used by
-        <select value={scope} onChange={(e) => setScope(e.target.value as FeedbackToken["scope"])}>
-          {FEEDBACK_TOKEN_SCOPES.map((s) => (
-            <option key={s.id} value={s.id}>
-              {s.label}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Expires after
-        <select value={days} onChange={(e) => setDays(Number(e.target.value))}>
-          <option value={30}>30 days</option>
-          <option value={60}>60 days</option>
-          <option value={90}>90 days (longest)</option>
-        </select>
-      </label>
-      <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
-        {act.pending ? "Creating…" : "Create token"}
-      </button>
-      <p className="small muted">{FEEDBACK_TOKEN_SCOPES.find((s) => s.id === scope)?.help}</p>
-      <ErrorBox error={act.error} title="Could not create the token" />
-    </form>
+    <Card title="Create an agent token" description="Make one token per program that signs in, so you can revoke it on its own.">
+      <form className="form" onSubmit={submit}>
+        <ErrorBox error={act.error} title="Could not create the token" />
+        <SettingRow title="Name" description="So you recognise it in the list later.">
+          <div className="field">
+            <label className="sr-only" htmlFor="fbt-name">
+              Name
+            </label>
+            <input id="fbt-name" required maxLength={100} placeholder="e.g. feedback-agent" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+        </SettingRow>
+        <SettingRow title="Used by" description="What the token may do. Each one reaches only its own part of the queue.">
+          <ChoiceCards
+            name="fbt-scope"
+            legend="Used by"
+            columns={2}
+            options={FEEDBACK_TOKEN_SCOPES.map((s) => ({ value: s.id, label: s.label, description: s.help }))}
+            value={scope}
+            onChange={setScope}
+          />
+        </SettingRow>
+        <SettingRow title="Expires after" description="90 days is the longest allowed. The list warns two weeks before it runs out.">
+          <div className="field">
+            <label className="sr-only" htmlFor="fbt-days">
+              Expires after
+            </label>
+            <select id="fbt-days" value={days} onChange={(e) => setDays(Number(e.target.value))}>
+              <option value={30}>30 days</option>
+              <option value={60}>60 days</option>
+              <option value={90}>90 days</option>
+            </select>
+          </div>
+        </SettingRow>
+        <CardFooter status="The token is shown once, right after you create it.">
+          <button type="submit" className="btn btn-primary" disabled={act.pending || !name.trim()}>
+            {act.pending ? "Creating…" : "Create token"}
+          </button>
+        </CardFooter>
+      </form>
+    </Card>
   );
 }
