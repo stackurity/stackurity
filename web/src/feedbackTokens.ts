@@ -15,14 +15,14 @@ export type FeedbackToken = {
 export const FEEDBACK_TOKEN_SCOPES: { id: FeedbackToken["scope"]; label: string; help: string; file: string }[] = [
   {
     id: "triage",
-    label: "Feedback agent (triage)",
-    help: "Reads items, their threads and attachments, and sets status, notes and links. Used by the feedback agent on the Mac.",
+    label: "Feedback agent",
+    help: "The agent on the Mac. Reads items, their threads and attachments, and sets status, notes and pull request links.",
     file: "~/.config/stackurity/feedback-agent-token",
   },
   {
     id: "scanner",
     label: "Virus scanner",
-    help: "Only lists attachments waiting for a scan and reports results. Used by the scan timer on the server.",
+    help: "The scan timer on the server. Only lists attachments waiting for a scan and reports the results.",
     file: "the scan timer's token file",
   },
 ];
