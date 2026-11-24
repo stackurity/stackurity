@@ -6,6 +6,20 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.33
+
+### Added
+
+- **Risky settings: Shirudo micropatches that stopped working.** On servers that use [Shirudo](https://docs.shirudo.dev) to block an exploit until the patch is installed, the agent reports a micropatch that is archived but not loaded in the running kernel (`shirudo-upatch-not-loaded`), and Shirudo enforcement that is not attached (`shirudo-enforcement-off`). Both are high and alert. Files are only listed. The check needs the agent to run as root, and reports "not read" otherwise. See [Risky settings](docs/config-checks.md#shirudo-micropatches).
+
+### Changed
+
+- **Admin → Feedback → Agent tokens is easier to use.** The list of tokens and the form for a new one are now two cards. The form is laid out like Settings → API tokens: a labelled row for each field, and the choice between the feedback agent and the virus scanner as two cards that say what each token may do.
+
+### Fixed
+
+- **Two servers with the same hostname are no longer merged into one.** Host agents send the machine's ID and its hostname, and the server matched a report on either, so a second machine named like an existing one reported into that machine's asset: it never showed in its own project, and the two inventories overwrote each other. The machine ID now decides and the hostname is only a fallback, for agents that send no machine ID and assets created before they did. Machines merged this way get their own asset back on their next report, and the asset stays with the machine it had first. A reinstalled machine with a new machine ID now appears as a new asset, and the old one goes stale. See [ObservationBatch](docs/api.md#observationbatch) (#565).
+
 ## 0.20.32
 
 0.20.31 was tagged but never published (its release checks failed); its changes are listed here.
