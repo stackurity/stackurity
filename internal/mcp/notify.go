@@ -192,8 +192,8 @@ func init() {
 		description: "Turn a notification channel (target channel) or a notification rule (target rule) on or off. A rule sends " +
 			"only while it and its channel are both on; a channel that is off gets nothing from any rule. Use it, for example, " +
 			"when the same alert arrives twice because two Slack channels (an incoming webhook and the Stackurity app) get the " +
-			"same events: the preview lists such possible duplicates. Find ids with integrations_status (channels) and " +
-			"notification_settings (rules). Nothing else about the channel or rule changes. Needs the organisation-wide admin " +
+			"same events: the preview lists such possible duplicates. Channel ids come from the integrations status, rule ids from " +
+			"the notification settings. Nothing else about the channel or rule changes. Needs the organisation-wide admin " +
 			"role and a connection to the whole organisation. Without confirm it only previews.",
 		schema: obj(map[string]any{
 			"target":  map[string]any{"type": "string", "enum": []string{"channel", "rule"}, "description": "channel or rule"},
