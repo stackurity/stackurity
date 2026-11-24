@@ -31,7 +31,7 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs of the curated catalogue (Chrome, Edge, Firefox, 7-Zip, Acrobat, .NET and others) are matched against their vendor's advisories or NVD; others are coverage gaps with the reason (see [Windows programs](#windows-programs)). Per-user installs, installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); Mozilla's security advisories; NVD; endoflife.date `windows-server`, `windows` |
 | Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | macOS 10.15 and later (Intel and Apple silicon) | `SystemVersion.plist`; applications' `Info.plist` in `/Applications` and `~/Applications`; Homebrew kegs and casks (`/opt/homebrew`, `/usr/local`); runtimes and JDKs from files; global npm and pip packages | Operating system: no (Apple's fixes are not read; unsupported coverage), lifecycle only. Global npm and pip packages: yes. Runtimes (Homebrew's Node.js, Python, PostgreSQL and others, nvm, pyenv, rbenv, asdf, python.org, JDKs): lifecycle only. Applications and other Homebrew packages: inventory only (unsupported coverage). See [macOS](#macos) | endoflife.date `macos`; OSV (npm, PyPI) |
-| Runtimes outside a package manager | Detected | nginx Open Source (a source build, the nginx in a container image such as an ingress controller's, Homebrew's): by the release it reports against NVD, see [nginx outside a package manager](#nginx-outside-a-package-manager). Others: no, lifecycle only | NVD (nginx); endoflife.date |
+| Runtimes outside a package manager | Detected | nginx Open Source (a source build, the nginx in a container image such as an ingress controller's, Homebrew's) and PHP (the official `php` images, a source build, Homebrew's): by the release it reports against NVD, see [nginx outside a package manager](#nginx-outside-a-package-manager) and [PHP outside a package manager](#php-outside-a-package-manager). Others: no, lifecycle only | NVD (nginx, PHP); endoflife.date |
 | WordPress plugins and themes on a deployed site | `Version` header of the plugin's main `.php` file (also single-file and must-use plugins) or the theme's `style.css` | No: latest release only, from wordpress.org (`releases:wordpress.org`); vulnerabilities are not matched yet | wordpress.org plugin and theme info APIs |
 | WordPress core on a deployed site | `$wp_version` in `wp-includes/version.php` | No CVE matching: no vulnerability source Stackurity reads lists WordPress core with version ranges (OSV has no WordPress ecosystem; NVD is read only for the Windows program catalogue). Lifecycle, and a finding for a version behind its supported branch's latest release, since WordPress point releases are its security releases (WordPress only) | endoflife.date `wordpress` |
 | Java web applications deployed in Tomcat or Jetty (an unpacked directory with `WEB-INF`, or a `.war` file), see [Java web applications](#java-web-applications) | The JARs in `WEB-INF/lib` through the [Java stack pack](packs.md); Apache Roller's release from its `roller-version.properties` | Libraries: OSV (Maven), with the Java pack; without it the JARs are an `unsupported` coverage gap. Apache Roller: by release against NVD (`nvd:java-apps`). Other applications: their libraries only | OSV (Maven); NVD |
@@ -297,6 +297,27 @@ under `f5:nginx_open_source`):
 - A build with fixes patched in by hand still matches the release it reports.
 - The action plan says "Update nginx to 1.31.9" and how such a binary is
   replaced; restart nginx afterwards, since a reload keeps the old binary.
+
+#### PHP outside a package manager
+
+A PHP no package owns is the upstream release it reports, so it is matched by
+that release against PHP's NVD records (`php:php`, feed `nvd:vendor-builds`),
+like Ondřej Surý's and Remi's packages:
+
+- The official `php` container images build PHP from php.net's source into
+  `/usr/local`. Nothing in an image is run: the version is read from the
+  installed `include/php/main/php_version.h`, or else the image's
+  `PHP_VERSION`. On a host the agent runs `php --version` on binaries in
+  `/usr/local/bin`, `/opt/*/bin` and the other runtime directories. Homebrew's
+  PHP is the upstream release too.
+- PHP has no separately released editions, so no edition is asked and an
+  agent of any version is matched.
+- Each line (8.3, 8.4) is updated on its own; the action plan says
+  "Update PHP 8.3 to 8.3.36" and how such a PHP is replaced: a newer `php`
+  image tag, or a rebuild from the php.net release.
+- CVEs NVD has not analysed yet are not matched until it does (in November
+  2026 the fixes of 19 November, such as CVE-2026-126714, had no NVD
+  configuration yet); the line's end-of-life finding is unaffected.
 
 Not matched: vendor builds the catalogue does not list (Docker Compose and
 Buildx, whose NVD records name no product or versions, the runc bundled in

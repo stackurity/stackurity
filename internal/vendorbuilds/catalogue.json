@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-23.1",
+  "version": "2026-11-24.1",
   "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
   "products": [
     {
@@ -68,13 +68,18 @@
       "cpes": ["cpe:2.3:a:php:php"],
       "coverage_note": "Ondřej Surý's and Remi's builds of PHP lines past PHP's end of life may carry fixes their maintainers backported, which NVD does not know of; the line's end-of-life finding is the one to act on",
       "update": "Update it from the repository it came from (Ondřej Surý's packages, or Remi's): sudo apt-get install --only-upgrade php<line>-common (or sudo dnf upgrade php-common), then restart PHP-FPM or the web server.",
+      "runtime": "php",
+      "runtime_update": "This PHP was not installed by a package manager: update the container image to a php image tag with the fixed release (or rebuild from the php.net release, or run brew upgrade php), then restart PHP-FPM or the web server.",
       "sources": [
         "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:php:php",
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-109618",
+        "https://www.php.net/ChangeLog-8.php",
+        "https://github.com/docker-library/php",
         "https://packages.sury.org/php/dists/bookworm/main/binary-amd64/Packages",
         "https://rpms.remirepo.net/"
       ],
-      "verified": "2026-11-11",
-      "note": "Only PHP itself and the extensions built from PHP's own source carry PHP's version; PECL extensions (php8.3-redis, -apcu, -imagick, -xdebug) have versions of their own and are not listed. NVD names 244 configurations for PHP on Windows only; they are not applied."
+      "verified": "2026-11-24",
+      "note": "Only PHP itself and the extensions built from PHP's own source carry PHP's version; PECL extensions (php8.3-redis, -apcu, -imagick, -xdebug) have versions of their own and are not listed. NVD names 244 configurations for PHP on Windows only; they are not applied. A PHP found outside a package manager (the official php images build PHP from php.net's source into /usr/local, a source build, a Homebrew keg) is the upstream release it reports and is matched by that release; PHP has no separately released editions, so no edition is asked (2026-11-24: 760 CVEs under php:php; CVE-2026-109618 lists 8.2.35, 8.3.36, 8.4.27 and 8.5.12 as fixed; the 19 November 2026 fixes, such as CVE-2026-126714, had no NVD configuration yet)."
     },
     {
       "id": "mongodb",
