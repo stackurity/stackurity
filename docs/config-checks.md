@@ -137,8 +137,8 @@ Agents send kernel findings only to servers that list `config_kernel` in `GET /m
 
 | Severity | Rule | When |
 |---|---|---|
-| medium | `shirudo-upatch-not-loaded` | A micropatch is archived in `/var/lib/shirudo/upatches/<name>.upatch` (Shirudo restores these at every boot) but has no pin directory under `/run/shirudo/bpffs/upatches/`, so it is not loaded in the running kernel. One finding per micropatch. |
-| medium | `shirudo-enforcement-off` | Micropatches are archived but `/run/shirudo/bpffs/lsm_link` is missing: Shirudo's LSM is not attached, so BPF loading is not restricted to signed loaders. When `/run/shirudo/bpffs` does not exist at all, Shirudo did not run this boot and every archived micropatch is reported too. |
+| high | `shirudo-upatch-not-loaded` | A micropatch is archived in `/var/lib/shirudo/upatches/<name>.upatch` (Shirudo restores these at every boot) but has no pin directory under `/run/shirudo/bpffs/upatches/`, so it is not loaded in the running kernel. One finding per micropatch. |
+| high | `shirudo-enforcement-off` | Micropatches are archived but `/run/shirudo/bpffs/lsm_link` is missing: Shirudo's LSM is not attached, so BPF loading is not restricted to signed loaders. When `/run/shirudo/bpffs` does not exist at all, Shirudo did not run this boot and every archived micropatch is reported too. |
 
 To see why, run `shirudo status` and `shirudo upatch list` as root, then `systemctl restart shirudo.service` or load the micropatch again. Once the vulnerable package has been upgraded, unload and remove the micropatch instead.
 
@@ -146,7 +146,7 @@ To see why, run `shirudo status` and `shirudo upatch list` as root, then `system
 
 Stackurity does not yet mark a vulnerability as mitigated by a micropatch: what a micropatch fixes is recorded on Shirudo's package server (the `fixes` list of a Beefile), not on the server. To record one, ignore the finding with the reason **Mitigated**, name the micropatch in the mitigation note, and choose **Until a fix ships**.
 
-Shirudo findings use the kernel category, so agents send them only to servers that list `config_kernel` in `GET /meta`.
+Both rules are high, so each server with one opens a **Risky setting** incident (see [Alerts](#alerts)): a server that relied on a micropatch is exposed again, which is worth waking someone for. Shirudo findings use the kernel category, so agents send them only to servers that list `config_kernel` in `GET /meta`.
 
 ## Second check
 

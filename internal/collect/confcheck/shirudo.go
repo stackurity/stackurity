@@ -75,7 +75,7 @@ func (h *hostFS) shirudo() []model.ConfigFinding {
 	}
 	var out []model.ConfigFinding
 	if !lsm {
-		out = append(out, finding(RuleShirudoLSMOff, model.ConfigKernel, "Shirudo micropatch enforcement is not attached", "medium",
+		out = append(out, finding(RuleShirudoLSMOff, model.ConfigKernel, "Shirudo micropatch enforcement is not attached", "high",
 			shirudoBPFFS+"/lsm_link", 0, "shirudo lsm_link missing in kernel "+release,
 			"This server has "+shirudoPlural(len(archived), "Shirudo micropatch", "Shirudo micropatches")+" in "+shirudoArchive+
 				", but Shirudo's LSM link ("+shirudoBPFFS+"/lsm_link) is not attached in the running kernel ("+release+
@@ -88,7 +88,7 @@ func (h *hostFS) shirudo() []model.ConfigFinding {
 			continue
 		}
 		p := shirudoArchive + "/" + name + ".upatch"
-		out = append(out, finding(RuleShirudoNotLoaded, model.ConfigKernel, "Shirudo micropatch is not loaded", "medium",
+		out = append(out, finding(RuleShirudoNotLoaded, model.ConfigKernel, "Shirudo micropatch is not loaded", "high",
 			p, 0, "upatch "+name+" not loaded in kernel "+release,
 			"The Shirudo micropatch \""+name+"\" is archived on this server ("+p+") but is not loaded in the running kernel ("+
 				release+"), so the exploit it was put there to block is not blocked. This happens after a restart where "+

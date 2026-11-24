@@ -73,7 +73,7 @@ func TestShirudo(t *testing.T) {
 				if f.Subject != c.want[i] {
 					t.Errorf("finding %d subject %q, want %q", i, f.Subject, c.want[i])
 				}
-				if f.Category != model.ConfigKernel || f.Severity != "medium" || len(f.Fingerprint) != 32 {
+				if f.Category != model.ConfigKernel || f.Severity != "high" || len(f.Fingerprint) != 32 {
 					t.Errorf("category/severity/fingerprint: %+v", f)
 				}
 				if RuleDoc(f.Rule) != ShirudoDoc {
