@@ -258,6 +258,14 @@ Failed sign-ins back off per account and client address (five are free, then 30 
 - If every event shows the same private address (your proxy, a tunnel connector, or the Docker bridge gateway), the server is not seeing client addresses, and everyone shares one count. Check `STACKURITY_TRUST_PROXY=true`, that `STACKURITY_TRUSTED_PROXY_HEADER` is the header your proxy sets, and that the proxy's address is in `STACKURITY_TRUSTED_PROXIES`; the server logs a warning naming an untrusted peer that sent the header ([Client addresses behind a proxy](install.md#client-addresses-behind-a-proxy)).
 - To lift every sign-in backoff and account cap at once (for example after fixing the above), connect with `psql` and run `DELETE FROM rate_limits WHERE key LIKE 'login-fail:%' OR key LIKE 'login-account-fail:%';`. Keys are hashed, so one account cannot be picked out.
 
+## Connection poolers
+
+Stackurity pools its own database connections (up to 20 per server process), so it needs no pooler in front of PostgreSQL. If you run one anyway (PgBouncer, RDS Proxy, Supavisor, or a provider's "pooled" endpoint), it must be in **session mode**: each Stackurity connection keeps one PostgreSQL session until it closes.
+
+Transaction or statement mode does not work. Stackurity sets its database role (`stackurity_app`) and the organisation's scope once on each connection, and row-level security reads them on every query. A pooler in transaction mode hands each transaction to whichever server connection is free, so a query can run with another request's scope, with none, or as the login role. Workspaces would not be isolated, and on a single-organisation install pages and jobs fail at random: evaluation jobs end with `null value in column "workspace_id" of relation "findings"`, and pages show "No such project" until reloaded.
+
+Every command that uses the database, the server included, checks this when it starts. Behind a pooler in transaction mode it refuses to run, saying that the database connections do not keep their PostgreSQL session, and `stackurity doctor` reports the `pooler` check as failed. To fix it, set the pooler to session mode (PgBouncer: `pool_mode = session`), or point `STACKURITY_DATABASE_URL` straight at PostgreSQL. Nothing in the database needs repairing afterwards.
+
 ## Memory
 
 The server's memory is mostly the Go heap. Background work is built to hold a bounded amount whatever the data: a vulnerability feed sync stores OSV records in batches of at most 500 records and 16 MiB of JSON (Ubuntu kernel records run to megabytes each), and an evaluation reads a package's advisories for the release it evaluates only, and keeps them only while it evaluates that package's rows.

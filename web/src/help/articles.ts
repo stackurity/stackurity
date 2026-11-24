@@ -2416,6 +2416,31 @@ docker compose up -d`,
       { p: "Schedule a nightly `pg_dump` (for example from cron) and keep at least two weeks of copies; test a restore now and then." },
     ],
   },
+  {
+    id: "website-check",
+    title: "Website check",
+    section: "Daily work",
+    summary: "See what a public website shows from the outside: server software, the libraries it loads, their vulnerabilities and end of life.",
+    where: ["Reports", "Website check"],
+    keywords: "website check domain scan external outside headers server nginx apache php wordpress jquery bootstrap javascript library tls certificate hsts csp",
+    body: [
+      {
+        p: "**Reports ▸ Website check** visits a public website once, like a browser, and lists what it shows anyone: the web server and language versions in its headers, its website platform (WordPress, Drupal and others), and the JavaScript and CSS libraries its page loads. Each version is matched to known vulnerabilities, with whether they are exploited in the wild and the version that fixes them, and to end-of-life dates. The report also shows the TLS certificate and which browser protection headers the site sends.",
+      },
+      { h: "What a check does", id: "what" },
+      {
+        list: [
+          "It loads the page you enter and the first bytes of up to 20 scripts and stylesheets that page links to. Nothing else is requested: no port scans, no hidden paths, no attacks.",
+          "Only public websites on the standard ports: IP addresses, internal names and private addresses are refused.",
+          "What a site hides cannot be found: a server that does not name its version, or a library bundled without its banner. A distribution that patches an older version (Ubuntu's nginx, for example) can show issues it has already fixed.",
+        ],
+      },
+      { h: "Plans", id: "plans" },
+      {
+        p: "On Stackurity Cloud each plan includes a number of checks a month, shown under **Settings ▸ Usage**; a check that could not run does not count. Running checks with an API token needs a plan with API access. Engineers and above can run checks; everyone can open earlier reports.",
+      },
+    ],
+  },
 ];
 
 export const ARTICLE_BY_ID: Record<string, Article> = Object.fromEntries(ARTICLES.map((a) => [a.id, a]));

@@ -210,6 +210,9 @@ func (e *env) start(extra ...string) *server {
 		// The drills make no call outside the machine, so the release
 		// check (a request to GitHub) is off.
 		"STACKURITY_UPDATE_CHECK=off",
+		// The website check reads nginx and PHP from NVD even when no
+		// asset runs them; the feed counts these tests assert leave it out.
+		"STACKURITY_SITE_CHECKS=off",
 		"STACKURITY_OSV_URL="+up+"/osv",
 		"STACKURITY_KEV_URL="+up+"/kev.json",
 		"STACKURITY_EPSS_URL="+up+"/epss.csv",

@@ -6,6 +6,7 @@ import { Badge } from "../../components/Badge";
 import { CardSkeleton } from "../../components/Skeleton";
 import { Card, CheckCard, EmptyState, ErrorBox, GoodToKnow, KeyValues, Notice, PageHeader, RelativeTime, Tabs } from "../../components/ui";
 import { formatBytes } from "../../feedback";
+import { FeedbackTokens } from "./FeedbackTokens";
 import {
   feedbackKindLabel,
   QUEUE_FILTERS,
@@ -325,6 +326,7 @@ export function FeedbackAdminPage() {
             something is unclear, and holds anything about billing, sign-in and permissions, customer wording, legal text, data deletion, AI prompts or
             costs for your approval. It never merges or deploys.
           </GoodToKnow>
+          <FeedbackTokens />
         </>
       )}
     </>

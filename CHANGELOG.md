@@ -6,6 +6,39 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.32
+
+0.20.31 was tagged but never published (its release checks failed); its changes are listed here.
+
+### Security
+
+- **Stackurity refuses to run behind a connection pooler in transaction mode.** The database role and each organisation's scope are set once per database connection, so a pooler that moves connections between PostgreSQL sessions (PgBouncer `pool_mode = transaction`, for example) could run a query with another request's scope, with none, or as the login role, and workspaces would not be isolated. Every command that uses the database now checks this when it starts and refuses with a message that says how to fix it, and `stackurity doctor` has a new `pooler` check. A pooler in session mode, or a direct connection, works as before. See [Connection poolers](docs/operations.md#connection-poolers). ([#539](https://github.com/stackurity/stackurity/issues/539), [#540](https://github.com/stackurity/stackurity/issues/540))
+
+### Added
+
+- **Website check.** Enter a domain and see what the website shows anyone who visits it: server and framework versions from its headers, the JavaScript and CSS libraries its page loads, its TLS and browser protection headers, each version matched to stored vulnerabilities (with CISA known-exploited flags and fixed versions) and end-of-life data. One browser-like visit, nothing probed; only public addresses on ports 80 and 443. In the dashboard under Reports > Website check, and through `POST /api/v1/site-checks`. On Stackurity Cloud, each plan includes a number of checks a month. See [Website check](docs/website-check.md).
+- **Agent tokens in Admin → Feedback.** Instance administrators can now create the feedback agent's and the virus scanner's tokens in the dashboard. Each token is shown once, with the command to save it. The card also shows when each token expires and was last used, and revokes tokens. Before this, the only way was an API call. See [Feedback queue](docs/feedback-queue.md#the-feedback-agent).
+
+### Changed
+
+- The dependency scan's exception for [GO-2026-6909](https://osv.dev/vulnerability/GO-2026-6909) (github.com/crewjam/saml) is removed: the advisory now names v0.5.2 as the fixed version, which Stackurity has used since 0.20.29, so the scanner no longer needs telling.
+
+### Fixed
+
+- **No two menu entries share an icon any more.** Code findings now has its own code-file icon (Risky settings keeps the checked file). In Settings, Policy gates has a gate icon and Trust badge a badge icon (Risk policy keeps the shield). In Needs your attention on the Overview page, overdue issues show a clock with an alert (due today keeps the plain clock) and an incomplete check shows a dashed circle (not reporting keeps the no-signal icon). This matters most on a phone, where some menus show icons with little or no text.
+
+### Upgrading
+
+- If `STACKURITY_DATABASE_URL` points at a pooler in transaction or statement mode, switch it to session mode or connect straight to PostgreSQL before upgrading: the server will not start behind it.
+- Migration `0126_site_checks` adds the `site_checks` table and lets `plan_allowances` hold `site_checks`.
+- While website checks are on (the default; `STACKURITY_SITE_CHECKS=off` turns them off), nginx and PHP are read from NVD even when no asset runs them: two more products in the vendor builds sync.
+
+## 0.20.30
+
+### Fixed
+
+- **Ubuntu fixes from security notices OSV has not carried yet.** A new feed, `notices:Ubuntu`, reads Ubuntu's list of security notices from ubuntu.com every 3 hours (only with Ubuntu in inventory) and stores the notices OSV does not have yet. Their fixed versions then replace the "no fix" of OSV's per-CVE records, as for notices that are in OSV. In November 2026, USN-9182-1 fixed CVE-2026-125283 in nginx `1.18.0-6ubuntu14.24` (22.04) and `1.24.0-2ubuntu7.21` (24.04), but OSV had neither the notice nor a fix in its CVE record, so up-to-date hosts kept open "no fix" findings. Only free-channel fixes are read (not Ubuntu Pro or FIPS), the records never open findings of their own, and OSV's copy replaces this feed's once it arrives. The explanation says when a fix came from ubuntu.com. New outbound destination: `ubuntu.com` (`STACKURITY_UBUNTU_NOTICES_URL`). See [Ubuntu notices not yet in OSV](docs/compatibility.md#ubuntu-notices-not-yet-in-osv) and [Network](docs/network.md#intelligence-feeds).
+
 ## 0.20.29
 
 ### Fixed
