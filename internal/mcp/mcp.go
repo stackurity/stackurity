@@ -194,9 +194,21 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 	result, rerr := s.dispatch(ctx, req, modern != "")
 	if m, ok := result.(map[string]any); ok && modern != "" {
 		m["resultType"] = "complete"
+		if cacheable[req.Method] {
+			// 2026-07-28 requires caching hints on these complete results.
+			// Both differ per connection (write tools and instructions
+			// follow AllowWrites, which an admin can change at any time),
+			// so: private to this client, and not reused without asking.
+			m["ttlMs"] = 0
+			m["cacheScope"] = "private"
+		}
 	}
 	return result, rerr
 }
+
+// cacheable lists the served methods whose complete results must carry
+// ttlMs and cacheScope (2026-07-28 caching utility).
+var cacheable = map[string]bool{"server/discover": true, "tools/list": true}
 
 func (s *Server) dispatch(ctx context.Context, req request, modern bool) (any, *rpcError) {
 	switch req.Method {
