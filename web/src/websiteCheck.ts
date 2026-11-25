@@ -1,4 +1,4 @@
-import type { SiteCheckSoftware } from "./api";
+import type { SiteCheckGrade, SiteCheckSoftware } from "./api";
 
 /** "Web server or runtime", "Website platform", "Library". */
 export function kindLabel(kind: SiteCheckSoftware["kind"]): string {
@@ -36,4 +36,18 @@ export function advisoryURL(id: string): string {
   if (id.startsWith("CVE-")) return `https://www.cve.org/CVERecord?id=${encodeURIComponent(id)}`;
   if (id.startsWith("GHSA-")) return `https://github.com/advisories/${encodeURIComponent(id)}`;
   return `https://osv.dev/vulnerability/${encodeURIComponent(id)}`;
+}
+
+/** The colour of a grade: A and B good, C and D a warning, F bad. */
+export function gradeTone(letter: SiteCheckGrade["letter"]): "good" | "warn" | "bad" {
+  if (letter === "A" || letter === "B") return "good";
+  if (letter === "C" || letter === "D") return "warn";
+  return "bad";
+}
+
+/** One sentence on what a grade means. */
+export function gradeMeaning(g: SiteCheckGrade): string {
+  if (g.deductions.length === 0) return "Nothing a visitor can see costs this site points.";
+  const n = g.deductions.length;
+  return `${g.score} out of 100: ${n} ${n === 1 ? "problem costs" : "problems cost"} points. Fix the ones at the top first.`;
 }

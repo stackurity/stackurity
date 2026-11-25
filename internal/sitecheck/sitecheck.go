@@ -69,6 +69,9 @@ type Report struct {
 	// or 1.1 still accepted, missing SPF or DMARC records. Worst first.
 	Findings []Finding `json:"findings"`
 	Summary  Summary   `json:"summary"`
+	// Grade sums the report up from A to F, with the deductions behind it.
+	// Only in the full report: the anonymous teaser does not carry it.
+	Grade *Grade `json:"grade,omitempty"`
 	// Notes say what the check could not do (a script that did not load).
 	Notes []string `json:"notes"`
 }
@@ -319,6 +322,7 @@ func (c *Checker) Check(ctx context.Context, target *url.URL) (*Report, error) {
 		r.Software = append(r.Software, sw)
 	}
 	r.Summary = summarise(r)
+	r.Grade = grade(r)
 	return r, nil
 }
 

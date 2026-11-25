@@ -48,7 +48,7 @@ func init() {
 			"known_exploited and fixed_in, its end of life, and coverage when its vulnerabilities could not be checked), TLS, " +
 			"the browser protection headers sent or missing, findings (leaked keys shown masked, cookie and password-form settings, " +
 			"mixed content, CDN files without integrity checks, TLS 1.0/1.1 accepted, SPF and DMARC; each with severity, detail, " +
-			"fix and where), a summary and notes. Takes a check id from the list of website checks.",
+			"fix and where), a grade from A to F with the deductions behind it, a summary and notes. Takes a check id from the list of website checks.",
 		schema: obj(map[string]any{"id": num("The check's id")}, "id"),
 		run: func(ctx context.Context, api API, a map[string]any) (any, error) {
 			id, ok := intArg(a["id"])
