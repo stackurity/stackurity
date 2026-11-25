@@ -124,6 +124,10 @@ func (s *session) do(method, path string, in, out any) int {
 	if out != nil {
 		_ = json.NewDecoder(resp.Body).Decode(out)
 	}
+	// Read the rest, so the handler has finished before the next request:
+	// returning on the status line alone let a test ask again while the
+	// server still held a per-workspace slot (the evidence pack's "busy" 429).
+	_, _ = io.Copy(io.Discard, resp.Body)
 	return resp.StatusCode
 }
 
