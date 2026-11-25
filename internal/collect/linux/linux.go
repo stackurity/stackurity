@@ -388,6 +388,18 @@ func parseApkInstalled(r io.Reader, distro string) ([]model.Observation, error) 
 			q["arch"] = s["A"]
 		}
 		ev := map[string]string{"db": "apk"}
+		// Alpine's own packages record the aports commit they were built
+		// from (c:); a package from another repository (nginx.org's) or a
+		// local abuild leaves it empty. "none" says it was read and empty,
+		// as signing_key does for an unsigned rpm, so the server can tell
+		// that from an older agent that did not read it.
+		ev["build_commit"] = "none"
+		if s["c"] != "" {
+			ev["build_commit"] = s["c"]
+		}
+		if s["m"] != "" {
+			ev["maintainer"] = s["m"]
+		}
 		if s["o"] != "" {
 			ev["source_package"] = s["o"]
 			q["upstream"] = s["o"]

@@ -21,6 +21,7 @@ func TestIdentify(t *testing.T) {
 	}{
 		{"deb", "nginx", "nginx", 0},
 		{"rpm", "nginx", "nginx", 1},
+		{"apk", "nginx", "nginx", 2},
 		{"deb", "nodejs", "nodejs", 0},
 		{"deb", "postgresql-16", "postgresql", 0},
 		{"deb", "postgresql-client-16", "postgresql", 2},
@@ -45,7 +46,6 @@ func TestIdentify(t *testing.T) {
 		{"deb", "php8.3-xdebug", "", 0},
 		{"deb", "libpq5", "", 0},
 		{"deb", "nginx-module-njs", "", 0},
-		{"apk", "nginx", "", 0},
 		{"deb", "docker.io", "", 0},
 		{"deb", "containerd", "", 0},
 		{"deb", "containerdXio", "", 0},
@@ -162,15 +162,17 @@ func TestParseRejects(t *testing.T) {
 	base := `{"schema":1,"version":"t","products":[{"id":"x","label":"X","packages":[PKG],"cpes":["cpe:2.3:a:x:x"],"sources":["s"],"verified":"2026-11-11"VER}]}`
 	for name, doc := range map[string]string{
 		"unanchored": strings.NewReplacer("PKG", `"deb/x"`, "VER", "").Replace(base),
-		"apk":        strings.NewReplacer("PKG", `"^apk/x$"`, "VER", "").Replace(base),
+		"npm":        strings.NewReplacer("PKG", `"^npm/x$"`, "VER", "").Replace(base),
 		"no group":   strings.NewReplacer("PKG", `"^deb/x$"`, "VER", `,"version":"^\\d+$"`).Replace(base),
 	} {
 		if _, err := Parse([]byte(doc)); err == nil {
 			t.Errorf("%s: parsed", name)
 		}
 	}
-	if _, err := Parse([]byte(strings.NewReplacer("PKG", `"^deb/x$"`, "VER", "").Replace(base))); err != nil {
-		t.Errorf("valid document: %v", err)
+	for _, pkg := range []string{`"^deb/x$"`, `"^apk/x$"`} {
+		if _, err := Parse([]byte(strings.NewReplacer("PKG", pkg, "VER", "").Replace(base))); err != nil {
+			t.Errorf("valid document with %s: %v", pkg, err)
+		}
 	}
 }
 

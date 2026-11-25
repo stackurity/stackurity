@@ -232,7 +232,7 @@ func TestOverlayRealisticPurls(t *testing.T) {
 		if cyc == nil || cyc.Cycle != c.cycle {
 			t.Errorf("%s: release line of %q = %+v, want %s", c.purl, m.cycleVersion, cyc, c.cycle)
 		}
-		if repo := thirdPartyRepo(lr.r.Overlay, typ, key, c.purl, version); (repo != "") != c.vendor {
+		if repo := thirdPartyRepo(lr.r.Overlay, typ, key, c.purl, version, nil); (repo != "") != c.vendor {
 			t.Errorf("%s: vendor build %q, want %v", c.purl, repo, c.vendor)
 		}
 	}

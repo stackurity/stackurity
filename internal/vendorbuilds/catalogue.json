@@ -1,14 +1,14 @@
 {
   "schema": 1,
-  "version": "2026-11-23.1",
+  "version": "2026-11-25.1",
   "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
   "products": [
     {
       "id": "nginx",
       "label": "nginx",
-      "packages": ["^deb/nginx$", "^rpm/nginx$"],
+      "packages": ["^deb/nginx$", "^rpm/nginx$", "^apk/nginx$"],
       "cpes": ["cpe:2.3:a:f5:nginx_open_source", "cpe:2.3:a:f5:nginx", "cpe:2.3:a:f5:nginx:*:*:*:*:open_source", "cpe:2.3:a:nginx:nginx"],
-      "update": "Update it from nginx.org's repository: sudo apt-get install --only-upgrade nginx (or sudo dnf upgrade nginx).",
+      "update": "Update it from nginx.org's repository: sudo apt-get install --only-upgrade nginx (or sudo dnf upgrade nginx). In a container image built from the official nginx Alpine image, rebuild it from a newer nginx tag: the image's nginx comes from nginx.org, so apk upgrade does not update it.",
       "runtime": "nginx",
       "runtime_edition": "open-source",
       "runtime_update": "This nginx was not installed by a package manager: rebuild it from the nginx.org release (or update the container image that ships it, or run brew upgrade nginx), or replace it with nginx.org's packages. Restart nginx afterwards: a reload keeps the old binary running.",
@@ -20,7 +20,7 @@
         "https://nginx.org/packages/mainline/ubuntu/dists/noble/nginx/binary-amd64/Packages"
       ],
       "verified": "2026-11-23",
-      "note": "NVD names nginx Open Source under f5:nginx_open_source (39 CVEs on 2026-11-23, including the 18 November 2026 batch: CVE-2026-123007 is 1.9.5 up to 1.30.7 and 1.31.0 up to 1.31.9, as nginx.org says), f5:nginx (41) and the older nginx:nginx (2); open_source is NGINX Open Source's sw_edition, plus (NGINX Plus) is not read. Most records list affected versions one by one. An nginx binary found outside a package manager (a source build, a binary in a container image such as an ingress controller's, a Homebrew keg) is matched by the version it prints when the agent reports it as nginx Open Source; NGINX Plus, OpenResty and Tengine print their own editions and are not matched (2026-11-23)."
+      "note": "NVD names nginx Open Source under f5:nginx_open_source (39 CVEs on 2026-11-23, including the 18 November 2026 batch: CVE-2026-123007 is 1.9.5 up to 1.30.7 and 1.31.0 up to 1.31.9, as nginx.org says), f5:nginx (41) and the older nginx:nginx (2); open_source is NGINX Open Source's sw_edition, plus (NGINX Plus) is not read. Most records list affected versions one by one. An nginx binary found outside a package manager (a source build, a binary in a container image such as an ingress controller's, a Homebrew keg) is matched by the version it prints when the agent reports it as nginx Open Source; NGINX Plus, OpenResty and Tengine print their own editions and are not matched (2026-11-23). The official nginx Alpine images (nginx:*-alpine) install nginx.org's apk, which Alpine's advisories do not describe: an apk nginx counts when its record has no aports commit, as nginx.org's has none (2026-11-25)."
     },
     {
       "id": "nodejs",

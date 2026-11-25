@@ -78,7 +78,7 @@
     },
     {
       "id": "nginx2root",
-      "revision": 2,
+      "revision": 3,
       "name": "nginx2root (nginx memory-corruption bugs fixed in 1.31.9 and 1.30.7)",
       "short_name": "nginx2root",
       "aliases": ["nginx2root", "cve-2026-123007", "cve-2026-123633", "cve-2026-121810", "cve-2026-123634", "cve-2026-113425", "nginx http/2 flow control"],
@@ -113,7 +113,7 @@
           "help": "/help/kubernetes"
         }
       ],
-      "min_version": "0.20.28"
+      "min_version": "0.20.37"
     }
   ]
 }
