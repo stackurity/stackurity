@@ -110,8 +110,10 @@ func TestMacOSHost(t *testing.T) {
 		"pkg:generic/Firefox@131.0.3":   "unsupported: macOS application: inventory only",
 		"pkg:brew/jq@1.7.1":             "unsupported: Homebrew packages have no vulnerability source",
 		"pkg:brew/cask/firefox@131.0.3": "unsupported: Homebrew packages have no vulnerability source",
-		"pkg:generic/nodejs@22.11.0":    "unsupported: runtime installed by Homebrew",
-		"pkg:generic/nodejs@18.20.4":    "unsupported: runtime installed outside a package manager",
+		// Homebrew's Node.js is the upstream release, matched against NVD's
+		// Node.js records (not synced here, so it says so).
+		"pkg:generic/nodejs@22.11.0": "not_evaluated: vulnerability feed nvd:vendor-builds has not completed a sync",
+		"pkg:generic/nodejs@18.20.4": "unsupported: runtime installed outside a package manager",
 	} {
 		if !strings.HasPrefix(reasons[purl], want) {
 			t.Errorf("%s: coverage %q, want %q", purl, reasons[purl], want)

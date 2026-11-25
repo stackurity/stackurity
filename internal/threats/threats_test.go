@@ -42,6 +42,12 @@ func TestEmbedded(t *testing.T) {
 		// setting of its own, not a sign that nginx2root is there.
 		t.Errorf("Find(CVE-2026-123007) = %+v, %v", n, ok)
 	}
+	// Found from its CVE wherever Brotli is: distribution packages, Node.js
+	// (packaged or not), Go modules and Python packages.
+	br, ok := c.Find("Node2Shell")
+	if !ok || br.ID != "brotli-cve-2026-111497" || br.Kind != KindExploitedVuln || strings.Join(br.Detects.CVEs, ",") != "CVE-2026-111497" {
+		t.Errorf("Find(Node2Shell) = %+v, %v", br, ok)
+	}
 	if c.ExpiresAt != nil {
 		t.Error("the embedded catalogue never expires")
 	}

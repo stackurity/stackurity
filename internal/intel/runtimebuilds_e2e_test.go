@@ -24,6 +24,83 @@ func nginxRuntime(version string, ev map[string]string) model.Observation {
 		Confidence: model.ConfidenceConfirmed, Evidence: e}
 }
 
+// A Node.js found outside a package manager (the official node images
+// install nodejs.org's release in /usr/local, nvm, a tarball under /opt) is
+// matched by the release it reports against Node.js's NVD records, with no
+// edition asked: Node.js has none. The record is CVE-2026-111497's as NVD
+// publishes it (the Brotli decoder bug CISA added to KEV on 27 October 2026:
+// Node.js below 22.23.4, 24.x below 24.22.1, 26.x below 26.12.1).
+func TestRuntimeBuildsNodejs(t *testing.T) {
+	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
+	st, sy, ev, _, nvd := setupPrograms(t)
+
+	node := func(version, binary, detectedBy string) model.Observation {
+		return model.Observation{Purl: "pkg:generic/nodejs@" + version, Version: version, Location: binary, Scope: "runtime",
+			Confidence: model.ConfidenceConfirmed, Evidence: map[string]string{"kind": "runtime", "install": "unmanaged", "binary": binary, "detected_by": detectedBy}}
+	}
+	hosts := map[string]int64{}
+	for name, o := range map[string]model.Observation{
+		"image-22.23.1": node("22.23.1", "/usr/local/bin/node", "header"),
+		"image-22.23.4": node("22.23.4", "/usr/local/bin/node", "header"),
+		"nvm-24.22.0":   node("24.22.0", "/home/app/.nvm/versions/node/v24.22.0/bin/node", "version-output"),
+	} {
+		hosts[name] = ingest(t, st, model.AssetHost, name, true, osRow("debian", "12"), o)
+	}
+	if err := EnsureFeeds(ctx, st); err != nil {
+		t.Fatal(err)
+	}
+	if f, err := st.GetFeed(ctx, FeedVendorBuilds); err != nil || f.Kind != "vulnerability" {
+		t.Fatalf("a Node.js runtime must create the %s feed: %+v %v", FeedVendorBuilds, f, err)
+	}
+	rng := func(start, end string) nvdCPEMatch {
+		return nvdCPEMatch{Vulnerable: true, Criteria: "cpe:2.3:a:nodejs:node.js:*:*:*:*:*:*:*:*", VersionStartIncluding: start, VersionEndExcluding: end}
+	}
+	nvd.extra["cpe:2.3:a:nodejs:node.js"] = []nvdWrapped{nvdCVEWith("CVE-2026-111497", nvdConfig{Nodes: []nvdNode{{Operator: "OR",
+		CPEMatch: []nvdCPEMatch{rng("", "22.23.4"), rng("23.0.0", "24.22.1"), rng("25.0.0", "26.12.1")}}}})}
+	if res, err := sy.Sync(ctx, FeedVendorBuilds); err != nil || res.Warning != "" {
+		t.Fatalf("sync: %+v %v", res, err)
+	}
+	if _, err := ev.Evaluate(ctx, nil, 0); err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]struct{ finding, words string }{
+		"image-22.23.1": {"CVE-2026-111497@22.23.4", "installed outside a package manager (/usr/local/bin/node): matched as Node.js 22.23.1"},
+		"image-22.23.4": {"", "matched as Node.js 22.23.4"},
+		"nvm-24.22.0":   {"CVE-2026-111497@24.22.1", "matched as Node.js 24.22.0"},
+	} {
+		var got []string
+		for _, f := range allFindings(t, st, ctx, hosts[name]) {
+			if f.Kind == "vulnerability" {
+				got = append(got, f.Key+"@"+f.FixedVersion)
+			}
+		}
+		if strings.Join(got, " ") != want.finding {
+			t.Errorf("%s: findings %q, want %q", name, got, want.finding)
+		}
+		var row store.InventoryRow
+		for purl, r := range rowCoverage(t, ctx, st, hosts[name]) {
+			if strings.HasPrefix(purl, "pkg:generic/nodejs") {
+				row = r
+			}
+		}
+		if row.Coverage != store.CoverageEvaluated || !strings.Contains(row.CoverageReason, want.words) {
+			t.Errorf("%s: coverage %s %q, want evaluated with %q", name, row.Coverage, row.CoverageReason, want.words)
+		}
+	}
+	if _, err := planner.Rebuild(ctx, st, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	raw, _, err := st.ListFixGroups(ctx, store.FixGroupFilter{AssetID: hosts["image-22.23.1"], Kind: fixplan.ProgramUpdate})
+	if err != nil || len(raw) != 1 {
+		t.Fatalf("fix groups %d %v", len(raw), err)
+	}
+	var g fixplan.Group
+	_ = json.Unmarshal(raw[0], &g)
+	if g.Title != "Update Node.js to 22.23.4" || !strings.Contains(g.Action, "not installed by a package manager") {
+		t.Errorf("runtime Node.js group %+v", g)
+	}
+}
+
 // An nginx found outside a package manager (a source build, the nginx an
 // ingress controller's image compiles in, a Homebrew keg) is matched by the
 // release it reports against nginx Open Source's NVD records, as nginx.org's

@@ -160,6 +160,46 @@
         }
       ],
       "min_version": "0.20.37"
+    },
+    {
+      "id": "brotli-cve-2026-111497",
+      "revision": 1,
+      "name": "Brotli decoder out-of-bounds write (CVE-2026-111497), in Node.js and others",
+      "short_name": "Brotli CVE-2026-111497",
+      "aliases": ["cve-2026-111497", "node2shell", "ghsa-9v8h-qqgm-4m35", "go-2026-6888", "brotli decoder", "node.js brotli"],
+      "kind": "exploited_vuln",
+      "severity": "critical",
+      "summary": "A bug in the decoder of Google's Brotli compression library lets a crafted compressed stream write past a buffer, which can leak memory, crash the process or run code (CVE-2026-111497, CVSS 9.8, published 22 October 2026). CISA added it to its Known Exploited Vulnerabilities catalogue on 27 October 2026. Brotli 1.0.3 to 1.2.0 is affected; it is fixed in 1.0.10, 1.1.1 and 1.2.1. Many programs carry their own copy: Node.js decodes Brotli through node:zlib and is fixed in 22.23.4, 24.22.1 and 26.12.1; the Go module github.com/andybalholm/brotli is fixed in 1.2.7; Python's brotlicffi in 1.2.1.0; .NET, Envoy and Istio have fixes of their own. Update your distribution's brotli packages and every Node.js, including the one inside container images built from the official node images, then restart the processes that use them.",
+      "first_seen": "2026-10-21",
+      "published_at": "2026-11-25",
+      "sources": [
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-111497",
+        "https://github.com/google/brotli/releases/tag/v1.2.1",
+        "https://nodejs.org/en/blog/vulnerability/october-2026-security-releases",
+        "https://osv.dev/vulnerability/CVE-2026-111497"
+      ],
+      "detects": {
+        "cves": ["CVE-2026-111497"]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server matches your distribution's brotli and nodejs packages against their advisories, Node.js installed outside a package manager (nvm, a tarball, a source build) against Node.js's NVD records, and Go programs and Python packages that bundle Brotli against their advisories",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for brotli packages and for the Node.js the official node images install in /usr/local",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a go.mod or Python lock file that pulls in an affected Brotli module",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.37"
     }
   ]
 }
