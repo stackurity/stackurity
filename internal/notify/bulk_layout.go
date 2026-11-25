@@ -94,6 +94,7 @@ func bulkHTML(m Message) string {
 		f = &bulkFooter{category: m.Event}
 	}
 	w(`<h1 class="stk-ink" style="margin:0 0 16px;font-size:22px;line-height:1.3;font-weight:700;color:`, emailNavy, `">`, esc(cleanSubject(m.Title)), "</h1>\n")
+	w(emailImage(m.Image))
 	for _, l := range m.Summary {
 		w(`<p style="margin:0 0 14px">`, esc(l), "</p>\n")
 	}

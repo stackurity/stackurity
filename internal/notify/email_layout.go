@@ -3,6 +3,7 @@ package notify
 import (
 	"html"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 )
@@ -355,6 +356,26 @@ func emailBadge(m Message) string {
 	return b.String()
 }
 
+// emailImage is the HTML of a picture under an email's heading ("" when
+// there is none, or it has no https:// address or no Alt). It scales down
+// on phones and keeps its alt text visible when pictures are blocked.
+func emailImage(im *EmailImage) string {
+	if im == nil || !strings.HasPrefix(im.Src, "https://") || strings.TrimSpace(im.Alt) == "" {
+		return ""
+	}
+	width := im.Width
+	if width <= 0 || width > 536 {
+		width = 520
+	}
+	esc := html.EscapeString
+	img := `<img src="` + esc(im.Src) + `" width="` + strconv.Itoa(width) + `" alt="` + esc(im.Alt) +
+		`" style="display:block;width:100%;max-width:` + strconv.Itoa(width) + `px;height:auto;border:0;outline:none;text-decoration:none;border-radius:10px;font-size:14px;line-height:1.4;color:` + emailMuted + `">`
+	if webLink(im.Link) {
+		img = `<a href="` + esc(im.Link) + `" style="text-decoration:none">` + img + `</a>`
+	}
+	return `<p style="margin:0 0 18px">` + img + "</p>\n"
+}
+
 // emailHTML is the text/html part.
 func emailHTML(m Message, br EmailBrand) string {
 	var b strings.Builder
@@ -373,6 +394,7 @@ func emailHTML(m Message, br EmailBrand) string {
 	para := `<p style="margin:0 0 14px">`
 	w(emailBadge(m))
 	w(`<h1 class="stk-ink" style="margin:0 0 16px;font-size:22px;line-height:1.3;font-weight:700;color:`, emailNavy, `">`, esc(cleanSubject(m.Title)), "</h1>\n")
+	w(emailImage(m.Image))
 	var items func(list []Item, depth int)
 	items = func(list []Item, depth int) {
 		if depth == 0 {
