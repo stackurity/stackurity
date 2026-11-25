@@ -62,9 +62,10 @@ type Product struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 	// Packages match "<purl type>/<package name>" ("deb/nginx",
-	// "rpm/php-common"). When several of a product's packages are installed
-	// at one version on a host, its findings are reported once, on the
-	// package of the earliest pattern that matches.
+	// "rpm/php-common"); none for a product listed only as a runtime
+	// (Tomcat). When several of a product's packages are installed at one
+	// version on a host, its findings are reported once, on the package of
+	// the earliest pattern that matches.
 	Packages []string `json:"packages"`
 	// Version reads the upstream version from the installed package
 	// version, in its first group; defaultVersion when empty.
@@ -153,8 +154,13 @@ func Parse(b []byte) (*Catalogue, error) {
 		if c.byID[p.ID] != nil {
 			return nil, fmt.Errorf("vendor build catalogue: %s is listed twice", p.ID)
 		}
-		if p.Label == "" || len(p.Packages) == 0 || len(p.CPEs) == 0 || len(p.Sources) == 0 {
-			return nil, fail(errors.New("needs a label, packages, CPEs and sources"))
+		if p.Label == "" || len(p.CPEs) == 0 || len(p.Sources) == 0 {
+			return nil, fail(errors.New("needs a label, CPEs and sources"))
+		}
+		// A product its vendor ships no packages of (Apache Tomcat, a
+		// tarball) is listed for its runtime alone.
+		if len(p.Packages) == 0 && p.Runtime == "" {
+			return nil, fail(errors.New("needs packages or a runtime"))
 		}
 		if _, err := time.Parse("2006-01-02", p.Verified); err != nil {
 			return nil, fail(fmt.Errorf("verified %q is not a date", p.Verified))

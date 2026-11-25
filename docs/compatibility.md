@@ -31,7 +31,7 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | Windows 10, 11, Server 2016, 2019, 2022, 2025 | Registry (installed programs, OS build) | Operating system vulnerabilities through cumulative updates: the build and update revision against Microsoft's fixed builds, one finding per missing CVE naming its update (KB); see [Windows missing updates](#windows-missing-updates). Lifecycle for the operating system (see [Windows end of life](#windows-end-of-life)). Installed programs of the curated catalogue (Chrome, Edge, Firefox, 7-Zip, Acrobat, .NET and others) are matched against their vendor's advisories or NVD; others are coverage gaps with the reason (see [Windows programs](#windows-programs)). Per-user installs, installed KBs and Store apps are unsupported coverage; hotpatched hosts, .NET Framework, Office and servicing stack updates are not evaluated | Microsoft Security Update Guide (MSRC CVRF); Mozilla's security advisories; NVD; endoflife.date `windows-server`, `windows` |
 | Windows Server 2012 R2 and older, Windows 7, 8, 8.1 | Registry | No: lifecycle only; paid Extended Security Updates are not evaluated (unsupported coverage) | endoflife.date |
 | macOS 10.15 and later (Intel and Apple silicon) | `SystemVersion.plist`; applications' `Info.plist` in `/Applications` and `~/Applications`; Homebrew kegs and casks (`/opt/homebrew`, `/usr/local`); runtimes and JDKs from files; global npm and pip packages | Operating system: no (Apple's fixes are not read; unsupported coverage), lifecycle only. Global npm and pip packages: yes. Runtimes (Homebrew's Node.js, Python, PostgreSQL and others, nvm, pyenv, rbenv, asdf, python.org, JDKs): lifecycle only. Applications and other Homebrew packages: inventory only (unsupported coverage). See [macOS](#macos) | endoflife.date `macos`; OSV (npm, PyPI) |
-| Runtimes outside a package manager | Detected | nginx Open Source (a source build, the nginx in a container image such as an ingress controller's, Homebrew's): by the release it reports against NVD, see [nginx outside a package manager](#nginx-outside-a-package-manager). Others: no, lifecycle only | NVD (nginx); endoflife.date |
+| Runtimes outside a package manager | Detected | nginx Open Source (a source build, the nginx in a container image such as an ingress controller's, Homebrew's) and Apache Tomcat (the official `tomcat` images, tarballs in `/opt`): by the release it reports against NVD, see [nginx outside a package manager](#nginx-outside-a-package-manager) and [Tomcat outside a package manager](#tomcat-outside-a-package-manager). Others: no, lifecycle only | NVD (nginx, Tomcat); endoflife.date |
 | WordPress plugins and themes on a deployed site | `Version` header of the plugin's main `.php` file (also single-file and must-use plugins) or the theme's `style.css` | No: latest release only, from wordpress.org (`releases:wordpress.org`); vulnerabilities are not matched yet | wordpress.org plugin and theme info APIs |
 | WordPress core on a deployed site | `$wp_version` in `wp-includes/version.php` | No CVE matching: no vulnerability source Stackurity reads lists WordPress core with version ranges (OSV has no WordPress ecosystem; NVD is read only for the Windows program catalogue). Lifecycle, and a finding for a version behind its supported branch's latest release, since WordPress point releases are its security releases (WordPress only) | endoflife.date `wordpress` |
 | Java web applications deployed in Tomcat or Jetty (an unpacked directory with `WEB-INF`, or a `.war` file), see [Java web applications](#java-web-applications) | The JARs in `WEB-INF/lib` through the [Java stack pack](packs.md); Apache Roller's release from its `roller-version.properties` | Libraries: OSV (Maven), with the Java pack; without it the JARs are an `unsupported` coverage gap. Apache Roller: by release against NVD (`nvd:java-apps`). Other applications: their libraries only | OSV (Maven); NVD |
@@ -297,6 +297,32 @@ under `f5:nginx_open_source`):
 - A build with fixes patched in by hand still matches the release it reports.
 - The action plan says "Update nginx to 1.31.9" and how such a binary is
   replaced; restart nginx afterwards, since a reload keeps the old binary.
+
+#### Tomcat outside a package manager
+
+Apache ships Tomcat as a tarball, so a Tomcat no package owns is Apache's
+release. It is reported as the runtime `tomcat` (lifecycle from
+endoflife.date) and matched by its release against Tomcat's NVD records
+(`apache:tomcat`, feed `nvd:vendor-builds`):
+
+- The agent and image scans look in `/usr/local/tomcat` (the official
+  `tomcat` images), `/usr/local/apache-tomcat*`, `/opt/tomcat*`,
+  `/opt/apache-tomcat*` and `/opt/*/tomcat` for a directory with
+  `bin/catalina.sh` and `lib/catalina.jar`. Nothing is run: the release is
+  read from `lib/catalina.jar`'s `ServerInfo.properties`, or else from
+  `RELEASE-NOTES`, or else, for `/usr/local/tomcat` only, the image's
+  `TOMCAT_VERSION`. A Tomcat with no readable version is listed without one,
+  never as clean.
+- A vendor's build whose version carries a suffix (Red Hat JBoss Web Server
+  prints `Apache Tomcat/9.0.62.redhat-00010`) backports fixes under its own
+  numbers: it is reported with the edition `vendor-build` and stays
+  `unsupported` with the reason (lifecycle is tracked).
+- The distributions' `tomcat9` and `tomcat10` packages are inventoried as
+  packages and keep their distribution's advisories.
+- Each line (9.0, 10.1, 11.0) is updated on its own; the action plan says
+  "Update Apache Tomcat 10.1 to 10.1.58" and how such a Tomcat is replaced.
+- Records NVD has not analysed yet are matched once it does; milestone
+  builds (`11.0.0-M20`) are not read.
 
 Not matched: vendor builds the catalogue does not list (Docker Compose and
 Buildx, whose NVD records name no product or versions, the runc bundled in

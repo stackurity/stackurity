@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-23.1",
+  "version": "2026-11-25.1",
   "description": "Stackurity's curated catalogue of vendor builds of Linux packages matched against the upstream product's NVD records. Each product's CPEs were checked against NVD's CVE API (virtualMatchString) on the verified date: CVE counts, editions (sw_edition) and platforms named. Package names and version forms were checked against the vendors' repository indexes. Vendor builds not listed stay coverage gaps, never clean.",
   "products": [
     {
@@ -248,6 +248,24 @@
       ],
       "verified": "2026-11-12",
       "note": "Docker's build of containerd carries the upstream release (2.4.2-4~ubuntu.24.04~noble, 2.4.2-4.el9 are containerd 2.4.2); NVD names it under linuxfoundation:containerd (22 CVEs). The distributions' own containerd package is not listed: its advisories apply."
+    },
+    {
+      "id": "tomcat",
+      "label": "Apache Tomcat",
+      "packages": [],
+      "side_by_side": "major.minor",
+      "cpes": ["cpe:2.3:a:apache:tomcat"],
+      "runtime": "tomcat",
+      "runtime_edition": "apache",
+      "runtime_update": "This Tomcat was not installed by a package manager: update the container image to a tomcat image tag with the fixed release, or unpack the fixed release from tomcat.apache.org over a new directory, keep conf/ and webapps/, and restart Tomcat.",
+      "sources": [
+        "https://nvd.nist.gov/products/cpe/search/results?keyword=cpe:2.3:a:apache:tomcat",
+        "https://nvd.nist.gov/vuln/detail/CVE-2026-66299",
+        "https://tomcat.apache.org/security-10.html",
+        "https://github.com/docker-library/tomcat"
+      ],
+      "verified": "2026-11-25",
+      "note": "Apache ships Tomcat as a tarball, not packages, so it is listed only as a runtime: the release the official tomcat images unpack into /usr/local/tomcat and tarballs in /opt, read from catalina.jar's ServerInfo.properties. The distributions' tomcat packages are not listed: their advisories apply. NVD names Tomcat under apache:tomcat (276 CVEs on 2026-11-25; CVE-2026-66299 is 9.0.89 up to 9.0.121, 10.1.24 up to 10.1.58 and 11.0.1 up to 11.0.25). Milestone builds (11.0.0:milestone20) are not read. Vendor builds (Red Hat JBoss Web Server, which prints a .redhat- suffix) backport fixes and are not matched. Lines (9.0, 10.1, 11.0) are updated on their own. Records NVD has not analysed yet (in November 2026 CVE-2026-133325 and the 10.1.61 fixes) are matched once it does."
     }
   ]
 }
