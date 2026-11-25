@@ -16,6 +16,20 @@ The website check shows what a public website gives away to anyone who visits it
   - **TLS 1.0 or 1.1 still accepted** alongside newer versions.
   - **Email records**: no SPF record or one ending in `+all`, and no DMARC record or one with `p=none`. Skipped for a site on a hosting platform's domain (`app.herokuapp.com`), which has no email records of its own.
 
+## The grade
+
+The full report starts with a grade from **A** to **F**, with the deductions behind it, most points first. A score starts at 100 and loses points for each problem a visitor can see:
+
+| Problem | Points |
+|---|---|
+| Critical (a leaked live key, for example), or a vulnerability CISA lists as exploited in the wild | 30 |
+| High (a page served over plain http, a password form posting to http) | 15 |
+| Medium (a release past end of life, TLS 1.0/1.1 accepted, a certificate expiring within 14 days) | 6 |
+| Low (a cookie without SameSite, for example) | 2 |
+| Browser protection headers missing | 2 each, at most 8 |
+
+Each piece of software counts once, at its worst vulnerability, plus once more if its release line has reached end of life. 90 and above is A, 80 B, 65 C, 50 D, below 50 F. A critical problem keeps the grade at D or below, and a high one at C or below, whatever the score. The grade is part of the full report only: the public summary without an account does not show it.
+
 ## What a check does, and does not do
 
 A check is one browser-like visit. It requests the page you asked for (following up to five redirects), then the first 16 KB of up to 20 of the scripts and stylesheets that page links to. For an https site it also sends one TLS hello offering nothing newer than TLS 1.1 and reads which version the server picks, then closes the connection: no handshake is completed and nothing is encrypted or sent beyond the hello. It also looks up the domain's SPF and DMARC records in DNS. That is all: no port scans, no paths the page does not link, no login attempts, no payloads. Requests say who they are from: `Mozilla/5.0 (compatible; StackurityWebsiteCheck/1.0; +https://stackurity.ai/website-check)`.

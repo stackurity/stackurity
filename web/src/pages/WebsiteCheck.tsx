@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from "react";
 import { Link, useSearchParams } from "react-router";
-import { ApiError, siteChecks, type SiteCheck, type SiteCheckFinding, type SiteCheckReport, type SiteCheckSoftware } from "../api";
+import { ApiError, siteChecks, type SiteCheck, type SiteCheckFinding, type SiteCheckGrade, type SiteCheckReport, type SiteCheckSoftware } from "../api";
 import { useAuth } from "../auth";
 import { useLoad } from "../hooks";
 import { absTime, plural, relTime } from "../format";
 import { Badge, SeverityBadge } from "../components/Badge";
 import { Table, type Column } from "../components/Table";
 import { Card, EmptyState, ErrorBox, GoodToKnow, Loading, PageHeader } from "../components/ui";
-import { advisoryURL, kindLabel, softwareSummary } from "../websiteCheck";
+import { advisoryURL, gradeMeaning, gradeTone, kindLabel, softwareSummary } from "../websiteCheck";
 
 /**
  * Reports > Website check (docs/website-check.md): what a public website
@@ -104,6 +104,7 @@ function ReportView({ report }: { report: SiteCheckReport }) {
   const s = report.summary;
   return (
     <>
+      {report.grade && <GradeCard grade={report.grade} />}
       <Card
         title={report.host}
         description={`Checked ${absTime(report.checked_at)}${report.final_url !== report.url ? `, ended on ${report.final_url}` : ""}.`}
@@ -171,6 +172,33 @@ function ReportView({ report }: { report: SiteCheckReport }) {
         </ul>
       </Card>
     </>
+  );
+}
+
+function GradeCard({ grade }: { grade: SiteCheckGrade }) {
+  return (
+    <Card
+      title="Grade"
+      description="Starts at 100 and loses points for each problem a visitor can see: critical 30, high 15, medium 6, low 2, at most 8 for missing headers. A critical problem or a vulnerability exploited in the wild keeps the grade at D or below, a high one at C or below."
+    >
+      <div className="site-grade">
+        <div className="site-grade-letter" data-tone={gradeTone(grade.letter)} role="img" aria-label={`Grade ${grade.letter}`}>
+          {grade.letter}
+        </div>
+        <div className="site-grade-body">
+          <p>{gradeMeaning(grade)}</p>
+          {grade.deductions.length > 0 && (
+            <ul>
+              {grade.deductions.map((d, i) => (
+                <li key={i}>
+                  <span className="site-grade-points">−{d.points}</span> <SeverityBadge severity={d.severity} /> {d.what}
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
 

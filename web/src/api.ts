@@ -4804,7 +4804,14 @@ export interface SiteCheckReport {
     headers_missing: number;
     findings?: number;
   };
+  /** A to F with the deductions behind it. Absent on reports stored before grades were added. */
+  grade?: SiteCheckGrade;
   notes: string[];
+}
+export interface SiteCheckGrade {
+  letter: "A" | "B" | "C" | "D" | "F";
+  score: number;
+  deductions: { what: string; severity: string; points: number }[];
 }
 export interface SiteCheck {
   id: number;

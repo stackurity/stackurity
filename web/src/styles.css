@@ -2558,6 +2558,29 @@ details.json pre {
 .count-list strong {
   font-variant-numeric: tabular-nums;
 }
+/* Website check: the A-F grade next to the deductions that explain it. */
+.site-grade {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+}
+.site-grade-letter {
+  flex: none;
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 40px;
+  font-weight: 700;
+  line-height: 1;
+}
+.site-grade-letter[data-tone="good"] { background: var(--good-bg); color: var(--good-fg); }
+.site-grade-letter[data-tone="warn"] { background: var(--warn-bg); color: var(--warn-fg); }
+.site-grade-letter[data-tone="bad"] { background: var(--bad-bg); color: var(--bad-fg); }
+.site-grade-body { min-width: 0; }
+.site-grade-body ul { margin: 6px 0 0; padding-left: 18px; }
+.site-grade-points { font-variant-numeric: tabular-nums; white-space: nowrap; }
 .report-grid {
   margin-bottom: 16px;
 }
