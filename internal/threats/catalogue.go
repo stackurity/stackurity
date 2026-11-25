@@ -94,12 +94,12 @@ type Threat struct {
 	ID string `json:"id"`
 	// Revision grows when the entry changes; when the embedded catalogue
 	// and the feed both have a threat, the higher revision is used.
-	Revision    int      `json:"revision"`
-	Name        string   `json:"name"`
+	Revision int    `json:"revision"`
+	Name     string `json:"name"`
 	// ShortName is what a threat notice's title and banner call it when
 	// Name carries an explanation ("nginx2root" for "nginx2root (nginx
 	// memory-corruption bugs ...)"). Empty means Name.
-	ShortName string `json:"short_name,omitempty"`
+	ShortName   string   `json:"short_name,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`
 	Kind        string   `json:"kind"`
 	Severity    string   `json:"severity"` // critical, high, medium or low
