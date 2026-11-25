@@ -2,6 +2,8 @@
 
 Stackurity can send its vulnerability-management evidence to the compliance platform you already use, so the controls there stay current without anyone exporting a report. It supplies evidence to Vanta and Drata; it does not replace them, and it changes nothing in your estate.
 
+For which controls this evidence covers, what it does not, and what you may say about it on your website, see [Using Stackurity in a SOC 2 or ISO 27001 audit](compliance-audits.md).
+
 Set up under **Integrations → Compliance evidence** (organisation admins). The connectors are part of the **Compliance add-on** (available on any paid plan, included in Enterprise) and exist only in the licensed build. Without the add-on the card shows what it would do and how to get it, and nothing is sent. In the Community build the routes are not served, even with a licence.
 
 ## What is sent, and when
