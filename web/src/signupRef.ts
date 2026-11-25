@@ -84,3 +84,13 @@ export function socialStartURL(startURL: string, returnTo?: string, ref?: string
   const qs = q.toString();
   return qs ? `${path}?${qs}` : path;
 }
+
+/**
+ * Where /signup sends someone who is already signed in: the page their
+ * link was about (?ref=website-check from the public website check opens
+ * Reports > Website check), otherwise the overview. Without this the
+ * address matched no signed-in page and showed "Page not found".
+ */
+export function signedInSignupTarget(search = typeof window === "undefined" ? "" : window.location.search): string {
+  return cleanRef(new URLSearchParams(search).get("ref")) === "website-check" ? "/website-check" : "/";
+}

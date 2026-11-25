@@ -55,6 +55,7 @@ import { ChecksPage } from "./pages/Checks";
 import { ReportsPage } from "./pages/Reports";
 import { OutcomesPage } from "./pages/Outcomes";
 import { WebsiteCheckPage } from "./pages/WebsiteCheck";
+import { signedInSignupTarget } from "./signupRef";
 import { UsersPage } from "./pages/settings/Users";
 import { SecretsPage } from "./pages/settings/Secrets";
 import { WorkspacesPage } from "./pages/admin/Workspaces";
@@ -170,6 +171,9 @@ export function App() {
   const signup = "meta" in state ? state.meta.signup : undefined;
   if (signup && pathname === "/signup/verify" && (state.phase === "login" || state.phase === "ready")) return <VerifySignupPage />;
   if (signup && pathname === "/signup" && state.phase === "login") return <SignupPage signup={signup} social={"meta" in state ? state.meta.social : undefined} />;
+  // Already signed in (a "Sign up free" link from the website, say): go to
+  // the page the link was about, not "Page not found".
+  if (pathname === "/signup" && state.phase === "ready") return <Navigate replace to={signedInSignupTarget()} />;
   // A free key for a self-hosted server, where the server hands them out
   // (Stackurity Cloud): no account needed, signed in or not.
   const communityKeys = "meta" in state ? state.meta.community_keys : undefined;
