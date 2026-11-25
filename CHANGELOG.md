@@ -6,6 +6,22 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.37
+
+### Security
+
+- **nginx in the official nginx Alpine images is checked against nginx's own advisories.** Images built from `nginx:*-alpine` install nginx from nginx.org's apk repository, but the package was matched against Alpine's advisories, which describe Alpine's own builds. So nginx 1.27.5 on Alpine 3.21 looked fixed (Alpine's fix is 1.26.3-r4), and nginx on an end-of-life Alpine release matched nothing: nginx2root and other nginx vulnerabilities were missed. The agent and image scans now record each apk's aports build commit and maintainer. An apk that Alpine did not build counts as another repository's build: nginx is matched by its upstream version against NVD, like nginx.org's deb and rpm packages, and other such packages are marked unsupported with the reason. Update the agent to get this; older agents' rows stay matched as Alpine's builds. See [Compatibility](docs/compatibility.md#nginxorgs-packages-in-alpine-images).
+
+### Added
+
+- **Attack tools: CyberStrikeAI.** Servers, container images and repositories are checked for CyberStrikeAI, an AI-driven offensive security platform with web shell management and a built-in command-and-control server. Unit 42 reported on 24 November 2026 that attackers ran it to steer AI agents that broke into Linux web servers. A Go executable built from its `cyberstrike-ai` module, or a `go.mod` declaring it, is a high finding (`attack-tool-cyberstrikeai`); a module or image only named like it is medium (`attack-tool-cyberstrikeai-name`). The threat catalogue lists it, so `threat_check` and threat notices cover it. See [Config checks](docs/config-checks.md#attack-tools).
+- **Using Stackurity in a SOC 2 or ISO 27001 audit.** A new page lists the controls the evidence pack gives evidence for, what Stackurity does not cover, how to give the pack to an auditor, and what customers can and cannot say on their website (never "SOC 2 / ISO 27001 certified via Stackurity"). See [compliance-audits.md](docs/compliance-audits.md).
+- **Threat catalogue: Drupal core CVE-2026-132165.** The installer takeover flaw, exploited since 19 November 2026 and listed by CISA as known exploited on 24 November, is in the threat catalogue, so `threat_check` and threat notices cover it. Stackurity already matched it: Drupal's `drupal/core` release is read from `composer.lock` or `vendor/composer/installed.json` on servers, in images and in repositories. See [Threat notices](docs/threat-notices.md).
+
+### Changed
+
+- **The nginx2root threat notice needs Stackurity 0.20.37 or later on Docker hosts and agents.** Its check now covers nginx.org's packages in Alpine images, so assets last checked by an older agent or image scan count as not checked yet, and the notice says to update them rather than reporting them as covered.
+
 ## 0.20.36
 
 ### Added
