@@ -29,6 +29,11 @@ func TestEmailImage(t *testing.T) {
 	if !strings.Contains(emailImage(&EmailImage{Src: "https://a/x.png", Alt: "x", Width: 2000}), `width="520"`) {
 		t.Error("a picture wider than the email is shown at 520")
 	}
+	// Campaign and release emails are bulk email, rendered by bulkHTML.
+	bulk := bulkSample("https://app.example", "x", "marketing", Message{Title: "Graded", Summary: []string{"Hello."}, Image: im})
+	if !strings.Contains(bulkHTML(bulk.Message), `alt="Grade C, 71 out of 100"`) {
+		t.Error("bulk email lacks the picture")
+	}
 	b, _ := json.Marshal(Message{Title: "T", Image: im})
 	if strings.Contains(string(b), "stackurity.ai/img") {
 		t.Errorf("webhooks get the picture: %s", b)
