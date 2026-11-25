@@ -120,6 +120,8 @@ func (c *Collector) collectRuntimes(ctx context.Context, b *model.ObservationBat
 		seen[cand.resolved] = true
 		b.Observations = append(b.Observations, c.probeRuntime(ctx, cand))
 	}
+	// Tomcat is a Java server, not a binary the probes run (tomcat.go).
+	b.Observations = append(b.Observations, c.collectTomcat(owned)...)
 	b.Cover("runtimes", "checked", "")
 }
 

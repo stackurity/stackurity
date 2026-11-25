@@ -213,3 +213,41 @@ func TestParseRejectsRuntime(t *testing.T) {
 		t.Errorf("valid document: %v", err)
 	}
 }
+
+// A product its vendor ships no packages of is listed for its runtime
+// alone; with neither, it is refused.
+func TestParseRuntimeOnly(t *testing.T) {
+	doc := `{"schema":1,"version":"v","description":"d","products":[{"id":"x","label":"X","packages":[],"cpes":["cpe:2.3:a:x:x"],"sources":["s"],"verified":"2026-11-25"@A@}]}`
+	if _, err := Parse([]byte(strings.Replace(doc, "@A@", `,"runtime":"x","runtime_edition":"apache","runtime_update":"u"`, 1))); err != nil {
+		t.Errorf("runtime-only product: %v", err)
+	}
+	if _, err := Parse([]byte(strings.Replace(doc, "@A@", "", 1))); err == nil || !strings.Contains(err.Error(), "packages or a runtime") {
+		t.Errorf("product with neither packages nor a runtime: %v", err)
+	}
+}
+
+func TestForRuntimeTomcat(t *testing.T) {
+	c := Default()
+	p := c.ForRuntime("tomcat")
+	if p == nil || p.ID != "tomcat" || p.RuntimeEdition != "apache" || p.RuntimeUpdate == "" || len(p.Packages) != 0 {
+		t.Fatalf("tomcat runtime: %+v", p)
+	}
+	if !p.OwnsCPE("cpe:2.3:a:apache:tomcat:*:*:*:*:*:*:*:*") {
+		t.Error("apache:tomcat is not read for Tomcat")
+	}
+	// No package is identified as Tomcat: the distributions' tomcat
+	// packages keep their own advisories.
+	for _, name := range []string{"tomcat10", "tomcat9", "tomcat"} {
+		for _, typ := range []string{"deb", "rpm"} {
+			if q, _ := c.Identify(typ, name); q != nil {
+				t.Errorf("%s/%s identified as %s", typ, name, q.ID)
+			}
+		}
+	}
+	if v, ok := p.SourceVersion("10.1.62"); !ok || v != "10.1.62" || p.Line(v) != "10.1" {
+		t.Errorf("SourceVersion(10.1.62) = %q %v, line %q", v, ok, p.Line(v))
+	}
+	if _, ok := p.SourceVersion("11.0.0:milestone20"); ok {
+		t.Error("a milestone CPE version must not be read")
+	}
+}

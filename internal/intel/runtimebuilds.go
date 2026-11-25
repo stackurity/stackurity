@@ -11,9 +11,10 @@ import (
 
 // Runtimes the agent finds outside a package manager (pkg:generic/<name>,
 // evidence kind "runtime") are, for the products the vendor build catalogue
-// lists with a runtime name (nginx), the upstream release they print: a
-// source build in /usr/local/nginx, the nginx an ingress controller's image
-// compiles in, a Homebrew keg. They are matched against the same NVD records
+// lists with a runtime name (nginx, Tomcat), the upstream release they
+// print: a source build in /usr/local/nginx, the nginx an ingress
+// controller's image compiles in, the Tomcat the official tomcat images
+// unpack into /usr/local/tomcat, a Homebrew keg. They are matched against the same NVD records
 // as the vendor's packages (FeedVendorBuilds). Other runtimes keep lifecycle
 // only.
 
@@ -29,6 +30,9 @@ var editionLabels = map[string]string{
 	"openresty":  "OpenResty",
 	"tengine":    "Tengine",
 	"angie":      "Angie",
+	// Tomcat whose version carries a vendor's suffix (Red Hat JBoss Web
+	// Server prints "Apache Tomcat/9.0.62.redhat-00010").
+	"vendor-build": "a vendor's build (such as Red Hat JBoss Web Server)",
 }
 
 // runtimePlan returns the plan for a generic runtime row the catalogue
