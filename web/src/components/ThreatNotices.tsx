@@ -28,7 +28,7 @@ export function ThreatNoticeBanner({ workspaceId }: { workspaceId: number }) {
       {shown.map((n) => (
         <div
           key={n.id}
-          className={`alert alert-${noticeTone(n.verdict)} update-banner threat-banner`}
+          className={`alert alert-${noticeTone(n.verdict, n.kind)} update-banner threat-banner`}
           role={n.verdict === "found" ? "alert" : "status"}
         >
           <span className="update-banner-text">

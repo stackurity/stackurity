@@ -1083,8 +1083,10 @@ type FindingFilter struct {
 	ComponentID  int64
 	Environment  string
 	Search       string
-	Key          string
-	Exploited    bool
+	// Key is one advisory id, or several separated by commas (a threat
+	// notice's CVEs).
+	Key       string
+	Exploited bool
 	// EPSSMin keeps vulnerability findings whose EPSS (EPSSCVE's) is at
 	// least this probability (0 to 1); 0 means no filter.
 	EPSSMin float64
@@ -1200,8 +1202,10 @@ func (s *Store) findingConditions(ctx context.Context, f FindingFilter) (finding
 	if f.Environment != "" {
 		w.add("a.environment = ?", f.Environment)
 	}
-	if f.Key != "" {
-		w.add("f.key = ?", f.Key)
+	if keys := splitKeys(f.Key); len(keys) == 1 {
+		w.add("f.key = ?", keys[0])
+	} else if len(keys) > 1 {
+		w.add("f.key = ANY(?)", keys)
 	}
 	if f.Exploited {
 		w.conds = append(w.conds, "(f.evidence->>'known_exploited')::boolean")
@@ -1472,4 +1476,16 @@ func (s *Store) ListEvaluationGaps(ctx context.Context, p Page) ([]EvaluationGap
 	}
 	out, err := pgx.CollectRows(rows, pgx.RowToStructByPos[EvaluationGap])
 	return out, total, err
+}
+
+// splitKeys reads FindingFilter.Key: advisory ids separated by commas,
+// blanks dropped.
+func splitKeys(s string) []string {
+	var out []string
+	for _, k := range strings.Split(s, ",") {
+		if k = strings.TrimSpace(k); k != "" {
+			out = append(out, k)
+		}
+	}
+	return out
 }

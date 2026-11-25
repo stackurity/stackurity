@@ -371,6 +371,14 @@ func TestModernEra(t *testing.T) {
 	if res[1]["result"].(map[string]any)["resultType"] != "complete" {
 		t.Errorf("tools/list = %v", res[1])
 	}
+	// Complete server/discover and tools/list results must carry caching
+	// hints (#602). Both vary per connection (write tools, instructions).
+	for i, name := range []string{"server/discover", "tools/list"} {
+		r := res[i]["result"].(map[string]any)
+		if ttl, ok := r["ttlMs"].(float64); !ok || ttl < 0 || r["cacheScope"] != "private" {
+			t.Errorf("%s caching hints: ttlMs=%v cacheScope=%v", name, r["ttlMs"], r["cacheScope"])
+		}
+	}
 	e := res[2]["error"].(map[string]any)
 	if e["code"] != float64(-32022) || e["data"].(map[string]any)["requested"] != "1900-01-01" {
 		t.Errorf("unsupported version = %v", e)

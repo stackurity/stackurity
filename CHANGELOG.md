@@ -6,6 +6,19 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.36
+
+### Added
+
+- **AI assistants can run a website check.** The new `run_website_check` tool checks a public website as Reports → Website check does: it previews first (with how many of the month's website checks are used) and runs only when called again with the preview's confirm code. The address rules, the engineer role, the plan's monthly allowance and its API rule are the API's own, and each check is in the activity log. When the allowance is used up, or the plan runs checks from the dashboard only, the tool says so instead. See [AI assistants](docs/ai-assistants.md#changing-things).
+- **Website check grade.** The full website check report now starts with a grade from A to F, with the deductions behind it, most points first. A critical problem, or a vulnerability exploited in the wild, keeps the grade at D or below, and a high one at C or below. The public summary without an account doesn't show the grade. See [Website check](docs/website-check.md#the-grade).
+
+### Fixed
+
+- **MCP: `server/discover` and `tools/list` carry the caching hints the 2026-07-28 revision requires.** Both results now include `ttlMs` and `cacheScope` (`"private"`, because the tool list and instructions depend on whether the connection may make changes), so clients that check them, such as OpenCode, connect without falling back to the legacy protocol. See [AI assistants](docs/ai-assistants.md).
+- **Sign-up link while signed in.** Opening a sign-up link (such as "Sign up free" on the public website check) while already signed in showed "Page not found". It now opens the page the link was about: Reports > Website check for the website check's links, the overview otherwise.
+- **Threat notice banner: readable button, shorter text, right colour.** The **See findings** button in a red or amber banner had dark, underlined text on blue; it keeps its own colours now. The banner's title uses a threat's short name (`nginx2root`) instead of repeating the long one, the findings line no longer counts the assets twice, and a newly disclosed vulnerability that is not known to be exploited yet shows in amber instead of red. **See findings** for a threat with several CVEs (nginx2root has five) opens the issues of all of them, not only the first CVE's search page; the issues list accepts several advisory ids in `key=`, separated by commas. See [Threat notices](docs/threat-notices.md).
+
 ## 0.20.35
 
 ### Added

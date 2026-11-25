@@ -30,7 +30,22 @@ func TestThreatNoticeDisclosedVuln(t *testing.T) {
 		}
 	}
 	m := ThreatNoticeMessage("https://stk.example", n, NoticeFacts{Verdict: threats.Found, Findings: 2, Assets: 1}, at)
-	if !strings.Contains(m.Action, "internet-facing ones first") || m.Link != "https://stk.example/search?q=CVE-2026-123007" {
+	if !strings.Contains(m.Action, "internet-facing ones first") || m.Link != "https://stk.example/fixes/issues?key=CVE-2026-123007%2CCVE-2026-123633%2CCVE-2026-121810%2CCVE-2026-123634%2CCVE-2026-113425" {
 		t.Errorf("found: action %q, link %q", m.Action, m.Link)
+	}
+}
+
+// The banner shows the title and the first lines together: the title uses
+// the short name, the long name is not repeated, and the assets are counted
+// once.
+func TestThreatNoticeShortName(t *testing.T) {
+	n, _ := threats.Embedded().Get("nginx2root")
+	m := ThreatNoticeMessage("", n, NoticeFacts{Verdict: threats.Found, Findings: 5, Assets: 1}, time.Now())
+	if m.Title != "nginx2root was found on 1 of your assets" {
+		t.Errorf("title %q", m.Title)
+	}
+	lines := strings.Join(m.Summary[:2], " ")
+	if strings.Contains(lines, "1.31.9") || strings.Contains(lines, "asset") || !strings.Contains(lines, "5 findings") {
+		t.Errorf("banner lines %q", lines)
 	}
 }

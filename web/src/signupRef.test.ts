@@ -1,7 +1,7 @@
 // Run with `npm test` (node --test, TypeScript types stripped).
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { cleanRef, refFromReferrer, signupRef, socialStartURL } from "./signupRef.ts";
+import { cleanRef, refFromReferrer, signedInSignupTarget, signupRef, socialStartURL } from "./signupRef.ts";
 
 test("?ref= is kept when it is a short tag", () => {
   assert.equal(signupRef("?ref=badge-acme"), "badge-acme");
@@ -89,4 +89,11 @@ test("a social start URL keeps the server's own query and drops a bad ref", () =
   assert.equal(two.searchParams.get("x"), "1?y");
   assert.equal(two.searchParams.get("ref"), "blog-x");
   for (const bad of ["a b", "<script>", "a".repeat(65), "-x", ""]) assert.equal(socialStartURL("/s", undefined, bad), "/s", bad);
+});
+
+test("a signed-in visit to /signup goes where its link was about", () => {
+  assert.equal(signedInSignupTarget("?ref=website-check"), "/website-check");
+  assert.equal(signedInSignupTarget("?ref=Website-Check"), "/website-check");
+  assert.equal(signedInSignupTarget("?ref=badge-acme"), "/");
+  assert.equal(signedInSignupTarget(""), "/");
 });

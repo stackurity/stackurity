@@ -21,6 +21,10 @@ test("the banner shows undismissed notices, found first, at most two", () => {
 
 test("only a found threat is red", () => {
   assert.equal(noticeTone("found"), "error");
+  assert.equal(noticeTone("found", "exploited_vuln"), "error");
+  assert.equal(noticeTone("found", "attack_tool"), "error");
+  // Found but not known to be exploited yet: amber, not red.
+  assert.equal(noticeTone("found", "disclosed_vuln"), "warn");
   assert.equal(noticeTone("upgrade"), "warn");
   assert.equal(noticeTone("needs_connection"), "warn");
   assert.equal(noticeTone("covered"), "info");
