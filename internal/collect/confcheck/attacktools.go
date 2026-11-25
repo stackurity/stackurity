@@ -40,6 +40,14 @@ const (
 	// rename the module, so this is reported, but at medium: "artex" is
 	// also an ordinary name, and a name alone proves nothing.
 	RuleAttackToolArtexName = "attack-tool-artex-name"
+	// RuleAttackToolCyberStrikeAI: CyberStrikeAI, an AI-driven offensive
+	// security platform with web shell management and a built-in C2,
+	// found as a binary or a copy of its source. Unit 42 reported on 24
+	// Nov 2026 that attackers ran it on a command-and-control server.
+	RuleAttackToolCyberStrikeAI = "attack-tool-cyberstrikeai"
+	// RuleAttackToolCyberStrikeAIName: a Go module or container image only
+	// named like CyberStrikeAI.
+	RuleAttackToolCyberStrikeAIName = "attack-tool-cyberstrikeai-name"
 )
 
 // AttackToolsDoc is the how-to every attack tool finding links to.
@@ -50,6 +58,8 @@ type attackTool struct {
 	name     string
 	rule     string
 	nameRule string
+	// backdoorRule is the rule for an image in backdoored.
+	backdoorRule string
 	// modules are Go module paths, lower case, that only the tool and its
 	// forks use; names are last path elements that identify it on their
 	// own (a module "artex" or "example.com/x/scopeweaver").
@@ -64,9 +74,10 @@ type attackTool struct {
 }
 
 var attackTools = []attackTool{{
-	name:     "ARTEX",
-	rule:     RuleAttackToolArtex,
-	nameRule: RuleAttackToolArtexName,
+	name:         "ARTEX",
+	rule:         RuleAttackToolArtex,
+	nameRule:     RuleAttackToolArtexName,
+	backdoorRule: RuleAttackToolArtexBackdoor,
 	// Autumn-27/ARTEX is the original (taken down 8 Oct 2026); the others
 	// are public forks, ScopeWeaver a renamed one.
 	modules:    []string{"github.com/autumn-27/artex", "github.com/ruoji6/artex", "github.com/jaykwok/artex", "github.com/cskwork/scopeweaver"},
@@ -75,6 +86,18 @@ var attackTools = []attackTool{{
 	images:     []string{"artex", "scopeweaver"},
 	about: "ARTEX is an AI-driven attack framework (published as a penetration testing tool) that criminals and " +
 		"state-backed groups use to break into organisations; the FBI warned about it on 13 Nov 2026.",
+}, {
+	name:     "CyberStrikeAI",
+	rule:     RuleAttackToolCyberStrikeAI,
+	nameRule: RuleAttackToolCyberStrikeAIName,
+	// Its go.mod declares the bare module "cyberstrike-ai" (main package
+	// cyberstrike-ai/cmd/server), which forks keep.
+	modules: []string{"cyberstrike-ai"},
+	names:   []string{"cyberstrike-ai", "cyberstrikeai"},
+	images:  []string{"cyberstrike-ai", "cyberstrikeai"},
+	about: "CyberStrikeAI is an AI-driven offensive security platform (published as a penetration testing tool) with web " +
+		"shell management and a built-in command-and-control server; Unit 42 reported on 24 Nov 2026 that attackers " +
+		"ran it on the server that steered AI agents breaking into Linux web servers.",
 }}
 
 // toolForModule returns the attack tool a Go main module or main package
@@ -131,8 +154,8 @@ func GoBinaryAttackTool(where, mainPackage, mainModule string) (model.ConfigFind
 }
 
 // ImageAttackTools grades a container image by its references (repository
-// and tags as Docker shows them): the backdoored ARTEX builds, and images
-// named after the tool.
+// and tags as Docker shows them): builds reported to be backdoored (ARTEX's),
+// and images named after a tool.
 func ImageAttackTools(refs ...string) []model.ConfigFinding {
 	var out, named []model.ConfigFinding
 	seen := map[string]bool{}
@@ -144,7 +167,7 @@ func ImageAttackTools(refs ...string) []model.ConfigFinding {
 		seen[repo] = true
 		for _, t := range attackTools {
 			if contains(t.backdoored, repo) {
-				out = append(out, finding(RuleAttackToolArtexBackdoor, model.ConfigAttackTool,
+				out = append(out, finding(t.backdoorRule, model.ConfigAttackTool,
 					t.name+" image with a reported backdoor", "high", ref, 0, "image "+repo,
 					t.about+" The prebuilt image "+repo+" was reported (BadByte, Nov 2026) to carry a backdoored login "+
 						"handler that runs any command sent to it before checking the password; Docker Hub removed it on 5 Nov, "+

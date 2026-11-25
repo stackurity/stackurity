@@ -1,0 +1,3 @@
+### Added
+
+- **Attack tools: CyberStrikeAI.** Servers, container images and repositories are checked for CyberStrikeAI, an AI-driven offensive security platform with web shell management and a built-in command-and-control server. Unit 42 reported on 24 November 2026 that attackers ran it to steer AI agents that broke into Linux web servers. A Go executable built from its `cyberstrike-ai` module, or a `go.mod` declaring it, is a high finding (`attack-tool-cyberstrikeai`); a module or image only named like it is medium (`attack-tool-cyberstrikeai-name`). The threat catalogue lists it, so `threat_check` and threat notices cover it. See [Config checks](docs/config-checks.md#attack-tools).

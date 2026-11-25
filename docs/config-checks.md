@@ -68,6 +68,8 @@ Some tools built for penetration testing are now run by attackers. When one turn
 
 The first tool covered is **ARTEX**, an AI-driven attack framework. Its source appeared on GitHub as `Autumn-27/ARTEX` in July 2026 and was removed on 8 October. The FBI warned about it in FLASH 261113 on 13 November 2026, and more than 1,600 of its consoles are reachable on the internet. Renamed forks, such as ScopeWeaver, are covered too.
 
+**CyberStrikeAI** is covered too. It is an open-source, AI-driven offensive security platform written in Go ([AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI)), with web shell management and a built-in command-and-control server. On 24 November 2026 [Unit 42 reported](https://unit42.paloaltonetworks.com/autonomous-ai-agent-threat-campaigns/) that attackers ran it on the command-and-control server of campaigns in which AI agents broke into Linux web servers through web shells.
+
 A **high** finding rests on evidence that only the tool leaves: the Go module its executable was built from, a `go.mod` that declares that module, or the name of a backdoored image. A file that is only *named* `artex` is not reported. A module or image that is only *named* like the tool is reported as **medium**, because forks rename the module. "Artex" is also an ordinary name, and medium findings never alert.
 
 | Severity | Rule | When |
@@ -75,6 +77,8 @@ A **high** finding rests on evidence that only the tool leaves: the Go module it
 | high | `attack-tool-artex` | A Go executable whose build record names an ARTEX module (`github.com/Autumn-27/ARTEX` or a known fork). The record is read; the binary is never run. Also a `go.mod` declaring that module, meaning a copy of its source. |
 | high | `attack-tool-artex-backdoored-image` | The image `tomicdd/artex` or `congdonglinux/artex`, either on the host (by tag, or by digest when it was pulled by digest) or in a `Dockerfile` `FROM` or Compose `image:`. BadByte reported in November 2026 that these prebuilt images carry a backdoored login handler, which runs any command sent to it before checking the password. Docker Hub removed them on 5 November, but copies already pulled are still backdoored. |
 | medium | `attack-tool-artex-name` | A Go module or a container image only named `artex` or `scopeweaver` (for example `github.com/someone/artex` or `acme/artex`). |
+| high | `attack-tool-cyberstrikeai` | A Go executable whose build record names the module `cyberstrike-ai` (its server is built from `cyberstrike-ai/cmd/server`), or a `go.mod` declaring that module, meaning a copy of its source. The record is read; the binary is never run. |
+| medium | `attack-tool-cyberstrikeai-name` | A Go module or a container image only named `cyberstrike-ai` or `cyberstrikeai` (for example `github.com/someone/cyberstrikeai` or `acme/cyberstrike-ai`). The project publishes no image of its own. |
 
 **On a server**, the agent looks in:
 
