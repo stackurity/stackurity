@@ -1425,8 +1425,9 @@ select:disabled {
   color: var(--warn-fg);
   border-color: var(--warn-dot);
 }
-.alert-warn a,
-.alert-error a {
+/* Not .btn: a button made from a link keeps its own colours. */
+.alert-warn a:not(.btn),
+.alert-error a:not(.btn) {
   color: inherit;
   text-decoration: underline;
 }
@@ -3255,7 +3256,7 @@ kbd {
 .update-banner .btn {
   flex: none;
 }
-.alert-info.update-banner a {
+.alert-info.update-banner a:not(.btn) {
   color: inherit;
   text-decoration: underline;
 }

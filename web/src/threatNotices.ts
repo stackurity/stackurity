@@ -17,9 +17,12 @@ export function bannerNotices(items: ThreatNotice[]): ThreatNotice[] {
 }
 
 /**
- * The banner's colour: red only when the threat was found (real urgency),
- * amber when something must be done to be checked, grey when covered.
+ * The banner's colour: red when the threat was found and is in use or
+ * exploited now (real urgency), amber when it was found but is a newly
+ * disclosed vulnerability not known to be exploited yet, or when something
+ * must be done to be checked, and grey when covered.
  */
-export function noticeTone(v: ThreatVerdict): "error" | "warn" | "info" {
-  return v === "found" ? "error" : v === "covered" ? "info" : "warn";
+export function noticeTone(v: ThreatVerdict, kind?: ThreatNotice["kind"]): "error" | "warn" | "info" {
+  if (v === "found") return kind === "disclosed_vuln" ? "warn" : "error";
+  return v === "covered" ? "info" : "warn";
 }

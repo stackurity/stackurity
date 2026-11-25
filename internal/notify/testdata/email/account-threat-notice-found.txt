@@ -1,7 +1,7 @@
 Subject: ARTEX was found on 1 of your assets
 
 - ARTEX is being used against systems on the public internet.
-- Stackurity's checks found it: 2 findings on 1 asset.
+- Stackurity's checks found it: 2 findings.
 - About ARTEX: ARTEX is an open-source, AI-driven penetration-testing framework (a Go server with a Next.js web console, default port 8787) published on GitHub in July 2026 and taken down on 8 October 2026; copies and forks still circulate. Criminal and state-aligned groups use it to automate intrusions against internet-facing systems, and the FBI warned about it on 13 November 2026. It is not a vulnerability: there is nothing to patch. Two prebuilt Docker Hub images (tomicdd/artex and congdonglinux/artex) were reported to carry a backdoored login handler.
 
 Recommended action: Open the findings, find out who installed it and why, and remove it. If nobody in your organisation put it there, treat the asset as compromised.
