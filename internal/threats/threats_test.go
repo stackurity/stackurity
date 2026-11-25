@@ -30,6 +30,12 @@ func TestEmbedded(t *testing.T) {
 		t.Errorf("ARTEX rules = %v / %v, want %v and the name rule as a signal (internal/collect/confcheck/attacktools.go)",
 			a.Detects.ConfigRules, a.Detects.SignalRules, want)
 	}
+	cs, ok := c.Find("cyberstrike-ai")
+	if !ok || cs.ID != "cyberstrikeai" || cs.Kind != KindAttackTool ||
+		strings.Join(cs.Detects.ConfigRules, ",") != "attack-tool-cyberstrikeai" ||
+		strings.Join(cs.Detects.SignalRules, ",") != "attack-tool-cyberstrikeai-name" {
+		t.Errorf("Find(cyberstrike-ai) = %+v, %v (rules: internal/collect/confcheck/attacktools.go)", cs, ok)
+	}
 	n, ok := c.Find("CVE-2026-123007")
 	if !ok || n.ID != "nginx2root" || n.Kind != KindDisclosedVuln || len(n.Detects.CVEs) != 5 || len(n.Detects.ConfigRules) != 0 {
 		// Only the CVEs make it found: a loadable SCTP module is a risky

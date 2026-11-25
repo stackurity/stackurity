@@ -43,6 +43,52 @@
       "min_version": "0.20.17"
     },
     {
+      "id": "cyberstrikeai",
+      "revision": 1,
+      "name": "CyberStrikeAI",
+      "aliases": [
+        "cyberstrike-ai",
+        "cyberstrike ai",
+        "aipentest/cyberstrikeai"
+      ],
+      "kind": "attack_tool",
+      "severity": "high",
+      "summary": "CyberStrikeAI is an open-source, AI-driven offensive security platform written in Go (github.com/AIPentest/CyberStrikeAI, Go module cyberstrike-ai, web console on port 8080 by default) with web shell management and a built-in command-and-control server. On 24 November 2026 Unit 42 reported campaigns, tracked from July to September 2026, in which autonomous AI agents followed web shells on vulnerable web applications, mostly on Linux web servers, then compiled public exploits on the target (Copy Fail CVE-2026-31431, CVE-2024-1086, PwnKit) to become root; the command-and-control server behind them also ran CyberStrikeAI. It is not a vulnerability: there is nothing to patch. Finding it on a server you did not put it on means the server is being used for an attack or someone installed it without the security team knowing. Patch the kernel and the web applications those agents start from.",
+      "first_seen": "2026-11-24",
+      "published_at": "2026-11-25",
+      "sources": [
+        "https://unit42.paloaltonetworks.com/autonomous-ai-agent-threat-campaigns/",
+        "https://github.com/AIPentest/CyberStrikeAI"
+      ],
+      "detects": {
+        "config_rules": [
+          "attack-tool-cyberstrikeai"
+        ],
+        "signal_rules": [
+          "attack-tool-cyberstrikeai-name"
+        ]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server looks for a CyberStrikeAI server binary (by its Go build record) or a copy of its source installed there",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for a CyberStrikeAI binary built into them, and for images named like it",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a copy of CyberStrikeAI's source (a go.mod declaring its module) or a file that runs an image named like it",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.36"
+    },
+    {
       "id": "apache-roller-cve-2026-129448",
       "revision": 1,
       "name": "Apache Roller XML-RPC deserialisation (CVE-2026-129448)",
