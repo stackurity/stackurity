@@ -184,7 +184,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 		unsupported := func(reason string) { rc.State, rc.Reason = store.CoverageUnsupported, reason }
 		notEvaluated := func(reason string) { rc.State, rc.Reason = store.CoverageNotEvaluated, reason }
 		t, ok := osv.TargetFor(r.Purl, r.Version, r.Evidence)
-		vendor := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version)
+		vendor := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version, r.Evidence)
 		// A runtime found outside a package manager that the vendor build
 		// catalogue lists (nginx): matched like the vendor's packages.
 		runtimeVP, runtimeWhy := runtimePlan(e.vendorCatalogue(), r)

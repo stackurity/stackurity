@@ -39,10 +39,13 @@ type vendorPlan struct {
 	binary  string // the runtime's binary, when the agent said
 }
 
+// vendorType is a package type the vendor build catalogue can list.
+func vendorType(t string) bool { return t == "deb" || t == "rpm" || t == "apk" }
+
 // vendorCandidate reports whether a row is a package the vendor build
 // catalogue lists, whoever built it.
 func vendorCandidate(cat *vendorbuilds.Catalogue, r store.EvalRow) bool {
-	if r.Type != "deb" && r.Type != "rpm" {
+	if !vendorType(r.Type) {
 		return false
 	}
 	p, _ := cat.Identify(r.Type, purlName(r.Purl))
@@ -61,14 +64,14 @@ func planVendorBuilds(cat *vendorbuilds.Catalogue, ov *eoloverlay.Overlay, rows 
 	}
 	groups := map[key][]store.EvalRow{}
 	for _, r := range rows {
-		if r.Type != "deb" && r.Type != "rpm" {
+		if !vendorType(r.Type) {
 			continue
 		}
 		p, rank := cat.Identify(r.Type, purlName(r.Purl))
 		if p == nil {
 			continue
 		}
-		repo := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version)
+		repo := thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version, r.Evidence)
 		if repo == "" {
 			continue // the distribution's own build: its advisories apply
 		}
@@ -254,7 +257,7 @@ func installedVendorBuilds(ctx context.Context, st *store.Store) ([]*vendorbuild
 	var out []*vendorbuilds.Product
 	for _, r := range rows {
 		p, _ := cat.Identify(r.Type, r.Name)
-		if p == nil || seen[p.ID] || thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version) == "" {
+		if p == nil || seen[p.ID] || thirdPartyRepo(ov, r.Type, r.PurlKey, r.Purl, r.Version, r.Evidence) == "" {
 			continue
 		}
 		if _, err := p.UpstreamVersion(r.Version); err != nil {

@@ -2,6 +2,7 @@ package intel
 
 import (
 	"context"
+	"strings"
 
 	"github.com/package-url/packageurl-go"
 
@@ -49,11 +50,17 @@ func (lr *lifecycleResolver) resolve(purlType, purlKey, version, kind string) (l
 // package name or a vendor version pattern from the overlay, or a version
 // marker of a known third-party repository. "" when it looks like the
 // distribution's own package. The agent does not record the repository a
-// package came from, so a third-party build whose name and version look
-// like the distribution's is not caught.
-func thirdPartyRepo(ov *eoloverlay.Overlay, purlType, purlKey, purl, version string) string {
+// deb or rpm came from, so a third-party build whose name and version look
+// like the distribution's is not caught. An apk is caught by its evidence:
+// Alpine's own packages carry the aports commit they were built from, a
+// package from another repository (nginx.org's, in the official nginx
+// Alpine images) does not (build_commit "none", from agents that read it).
+func thirdPartyRepo(ov *eoloverlay.Overlay, purlType, purlKey, purl, version string, ev map[string]string) string {
 	if !upgrade.IsDistro(purlType) {
 		return ""
+	}
+	if purlType == "apk" && ev["build_commit"] == "none" {
+		return apkRepository(ev["maintainer"])
 	}
 	if repo, ok := ov.VendorBuild(purlKey, version); ok {
 		return repo
@@ -66,4 +73,15 @@ func thirdPartyRepo(ov *eoloverlay.Overlay, purlType, purlKey, purl, version str
 		return "another repository"
 	}
 	return ""
+}
+
+// apkRepository names the repository of an apk Alpine did not build, from
+// its maintainer ("NGINX Packaging <nginx-packaging@f5.com>" is "NGINX
+// Packaging's repository").
+func apkRepository(maintainer string) string {
+	name, _, _ := strings.Cut(maintainer, "<")
+	if name = strings.TrimSpace(name); name != "" {
+		return name + "'s repository"
+	}
+	return "another repository"
 }

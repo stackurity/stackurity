@@ -62,7 +62,8 @@ type Product struct {
 	ID    string `json:"id"`
 	Label string `json:"label"`
 	// Packages match "<purl type>/<package name>" ("deb/nginx",
-	// "rpm/php-common"). When several of a product's packages are installed
+	// "rpm/php-common", "apk/nginx": an apk only counts when Alpine did not
+	// build it, see internal/intel thirdPartyRepo). When several of a product's packages are installed
 	// at one version on a host, its findings are reported once, on the
 	// package of the earliest pattern that matches.
 	Packages []string `json:"packages"`
@@ -164,8 +165,8 @@ func Parse(b []byte) (*Catalogue, error) {
 			if err != nil {
 				return nil, fail(err)
 			}
-			if !strings.HasPrefix(s, "^deb/") && !strings.HasPrefix(s, "^rpm/") {
-				return nil, fail(fmt.Errorf("package pattern %q must start with ^deb/ or ^rpm/", s))
+			if !strings.HasPrefix(s, "^deb/") && !strings.HasPrefix(s, "^rpm/") && !strings.HasPrefix(s, "^apk/") {
+				return nil, fail(fmt.Errorf("package pattern %q must start with ^deb/, ^rpm/ or ^apk/", s))
 			}
 			p.packages = append(p.packages, re)
 		}

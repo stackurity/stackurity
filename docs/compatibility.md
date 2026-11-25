@@ -249,7 +249,7 @@ upstream version against the upstream product's NVD records (feed
 
 | Product | Packages | NVD products |
 |---|---|---|
-| nginx (nginx.org) | `nginx` | `f5:nginx_open_source`, `f5:nginx` (with `open_source`), `nginx:nginx` |
+| nginx (nginx.org) | `nginx` (deb, rpm, and apk in Alpine images) | `f5:nginx_open_source`, `f5:nginx` (with `open_source`), `nginx:nginx` |
 | Node.js (NodeSource) | `nodejs` | `nodejs:node.js` (with `lts`) |
 | PostgreSQL (PGDG) | `postgresql-<major>`, `postgresql-client-<major>`, `postgresql<major>-server` | `postgresql:postgresql`, per major line |
 | PHP (Ondřej Surý, Remi) | `php<line>-common`, `-cli`, `-fpm`, the extensions built from PHP's source, `libapache2-mod-php<line>`, `php-common`, `php<NN>-php-common` | `php:php`, per minor line |
@@ -275,6 +275,24 @@ upstream version against the upstream product's NVD records (feed
   "Update nginx to 1.26.3" per host and line.
 - The distribution's own builds of the same names are unchanged: their
   distribution advisories apply.
+
+#### nginx.org's packages in Alpine images
+
+The official nginx Alpine images (`nginx:*-alpine`) install nginx from
+nginx.org's own apk repository, not Alpine's. Its versions look like
+Alpine's (`1.27.5-r1`), but Alpine's advisories describe Alpine's builds:
+Alpine 3.21's nginx is fixed in `1.26.3-r4`, so nginx.org's 1.27.5 would
+compare as fixed, and an end-of-life Alpine release has no entries at all.
+
+Alpine's own packages record the aports commit they were built from (`c:` in
+`/lib/apk/db/installed`); nginx.org's leave it empty. The agent and image
+scans record it as the evidence `build_commit` (`none` when empty) with the
+`maintainer`. An apk with `build_commit` `none` is another repository's build
+("built by NGINX Packaging's repository"): nginx is matched like nginx.org's
+deb and rpm packages, by its upstream version against NVD, and any other such
+apk stays `unsupported` with the reason, as for deb and rpm. Agents and image
+scans older than 0.20.37 do not record it, so their apk rows are matched as
+Alpine's builds until the agent is updated.
 
 #### nginx outside a package manager
 

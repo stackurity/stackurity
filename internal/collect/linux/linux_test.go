@@ -108,6 +108,18 @@ func TestAlpine(t *testing.T) {
 	if _, ok := obs["pkg:apk/alpine/libcrypto3@3.1.4-r5?arch=aarch64&distro=alpine-3.19.1&upstream=openssl"]; !ok {
 		t.Errorf("libcrypto3 missing: %v", obs)
 	}
+	// The aports commit and maintainer tell nginx.org's apk (official nginx
+	// Alpine images) from Alpine's own builds; "none" when it is empty.
+	for purl, want := range map[string][2]string{
+		"pkg:apk/alpine/musl@1.2.4_git20230717-r4?arch=aarch64&distro=alpine-3.19.1&upstream=musl": {"5a8f0b2e1d3c4b6a7e9f0a1b2c3d4e5f6a7b8c9d", "Natanael Copa <ncopa@alpinelinux.org>"},
+		"pkg:apk/alpine/nginx@1.27.5-r1?arch=aarch64&distro=alpine-3.19.1&upstream=nginx":          {"none", "NGINX Packaging <nginx-packaging@f5.com>"},
+		"pkg:apk/alpine/libcrypto3@3.1.4-r5?arch=aarch64&distro=alpine-3.19.1&upstream=openssl":    {"none", ""},
+	} {
+		o, ok := obs[purl]
+		if !ok || o.Evidence["build_commit"] != want[0] || o.Evidence["maintainer"] != want[1] {
+			t.Errorf("%s: %v %v", purl, ok, o.Evidence)
+		}
+	}
 }
 
 func TestRPMMissingBinaryIsVisible(t *testing.T) {
