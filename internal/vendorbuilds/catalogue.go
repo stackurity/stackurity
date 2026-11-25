@@ -93,7 +93,8 @@ type Product struct {
 	// RuntimeEdition is the edition evidence a binary found outside a
 	// package manager must carry to be matched ("open-source" for nginx, not
 	// NGINX Plus or OpenResty, which have releases of their own). Homebrew
-	// builds the open-source edition and is not asked.
+	// builds the open-source edition and is not asked. Empty for a product
+	// with no other editions (PHP): every build is matched by its release.
 	RuntimeEdition string `json:"runtime_edition,omitempty"`
 	// RuntimeUpdate says how such a binary is usually updated.
 	RuntimeUpdate string   `json:"runtime_update,omitempty"`
@@ -201,8 +202,8 @@ func Parse(b []byte) (*Catalogue, error) {
 			if prev := c.byRuntime[p.Runtime]; prev != nil {
 				return nil, fail(fmt.Errorf("runtime %s is also listed for %s", p.Runtime, prev.ID))
 			}
-			if p.RuntimeEdition == "" || p.RuntimeUpdate == "" {
-				return nil, fail(errors.New("a runtime needs runtime_edition and runtime_update"))
+			if p.RuntimeUpdate == "" {
+				return nil, fail(errors.New("a runtime needs runtime_update"))
 			}
 			c.byRuntime[p.Runtime] = p
 		} else if p.RuntimeEdition != "" || p.RuntimeUpdate != "" {

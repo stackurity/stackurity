@@ -417,7 +417,9 @@ func TestUbuntuProAndIdleKernels(t *testing.T) {
 }
 
 // A runtime the agent found outside the package manager gets lifecycle
-// findings by product name, and is listed as a vulnerability gap.
+// findings by product name, and is listed as a vulnerability gap until its
+// vulnerabilities are read (Node.js is matched against NVD's records through
+// the vendor build catalogue, not synced here).
 func TestUnmanagedRuntimeLifecycle(t *testing.T) {
 	ctx := tenant.WithWorkspace(context.Background(), tenant.DefaultWorkspace)
 	st, sy, ev, up := setup(t)
@@ -443,7 +445,7 @@ func TestUnmanagedRuntimeLifecycle(t *testing.T) {
 		t.Errorf("findings = %+v", fs)
 	}
 	gaps, _, _ := st.ListEvaluationGaps(ctx, store.Page{})
-	if len(gaps) != 1 || !strings.Contains(gaps[0].Reason, "outside a package manager") {
+	if len(gaps) != 1 || !strings.Contains(gaps[0].Reason, "nvd:vendor-builds has not completed a sync") {
 		t.Errorf("gaps = %+v", gaps)
 	}
 }

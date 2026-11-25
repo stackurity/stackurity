@@ -308,7 +308,7 @@ func TestCoverageInvariants(t *testing.T) {
 			state: store.StatePartiallyEvaluated, row: store.CoverageNotEvaluated, reason: "could not be compared", summary: gaps},
 		{name: "unsupported ecosystem", obs: confirmed("pkg:cocoapods/AFNetworking@4.0.1", nil),
 			state: store.StateUnsupported, row: store.CoverageUnsupported, reason: "CocoaPods packages have no vulnerability source", summary: gaps},
-		{name: "runtime outside a package manager", obs: confirmed("pkg:generic/nodejs@20.11.1", map[string]string{"kind": "runtime", "install": "unmanaged"}),
+		{name: "runtime outside a package manager", obs: confirmed("pkg:generic/ruby@3.3.0", map[string]string{"kind": "runtime", "install": "unmanaged"}),
 			state: store.StateUnsupported, row: store.CoverageUnsupported, reason: "outside a package manager", summary: gaps},
 		{name: "never evaluated", obs: lodash,
 			prepare: func(t *testing.T, ctx context.Context, st *store.Store, sy *Syncer, up *upstream, _ int64) {

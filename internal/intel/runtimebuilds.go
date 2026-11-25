@@ -11,9 +11,10 @@ import (
 
 // Runtimes the agent finds outside a package manager (pkg:generic/<name>,
 // evidence kind "runtime") are, for the products the vendor build catalogue
-// lists with a runtime name (nginx), the upstream release they print: a
+// lists with a runtime name (nginx, PHP), the upstream release they print: a
 // source build in /usr/local/nginx, the nginx an ingress controller's image
-// compiles in, a Homebrew keg. They are matched against the same NVD records
+// compiles in, the PHP the official php images build into /usr/local, a
+// Homebrew keg. They are matched against the same NVD records
 // as the vendor's packages (FeedVendorBuilds). Other runtimes keep lifecycle
 // only.
 
@@ -49,6 +50,8 @@ func runtimePlan(cat *vendorbuilds.Catalogue, r store.EvalRow) (*vendorPlan, str
 	case "unmanaged", "":
 		install = "unmanaged"
 		switch ed := r.Evidence["edition"]; {
+		case p.RuntimeEdition == "":
+			// The product has no other editions: every build is its release.
 		case ed == p.RuntimeEdition:
 		case ed == "":
 			return nil, fmt.Sprintf("%s: this agent did not say whether this %s is %s's %s edition or another build of it, so its vulnerabilities are not matched; upgrade the agent to check it",
