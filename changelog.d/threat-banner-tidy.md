@@ -1,0 +1,3 @@
+### Fixed
+
+- **Threat notice banner: readable button, shorter text, right colour.** The **See findings** button in a red or amber banner had dark, underlined text on blue; it keeps its own colours now. The banner's title uses a threat's short name (`nginx2root`) instead of repeating the long one, the findings line no longer counts the assets twice, and a newly disclosed vulnerability that is not known to be exploited yet shows in amber instead of red. **See findings** for a threat with several CVEs (nginx2root has five) opens the issues of all of them, not only the first CVE's search page; the issues list accepts several advisory ids in `key=`, separated by commas. See [Threat notices](docs/threat-notices.md).

@@ -63,8 +63,12 @@ func ThreatFindingsPath(t threats.Threat) string {
 	if len(t.Detects.ConfigRules) > 0 {
 		return "/fixes/config?category=attack_tool"
 	}
-	if len(t.Detects.CVEs) > 0 {
+	if len(t.Detects.CVEs) == 1 {
 		return "/search?q=" + url.QueryEscape(t.Detects.CVEs[0])
+	}
+	if len(t.Detects.CVEs) > 1 {
+		// Every CVE of the threat, open ones: the count the notice gives.
+		return "/fixes/issues?key=" + url.QueryEscape(strings.Join(t.Detects.CVEs, ","))
 	}
 	return "/fixes/issues"
 }
@@ -106,21 +110,25 @@ func connectedText(conn map[string]int) string {
 func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.Time) Message {
 	m := Message{Event: EventThreatNotice, Kind: "threat", Key: "threat:" + t.ID, At: at,
 		Detail: map[string]any{"threat": t.ID, "verdict": f.Verdict, "findings": f.Findings, "assets": f.Assets, "signals": f.Signals}}
-	inTheWild := t.Name + " is being used against systems on the public internet."
+	// The title and lines use the short name: the banner shows the title
+	// and the first lines together, and a long name read twice.
+	name := t.Short()
+	inTheWild := name + " is being used against systems on the public internet."
 	switch t.Kind {
 	case threats.KindExploitedVuln:
-		inTheWild = t.Name + " is being exploited against systems on the public internet."
+		inTheWild = name + " is being exploited against systems on the public internet."
 	case threats.KindDisclosedVuln:
 		// Not exploited yet, as far as anyone has reported: say so rather
 		// than borrow the in-the-wild wording.
-		inTheWild = t.Name + " is a newly disclosed vulnerability with a fix available. It is not known to be exploited yet, but attackers are expected to target systems on the public internet."
+		inTheWild = name + " is a newly disclosed vulnerability with a fix available. It is not known to be exploited yet, but attackers are expected to target systems on the public internet."
 	}
 	switch f.Verdict {
 	case threats.Found:
-		m.Title = fmt.Sprintf("%s was found on %s", t.Name, plainCount(f.Assets, "of your assets", "of your assets"))
-		found := fmt.Sprintf("Stackurity's checks found it on %s.", plainCount(f.Assets, "asset", "assets"))
+		m.Title = fmt.Sprintf("%s was found on %s", name, plainCount(f.Assets, "of your assets", "of your assets"))
+		// The title already counts the assets.
+		found := "Stackurity's checks found it."
 		if f.Findings > 0 {
-			found = fmt.Sprintf("Stackurity's checks found it: %s on %s.", plainCount(f.Findings, "finding", "findings"), plainCount(f.Assets, "asset", "assets"))
+			found = fmt.Sprintf("Stackurity's checks found it: %s.", plainCount(f.Findings, "finding", "findings"))
 		}
 		m.Summary = []string{inTheWild, found}
 		m.Action = "Open the findings, find out who installed it and why, and remove it. If nobody in your organisation put it there, treat the asset as compromised."
@@ -132,7 +140,7 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 		}
 		m.Link, m.LinkLabel = absURL(base, ThreatFindingsPath(t)), "See findings"
 	case threats.Covered:
-		m.Title = fmt.Sprintf("%s: your connected assets are checked, nothing was found", t.Name)
+		m.Title = fmt.Sprintf("%s: your connected assets are checked, nothing was found", name)
 		m.Summary = []string{inTheWild,
 			"Your connected assets are checked for it (" + connectedText(f.Connected) + ") and nothing was found. You don't need to do anything."}
 		var more, update []string
@@ -153,9 +161,9 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 	case threats.NeedsConnection:
 		first := mainNeed(f.Missing)
 		update := f.Outdated[first.Connection] > 0
-		m.Title = fmt.Sprintf("%s: Stackurity can check for it, but needs %s", t.Name, threats.ConnectionLabel(first.Connection))
+		m.Title = fmt.Sprintf("%s: Stackurity can check for it, but needs %s", name, threats.ConnectionLabel(first.Connection))
 		if update {
-			m.Title = fmt.Sprintf("%s: Stackurity can check for it, once %s is updated", t.Name, threats.ConnectionLabel(first.Connection))
+			m.Title = fmt.Sprintf("%s: Stackurity can check for it, once %s is updated", name, threats.ConnectionLabel(first.Connection))
 		}
 		m.Summary = []string{inTheWild, "We can check for it, but need this from you:"}
 		for _, n := range f.Missing {
@@ -185,20 +193,20 @@ func ThreatNoticeMessage(base string, t threats.Threat, f NoticeFacts, at time.T
 			}
 		}
 	case threats.Upgrade:
-		m.Title = fmt.Sprintf("%s: upgrade Stackurity to check for it", t.Name)
+		m.Title = fmt.Sprintf("%s: upgrade Stackurity to check for it", name)
 		running := f.Running
 		if running == "" {
 			running = "an older release"
 		}
 		m.Summary = []string{inTheWild,
-			fmt.Sprintf("This Stackurity server runs %s. The check for %s is in Stackurity %s and later: upgrade to the latest version to check your assets for it.", running, t.Name, t.MinVersion)}
+			fmt.Sprintf("This Stackurity server runs %s. The check for %s is in Stackurity %s and later: upgrade to the latest version to check your assets for it.", running, name, t.MinVersion)}
 		m.Link, m.LinkLabel = absURL(base, "/help/backups-upgrades"), "How to upgrade"
 	}
 	if f.Signals > 0 && f.Verdict != threats.Found {
 		m.Summary = append(m.Summary, fmt.Sprintf("%s only named like %s (a weaker sign, not counted as found): look at it under Risky settings to rule it out.",
-			plainCount(f.Signals, "finding is", "findings are"), t.Name))
+			plainCount(f.Signals, "finding is", "findings are"), name))
 	}
-	m.Summary = append(m.Summary, "About "+t.Name+": "+t.Summary)
+	m.Summary = append(m.Summary, "About "+name+": "+t.Summary)
 	// Sources are linked only on hosts every email may link to
 	// (EmailExternalHosts); the others are in the dashboard and in
 	// threat_check.

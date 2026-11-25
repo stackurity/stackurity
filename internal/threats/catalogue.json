@@ -78,8 +78,9 @@
     },
     {
       "id": "nginx2root",
-      "revision": 1,
+      "revision": 2,
       "name": "nginx2root (nginx memory-corruption bugs fixed in 1.31.9 and 1.30.7)",
+      "short_name": "nginx2root",
       "aliases": ["nginx2root", "cve-2026-123007", "cve-2026-123633", "cve-2026-121810", "cve-2026-123634", "cve-2026-113425", "nginx http/2 flow control"],
       "kind": "disclosed_vuln",
       "severity": "critical",

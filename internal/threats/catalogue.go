@@ -96,6 +96,10 @@ type Threat struct {
 	// and the feed both have a threat, the higher revision is used.
 	Revision    int      `json:"revision"`
 	Name        string   `json:"name"`
+	// ShortName is what a threat notice's title and banner call it when
+	// Name carries an explanation ("nginx2root" for "nginx2root (nginx
+	// memory-corruption bugs ...)"). Empty means Name.
+	ShortName string `json:"short_name,omitempty"`
 	Aliases     []string `json:"aliases,omitempty"`
 	Kind        string   `json:"kind"`
 	Severity    string   `json:"severity"` // critical, high, medium or low
@@ -212,6 +216,14 @@ func (c *Catalogue) Validate() error {
 	return nil
 }
 
+// Short is the name a notice's title uses: ShortName, else Name.
+func (t Threat) Short() string {
+	if t.ShortName != "" {
+		return t.ShortName
+	}
+	return t.Name
+}
+
 func (t *Threat) validate() error {
 	switch {
 	case !idRE.MatchString(t.ID):
@@ -220,6 +232,8 @@ func (t *Threat) validate() error {
 		return errors.New("revision must be 1 or more")
 	case t.Name == "" || len(t.Name) > maxShort:
 		return errors.New("name is empty or too long")
+	case len(t.ShortName) > maxShort || t.ShortName != strings.TrimSpace(t.ShortName):
+		return errors.New("short_name is too long or has spaces around it")
 	case !slices.Contains([]string{KindAttackTool, KindExploitedVuln, KindDisclosedVuln, KindCampaign, KindPractice}, t.Kind):
 		return fmt.Errorf("unknown kind %q", t.Kind)
 	case !slices.Contains([]string{"critical", "high", "medium", "low"}, t.Severity):
