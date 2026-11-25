@@ -75,12 +75,29 @@ type Message struct {
 	// towards MaxEmailRecipients.
 	ReplyTo string   `json:"-"`
 	Cc      []string `json:"-"`
+	// Image is a picture an email shows under its heading, such as an
+	// example of a new feature in a campaign email. Email only: never sent
+	// to webhooks. An image without an https:// Src or without Alt is left
+	// out.
+	Image *EmailImage `json:"-"`
 
 	// Email sent by Stackurity, per recipient: the page that stops these
 	// emails, and its one-click address for the List-Unsubscribe header.
 	unsubscribe, unsubscribeLabel, oneClick string
 	// Bulk email (bulk.go): the recipient's footer.
 	bulk *bulkFooter
+}
+
+// EmailImage is a picture in an email (Message.Image). Alt says what it
+// shows, for mail apps that do not load pictures and for screen readers.
+// Width is the width it is shown at in pixels (520 when 0; the picture
+// itself should be twice that for sharp screens); Link, when set, opens
+// when the picture is clicked.
+type EmailImage struct {
+	Src   string
+	Alt   string
+	Width int
+	Link  string
 }
 
 // Section is a titled list of items in a grouped message.

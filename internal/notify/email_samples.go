@@ -176,6 +176,11 @@ func EmailSamples(base string) []EmailSample {
 			Summary:  []string{"Email now looks like the rest of Stackurity, and every kind of email is checked before a release."},
 			Sections: []Section{{Title: "Added", Items: []Item{{Text: "A button for the main action of every email"}, {Text: "Dark mode in mail clients that support it"}}}},
 			Link:     "https://github.com/stackurity/stackurity/releases/tag/v0.17.0", LinkLabel: "Read the release notes"}),
+		bulkSample(base, "bulk-campaign-image", store.CategoryMarketing, Message{Title: "Your website, graded A to F",
+			Summary: []string{"Every website check now starts with a grade and lists what cost points, worst first."},
+			Image: &EmailImage{Src: "https://stackurity.ai/img/email/website-check-grade.png", Width: 520, Link: base + "/website-check",
+				Alt: "An example report: grade C, 71 out of 100, with the four problems that cost points"},
+			Link: base + "/website-check", LinkLabel: "Check your website"}),
 		bulkSample(base, "bulk-vulnerability-news", store.CategoryVulnerabilityNews, Message{Title: "Vulnerability news: 3 exploited flaws to patch this week",
 			Summary: []string{"Three vulnerabilities added to CISA's Known Exploited list affect software Stackurity users run."},
 			Sections: []Section{{Title: "Known exploited", Items: []Item{
