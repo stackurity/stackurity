@@ -77,6 +77,51 @@
       "min_version": "0.20.25"
     },
     {
+      "id": "drupal-cve-2026-132165",
+      "revision": 1,
+      "name": "Drupal core installer takeover (CVE-2026-132165)",
+      "aliases": [
+        "cve-2026-132165",
+        "sa-core-2026-017",
+        "drupal-core-2026-017",
+        "drupal install.php takeover"
+      ],
+      "kind": "exploited_vuln",
+      "severity": "critical",
+      "summary": "A flaw in Drupal core's installer (install.php) lets an unauthenticated attacker try to reinstall Drupal on a live site, which can lead to taking the site over or running code on the server (SA-CORE-2026-017, CVE-2026-132165, published 18 November 2026). Drupal says it has been exploited on live sites since 19 November, and CISA added it to its Known Exploited Vulnerabilities catalogue on 24 November 2026. Affected: every Drupal core release before 10.6.22, 11.0.0 to 11.3.21 and 11.4.0 to 11.4.12. Upgrade to 10.6.22, 11.3.22 or 11.4.13; Drupal 11.2 and older 11.x, and 10.5 and older 10.x, are end of life, so move to a supported line. Until you can upgrade, block public access to core/install.php and make sure the web server cannot write to settings.php, which blocks some of the attack paths.",
+      "first_seen": "2026-11-18",
+      "published_at": "2026-11-25",
+      "sources": [
+        "https://www.drupal.org/sa-core-2026-017",
+        "https://www.cisa.gov/news-events/alerts/2026/11/24/cisa-adds-three-known-exploited-vulnerabilities-catalog",
+        "https://osv.dev/vulnerability/DRUPAL-CORE-2026-017"
+      ],
+      "detects": {
+        "cves": [
+          "CVE-2026-132165"
+        ]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server finds Drupal sites and reads the drupal/core release from their composer.lock or vendor/composer/installed.json (Drupal's release archives ship both), then matches it against this vulnerability",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for Drupal sites with an affected drupal/core release",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a composer.lock that installs an affected drupal/core release",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.36"
+    },
+    {
       "id": "nginx2root",
       "revision": 1,
       "name": "nginx2root (nginx memory-corruption bugs fixed in 1.31.9 and 1.30.7)",

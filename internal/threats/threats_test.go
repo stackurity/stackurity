@@ -30,6 +30,10 @@ func TestEmbedded(t *testing.T) {
 		t.Errorf("ARTEX rules = %v / %v, want %v and the name rule as a signal (internal/collect/confcheck/attacktools.go)",
 			a.Detects.ConfigRules, a.Detects.SignalRules, want)
 	}
+	d, ok := c.Find("SA-CORE-2026-017")
+	if !ok || d.ID != "drupal-cve-2026-132165" || d.Kind != KindExploitedVuln || strings.Join(d.Detects.CVEs, ",") != "CVE-2026-132165" {
+		t.Errorf("Find(SA-CORE-2026-017) = %+v, %v", d, ok)
+	}
 	n, ok := c.Find("CVE-2026-123007")
 	if !ok || n.ID != "nginx2root" || n.Kind != KindDisclosedVuln || len(n.Detects.CVEs) != 5 || len(n.Detects.ConfigRules) != 0 {
 		// Only the CVEs make it found: a loadable SCTP module is a risky
