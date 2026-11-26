@@ -24,7 +24,7 @@ export function ProNotice({ feature, children }: { feature: Feature; children?: 
   const plan =
     feature === "compliance_addon"
       ? "Compliance add-on"
-      : feature === "enterprise_packs" || feature === "phishing_resistant_mfa"
+      : feature === "enterprise_packs" || feature === "phishing_resistant_mfa" || feature === "sso"
         ? "Enterprise"
         : "Pro";
   // Counted for the operator: which locked features people see and follow
