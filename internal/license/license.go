@@ -75,8 +75,10 @@ const (
 )
 
 var editionFeatures = map[Edition][]Feature{
-	Community:  nil,
-	Pro:        {Remediation, Teams, EvidenceReport, SSO, FixLoop, Reachability, GateEnforce, GateDeploy},
+	Community: nil,
+	// Single sign-on is Enterprise only (owner decision, 26 Nov 2026); a Pro
+	// licence issued before SSOEnterpriseFrom keeps it (Grandfathered).
+	Pro:        {Remediation, Teams, EvidenceReport, FixLoop, Reachability, GateEnforce, GateDeploy},
 	Enterprise: {Remediation, Teams, EvidenceReport, SSO, EnterprisePacks, PhishingResistantMFA, FixLoop, Reachability, ComplianceAddon, GateEnforce, GateDeploy},
 }
 
@@ -137,6 +139,21 @@ type License struct {
 
 // addonFeatures are the features sold as add-ons to a paid edition.
 var addonFeatures = []Feature{ComplianceAddon}
+
+// SSOEnterpriseFrom is when single sign-on became Enterprise only. Pro
+// licences issued before it included single sign-on, and keep it until
+// they expire, so nobody already signing in through their identity
+// provider is locked out mid-term. A renewal issued after it does not.
+var SSOEnterpriseFrom = time.Date(2026, 11, 27, 0, 0, 0, 0, time.UTC)
+
+// Grandfathered lists the features the licence keeps beyond its edition
+// because they were in the edition when it was issued.
+func (l *License) Grandfathered() []Feature {
+	if l != nil && l.Edition == Pro && !l.IssuedAt.IsZero() && l.IssuedAt.Before(SSOEnterpriseFrom) {
+		return []Feature{SSO}
+	}
+	return nil
+}
 
 // Addons lists the features that can be bought as add-ons.
 func Addons() []Feature { return append([]Feature{}, addonFeatures...) }
@@ -317,6 +334,11 @@ func StatusAt(l *License, now time.Time) Status {
 				st.Features = append(st.Features, a)
 			}
 		}
+		for _, g := range l.Grandfathered() {
+			if !st.Edition.Includes(g) {
+				st.Features = append(st.Features, g)
+			}
+		}
 	}
 	return st
 }
@@ -384,6 +406,15 @@ func (g *Gate) Has(ctx context.Context, f Feature) bool {
 	}
 	if e.Includes(f) {
 		return true
+	}
+	// A feature a Pro licence kept when it left the Pro edition
+	// (Grandfathered), for workspaces whose plan is a paid edition.
+	if e != Community && st.License != nil && st.State != StateExpired {
+		for _, x := range st.License.Grandfathered() {
+			if x == f {
+				return true
+			}
+		}
 	}
 	// Only an add-on bought on the licence counts here: an Enterprise
 	// licence includes the add-on by its edition, which the workspace's

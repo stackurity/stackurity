@@ -156,3 +156,53 @@ func TestAddons(t *testing.T) {
 		t.Error("an Enterprise workspace lacks the add-on")
 	}
 }
+
+func TestSSOEnterpriseOnly(t *testing.T) {
+	if Pro.Includes(SSO) || !Enterprise.Includes(SSO) {
+		t.Fatal("single sign-on must be Enterprise only")
+	}
+	if LowestEdition(SSO) != Enterprise {
+		t.Errorf("LowestEdition(SSO) = %s", LowestEdition(SSO))
+	}
+	if o := SelfHostedOffer(SSO); len(o.IncludedIn) != 1 || o.IncludedIn[0] != "Enterprise" || o.Addon != nil {
+		t.Errorf("offer = %+v", o)
+	}
+	now := time.Date(2026, 12, 1, 0, 0, 0, 0, time.UTC)
+	before := SSOEnterpriseFrom.Add(-time.Hour)
+	cases := []struct {
+		name string
+		l    *License
+		plan Edition
+		want bool
+	}{
+		{"none", nil, Enterprise, false},
+		{"new Pro", &License{Edition: Pro, IssuedAt: SSOEnterpriseFrom, ExpiresAt: now.AddDate(1, 0, 0)}, Enterprise, false},
+		{"Pro without issue date", &License{Edition: Pro, ExpiresAt: now.AddDate(1, 0, 0)}, Enterprise, false},
+		{"old Pro keeps it", &License{Edition: Pro, IssuedAt: before, ExpiresAt: now.AddDate(1, 0, 0)}, Enterprise, true},
+		{"old Pro in grace", &License{Edition: Pro, IssuedAt: before, ExpiresAt: now.Add(-24 * time.Hour)}, Enterprise, true},
+		{"old Pro expired", &License{Edition: Pro, IssuedAt: before, ExpiresAt: now.Add(-Grace - time.Hour)}, Enterprise, false},
+		{"old Pro, Community workspace", &License{Edition: Pro, IssuedAt: before, ExpiresAt: now.AddDate(1, 0, 0)}, Community, false},
+		{"old Pro, Pro workspace", &License{Edition: Pro, IssuedAt: before, ExpiresAt: now.AddDate(1, 0, 0)}, Pro, true},
+		{"Enterprise", &License{Edition: Enterprise, IssuedAt: SSOEnterpriseFrom, ExpiresAt: now.AddDate(1, 0, 0)}, Enterprise, true},
+		{"Enterprise, Pro workspace", &License{Edition: Enterprise, IssuedAt: SSOEnterpriseFrom, ExpiresAt: now.AddDate(1, 0, 0)}, Pro, false},
+	}
+	for _, c := range cases {
+		h := &Holder{now: func() time.Time { return now }}
+		h.Set(c.l)
+		plan := c.plan
+		g := &Gate{Licence: h, Plan: func(context.Context) Edition { return plan }}
+		if got := g.Has(context.Background(), SSO); got != c.want {
+			t.Errorf("%s: Gate.Has(SSO) = %v, want %v", c.name, got, c.want)
+		}
+		if c.plan == Enterprise {
+			st := StatusAt(c.l, now)
+			in := false
+			for _, f := range st.Features {
+				in = in || f == SSO
+			}
+			if in != c.want {
+				t.Errorf("%s: Status.Features has SSO = %v, want %v", c.name, in, c.want)
+			}
+		}
+	}
+}
