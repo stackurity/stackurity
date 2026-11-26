@@ -1,6 +1,7 @@
 {
   "Key": "release-0.14.0",
   "Category": "marketing",
+  "Service": true,
   "Message": {
     "title": "Stackurity 0.14.0: what changed",
     "summary": ["Here is what changed in Stackurity 0.14.0."],

@@ -84,8 +84,10 @@ type Message struct {
 	// Email sent by Stackurity, per recipient: the page that stops these
 	// emails, and its one-click address for the List-Unsubscribe header.
 	unsubscribe, unsubscribeLabel, oneClick string
-	// Bulk email (bulk.go): the recipient's footer.
-	bulk *bulkFooter
+	// Bulk email (bulk.go): the recipient's footer, and whether the
+	// campaign is a service message (BulkCampaign.Service).
+	bulk        *bulkFooter
+	bulkService bool
 }
 
 // EmailImage is a picture in an email (Message.Image). Alt says what it

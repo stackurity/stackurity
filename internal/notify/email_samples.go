@@ -201,7 +201,8 @@ func EmailSamples(base string) []EmailSample {
 func bulkSample(base, name, category string, m Message) EmailSample {
 	m.Event = category
 	unsub := fmt.Sprintf("%s/email/preferences#PREVIEW-unsubscribe-%s", base, category)
-	m.bulk = &bulkFooter{category: category, unsubscribe: unsub, preferences: base + "/email/preferences#PREVIEW-preferences",
+	// The release email is a service message (BulkCampaign.Service).
+	m.bulk = &bulkFooter{category: category, service: name == "bulk-release", unsubscribe: unsub, preferences: base + "/email/preferences#PREVIEW-preferences",
 		postalAddress: "Example Ltd, 1 Main Road, Pune 411001, India", sender: "Stackurity <news@stackurity.dev>", home: base + "/"}
 	m.oneClick = base + "/email/preferences/one-click?t=PREVIEW-" + category
 	return EmailSample{Name: name, Message: m, Notification: true}

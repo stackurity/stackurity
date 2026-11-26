@@ -58,6 +58,28 @@ func TestBulkGolden(t *testing.T) {
 	}
 }
 
+// TestBulkServiceFooter: a service message (the release email, sent to
+// every account) never says the person subscribed; it says why they get
+// it and keeps the unsubscribe link and the one-click headers.
+func TestBulkServiceFooter(t *testing.T) {
+	b := &Bulk{Mail: &bulkBox{}, BaseURL: "https://app.stk.example/"}
+	for _, service := range []bool{false, true} {
+		p, err := b.Preview(BulkCampaign{Key: "release-1.0.0", Category: store.CategoryMarketing, Service: service,
+			Message: Message{Title: "Stackurity 1.0.0: what changed", Summary: []string{"Hi."}}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		subscribed := strings.Contains(p.Text, "subscribed to Marketing") || strings.Contains(p.HTML, "subscribed to Marketing")
+		account := strings.Contains(p.Text, "because you have a Stackurity account") && strings.Contains(p.HTML, "because you have a Stackurity account")
+		if subscribed == service || account != service {
+			t.Errorf("service=%v: footer says subscribed=%v, has an account=%v:\n%s", service, subscribed, account, p.Text)
+		}
+		if service && (!strings.Contains(p.HTML, "Unsubscribe from these emails</a>") || !strings.Contains(strings.Join(p.Headers, "\n"), "List-Unsubscribe-Post")) {
+			t.Errorf("service message lacks its unsubscribe link or one-click headers:\n%s\n%v", p.HTML, p.Headers)
+		}
+	}
+}
+
 func TestBulkLayout(t *testing.T) {
 	camp := BulkCampaign{Key: "x", Category: store.CategoryMarketing, Message: Message{Title: "Hello", Summary: []string{"Hi."},
 		Sections: []Section{{Title: "Added", Items: []Item{{Text: "A thing"}}}}, Link: "https://example.com/notes", LinkLabel: "Release notes"}}

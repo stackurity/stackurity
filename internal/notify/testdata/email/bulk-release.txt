@@ -10,8 +10,8 @@ Read the release notes:
 https://github.com/stackurity/stackurity/releases/tag/v0.17.0
 
 --
-You are receiving this because you are subscribed to Marketing emails from Stackurity.
-Unsubscribe from Marketing: https://app.stackurity.dev/email/preferences#PREVIEW-unsubscribe-marketing
+You are receiving this because you have a Stackurity account; this email tells you what changed in the service.
+Unsubscribe from these emails: https://app.stackurity.dev/email/preferences#PREVIEW-unsubscribe-marketing
 Manage email preferences: https://app.stackurity.dev/email/preferences#PREVIEW-preferences
 Sent by Stackurity (news@stackurity.dev)
 Example Ltd, 1 Main Road, Pune 411001, India

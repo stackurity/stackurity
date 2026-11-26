@@ -153,6 +153,7 @@ func PrefsKey(ctx context.Context, st *store.Store) ([]byte, error) {
 // bulkFooter is what a bulk email adds for its recipient.
 type bulkFooter struct {
 	category      string
+	service       bool   // a service message (BulkCampaign.Service)
 	unsubscribe   string // the visible unsubscribe link (preference page)
 	preferences   string // the preference page, both categories
 	postalAddress string // none: no address line
@@ -217,6 +218,12 @@ type BulkCampaign struct {
 	Key      string
 	Category string
 	Message  Message
+	// Service marks a service message, such as the release email: it goes
+	// to every account whether or not they subscribed to Category, so its
+	// footer says the person gets it because they have a Stackurity
+	// account, not that they subscribed. Its unsubscribe links and the
+	// one-click List-Unsubscribe header are the same as for any bulk email.
+	Service bool `json:",omitempty"`
 }
 
 func (c BulkCampaign) check() error {
@@ -234,6 +241,7 @@ func (c BulkCampaign) check() error {
 func (c BulkCampaign) message() Message {
 	m := c.Message
 	m.Event = c.Category
+	m.bulkService = c.Service
 	return m
 }
 
@@ -393,7 +401,7 @@ func (b *Bulk) Preview(c BulkCampaign) (BulkPreview, error) {
 	}
 	m := c.message()
 	u := strings.TrimRight(b.BaseURL, "/")
-	m.bulk = &bulkFooter{category: c.Category, unsubscribe: u + "/email/preferences#PREVIEW-unsubscribe",
+	m.bulk = &bulkFooter{category: c.Category, service: c.Service, unsubscribe: u + "/email/preferences#PREVIEW-unsubscribe",
 		preferences: u + "/email/preferences#PREVIEW-preferences", postalAddress: b.PostalAddress, sender: b.Mail.From(), home: u + "/"}
 	m.oneClick = u + "/email/preferences/one-click?t=PREVIEW"
 	raw := string(buildEmail(b.Mail.From(), []string{"recipient@example.com"}, m))
@@ -413,7 +421,7 @@ func (b *Bulk) personalise(m Message, key []byte, userID int64, test bool) Messa
 	u := strings.TrimRight(b.BaseURL, "/")
 	unsub := PrefsToken(key, PrefsClaim{Kind: PrefsKindUnsubscribe, UserID: userID, Category: m.Event, Expires: now.Add(UnsubscribeLinkTTL)})
 	prefs := PrefsToken(key, PrefsClaim{Kind: PrefsKindCentre, UserID: userID, Category: "all", Expires: now.Add(PreferencesLinkTTL)})
-	m.bulk = &bulkFooter{category: m.Event, unsubscribe: u + "/email/preferences#" + unsub, preferences: u + "/email/preferences#" + prefs,
+	m.bulk = &bulkFooter{category: m.Event, service: m.bulkService, unsubscribe: u + "/email/preferences#" + unsub, preferences: u + "/email/preferences#" + prefs,
 		postalAddress: b.PostalAddress, sender: b.Mail.From(), home: u + "/", test: test}
 	m.oneClick = u + "/email/preferences/one-click?" + url.Values{"t": {unsub}}.Encode()
 	if m.At.IsZero() {
