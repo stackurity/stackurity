@@ -6,6 +6,26 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.40
+
+### Security
+
+- **go-jose updated to 4.1.9 (from 4.1.6).** Stackurity uses go-jose to verify CI OIDC tokens, OAuth client assertions and Microsoft Teams bot tokens. go-jose 4.1.7 fixes five advisories that go-jose published on 30 October 2026 (not yet in the GitHub Advisory Database or OSV, so the dependency scans did not report them): [GHSA-p9j4-2j95-j4rv](https://github.com/go-jose/go-jose/security/advisories/GHSA-p9j4-2j95-j4rv) (medium, unprotected JWE headers can override empty or null protected values), [GHSA-c67m-wr4h-2ccg](https://github.com/go-jose/go-jose/security/advisories/GHSA-c67m-wr4h-2ccg) (medium, denial of service from JWS and JWE JSON serialization), [GHSA-v6h2-qj3f-2h6v](https://github.com/go-jose/go-jose/security/advisories/GHSA-v6h2-qj3f-2h6v) (medium, denial of service when verifying certificates), [GHSA-27pc-rm86-68pq](https://github.com/go-jose/go-jose/security/advisories/GHSA-27pc-rm86-68pq) (low, panic on a JWT claim matching an embedded unexported field) and [GHSA-r39w-98wm-9pp6](https://github.com/go-jose/go-jose/security/advisories/GHSA-r39w-98wm-9pp6) (low, panic during RSA JWK thumbprint processing).
+
+### Added
+
+- **`stackurity evidence verify` checks an evidence pack.** It checks every file in an evidence pack ZIP against the pack's SHA-256 manifest and, for a signed pack, the Ed25519 signature against the published key set (`--keys FILE` works offline); `stackurity evidence pubkey` prints a key's entry for a key set. Evidence packs are not signed yet: signing arrives in a later release, and until then `verify` reports a pack as unsigned. See [Checking a pack's signature](docs/compliance-audits.md#checking-a-packs-signature).
+
+### Changed
+
+- **AI providers' keys in a server's configuration file are medium, not low.** An OpenAI, Anthropic, Gemini, OpenRouter, Groq, xAI or Hugging Face key, or a setting named for Mistral, DeepSeek, Cohere, LiteLLM and other AI providers, found in a `.env` or other configuration file on a server is now graded medium: a stolen AI key is resold and runs up the provider's bill within hours. It still raises no alert (the file is where keys belong), but it gets a rotate-by date (30 days by default) and its own one-line reason on the dashboard, the API and MCP. Other keys and passwords kept in configuration files stay low (medium when every account can read the file). See [Leaked keys](docs/leaked-keys.md#severity-and-exposure).
+- **Sign-up: product emails are a checkbox you can untick.** On Stackurity Cloud the sentence about product emails under the sign-up form (email and Google/Microsoft/GitHub sign-up) is now a ticked checkbox. Leave it ticked and the account is subscribed as before; untick it and the sign-up subscribes nobody (the form sends no notice version). This gives people the chance to refuse at sign-up that the e-Privacy "soft opt-in" rules (UK PECR reg. 22(3), EU ePrivacy art. 13(2)) require. Every email still has one-click unsubscribe. Self-hosted servers show no notice and are unchanged.
+- **Product emails ask the relay not to track them.** Bulk email (release, vulnerability news, campaigns) now carries `X-Mailjet-TrackOpen: 0` and `X-Mailjet-TrackClick: 0`, so a relay that tracks by default (Mailjet, which Stackurity Cloud uses for product email) adds no open pixel and does not route the signed unsubscribe and preference links through itself. Other relays ignore the headers. Alerts and account email are unchanged.
+
+### Upgrading
+
+- The agent grades leaks, so existing AI keys move from low to medium on each server's first scan after its agent is upgraded. No migration.
+
 ## 0.20.39
 
 ### Added
