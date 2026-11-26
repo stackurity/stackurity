@@ -88,6 +88,25 @@ func TestRecordAndShard(t *testing.T) {
 	}
 }
 
+func TestRecordAllPackages(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "times.json")
+	os.WriteFile(path, []byte(`{"p": {"TestOld": 1}, "r": {"TestKeep": 2}}`), 0o644)
+	stream := `{"Action":"pass","Package":"p","Test":"TestA","Elapsed":4}
+{"Action":"pass","Package":"q","Test":"TestB","Elapsed":5}
+{"Action":"pass","Package":"q","Test":"TestB/sub","Elapsed":5}
+`
+	if err := recordTimes(strings.NewReader(stream), path, "all"); err != nil {
+		t.Fatal(err)
+	}
+	tf, err := readTimes(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := (timesFile{"p": {"TestA": 4}, "q": {"TestB": 5}, "r": {"TestKeep": 2}}); !reflect.DeepEqual(tf, want) {
+		t.Fatalf("times = %v, want %v", tf, want)
+	}
+}
+
 func TestRecordNeedsResults(t *testing.T) {
 	if err := recordTimes(strings.NewReader(""), filepath.Join(t.TempDir(), "t.json"), "p"); err == nil {
 		t.Fatal("empty input accepted")

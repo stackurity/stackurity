@@ -7,9 +7,10 @@
 //
 //	go test -list '^Test' ./internal/api | go run ./tools/testshard -shard 2 -of 3 -times tools/ci/test-times.json
 //
-// Refresh the recorded times from a go test -json run (see Makefile test-times):
+// Refresh the recorded times from a go test -json run (see Makefile test-times);
+// -pkg all records every package in the stream:
 //
-//	go test -json -race ./internal/api | go run ./tools/testshard -record -times tools/ci/test-times.json
+//	go test -json -race ./internal/api ./internal/store | go run ./tools/testshard -record -pkg all -times tools/ci/test-times.json
 //
 // Tests are placed longest first, each on the shard with the least time so far
 // (ties go to the lowest shard), which keeps the shards within about one test's
@@ -37,7 +38,7 @@ func main() {
 		shard  = flag.Int("shard", 0, "shard to print, 1-based")
 		of     = flag.Int("of", 0, "number of shards")
 		times  = flag.String("times", "tools/ci/test-times.json", "recorded test times (JSON: package -> test -> seconds)")
-		pkg    = flag.String("pkg", "github.com/stackurity/stackurity/internal/api", "package whose times to use or record")
+		pkg    = flag.String("pkg", "github.com/stackurity/stackurity/internal/api", "package whose times to use, or record (all: every package in the input)")
 		record = flag.Bool("record", false, "read go test -json from stdin and write its top-level test times for -pkg into -times")
 	)
 	flag.Parse()
@@ -145,10 +146,11 @@ func median(times map[string]float64) float64 {
 	return 0.01
 }
 
-// recordTimes replaces the times for pkg with the top-level test times from a
-// go test -json stream. Other packages in the file are kept.
+// recordTimes replaces the times for pkg (all: for every package in the
+// stream) with the top-level test times from a go test -json stream. Other
+// packages in the file are kept.
 func recordTimes(in io.Reader, timesPath, pkg string) error {
-	got := map[string]float64{}
+	got := map[string]map[string]float64{}
 	dec := json.NewDecoder(in)
 	for {
 		var ev struct {
@@ -160,11 +162,14 @@ func recordTimes(in io.Reader, timesPath, pkg string) error {
 		} else if err != nil {
 			return fmt.Errorf("reading go test -json: %w", err)
 		}
-		if ev.Package != pkg || ev.Test == "" || strings.Contains(ev.Test, "/") {
+		if (pkg != "all" && ev.Package != pkg) || ev.Test == "" || strings.Contains(ev.Test, "/") {
 			continue
 		}
 		if ev.Action == "pass" || ev.Action == "fail" {
-			got[ev.Test] = math.Round(ev.Elapsed*100) / 100
+			if got[ev.Package] == nil {
+				got[ev.Package] = map[string]float64{}
+			}
+			got[ev.Package][ev.Test] = math.Round(ev.Elapsed*100) / 100
 		}
 	}
 	if len(got) == 0 {
@@ -174,7 +179,9 @@ func recordTimes(in io.Reader, timesPath, pkg string) error {
 	if err != nil {
 		return err
 	}
-	t[pkg] = got
+	for p, tests := range got {
+		t[p] = tests
+	}
 	b, err := json.MarshalIndent(t, "", "  ")
 	if err != nil {
 		return err
@@ -182,10 +189,17 @@ func recordTimes(in io.Reader, timesPath, pkg string) error {
 	if err := os.WriteFile(timesPath, append(b, '\n'), 0o644); err != nil {
 		return err
 	}
-	var total float64
-	for _, s := range got {
-		total += s
+	pkgs := make([]string, 0, len(got))
+	for p := range got {
+		pkgs = append(pkgs, p)
 	}
-	fmt.Fprintf(os.Stderr, "recorded %d tests of %s, %.0fs in total\n", len(got), pkg, total)
+	sort.Strings(pkgs)
+	for _, p := range pkgs {
+		var total float64
+		for _, s := range got[p] {
+			total += s
+		}
+		fmt.Fprintf(os.Stderr, "recorded %d tests of %s, %.0fs in total\n", len(got[p]), p, total)
+	}
 	return nil
 }
