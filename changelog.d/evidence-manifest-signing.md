@@ -1,0 +1,3 @@
+### Added
+
+- **Evidence packs can be signed, and anyone can check them.** With `STACKURITY_EVIDENCE_SIGNING_KEY_FILE` set (licensed build), the evidence pack ZIP carries `manifest.json.sig`, an Ed25519 signature over its SHA-256 manifest that names its key. `stackurity evidence verify PACK.zip` checks every file and the signature against the published key set (`https://stackurity.ai/.well-known/stackurity-evidence-keys.json`, or `--keys FILE` offline); `stackurity evidence pubkey` prints a key's entry for the set. Keys are retired, never removed, so rotation never breaks older packs. A pack without a key is unsigned and says so. See [Checking a pack's signature](docs/compliance-audits.md#checking-a-packs-signature).
