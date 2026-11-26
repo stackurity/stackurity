@@ -6,6 +6,13 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.39
+
+### Added
+
+- **Node.js found outside a package manager is matched against its vulnerabilities.** The Node.js the official `node` container images install in `/usr/local`, nvm's, a tarball's and Homebrew's were reported with their version and end of life only. They are now matched by the release they report against Node.js's NVD records, like NodeSource's packages, through the vendor build catalogue's runtime fields (as nginx in 0.20.28). This finds CVE-2026-111497, the Brotli decoder bug CISA lists as known exploited, in images built on a `node` image older than 22.23.4, 24.22.1 or 26.12.1. Node.js has no separate editions, so agents of every version are matched. See [Node.js outside a package manager](docs/compatibility.md#nodejs-outside-a-package-manager).
+- **Threat catalogue: Brotli CVE-2026-111497.** The Brotli decoder bug in Node.js, Go, Python and distribution packages, known exploited since 27 October 2026, is in the threat catalogue, so `threat_check` and threat notices cover it.
+
 ## 0.20.38
 
 ### Added
