@@ -189,10 +189,26 @@ func TestForRuntime(t *testing.T) {
 	if p.OwnsCPE("cpe:2.3:a:f5:nginx_plus:*:*:*:*:*:*:*:*") {
 		t.Error("NGINX Plus records are read for nginx")
 	}
-	for _, name := range []string{"nodejs", "python", "haproxy", ""} {
+	for _, name := range []string{"python", "haproxy", ""} {
 		if c.ForRuntime(name) != nil {
 			t.Errorf("%q is matched as a runtime", name)
 		}
+	}
+}
+
+// The Node.js the official node images install in /usr/local, nvm's and a
+// tarball's are matched as nodejs.org's release, with no edition asked.
+func TestForRuntimeNodejs(t *testing.T) {
+	p := Default().ForRuntime("nodejs")
+	if p == nil || p.ID != "nodejs" || p.RuntimeEdition != "" || p.RuntimeUpdate == "" {
+		t.Fatalf("nodejs runtime: %+v", p)
+	}
+	if !p.OwnsCPE("cpe:2.3:a:nodejs:node.js:*:*:*:*:*:*:*:*") || !p.OwnsCPE("cpe:2.3:a:nodejs:node.js:*:*:*:*:lts:*:*:*") {
+		t.Error("nodejs:node.js is not read for Node.js")
+	}
+	// The release node --version and node_version.h give.
+	if v, ok := p.SourceVersion("22.23.1"); !ok || v != "22.23.1" {
+		t.Errorf("SourceVersion(22.23.1) = %q %v", v, ok)
 	}
 }
 
@@ -202,7 +218,7 @@ func TestParseRejectsRuntime(t *testing.T) {
 		`{"id":"y","label":"Y","packages":["^deb/y$"],"cpes":["cpe:2.3:a:y:y"],"sources":["s"],"verified":"2026-11-11"@B@}]}`
 	full := `,"runtime":"x","runtime_edition":"open-source","runtime_update":"u"`
 	for name, r := range map[string]*strings.Replacer{
-		"no edition":    strings.NewReplacer("@A@", `,"runtime":"x","runtime_update":"u"`, "@B@", ""),
+		"no update":     strings.NewReplacer("@A@", `,"runtime":"x","runtime_edition":"open-source"`, "@B@", ""),
 		"edition alone": strings.NewReplacer("@A@", `,"runtime_edition":"open-source"`, "@B@", ""),
 		"bad name":      strings.NewReplacer("@A@", `,"runtime":"X Y","runtime_edition":"e","runtime_update":"u"`, "@B@", ""),
 		"listed twice":  strings.NewReplacer("@A@", full, "@B@", full),
@@ -213,5 +229,9 @@ func TestParseRejectsRuntime(t *testing.T) {
 	}
 	if _, err := Parse([]byte(strings.NewReplacer("@A@", full, "@B@", "").Replace(base))); err != nil {
 		t.Errorf("valid document: %v", err)
+	}
+	// A product with no other editions needs no runtime_edition.
+	if _, err := Parse([]byte(strings.NewReplacer("@A@", `,"runtime":"x","runtime_update":"u"`, "@B@", "").Replace(base))); err != nil {
+		t.Errorf("runtime without an edition: %v", err)
 	}
 }
