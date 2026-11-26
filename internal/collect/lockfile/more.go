@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"encoding/xml"
 	"fmt"
 	"io/fs"
 	"path"
@@ -364,6 +365,52 @@ func parseNuGetLock(fsys fs.FS, dir, file string) ([]model.Observation, error) {
 				Evidence: map[string]string{"lockfile": "packages.lock.json", "framework": framework},
 			})
 		}
+	}
+	return obs, nil
+}
+
+// parseNuGetPackagesConfig reads the legacy NuGet format of .NET Framework
+// projects (ASP.NET WebForms and MVC 5, older libraries): one <package> per
+// installed package, direct and transitive alike, each at an exact version.
+// The file does not say which packages the project asked for, so Direct is
+// left unknown. encoding/xml resolves no external entities or DTDs.
+func parseNuGetPackagesConfig(fsys fs.FS, dir, file string) ([]model.Observation, error) {
+	data, err := readLimited(fsys, file)
+	if err != nil {
+		return nil, err
+	}
+	var doc struct {
+		XMLName  xml.Name `xml:"packages"`
+		Packages []struct {
+			ID              string `xml:"id,attr"`
+			Version         string `xml:"version,attr"`
+			TargetFramework string `xml:"targetFramework,attr"`
+			Development     string `xml:"developmentDependency,attr"`
+		} `xml:"package"`
+	}
+	if err := xml.Unmarshal(data, &doc); err != nil {
+		return nil, fmt.Errorf("parse %s: %w", file, err)
+	}
+	var obs []model.Observation
+	seen := map[string]bool{}
+	for _, p := range doc.Packages {
+		name, ver := strings.TrimSpace(p.ID), strings.TrimSpace(p.Version)
+		key := strings.ToLower(name) + "@" + strings.ToLower(ver)
+		if name == "" || ver == "" || seen[key] {
+			continue
+		}
+		seen[key] = true
+		ev := map[string]string{"lockfile": "packages.config"}
+		if p.TargetFramework != "" {
+			ev["framework"] = p.TargetFramework
+		}
+		if strings.EqualFold(p.Development, "true") {
+			ev["development"] = "true"
+		}
+		obs = append(obs, model.Observation{
+			Purl: packageurl.NewPackageURL("nuget", "", name, ver, nil, "").ToString(), Version: ver,
+			Location: file, Confidence: model.ConfidenceConfirmed, Evidence: ev,
+		})
 	}
 	return obs, nil
 }
