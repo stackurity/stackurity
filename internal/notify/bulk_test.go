@@ -159,6 +159,8 @@ func TestBulkSend(t *testing.T) {
 		"List-Unsubscribe: <https://app.stk.example/email/preferences/one-click?t=",
 		"List-Unsubscribe-Post: List-Unsubscribe=One-Click",
 		"X-Stackurity-Category: marketing",
+		"X-Mailjet-TrackOpen: 0",
+		"X-Mailjet-TrackClick: 0",
 		"Subject: Stackurity 0.14.0: what changed",
 		"Unsubscribe from Marketing: https://app.stk.example/email/preferences#",
 		"Manage email preferences: https://app.stk.example/email/preferences#",
