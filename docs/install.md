@@ -238,8 +238,8 @@ Without a paid licence Stackurity runs as **Community**: all detection, intellig
 
 | Edition | Adds |
 | --- | --- |
-| Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report, single sign-on (OpenID Connect or SAML) |
-| Enterprise | Pro, plus Enterprise stack packs (none published yet; see [editions.md](editions.md)) |
+| Pro | Automatic fixing (policies, approvals, rollouts, Renovate pull requests), several teams with routing by team and escalation, the evidence report |
+| Enterprise | Pro, plus single sign-on (OpenID Connect or SAML), Enterprise stack packs (none published yet; see [editions.md](editions.md)) |
 
 [editions.md](editions.md) lists every capability by edition with its limits and prerequisites, and which features need the licensed build rather than only a licence.
 
@@ -413,7 +413,7 @@ How a sign-in finds its account:
 - Otherwise the sign-in is refused: an existing account is not taken over by whoever the provider vouches for. With `STACKURITY_OIDC_LINK_EXISTING=true` it is linked, but only if it is a member of `STACKURITY_OIDC_WORKSPACE` and of no other workspace (otherwise it could switch to them with this provider), is not an instance administrator, is not disabled, and is not linked to another identity. Instance administrators always sign in with their password.
 - With `STACKURITY_OIDC_ROLE_MAP` the provider decides each member's role on every sign-in, except that the workspace's last admin is never demoted.
 
-Single sign-on is in the licensed build, needs a Pro or Enterprise licence, and admits people into one workspace, whose plan must include it. OpenID Connect and SAML can be configured together; the sign-in page then shows a button for each.
+Single sign-on is in the licensed build, needs an Enterprise licence (a Pro licence issued before 27 Nov 2026 keeps it until it expires), and admits people into one workspace, whose plan must include it. OpenID Connect and SAML can be configured together; the sign-in page then shows a button for each.
 
 ### SAML
 

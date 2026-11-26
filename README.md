@@ -58,7 +58,7 @@ Stackurity is a vulnerability evidence source for SOC 2, ISO 27001, PCI DSS 4.0 
 - **Jira:** one issue per incident in Jira Cloud or Data Center, kept up to date as findings join and priority changes, commented on and optionally transitioned when the incident resolves, and linked from the dashboard.
 - **Controlled remediation (Pro):** opt-in, policy-scoped upgrades with approval gates, maintenance windows, canary then staged rollout, verification against freshly collected inventory and health checks, and halt-on-failure with best-effort rollback where the package manager supports it. Hosts are enrolled one at a time with a bound token and a local allowlist. Repositories get Renovate pull requests, so code review stays in place. See [docs/remediation.md](docs/remediation.md).
 - **Workspaces:** one installation can serve several organisations, kept apart by PostgreSQL row-level security as well as by the application.
-- **Dashboard, API and CLI:** role-based access (viewer, engineer, security, admin, collector), API tokens, a full audit log and single sign-on (Pro).
+- **Dashboard, API and CLI:** role-based access (viewer, engineer, security, admin, collector), API tokens, a full audit log and single sign-on (Enterprise).
 
 ## Quick start
 
@@ -93,7 +93,7 @@ docker compose exec stackurity stackurity admin load-demo        # --remove dele
 - **Servers:** under **Assets → Add server**, create an install command and run it on each Linux host (or, in PowerShell, on each Windows host) or Mac. The agent is read-only and unprivileged, and it reports OS packages, runtimes and the libraries your deployed applications have installed (on Windows, the OS build and installed programs).
 - **Code:** add repositories under **Integrations**, or run `stackurity scan . --fail-on critical` in CI to block vulnerable changes.
 - **Cloud:** the AWS plugin reads managed service versions with a read-only role, and the Kubernetes reporter (in the cluster) or plugin reads a cluster's workloads, images and exposure with a read-only service account.
-- **People and tools:** invite your team (or turn on single sign-on with Pro), route alerts to Slack, Teams or email, and connect AI assistants to `/mcp` with the organisation, project and role you choose.
+- **People and tools:** invite your team (or turn on single sign-on with Enterprise), route alerts to Slack, Teams or email, and connect AI assistants to `/mcp` with the organisation, project and role you choose.
 
 **4. Act on it:** **Fixes** groups findings into concrete upgrades, and the **Dashboard** shows what needs you now. With Pro, opt-in remediation applies approved upgrades on enrolled hosts and opens Renovate pull requests for repositories.
 
@@ -121,7 +121,7 @@ For TLS, backups, upgrades, Kubernetes (Helm), the agents and plugins, see [docs
 
 ## Editions
 
-Community is free and complete for finding and prioritising what to fix. Each self-hosted server needs a free key from a short sign-up (email, name, company), checked offline; see [The free key](docs/install.md#the-free-key). Pro adds automatic fixing, multi-team workflow, the evidence report and single sign-on; Enterprise adds packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
+Community is free and complete for finding and prioritising what to fix. Each self-hosted server needs a free key from a short sign-up (email, name, company), checked offline; see [The free key](docs/install.md#the-free-key). Pro adds automatic fixing, multi-team workflow and the evidence report; Enterprise adds single sign-on and packs for enterprise technologies. [docs/editions.md](docs/editions.md) has the full matrix with limits and prerequisites; licences are covered in [Editions and licences](docs/install.md#editions-and-licences).
 
 ## Principles
 

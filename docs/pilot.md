@@ -12,7 +12,7 @@ A pilot answers one question: **does Stackurity find something important on your
 | Setup time | About 15 minutes | About 30 minutes |
 | Best when | You want to see results quickly | Your policies do not allow inventory data to leave your network |
 
-Both run the same release, and everything in the [Community edition](editions.md) is available. The Cloud trial includes the Pro features of the Team plan, with up to 20 assets and 3 projects, and its reports are shortened and marked as a trial. On your own server, Pro features (automatic fixing, several teams, the evidence report, single sign-on) can be switched on for the pilot with a time-limited licence.
+Both run the same release, and everything in the [Community edition](editions.md) is available. The Cloud trial includes the Pro features of the Team plan, with up to 20 assets and 3 projects, and its reports are shortened and marked as a trial. On your own server, Pro features (automatic fixing, several teams, the evidence report) and Enterprise ones such as single sign-on can be switched on for the pilot with a time-limited licence.
 
 ## Week by week
 

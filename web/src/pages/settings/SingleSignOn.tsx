@@ -78,7 +78,7 @@ export function SelfHostedSingleSignOn() {
         <SettingRow title="Single sign-on" description={providers ? "People can choose these on the sign-in page." : "People sign in with their email and password."}>
           {providers ? <strong>Set up: {providers}</strong> : <span className="muted">Not set up</span>}
         </SettingRow>
-        <SettingRow title="Included in this workspace" description="Single sign-on needs the licensed build and a Pro or Enterprise licence.">
+        <SettingRow title="Included in this workspace" description="Single sign-on needs the licensed build and an Enterprise licence.">
           {has("sso") ? <span>Yes</span> : <ProNotice feature="sso" />}
         </SettingRow>
       </Card>
