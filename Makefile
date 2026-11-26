@@ -23,13 +23,21 @@ web:
 test:
 	go test ./...
 
-# Records how long each internal/api test takes (as on CI: -race, community
-# build) into tools/ci/test-times.json, which tools/ci/go-test-shard.sh uses
-# to split that package into shards that finish together. Needs
-# STACKURITY_TEST_DATABASE_URL. Refresh when a shard runs much longer than
-# the others; new tests are fine without it.
+# Records how long each test of the sharded packages takes (as on CI: -race,
+# community build) into tools/ci/test-times.json, which
+# tools/ci/go-test-shard.sh uses to split a package into shards that finish
+# together. Record on a quiet machine with runner-like CPUs (work-1, one
+# package per 4 CPUs), not a busy laptop. Needs STACKURITY_TEST_DATABASE_URL,
+# or TIMES_JSON=FILE to read an existing go test -json output instead of
+# running the tests. Refresh when one shard runs much longer than the others;
+# new tests are fine without it.
+TIMES_PKGS ?= ./internal/api ./internal/store ./internal/intel ./internal/notify
 test-times:
-	go test -json -race -count=1 -timeout $(TEST_TIMEOUT) ./internal/api | go run ./tools/testshard -record -times tools/ci/test-times.json
+ifdef TIMES_JSON
+	go run ./tools/testshard -record -pkg all -times tools/ci/test-times.json < $(TIMES_JSON)
+else
+	go test -json -race -count=1 -timeout $(TEST_TIMEOUT) $(TIMES_PKGS) | go run ./tools/testshard -record -pkg all -times tools/ci/test-times.json
+endif
 
 # Every kind of email the server sends, rendered from its sample and
 # checked (internal/notify/email_check.go), as .html files to look at:
