@@ -404,7 +404,7 @@ export const VIEW_LABEL: Record<LeakView, string> = {
 const VIEW_HINT: Record<LeakView, string> = {
   action:
     "Critical and high: keys the web server may send, keys committed to a repository or written into code. Rotate each one: revoke it, issue a new one, and remove it from the file. A scan then confirms it is gone.",
-  kept: "Keys kept in configuration files, where they belong. Nothing to do now: this is where each key lives when you rotate it.",
+  kept: "Keys kept in configuration files, where they belong. Low ones need nothing now: this is where each key lives when you rotate it. Medium ones (AI providers' keys, files every account can read) have a rotate-by date.",
   resolved: "Leaked keys a complete scan no longer finds, and those dismissed.",
 };
 

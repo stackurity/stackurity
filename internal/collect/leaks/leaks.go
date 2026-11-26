@@ -74,17 +74,86 @@ func AtLeast(severity, min string) bool { return severityRank[severity] >= sever
 // Stripe key) written into code keeps its severity: it is in the
 // application's repository too. In a repository every leak keeps its
 // severity: anyone who can read the repository has the value, .env or not.
+//
+// An AI provider's key (AIProvider) in a configuration file on a host is
+// medium either way, never low: a stolen one is resold and runs up the
+// provider's bill within hours (LLMjacking), and few of them can be limited
+// to one address or use, so it gets a rotate-by date even where it belongs.
+// It still raises no alert: the file is the right place for it.
 func Grade(l *Leak, exposure string, onHost bool) {
 	l.Exposure = exposure
 	switch {
 	case exposure == model.ExposureServed:
 		l.Severity = critical
-	case onHost && (configFile(l.Path) || l.Rule == "password-assignment" || l.Rule == "database-url"):
+	case onHost && keptInConfig(l.Rule, l.Path):
 		l.Severity = low
-		if exposure == model.ExposureWorldReadable {
+		if exposure == model.ExposureWorldReadable || AIProvider(l.Rule, l.Name) != "" {
 			l.Severity = medium
 		}
 	}
+}
+
+// keptInConfig reports whether a leak is a setting in a configuration
+// file, where on a host keys belong.
+func keptInConfig(rule, path string) bool {
+	return configFile(path) || rule == "password-assignment" || rule == "database-url"
+}
+
+// AIKeptInConfig reports whether a leak is an AI provider's key kept in a
+// configuration file: what Grade makes medium on a host.
+func AIKeptInConfig(rule, name, path string) bool {
+	return AIProvider(rule, name) != "" && keptInConfig(rule, path)
+}
+
+// aiRules are the rules for AI providers' keys, and whose they are.
+// google-api-key is here because Gemini's keys are Google API keys: one in
+// a server's configuration is as likely Gemini's as Maps'.
+var aiRules = map[string]string{
+	"openai-key": "OpenAI", "anthropic-key": "Anthropic", "anthropic-oauth-token": "Anthropic",
+	"openrouter-key": "OpenRouter", "groq-key": "Groq", "xai-key": "xAI", "huggingface-token": "Hugging Face",
+	"google-api-key": "Google (Gemini)",
+}
+
+// aiNameParts are words in a setting's name (split at _ . -) that say the
+// value is an AI provider's key, for providers whose keys have no format of
+// their own (Mistral, DeepSeek, Cohere, LiteLLM's master key) and for a
+// format key assigned by name.
+var aiNameParts = map[string]string{
+	"OPENAI": "OpenAI", "ANTHROPIC": "Anthropic", "CLAUDE": "Anthropic", "GEMINI": "Google (Gemini)",
+	"GENAI": "Google (Gemini)", "VERTEXAI": "Google (Gemini)", "MISTRAL": "Mistral", "DEEPSEEK": "DeepSeek",
+	"COHERE": "Cohere", "GROQ": "Groq", "XAI": "xAI", "GROK": "xAI", "OPENROUTER": "OpenRouter",
+	"PERPLEXITY": "Perplexity", "PPLX": "Perplexity", "FIREWORKS": "Fireworks", "REPLICATE": "Replicate",
+	"HUGGINGFACE": "Hugging Face", "HF": "Hugging Face", "LITELLM": "LiteLLM", "LLM": "an AI provider",
+	"TOGETHERAI": "Together AI", "VOYAGE": "Voyage AI", "AI21": "AI21",
+}
+
+// AIProvider names the AI provider a leak's key is for, from its rule or
+// the setting it was assigned to; "" when it is not an AI provider's key.
+func AIProvider(rule, name string) string {
+	if p := aiRules[rule]; p != "" {
+		return p
+	}
+	if name == "" {
+		return ""
+	}
+	parts := strings.FieldsFunc(strings.ToUpper(name), func(r rune) bool { return r == '_' || r == '.' || r == '-' })
+	for i, w := range parts {
+		if p := aiNameParts[w]; p != "" {
+			return p
+		}
+		// Two words: TOGETHER_API_KEY, GOOGLE_AI_API_KEY.
+		next := ""
+		if i+1 < len(parts) {
+			next = parts[i+1]
+		}
+		switch {
+		case w == "TOGETHER" && (next == "AI" || next == "API"):
+			return "Together AI"
+		case w == "GOOGLE" && next == "AI":
+			return "Google (Gemini)"
+		}
+	}
+	return ""
 }
 
 // assigned is a setting name that holds a credential, and the value after
