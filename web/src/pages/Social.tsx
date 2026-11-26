@@ -50,6 +50,8 @@ export function SocialSignupPage({ signup }: { signup: SignupMeta }) {
   const [name, setName] = useState<string | null>(null);
   const [organisation, setOrganisation] = useState("");
   const [accept, setAccept] = useState(false);
+  // Product emails: ticked by default; unticked subscribes nobody.
+  const [emails, setEmails] = useState(true);
   const [localErr, setLocalErr] = useState<string | null>(null);
   const act = useAction();
   const p = preview.data;
@@ -64,7 +66,7 @@ export function SocialSignupPage({ signup }: { signup: SignupMeta }) {
         name: (name ?? p?.name ?? "").trim(),
         organisation: organisation.trim(),
         accept_terms: true,
-        email_notice_version: signup.email_notice ? signup.email_notice_version : undefined,
+        email_notice_version: signup.email_notice && emails ? signup.email_notice_version : undefined,
       }),
     );
     if (r) {
@@ -154,7 +156,12 @@ export function SocialSignupPage({ signup }: { signup: SignupMeta }) {
             .
           </span>
         </label>
-        {signup.email_notice && <p className="small muted">{signup.email_notice}</p>}
+        {signup.email_notice && (
+          <label className="check-row">
+            <input type="checkbox" checked={emails} onChange={(e) => setEmails(e.target.checked)} />
+            <span>{signup.email_notice}</span>
+          </label>
+        )}
         <p className="small muted">Your data is stored in {signup.region_label}.</p>
         <button type="submit" className="btn btn-primary btn-block" disabled={act.pending}>
           {act.pending ? "Creating…" : "Create account"}

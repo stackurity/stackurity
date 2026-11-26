@@ -42,6 +42,21 @@ A compliance platform such as Vanta or Drata tracks these, and your auditor test
 
 Start the evidence early: a pack can only show what Stackurity recorded, so an asset added the week before the audit shows one week of monitoring.
 
+## Checking a pack's signature
+
+The ZIP's `manifest.json` lists every file in the pack with its SHA-256. On Stackurity Cloud it is also signed: `manifest.json.sig` is an Ed25519 signature over the exact bytes of `manifest.json`, and names the key that made it (`key_id`, which `manifest.json` repeats as `signing_key_id`). Together they show the pack came from Stackurity and that no file was changed, added or removed after it was made. Your auditor can check it without an account:
+
+```sh
+stackurity evidence verify stackurity-evidence-workspace-2026-07-01-2026-09-30.zip
+```
+
+It prints `ok`, the key and the date, and exits 0; it exits non-zero and says why when a file was changed, the pack is unsigned, or the key is unknown or revoked. `stackurity evidence verify --keys FILE` checks against a saved copy of the key set instead of fetching it (offline). Without the CLI: check each file's SHA-256 against `manifest.json`, then the signature with any Ed25519 library, using the `public_key` (base64, 32 bytes) of the `key_id` in the key set.
+
+- **The key set** is published at `https://stackurity.ai/.well-known/stackurity-evidence-keys.json`, an address that does not change. It lists every key ever used, with `status` (`active`, `retired` or `revoked`), `not_before` and, once retired, `not_after`. A key is never removed, so a pack signed before a key was rotated still verifies: a retired key verifies the packs dated (`generated_at`) inside its period. Only a revoked (compromised) key stops verifying anything.
+- **An unsigned pack** says so in `manifest.json` (`"signed": false`), in `pack.json` (`signature.signed`) and in the PDF. Its files still match the manifest, but nothing proves who made it. The PDF and JSON downloads are not signed on their own; the ZIP's signed manifest lists the PDF's SHA-256.
+- **On your own server** packs are signed when `STACKURITY_EVIDENCE_SIGNING_KEY_FILE` names an Ed25519 private key (PKCS#8 PEM, as `openssl genpkey -algorithm ed25519 -out evidence.key` makes; readable only by the server). `stackurity evidence pubkey evidence.key` prints its key set entry (`--not-before` sets the date it starts signing, default now). Publish your own key set (`{"keys": [ ... ]}`) where your auditors can fetch it, and give them `--keys` with its address. To rotate: add the new key's entry, switch the server to the new key, then mark the old entry `retired` with `not_after` set to the switch time; never delete it. Keep an offline copy of each private key.
+
+
 ## What you can say on your website
 
 | You can say | You cannot say |

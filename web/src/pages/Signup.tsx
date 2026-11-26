@@ -102,6 +102,9 @@ export function Challenge({ siteKey, onToken, resetKey }: { siteKey: string; onT
 export function SignupPage({ signup, social }: { signup: SignupMeta; social?: SocialMeta }) {
   const [f, setF] = useState({ email: "", name: "", organisation: "", password: "", confirm: "" });
   const [accept, setAccept] = useState(false);
+  // Product emails: ticked by default, and unticking it here subscribes
+  // nobody (the opt-out at collection the "soft opt-in" rules need).
+  const [emails, setEmails] = useState(true);
   const [token, setToken] = useState("");
   const [resetKey, setResetKey] = useState(0);
   const [localErr, setLocalErr] = useState<string | null>(null);
@@ -125,8 +128,9 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
         password: f.password,
         turnstile_token: token,
         accept_terms: true,
-        // Which notice about product emails was on screen.
-        email_notice_version: signup.email_notice ? signup.email_notice_version : undefined,
+        // Which notice about product emails was on screen, when its box
+        // was left ticked; none subscribes nobody.
+        email_notice_version: signup.email_notice && emails ? signup.email_notice_version : undefined,
         // Where they came from (?ref=badge-<slug> from a trust page), counted
         // by Stackurity Cloud's sales funnel; anything else is dropped.
         ref: signupRef(),
@@ -259,9 +263,10 @@ export function SignupPage({ signup, social }: { signup: SignupMeta; social?: So
           </span>
         </label>
         {signup.email_notice && (
-          <p className="small muted" id="su-email-notice">
-            {signup.email_notice}
-          </p>
+          <label className="check-row" id="su-email-notice">
+            <input type="checkbox" checked={emails} onChange={(e) => setEmails(e.target.checked)} />
+            <span>{signup.email_notice}</span>
+          </label>
         )}
         <Challenge siteKey={signup.turnstile_site_key} onToken={setToken} resetKey={resetKey} />
         <button type="submit" className="btn btn-primary btn-block" disabled={act.pending || !passwordOK(f.password)}>

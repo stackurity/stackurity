@@ -78,6 +78,11 @@ func renderEmail(from string, to []string, m Message, br EmailBrand, now time.Ti
 		hdr("X-Stackurity-Category", m.bulk.category)
 		hdr("Precedence", "bulk")
 		hdr("Auto-Submitted", "auto-generated")
+		// No open pixel and no rewritten links: relays that track by
+		// default (Mailjet) would otherwise route the signed unsubscribe
+		// and preference links through themselves. Other relays ignore it.
+		hdr("X-Mailjet-TrackOpen", "0")
+		hdr("X-Mailjet-TrackClick", "0")
 	}
 	text, page := emailText(m, br), emailHTML(m, br)
 	if m.bulk != nil {

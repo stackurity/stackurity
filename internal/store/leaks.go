@@ -14,6 +14,7 @@ import (
 
 	"github.com/jackc/pgx/v5"
 
+	"github.com/stackurity/stackurity/internal/collect/leaks"
 	"github.com/stackurity/stackurity/internal/model"
 	"github.com/stackurity/stackurity/internal/risk"
 )
@@ -96,11 +97,17 @@ const (
 	whyConfig = "Kept in the application's configuration file, where keys belong. " +
 		"Listed so you know where this key lives when you rotate it."
 	whyCode = "Written into the application's code, so it is in its repository too. Move it to configuration and rotate it."
+	// whyAIConfig is an AI provider's key kept in a configuration file:
+	// where it belongs, but graded medium rather than low (leaks.Grade).
+	whyAIConfig = "An AI provider's key, kept in the application's configuration file where keys belong. " +
+		"Graded medium, not low: stolen AI keys are resold and run up bills within hours. " +
+		"Keep the file readable only by the application's user, set a spending limit with the provider, and rotate the key by its date."
 )
 
 // LeakWhy is the one-line reason for a leak's severity: what its exposure,
-// the kind of asset and the file mean, and what to do.
-func LeakWhy(assetKind, exposure, severity string) string {
+// the kind of asset and the file mean, and what to do. aiConfig is an AI
+// provider's key in a configuration file (leaks.AIKeptInConfig).
+func LeakWhy(assetKind, exposure, severity string, aiConfig bool) string {
 	switch {
 	case exposure == model.ExposureServed:
 		return whyServed
@@ -115,6 +122,8 @@ func LeakWhy(assetKind, exposure, severity string) string {
 		return whyConfig
 	case severity == "medium" && exposure == model.ExposureWorldReadable:
 		return whyWorldReadable
+	case severity == "medium" && aiConfig:
+		return whyAIConfig
 	}
 	return whyCode
 }
@@ -127,7 +136,7 @@ func withWhy(ls []Leak) {
 
 // fill sets what is derived from the stored columns.
 func (l *Leak) fill() {
-	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity)
+	l.Why = LeakWhy(l.AssetKind, l.Exposure, l.Severity, leaks.AIKeptInConfig(l.Rule, l.Name, l.Path))
 	l.SecondCheck = latestVerdict(l.RecheckVerdict, l.RecheckReason, l.RecheckChecker, l.RecheckAt)
 	if l.ValueSignals == nil {
 		l.ValueSignals = []string{}
@@ -574,7 +583,7 @@ func (s *Store) leakProblems(ctx context.Context) ([]SystemIncident, error) {
 			pri = "P1"
 		}
 		det := map[string]any{"asset_id": id, "asset_name": name, "asset_kind": kind, "count": n, "critical": critical,
-			"served": served, "titles": titles, "files": files, "why": LeakWhy(kind, exposure, severity)}
+			"served": served, "titles": titles, "files": files, "why": LeakWhy(kind, exposure, severity, false)}
 		if env != "" {
 			det["environments"] = []string{env}
 		}

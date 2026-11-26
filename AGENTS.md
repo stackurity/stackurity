@@ -15,6 +15,8 @@ For people and AI coding agents. Most pull requests here come from AI builder se
 
 ## Conventions that are easy to guess wrong
 
+**Sign off every commit.** `git commit -s` (or `git rebase --signoff origin/main` before pushing). The DCO sign-off check fails a pull request with an unsigned commit; AI sessions committing under a person's account sign off as that account, and their `Co-Authored-By:` line does not count as a sign-off. See [CONTRIBUTING.md](CONTRIBUTING.md#sign-off).
+
 **Migrations.** `internal/db/migrations/NNNN_name.sql`, applied in filename order and recorded by name in `schema_migrations` (`internal/db/schema.go`). Parallel PRs often pick the same next number; when rebasing onto a main that already has yours, renumber your unmerged migration to the next free number. Never rename one that has been merged: a new name is a new migration and runs again.
 
 **Changelog entries go in `changelog.d/<short-slug>.md`, one file per pull request**, not in CHANGELOG.md: `### Added` (or Security, Changed, Fixed, Upgrading, Removed) headings with the entries under them, as they would appear in CHANGELOG.md (see [changelog.d/README.md](changelog.d/README.md)). Parallel PRs editing `## Unreleased` conflicted on every merge, and git sometimes moved a bullet into a released section. `go run ./tools/release prepare` merges the fragments into the release section and deletes them; `go run ./tools/changelog -unreleased` previews the result. During the transition entries written directly under CHANGELOG.md's single `## Unreleased` heading still work. `tools/changelog` (`-check`, and its test in CI) fails on a second `## Unreleased` left by a bad merge or on a fragment it cannot parse.

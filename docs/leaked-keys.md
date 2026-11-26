@@ -45,8 +45,11 @@ Keeping keys in a `.env` or other configuration file on the server, out of the c
 | A file under a directory the web server serves (a document root or alias in the Apache or nginx configuration) that it sends as it is, not as PHP: `.env`, `config.php.bak`, `.sql`, `.js` | `served` | critical |
 | A key with its own format (Stripe, AWS, GitHub, …) written into the application's code | none or `world_readable` | its own (above) |
 | Any key or password in a configuration file (`.env`, `wp-config.php`, `config/*.yml`) every account on the host can read | `world_readable` | medium |
-| Any key or password in a configuration file only its owner can read | none | low |
+| An AI provider's key (OpenAI, Anthropic, Gemini, OpenRouter, Groq, xAI, Hugging Face, or a setting named for Mistral, DeepSeek, Cohere, LiteLLM and others) in a configuration file, whoever can read it | none or `world_readable` | medium |
+| Any other key or password in a configuration file only its owner can read | none | low |
 | Anything committed to a repository, `.env` included | none | its own (above) |
+
+AI providers' keys are medium rather than low because a stolen one is resold and runs up the provider's bill within hours (LLMjacking), and few of them can be limited to one address. A configuration file is still the right place for one, so it raises no alert either; being medium, it gets a rotate-by date (30 days by default, see [Due](#rotating-a-leak)) and counts with the medium leaks.
 
 Only critical and high leaks raise an alert; medium and low ones are listed on the asset. The agent does not read the web server's deny rules: a `.env` under a document root is reported as served even if a rule blocks it, since one configuration change would expose it. Apache's default denial of `.ht*` files (`.htpasswd`) is assumed.
 
@@ -80,7 +83,7 @@ TEST_KEY = "sk_test_…"  # stackurity:allow
 
 Open critical and high leaks raise one incident per asset (kind `leak`): `P1` when one is critical, otherwise `P2`. A leak the [second check](#second-check) found likely not a real key because of its value (a published sample, a placeholder, a too-regular value, a test-mode key, a GitHub token whose checksum does not match) is left out, unless the web server may send its file. One flagged only because it is in a test or docs file still alerts. The incident is sent where new issues go right away (a route's **Urgent** and **New issues** triggers, at their priority thresholds), not with problems about Stackurity itself, and it follows the route's projects, owner teams and environments like any issue. It resolves when no critical or high leak is open on the asset, after a complete scan no longer sees them or they are dismissed. The incident's page lists those keys under **Leaked keys in this incident**, each with the same actions as the asset's Leaked keys tab (Assign, Mark as rotated, Check again, Dismiss).
 
-Low and medium leaks never alert. On a server they are mostly keys kept in the application's configuration file, where they belong: the dashboard lists them under **Where keys are kept**, apart from the leaks that need action.
+Low and medium leaks never alert. On a server they are mostly keys kept in the application's configuration file, where they belong: the dashboard lists them under **Where keys are kept**, apart from the leaks that need action. The medium ones there (AI providers' keys, and files every account can read) have a rotate-by date.
 
 The message names the kind of key, the file and line, and one line saying why it matters and what to do (the same line the dashboard, the API's `why` and MCP's `list_leaks` show):
 

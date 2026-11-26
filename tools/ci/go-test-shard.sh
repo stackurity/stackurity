@@ -3,8 +3,9 @@
 # on its own runner against its own PostgreSQL, so the slowest packages no
 # longer share four cores and one database with everything else.
 #
-#   tools/ci/go-test-shard.sh api 1 3   a third of internal/api, by recorded time
-#   tools/ci/go-test-shard.sh pkg ./internal/intel
+#   tools/ci/go-test-shard.sh split ./internal/store 1 2   half of internal/store, by recorded time
+#   tools/ci/go-test-shard.sh api 1 3   the same as split ./internal/api 1 3
+#   tools/ci/go-test-shard.sh pkg ./internal/notify
 #   tools/ci/go-test-shard.sh rest      every package not given a shard above
 #
 # Shards of one package split its top-level tests by the run times recorded
@@ -18,14 +19,22 @@ flags=(-race -count=1 -timeout 40m)
 # Packages with shards of their own (keep in step with the matrix in ci.yml).
 own='/internal/(api|intel|store|notify)$'
 
-case "${1:?usage: go-test-shard.sh api N OF | pkg PATH | rest}" in
+split() { # PATH N OF
+  local dir=${1:?} n=${2:?} of=${3:?} pkg names
+  pkg=$(go list "$dir")
+  names=$(go test -race -list '^Test' "$dir" |
+    go run ./tools/testshard -pkg "$pkg" -shard "$n" -of "$of" -times tools/ci/test-times.json)
+  [ -n "$names" ] || { echo "no tests in shard $n of $of of $dir" >&2; exit 1; }
+  echo "$dir shard $n of $of: $(echo "$names" | wc -l) tests"
+  go test "${flags[@]}" -run "^($(echo "$names" | paste -sd '|' -))\$" "$dir"
+}
+
+case "${1:?usage: go-test-shard.sh split PATH N OF | api N OF | pkg PATH | rest}" in
+split)
+  split "${2:?}" "${3:?}" "${4:?}"
+  ;;
 api)
-  n=${2:?} of=${3:?}
-  names=$(go test -race -list '^Test' ./internal/api |
-    go run ./tools/testshard -shard "$n" -of "$of" -times tools/ci/test-times.json)
-  [ -n "$names" ] || { echo "no tests in shard $n of $of" >&2; exit 1; }
-  echo "shard $n of $of: $(echo "$names" | wc -l) tests"
-  go test "${flags[@]}" -run "^($(echo "$names" | paste -sd '|' -))\$" ./internal/api
+  split ./internal/api "${2:?}" "${3:?}"
   ;;
 pkg)
   go test "${flags[@]}" "${2:?}"
