@@ -4,11 +4,13 @@ Thanks for helping. Stackurity is Apache-2.0 licensed. By contributing, you agre
 
 ## Sign-off
 
-We use the [Developer Certificate of Origin](https://developercertificate.org/). Sign off every commit:
+We use the [Developer Certificate of Origin](https://developercertificate.org/) (DCO), not a contributor licence agreement: you keep the copyright in your contribution and license it under Apache-2.0, as the project is. Sign off every commit, which adds a `Signed-off-by:` line with your name and the email address of the commit's author:
 
 ```sh
 git commit -s -m "Add yarn.lock parser"
 ```
+
+The **DCO sign-off** check (`.github/workflows/dco.yml`, `go run ./tools/dco origin/main HEAD` locally) fails a pull request with a commit that is not signed off. To fix one, sign off the commits and push again: `git rebase --signoff origin/main && git push --force-with-lease`. Commits by bots such as Dependabot are exempt.
 
 ## Development
 
