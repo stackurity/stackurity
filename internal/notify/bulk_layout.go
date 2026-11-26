@@ -12,9 +12,22 @@ import (
 // gets it, the links to unsubscribe from its category and to the
 // preference page, the sender and the postal address.
 
-// bulkWhy is the footer's first line.
+// bulkWhy is the footer's first line: why the person gets the email. A
+// service message (the release email) goes to every account, so it must
+// not claim the person subscribed.
 func bulkWhy(f *bulkFooter) string {
+	if f.service {
+		return "You are receiving this because you have a Stackurity account; this email tells you what changed in the service."
+	}
 	return fmt.Sprintf("You are receiving this because you are subscribed to %s emails from Stackurity.", BulkCategoryLabel(f.category))
+}
+
+// bulkUnsubscribeLabel is the footer's unsubscribe link text.
+func bulkUnsubscribeLabel(f *bulkFooter) string {
+	if f.service {
+		return "Unsubscribe from these emails"
+	}
+	return "Unsubscribe from " + BulkCategoryLabel(f.category)
 }
 
 // bulkSender is the footer's sender line: "Sent by Stackurity
@@ -56,7 +69,7 @@ func bulkText(m Message) string {
 	}
 	if f := m.bulk; f != nil {
 		b.WriteString("\n--\n" + bulkWhy(f) + "\n")
-		b.WriteString("Unsubscribe from " + BulkCategoryLabel(f.category) + ": " + f.unsubscribe + "\n")
+		b.WriteString(bulkUnsubscribeLabel(f) + ": " + f.unsubscribe + "\n")
 		b.WriteString("Manage email preferences: " + f.preferences + "\n")
 		if s := bulkSender(f.sender); s != "" {
 			b.WriteString(s + "\n")
@@ -126,7 +139,7 @@ func bulkHTML(m Message) string {
 	var foot strings.Builder
 	if m.bulk != nil {
 		foot.WriteString(`<p style="margin:0 0 8px">` + esc(emailAbout) + " " + esc(bulkWhy(f)) + "</p>\n")
-		foot.WriteString(`<p style="margin:0 0 8px">` + link("Unsubscribe from "+BulkCategoryLabel(f.category), f.unsubscribe) + " &middot; " +
+		foot.WriteString(`<p style="margin:0 0 8px">` + link(bulkUnsubscribeLabel(f), f.unsubscribe) + " &middot; " +
 			link("Manage email preferences", f.preferences) + "</p>\n")
 		if s := bulkSender(f.sender); s != "" {
 			foot.WriteString(`<p style="margin:0">` + esc(s) + "</p>\n")
