@@ -47,7 +47,7 @@ func pack(t *testing.T, o packOpts) []byte {
 	}
 	for _, name := range []string{"findings.csv", "pack.json"} {
 		h := sha256.Sum256(files[name])
-		m.Files = append(m.Files, ManifestFile{name, hex.EncodeToString(h[:]), int64(len(files[name]))})
+		m.Files = append(m.Files, ManifestFile{Path: name, SHA256: hex.EncodeToString(h[:]), Bytes: int64(len(files[name]))})
 	}
 	if o.signer != nil {
 		m.Signed, m.KeyID = true, o.signer.KeyID()
