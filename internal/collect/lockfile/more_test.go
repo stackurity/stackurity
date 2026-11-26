@@ -419,3 +419,50 @@ func TestLimitedCoverageKeepsBatchComplete(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestNuGetPackagesConfig(t *testing.T) {
+	m, cov := scan(t, map[string]string{"web/packages.config": `<?xml version="1.0" encoding="utf-8"?>
+<packages>
+  <package id="Newtonsoft.Json" version="12.0.1" targetFramework="net48" />
+  <package id="Microsoft.AspNet.Mvc" version="5.2.7" targetFramework="net48" />
+  <package id="Microsoft.CodeDom.Providers.DotNetCompilerPlatform" version="2.0.1" targetFramework="net48" developmentDependency="true" />
+  <package id="newtonsoft.json" version="12.0.1" targetFramework="net48" />
+  <package id="" version="1.0.0" />
+  <package id="NoVersion" />
+</packages>`})
+	o := mustHave(t, m, "pkg:nuget/Newtonsoft.Json@12.0.1", nil)
+	if o.Direct != nil {
+		t.Errorf("packages.config does not say which packages are direct, got Direct = %v", *o.Direct)
+	}
+	if o.Evidence["framework"] != "net48" || o.Location != "web/packages.config" {
+		t.Errorf("evidence %v, location %q", o.Evidence, o.Location)
+	}
+	mustHave(t, m, "pkg:nuget/Microsoft.AspNet.Mvc@5.2.7", nil)
+	if d := mustHave(t, m, "pkg:nuget/Microsoft.CodeDom.Providers.DotNetCompilerPlatform@2.0.1", nil); d.Evidence["development"] != "true" {
+		t.Errorf("development dependency not marked: %v", d.Evidence)
+	}
+	if len(m) != 3 {
+		t.Errorf("want 3 packages (duplicate in another case, empty id and missing version skipped), got %d: %v", len(m), m)
+	}
+	for _, c := range cov {
+		if c.Status == "unsupported" {
+			t.Errorf("packages.config still reported as unsupported: %+v", c)
+		}
+	}
+}
+
+func TestNuGetPackagesConfigRejectsOtherXML(t *testing.T) {
+	_, cov := scan(t, map[string]string{
+		"a/packages.config": `<configuration><package id="X" version="1.0.0"/></configuration>`,
+		"b/packages.config": `<!DOCTYPE packages [<!ENTITY x SYSTEM "file:///etc/passwd">]><packages><package id="&x;" version="1.0.0"/></packages>`,
+	})
+	failed := 0
+	for _, c := range cov {
+		if c.Status == "failed" {
+			failed++
+		}
+	}
+	if failed != 2 {
+		t.Errorf("a file that is not a packages.config and one using an external entity must fail to parse, got coverage %+v", cov)
+	}
+}

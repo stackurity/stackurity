@@ -892,7 +892,7 @@ Supported lockfiles:
 - Poetry, Pipenv and pinned `requirements.txt` (unpinned lines are reported as partial coverage)
 - Go modules
 - Bundler
-- NuGet (`packages.lock.json`)
+- NuGet (`packages.lock.json`, and `packages.config` of .NET Framework projects, which does not say which packages are direct)
 - Dart and Flutter (`pubspec.lock`; packages from private pub repositories are skipped)
 
 Java (Maven, Gradle) and Rust (Cargo) are read by [stack packs](packs.md) once installed. Others, such as mix, are reported as unsupported coverage and never silently ignored.

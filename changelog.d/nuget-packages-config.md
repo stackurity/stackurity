@@ -1,0 +1,3 @@
+### Added
+
+- **NuGet `packages.config` is read.** Repository scans, the CLI and applications the agent finds on servers now list, for .NET Framework projects (ASP.NET WebForms and MVC 5), the NuGet packages in `packages.config`, so they are matched against NuGet advisories and malicious-package records like `packages.lock.json`. Until now the file was only reported as unsupported coverage. Every package in it is listed at its exact version; the file does not say which ones the project asked for, so none is marked direct or transitive, and development-only packages carry `development` in their evidence. Agents and scans report it from this release on. See [Install](docs/install.md).

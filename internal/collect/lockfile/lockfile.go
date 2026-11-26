@@ -103,7 +103,6 @@ var unsupported = map[string]string{
 	"vcpkg.spdx.json":  "vcpkg:vcpkg.spdx.json",
 	"uv.lock":          "pypi:uv.lock",
 	"pdm.lock":         "pypi:pdm.lock",
-	"packages.config":  "nuget:packages.config",
 	"deno.lock":        "npm:deno.lock",
 	"bun.lock":         "npm:bun.lock",
 	"build.sbt":        "maven:build.sbt",
@@ -135,6 +134,7 @@ var parsers = map[string]parser{
 	"go.mod":              parseGoMod,
 	"Gemfile.lock":        parseGemfileLock,
 	"packages.lock.json":  parseNuGetLock,
+	"packages.config":     parseNuGetPackagesConfig,
 	"pubspec.lock":        parsePubspecLock,
 }
 

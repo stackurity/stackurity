@@ -377,7 +377,7 @@ workspace under **Admin → Coverage gaps** (`GET /api/v1/admin/coverage-gaps`):
 files a scan found that no built-in reader or installed stack pack reads, by
 kind (`mix.lock`, `rebar.lock`, `Package.swift`, `Package.resolved`,
 `Podfile.lock`, `conanfile.txt`, `conanfile.py`, `conan.lock`, `vcpkg.json`,
-`uv.lock`, `pdm.lock`, `packages.config`, `deno.lock`, `bun.lock`,
+`uv.lock`, `pdm.lock`, `deno.lock`, `bun.lock`,
 `bun.lockb`, `build.sbt`, and Maven, Gradle and Cargo files and deployed
 Java web applications' JARs without their stack pack), and application files the agent's user may not read; components with no vulnerability source, by package type and
 reason (vendor builds per repository; installed Windows programs outside the
