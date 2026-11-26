@@ -44,7 +44,7 @@ Start the evidence early: a pack can only show what Stackurity recorded, so an a
 
 ## Checking a pack's signature
 
-The ZIP's `manifest.json` lists every file in the pack with its SHA-256. On Stackurity Cloud it is also signed: `manifest.json.sig` is an Ed25519 signature over the exact bytes of `manifest.json`, and names the key that made it (`key_id`, which `manifest.json` repeats as `signing_key_id`). Together they show the pack came from Stackurity and that no file was changed, added or removed after it was made. Your auditor can check it without an account:
+The ZIP's `manifest.json` lists every file in the pack with its SHA-256. Stackurity supports signing it, and signing will be turned on on Stackurity Cloud soon; until then Cloud packs are unsigned. Every pack says whether it is signed (see below). A signed pack has `manifest.json.sig`, an Ed25519 signature over the exact bytes of `manifest.json`, and names the key that made it (`key_id`, which `manifest.json` repeats as `signing_key_id`). Together they show the pack came from Stackurity and that no file was changed, added or removed after it was made. Your auditor can check it without an account:
 
 ```sh
 stackurity evidence verify stackurity-evidence-workspace-2026-07-01-2026-09-30.zip
