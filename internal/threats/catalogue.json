@@ -244,7 +244,7 @@
           "help": "/help/repositories"
         }
       ],
-      "min_version": "0.20.37"
+      "min_version": "0.20.39"
     }
   ]
 }
