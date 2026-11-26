@@ -266,21 +266,29 @@ func TestLeakIncidents(t *testing.T) {
 
 // Every surface takes a leak's reason from LeakWhy.
 func TestLeakWhy(t *testing.T) {
-	for _, tc := range []struct{ kind, exposure, severity, want string }{
-		{"application", "served", "critical", "The web server may send this file"},
-		{"host", "served", "critical", "The web server may send this file"},
-		{"repository", "", "high", "Committed to the repository"},
-		{"repository", "", "low", "Committed to the repository"},
-		{"image", "", "high", "Built into the container image"},
-		{"application", "world_readable", "medium", "every account on this server can read"},
+	for _, tc := range []struct {
+		kind, exposure, severity, want string
+		ai                             bool
+	}{
+		{"application", "served", "critical", "The web server may send this file", false},
+		{"host", "served", "critical", "The web server may send this file", false},
+		{"repository", "", "high", "Committed to the repository", false},
+		{"repository", "", "low", "Committed to the repository", false},
+		{"image", "", "high", "Built into the container image", false},
+		{"application", "world_readable", "medium", "every account on this server can read", false},
 		// A live key written into a PHP file is 644 like every web file:
 		// the advice is to move it out of the code, not to chmod a config.
-		{"application", "world_readable", "critical", "Written into the application's code"},
-		{"application", "", "low", "Kept in the application's configuration file"},
-		{"host", "", "critical", "Written into the application's code"},
-		{"application", "", "high", "Written into the application's code"},
+		{"application", "world_readable", "critical", "Written into the application's code", false},
+		{"application", "", "low", "Kept in the application's configuration file", false},
+		{"host", "", "critical", "Written into the application's code", false},
+		{"application", "", "high", "Written into the application's code", false},
+		// An AI provider's key in a configuration file is medium, not low.
+		{"application", "", "medium", "An AI provider's key", true},
+		{"application", "world_readable", "medium", "every account on this server can read", true},
+		{"repository", "", "critical", "Committed to the repository", true},
+		{"application", "", "medium", "Written into the application's code", false},
 	} {
-		if got := store.LeakWhy(tc.kind, tc.exposure, tc.severity); !strings.HasPrefix(got, tc.want) && !strings.Contains(got, tc.want) {
+		if got := store.LeakWhy(tc.kind, tc.exposure, tc.severity, tc.ai); !strings.HasPrefix(got, tc.want) && !strings.Contains(got, tc.want) {
 			t.Errorf("%+v: %q", tc, got)
 		}
 	}

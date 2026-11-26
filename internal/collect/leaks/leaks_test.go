@@ -195,9 +195,10 @@ func TestGradeConfigFiles(t *testing.T) {
 		onHost         bool
 		want           string
 	}{
-		{"/srv/blog/.env", "", true, "low"},
+		// An AI provider's key in a configuration file is medium, not low.
+		{"/srv/blog/.env", "", true, "medium"},
 		{"/srv/blog/.env", "world_readable", true, "medium"},
-		{"/srv/blog/config/services.yml", "", true, "low"},
+		{"/srv/blog/config/services.yml", "", true, "medium"},
 		{"/var/www/html/.env", "served", true, "critical"},
 		{"/srv/blog/src/ai.js", "", true, "critical"},
 		{".env", "", false, "critical"}, // committed
@@ -231,6 +232,61 @@ func TestGrade(t *testing.T) {
 		if l.Severity != tc.want || l.Exposure != tc.exposure {
 			t.Errorf("%+v: got %s, want %s", tc, l.Severity, tc.want)
 		}
+	}
+}
+
+// An AI provider's key kept in a server's configuration file is medium,
+// never low; every other key or password there keeps the low grade.
+func TestGradeAIKeysInConfig(t *testing.T) {
+	for _, tc := range []struct {
+		rule, name, severity, path, exposure string
+		onHost                               bool
+		want                                 string
+	}{
+		{"anthropic-key", "", "critical", "/srv/app/.env", "", true, "medium"},
+		{"openai-key", "", "critical", "/srv/app/.env", "world_readable", true, "medium"},
+		{"google-api-key", "", "medium", "/srv/app/.env", "", true, "medium"},
+		{"groq-key", "", "critical", "/srv/app/config/app.yml", "", true, "medium"},
+		{"password-assignment", "MISTRAL_API_KEY", "high", "/srv/app/.env", "", true, "medium"},
+		{"password-assignment", "LITELLM_MASTER_KEY", "high", "/srv/app/.env", "", true, "medium"},
+		{"password-assignment", "together_api_key", "high", "/srv/app/.env", "", true, "medium"},
+		{"password-assignment", "GOOGLE_AI_API_KEY", "high", "/srv/app/.env", "", true, "medium"},
+		// Not an AI provider's: the low grade stays.
+		{"password-assignment", "DB_PASSWORD", "high", "/srv/app/.env", "", true, "low"},
+		{"password-assignment", "GOOGLE_API_KEY", "high", "/srv/app/.env", "", true, "low"},
+		{"password-assignment", "MAIL_PASSWORD", "high", "/srv/app/.env", "", true, "low"},
+		{"stripe-live-key", "", "critical", "/srv/app/.env", "", true, "low"},
+		// Served, in code or in a repository: as before.
+		{"anthropic-key", "", "critical", "/var/www/html/.env", "served", true, "critical"},
+		{"anthropic-key", "", "critical", "/srv/app/src/ai.js", "", true, "critical"},
+		{"anthropic-key", "", "critical", ".env", "", false, "critical"},
+	} {
+		l := Leak{Rule: tc.rule, Name: tc.name, Severity: tc.severity, Path: tc.path}
+		Grade(&l, tc.exposure, tc.onHost)
+		if l.Severity != tc.want {
+			t.Errorf("%+v: got %s", tc, l.Severity)
+		}
+	}
+}
+
+func TestAIProvider(t *testing.T) {
+	for _, tc := range []struct{ rule, name, want string }{
+		{"anthropic-oauth-token", "", "Anthropic"},
+		{"openrouter-key", "", "OpenRouter"},
+		{"password-assignment", "DEEPSEEK_API_KEY", "DeepSeek"},
+		{"password-assignment", "app.openai.api-key", "OpenAI"},
+		{"password-assignment", "HF_TOKEN", "Hugging Face"},
+		{"password-assignment", "TOGETHER_API_KEY", "Together AI"},
+		{"password-assignment", "MAXAI_TOKEN", ""},
+		{"password-assignment", "SECRET_KEY_BASE", ""},
+		{"stripe-live-key", "", ""},
+	} {
+		if got := AIProvider(tc.rule, tc.name); got != tc.want {
+			t.Errorf("%+v: got %q", tc, got)
+		}
+	}
+	if !AIKeptInConfig("openai-key", "", "/srv/app/.env") || AIKeptInConfig("openai-key", "", "/srv/app/src/ai.js") {
+		t.Error("AIKeptInConfig")
 	}
 }
 
@@ -311,18 +367,17 @@ func TestLLMKeysByName(t *testing.T) {
 	}
 }
 
-// The new formats keep the policy for servers: a key in a configuration
-// file is listed (low, medium when every account can read it), never an
-// alert.
-func TestLLMKeysOnHostStayLow(t *testing.T) {
+// An AI provider's key in a server's configuration file is medium (owner
+// decision, 26 Nov 2026): listed with a rotate-by date, never an alert.
+func TestLLMKeysOnHostAreMedium(t *testing.T) {
 	v := key("gsk", "_", repeat("Zq7Lm2Xr9Tb4Kc8Vn3Pw6Hy1Jd5Fs0Ga", 52))
 	got := Scan(".env", []byte("GROQ_API_KEY="+v+"\n"))
 	if len(got) != 1 || got[0].Rule != "groq-key" {
 		t.Fatalf("got %+v", got)
 	}
 	Grade(&got[0], "", true)
-	if got[0].Severity != low {
-		t.Errorf("on a host: %s, want low", got[0].Severity)
+	if got[0].Severity != medium {
+		t.Errorf("on a host: %s, want medium", got[0].Severity)
 	}
 	Grade(&got[0], "world_readable", true)
 	if got[0].Severity != medium {
