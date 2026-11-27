@@ -70,7 +70,8 @@ func loadThreats(ctx context.Context, api API) ([]serverThreat, error) {
 	return nil, err
 }
 
-// findThreat matches a name, id or alias, ignoring case and spacing.
+// findThreat matches a name, short name, id or alias, ignoring case and
+// spacing, or a word of only one threat's name (threats.Catalogue.Find).
 func findThreat(list []serverThreat, name string) (serverThreat, bool) {
 	c := &threats.Catalogue{}
 	for _, t := range list {

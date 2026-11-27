@@ -62,6 +62,29 @@ func TestEmbedded(t *testing.T) {
 	if !ok || br.ID != "brotli-cve-2026-111497" || br.Kind != KindExploitedVuln || strings.Join(br.Detects.CVEs, ",") != "CVE-2026-111497" {
 		t.Errorf("Find(Node2Shell) = %+v, %v", br, ok)
 	}
+	// A word of one threat's name or short name finds it (threat_check
+	// "Brotli"); a word several threats share finds none.
+	for q, want := range map[string]string{
+		"Brotli":                 "brotli-cve-2026-111497",
+		" brotli ":               "brotli-cve-2026-111497",
+		"Brotli CVE-2026-111497": "brotli-cve-2026-111497",
+		"Roller":                 "apache-roller-cve-2026-129448",
+		"nginx":                  "nginx2root",
+		"Drupal":                 "",
+		"core":                   "",
+		"in":                     "",
+		"brot":                   "",
+		"":                       "",
+	} {
+		got, ok := c.Find(q)
+		if want == "" {
+			if ok {
+				t.Errorf("Find(%q) = %s, want no match", q, got.ID)
+			}
+		} else if !ok || got.ID != want {
+			t.Errorf("Find(%q) = %s, %v, want %s", q, got.ID, ok, want)
+		}
+	}
 	if c.ExpiresAt != nil {
 		t.Error("the embedded catalogue never expires")
 	}
