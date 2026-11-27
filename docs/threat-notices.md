@@ -43,7 +43,7 @@ The threats are a versioned JSON catalogue, [`internal/threats/catalogue.json`](
 
 | Field | |
 |---|---|
-| `id`, `name`, `aliases` | The threat's names; `threat_check` matches any, ignoring case |
+| `id`, `name`, `aliases` | The threat's names; `threat_check` matches any of them or `short_name`, ignoring case. Failing that, it matches a word of only one threat's name or short name ("Brotli", "Roller"); a word several threats share ("Drupal") lists the threats instead |
 | `short_name` | Optional: what the notice's title and lines call it when `name` carries an explanation (`nginx2root` for "nginx2root (nginx memory-corruption bugs ...)"); the full `name` stays in `threat_check` and the catalogue |
 | `kind` | `attack_tool`, `exploited_vuln`, `disclosed_vuln` (a critical vulnerability with a fix out, not known to be exploited yet), `campaign` or `practice` |
 | `severity` | `critical`, `high`, `medium` or `low` |

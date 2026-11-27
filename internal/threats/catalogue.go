@@ -24,6 +24,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/stackurity/stackurity/internal/version"
 )
@@ -366,15 +367,46 @@ func Merge(base, feed *Catalogue) *Catalogue {
 	return out
 }
 
-// Find matches a name, id or alias, ignoring case and spacing.
+// Find matches a name, short name, id or alias, ignoring case and spacing.
+// Failing that, it matches a word or run of words of exactly one threat's
+// name or short name ("Brotli", "Roller"); a word several threats share
+// ("Drupal") matches none, so the caller lists the threats instead.
 func (c *Catalogue) Find(name string) (Threat, bool) {
 	n := normalName(name)
+	if n == "" {
+		return Threat{}, false
+	}
 	for _, t := range c.Threats {
-		if n == t.ID || n == normalName(t.Name) || slices.Contains(t.Aliases, n) {
+		if n == t.ID || n == normalName(t.Name) || (t.ShortName != "" && n == normalName(t.ShortName)) || slices.Contains(t.Aliases, n) {
 			return t, true
 		}
 	}
-	return Threat{}, false
+	q := nameWords(n)
+	if len([]rune(q)) < minWordMatch {
+		return Threat{}, false
+	}
+	var hit Threat
+	hits := 0
+	for _, t := range c.Threats {
+		if strings.Contains(" "+nameWords(t.Name)+" ", " "+q+" ") || strings.Contains(" "+nameWords(t.ShortName)+" ", " "+q+" ") {
+			hit = t
+			hits++
+		}
+	}
+	return hit, hits == 1
+}
+
+// minWordMatch is the shortest query Find matches against words of a name,
+// so "in" or "the" never picks a threat.
+const minWordMatch = 4
+
+// nameWords lowercases s and splits it into words at anything that is not a
+// letter, digit or one of ".-/" (kept so CVE ids and "node.js" stay whole),
+// joined by single spaces.
+func nameWords(s string) string {
+	return strings.Join(strings.FieldsFunc(strings.ToLower(s), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '.' && r != '-' && r != '/'
+	}), " ")
 }
 
 // Get returns the threat with this id.
