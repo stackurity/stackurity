@@ -36,6 +36,12 @@ func TestEmbedded(t *testing.T) {
 		strings.Join(cs.Detects.SignalRules, ",") != "attack-tool-cyberstrikeai-name" {
 		t.Errorf("Find(cyberstrike-ai) = %+v, %v (rules: internal/collect/confcheck/attacktools.go)", cs, ok)
 	}
+	pa, ok := c.Find("vxcontrol/pentagi")
+	if !ok || pa.ID != "pentagi" || pa.Kind != KindAttackTool ||
+		strings.Join(pa.Detects.ConfigRules, ",") != "attack-tool-pentagi" ||
+		strings.Join(pa.Detects.SignalRules, ",") != "attack-tool-pentagi-name" {
+		t.Errorf("Find(vxcontrol/pentagi) = %+v, %v (rules: internal/collect/confcheck/attacktools.go)", pa, ok)
+	}
 	d, ok := c.Find("SA-CORE-2026-017")
 	if !ok || d.ID != "drupal-cve-2026-132165" || d.Kind != KindExploitedVuln || strings.Join(d.Detects.CVEs, ",") != "CVE-2026-132165" {
 		t.Errorf("Find(SA-CORE-2026-017) = %+v, %v", d, ok)

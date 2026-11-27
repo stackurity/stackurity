@@ -289,6 +289,51 @@
         }
       ],
       "min_version": "0.20.39"
+    },
+    {
+      "id": "pentagi",
+      "revision": 1,
+      "name": "PentAGI",
+      "aliases": [
+        "pent agi",
+        "vxcontrol/pentagi"
+      ],
+      "kind": "attack_tool",
+      "severity": "high",
+      "summary": "PentAGI is an open-source autonomous AI penetration testing system (github.com/vxcontrol/pentagi): a Go backend (Go module pentagi) with a web console, usually run from the vxcontrol/pentagi image with Docker Compose, that plans and runs reconnaissance, scanning and exploitation with LLM agents. On 17 November 2026 Google Threat Intelligence reported that threat actors had deployed PentAGI in the wild; from late August to early October 2026 one actor used a customised platform built on it to scan a wide range of organisations in Asia. It is not a vulnerability: there is nothing to patch. Finding it on a server, in an image or in a repository you did not put it in means the machine is being used for an attack or someone installed it without the security team knowing.",
+      "first_seen": "2026-11-17",
+      "published_at": "2026-11-27",
+      "sources": [
+        "https://cloud.google.com/blog/topics/threat-intelligence/agentic-threat-activity-crosses-a-significant-threshold",
+        "https://github.com/vxcontrol/pentagi"
+      ],
+      "detects": {
+        "config_rules": [
+          "attack-tool-pentagi"
+        ],
+        "signal_rules": [
+          "attack-tool-pentagi-name"
+        ]
+      },
+      "needs": [
+        {
+          "connection": "host_agent",
+          "required": true,
+          "checks": "the Stackurity agent on each server looks for a PentAGI server binary (by its Go build record) or a copy of its source installed there",
+          "help": "/help/add-server"
+        },
+        {
+          "connection": "docker",
+          "checks": "container images (from the agent's Docker access or a connected registry) are checked for the PentAGI server binary built into them, and for images named like it",
+          "help": "/help/container-images"
+        },
+        {
+          "connection": "repository",
+          "checks": "connected repositories are checked for a copy of PentAGI's source (a go.mod or backend/go.mod declaring its module) or a file that runs an image named like it",
+          "help": "/help/repositories"
+        }
+      ],
+      "min_version": "0.20.41"
     }
   ]
 }

@@ -48,6 +48,14 @@ const (
 	// RuleAttackToolCyberStrikeAIName: a Go module or container image only
 	// named like CyberStrikeAI.
 	RuleAttackToolCyberStrikeAIName = "attack-tool-cyberstrikeai-name"
+	// RuleAttackToolPentAGI: PentAGI, an autonomous AI penetration testing
+	// system, found as a binary, in an image or as a copy of its source.
+	// GTIG reported on 17 Nov 2026 that threat actors deployed it in the
+	// wild.
+	RuleAttackToolPentAGI = "attack-tool-pentagi"
+	// RuleAttackToolPentAGIName: a Go module or container image only named
+	// like PentAGI.
+	RuleAttackToolPentAGIName = "attack-tool-pentagi-name"
 )
 
 // AttackToolsDoc is the how-to every attack tool finding links to.
@@ -98,6 +106,21 @@ var attackTools = []attackTool{{
 	about: "CyberStrikeAI is an AI-driven offensive security platform (published as a penetration testing tool) with web " +
 		"shell management and a built-in command-and-control server; Unit 42 reported on 24 Nov 2026 that attackers " +
 		"ran it on the server that steered AI agents breaking into Linux web servers.",
+}, {
+	name:     "PentAGI",
+	rule:     RuleAttackToolPentAGI,
+	nameRule: RuleAttackToolPentAGIName,
+	// Its backend/go.mod declares the bare module "pentagi"; the server is
+	// built from pentagi/cmd/pentagi and its test tools from pentagi/cmd/*
+	// (github.com/vxcontrol/pentagi). The project's image is
+	// vxcontrol/pentagi: an image only carries the name, so it is medium,
+	// and the server binary inside it is the high finding.
+	modules: []string{"pentagi"},
+	names:   []string{"pentagi"},
+	images:  []string{"pentagi"},
+	about: "PentAGI is an autonomous AI penetration testing system (published as a penetration testing tool) that " +
+		"runs reconnaissance and exploitation on its own; Google Threat Intelligence reported on 17 Nov 2026 that threat " +
+		"actors deployed it in the wild, one of them to scan a wide range of organisations in Asia.",
 }}
 
 // toolForModule returns the attack tool a Go main module or main package
@@ -247,8 +270,8 @@ func sourceAttackTool(display string, goMod []byte) (model.ConfigFinding, bool) 
 			"then dismiss this finding with a note."), true
 }
 
-// repoAttackTools reads a checkout's go.mod and the image references in
-// its Dockerfile and Compose files.
+// repoAttackTools reads a checkout's go.mod (and backend/go.mod) and the
+// image references in its Dockerfile and Compose files.
 func repoAttackTools(dir string) []model.ConfigFinding {
 	var out []model.ConfigFinding
 	read := func(rel string) []byte {
@@ -262,9 +285,13 @@ func repoAttackTools(dir string) []model.ConfigFinding {
 		}
 		return data
 	}
-	if data := read("go.mod"); data != nil {
-		if f, ok := sourceAttackTool("go.mod", data); ok {
-			out = append(out, f)
+	// backend/go.mod: PentAGI keeps its Go server there, under a web
+	// frontend at the root.
+	for _, rel := range []string{"go.mod", "backend/go.mod"} {
+		if data := read(rel); data != nil {
+			if f, ok := sourceAttackTool(rel, data); ok {
+				out = append(out, f)
+			}
 		}
 	}
 	for _, rel := range []string{"Dockerfile", "docker-compose.yml", "docker-compose.yaml", "compose.yml", "compose.yaml"} {
