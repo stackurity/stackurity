@@ -6,6 +6,21 @@ Each release's section is published as its GitHub release notes, and a tag witho
 
 ## Unreleased
 
+## 0.20.41
+
+### Added
+
+- **Attack tools: PentAGI.** Servers, container images and repositories are checked for PentAGI, an open-source autonomous AI penetration testing system. Google Threat Intelligence reported on 17 November 2026 that threat actors deployed it in the wild. A Go executable built from its `pentagi` module (the server in the `vxcontrol/pentagi` image is one), or a `go.mod` or `backend/go.mod` declaring it, is a high finding (`attack-tool-pentagi`); a module or image only named like it is medium (`attack-tool-pentagi-name`). The threat catalogue lists it, so `threat_check` and threat notices cover it. See [Config checks](docs/config-checks.md#attack-tools).
+- **Threat catalogue: Drupal core CVE-2026-136716 (SA-CORE-2026-019).** Drupal's 25 November 2026 follow-up to the installer takeover flaw, exploited in the wild, is in the threat catalogue, so `threat_check` and threat notices cover it. Sites that upgraded to 10.6.22, 11.3.22 or 11.4.13 for CVE-2026-132165 are still affected and need 10.6.23, 11.3.23 or 11.4.14 and `update.php`. Stackurity already matched it from OSV's `drupal/core` record: the release is read from `composer.lock` or `vendor/composer/installed.json` on servers, in images and in repositories. See [Threat notices](docs/threat-notices.md).
+
+### Changed
+
+- **Single sign-on is now an Enterprise feature.** OpenID Connect and SAML sign-in need an Enterprise licence, as single sign-on for an organisation on Stackurity Cloud already did. A Pro licence issued before 27 November 2026 keeps single sign-on until it expires, so nobody who already signs in through their identity provider is locked out. See [Editions](docs/editions.md).
+
+### Fixed
+
+- **The release email's footer no longer says you subscribed to Marketing emails.** The release email goes to every Stackurity Cloud account as a service message, so its footer now says you get it because you have a Stackurity account and tells you what changed in the service, with an **Unsubscribe from these emails** link (one click, as before). Marketing emails keep their subscription line. See [Email sent by Stackurity](docs/install.md).
+
 ## 0.20.40
 
 ### Security

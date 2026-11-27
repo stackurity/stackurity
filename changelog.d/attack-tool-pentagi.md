@@ -1,3 +1,0 @@
-### Added
-
-- **Attack tools: PentAGI.** Servers, container images and repositories are checked for PentAGI, an open-source autonomous AI penetration testing system. Google Threat Intelligence reported on 17 November 2026 that threat actors deployed it in the wild. A Go executable built from its `pentagi` module (the server in the `vxcontrol/pentagi` image is one), or a `go.mod` or `backend/go.mod` declaring it, is a high finding (`attack-tool-pentagi`); a module or image only named like it is medium (`attack-tool-pentagi-name`). The threat catalogue lists it, so `threat_check` and threat notices cover it. See [Config checks](docs/config-checks.md#attack-tools).
