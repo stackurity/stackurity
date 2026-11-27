@@ -70,6 +70,8 @@ The first tool covered is **ARTEX**, an AI-driven attack framework. Its source a
 
 **CyberStrikeAI** is covered too. It is an open-source, AI-driven offensive security platform written in Go ([AIPentest/CyberStrikeAI](https://github.com/AIPentest/CyberStrikeAI)), with web shell management and a built-in command-and-control server. On 24 November 2026 [Unit 42 reported](https://unit42.paloaltonetworks.com/autonomous-ai-agent-threat-campaigns/) that attackers ran it on the command-and-control server of campaigns in which AI agents broke into Linux web servers through web shells.
 
+**PentAGI** is covered too. It is an open-source autonomous AI penetration testing system with a Go backend ([vxcontrol/pentagi](https://github.com/vxcontrol/pentagi)), usually run from the `vxcontrol/pentagi` image with Docker Compose. On 17 November 2026 [Google Threat Intelligence reported](https://cloud.google.com/blog/topics/threat-intelligence/agentic-threat-activity-crosses-a-significant-threshold) that threat actors deployed it in the wild, one of them to scan a wide range of organisations in Asia from late August to early October 2026.
+
 A **high** finding rests on evidence that only the tool leaves: the Go module its executable was built from, a `go.mod` that declares that module, or the name of a backdoored image. A file that is only *named* `artex` is not reported. A module or image that is only *named* like the tool is reported as **medium**, because forks rename the module. "Artex" is also an ordinary name, and medium findings never alert.
 
 | Severity | Rule | When |
@@ -79,6 +81,8 @@ A **high** finding rests on evidence that only the tool leaves: the Go module it
 | medium | `attack-tool-artex-name` | A Go module or a container image only named `artex` or `scopeweaver` (for example `github.com/someone/artex` or `acme/artex`). |
 | high | `attack-tool-cyberstrikeai` | A Go executable whose build record names the module `cyberstrike-ai` (its server is built from `cyberstrike-ai/cmd/server`), or a `go.mod` declaring that module, meaning a copy of its source. The record is read; the binary is never run. |
 | medium | `attack-tool-cyberstrikeai-name` | A Go module or a container image only named `cyberstrike-ai` or `cyberstrikeai` (for example `github.com/someone/cyberstrikeai` or `acme/cyberstrike-ai`). The project publishes no image of its own. |
+| high | `attack-tool-pentagi` | A Go executable whose build record names the module `pentagi` (its server is built from `pentagi/cmd/pentagi`, and the official image keeps it at `/pentagi`), or a `go.mod` declaring that module, meaning a copy of its source. The record is read; the binary is never run. |
+| medium | `attack-tool-pentagi-name` | A Go module or a container image only named `pentagi`, including the project's own `vxcontrol/pentagi` image by name: the server binary inside a scanned image is the high finding. |
 
 **On a server**, the agent looks in:
 
@@ -93,7 +97,7 @@ It skips other folders whose names start with `.`, and it never walks deeper. It
 
 **In a container image**, every Go executable that no OS package installed is read, as for vulnerability matching. If that read stops at its limits, the check is incomplete.
 
-**In a repository**, Stackurity reads `go.mod`, `Dockerfile` and the Compose files at the root. Only `FROM` instructions count, not lines inside a heredoc or a `RUN` script.
+**In a repository**, Stackurity reads `go.mod` (and `backend/go.mod`, where PentAGI keeps its server), `Dockerfile` and the Compose files at the root. Only `FROM` instructions count, not lines inside a heredoc or a `RUN` script.
 
 `--no-config-checks` turns these checks off along with the others, for images too.
 
