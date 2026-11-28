@@ -34,7 +34,7 @@ require (
 	golang.org/x/image v0.47.0
 	golang.org/x/mod v0.42.0
 	golang.org/x/net v0.62.0
-	golang.org/x/oauth2 v0.37.0
+	golang.org/x/oauth2 v0.38.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/text v0.44.0
 	howett.net/plist v1.0.1
