@@ -636,7 +636,7 @@ func (s *Scanner) ScanApp(ctx context.Context, dir string) App {
 	wpObs, wpCov := s.wordpressCore(dir, den)
 	add(wpObs)
 	app.Coverage = append(app.Coverage, wpCov...)
-	// A Java web application's own release (Apache Roller), and its JARs
+	// A Java web application's own release (Apache Roller, GeoServer), and its JARs
 	// when no stack pack reads them (javawebapps.go).
 	javaObs, javaCov := s.javaWebapp(dir, den)
 	add(javaObs)

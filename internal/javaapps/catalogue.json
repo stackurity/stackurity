@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "version": "2026-11-22.1",
+  "version": "2026-11-28.1",
   "description": "Stackurity's curated catalogue of Java web applications deployed in a servlet container (Tomcat, Jetty) whose release the host agent reads from the application's own files, matched against the product's NVD records. Each product's CPE was checked against NVD's CVE API (virtualMatchString) on the verified date. Products not listed are not identified by the agent and are not matched.",
   "products": [
     {
@@ -17,6 +17,21 @@
       ],
       "verified": "2026-11-22",
       "note": "NVD names Roller under apache:roller only (15 CVEs on the verified date, CVE-2026-129448 analysed: 4.0 up to 6.1.5). The agent reads ro.version from roller-version.properties, which Roller loads from its classpath (WebloggerImpl): in WEB-INF/classes in the 5.2.4 and 6.1.4 release WARs, at the root of WEB-INF/lib/roller-business.jar in 4.0.1 and of WEB-INF/lib/roller-weblogger-business-5.0.4.jar in 5.0.4."
+    },
+    {
+      "id": "geoserver",
+      "label": "GeoServer",
+      "cpes": ["cpe:2.3:a:geoserver:geoserver", "cpe:2.3:a:osgeo:geoserver"],
+      "coverage_note": "NVD had no record yet for the GeoServer flaws published on 23 November 2026 (CVE-2026-120705, CVE-2026-129243, CVE-2026-129242, CVE-2026-129244, CVE-2026-129245, fixed in 2.27.7, 2.28.6 and 3.0.2), so they are matched only once NVD records their affected versions; GeoTools and other libraries in WEB-INF/lib are matched as Maven packages through the Java stack pack",
+      "update": "Deploy GeoServer 2.28.6, 3.0.2 or later from geoserver.org, keeping the data directory (2.27.7 fixes the November 2026 flaws, but the 2.27 series has reached end of life).",
+      "sources": [
+        "https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=cpe:2.3:a:geoserver:geoserver",
+        "https://services.nvd.nist.gov/rest/json/cves/2.0?virtualMatchString=cpe:2.3:a:osgeo:geoserver",
+        "https://repo.osgeo.org/repository/release/org/geoserver/gs-main/2.28.5/gs-main-2.28.5.jar",
+        "https://geoserver.org/vulnerability/2026/11/23/cve-update.html"
+      ],
+      "verified": "2026-11-28",
+      "note": "NVD names GeoServer under two CPE products: geoserver:geoserver (17 CVEs on the verified date, including the exploited CVE-2024-36401 and CVE-2025-58360) and osgeo:geoserver (16 CVEs). The agent reads the release from META-INF/maven/org.geoserver/gs-main/pom.properties in WEB-INF/lib/gs-main-<release>.jar (checked in the 2.27.6 and 2.28.5 JARs), which every GeoServer WAR and binary distribution ships."
     }
   ]
 }

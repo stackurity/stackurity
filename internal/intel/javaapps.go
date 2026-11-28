@@ -14,7 +14,7 @@ import (
 )
 
 // FeedJavaApps holds advisories for Java web applications deployed in a
-// servlet container (Apache Roller): the product's NVD records, for the
+// servlet container (Apache Roller, GeoServer): the product's NVD records, for the
 // products of the curated catalogue (internal/javaapps) deployed on some
 // host. The libraries in their WEB-INF/lib are Maven packages and are
 // matched against OSV like any other.

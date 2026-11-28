@@ -222,7 +222,7 @@ func (e *Evaluator) EvaluateLocked(ctx context.Context, componentIDs []int64, as
 			unsupported(macOSAppInventoryOnly)
 		case isJavaApp(r):
 			// A Java web application the agent identified by its own files
-			// (Apache Roller): matched by its release against the product's
+			// (Apache Roller, GeoServer): matched by its release against the product's
 			// NVD records if the curated catalogue lists it.
 			found, err := e.evaluateJavaApp(ctx, r, feedState, javaAdvs, javaUnfixed, &rc)
 			if err != nil {

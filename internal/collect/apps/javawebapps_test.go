@@ -158,6 +158,8 @@ func TestDiscoverJavaWebapps(t *testing.T) {
 	tr.file("opt/tomcat/webapps/api/WEB-INF/classes/x.class", "x")
 	tr.file("opt/tomcat/webapps/legacy.war", string(zipOf(t, map[string][]byte{"WEB-INF/web.xml": nil})))
 	tr.file("srv/portal/WEB-INF/web.xml", "<web-app/>")
+	// GeoServer's binary distribution runs its own Jetty.
+	tr.file("usr/share/geoserver/webapps/geoserver/WEB-INF/web.xml", "<web-app/>")
 	// A link is not a web application, nor read as a webapps directory.
 	tr.file("elsewhere/outside/WEB-INF/web.xml", "<web-app/>")
 	tr.link("var/lib/tomcat10/webapps/linked", tr.root+"/elsewhere/outside")
@@ -170,12 +172,13 @@ func TestDiscoverJavaWebapps(t *testing.T) {
 		got[d.Dir] = strings.Join(d.By, ",")
 	}
 	want := map[string]string{
-		"/var/lib/tomcat10/webapps/roller":   "WEB-INF",
-		"/var/lib/tomcat10/webapps/shop":     "WEB-INF",
-		"/var/lib/tomcat10/webapps/blog.war": "war",
-		"/opt/tomcat/webapps/api":            "WEB-INF",
-		"/opt/tomcat/webapps/legacy.war":     "war",
-		"/srv/portal":                        "WEB-INF/web.xml",
+		"/var/lib/tomcat10/webapps/roller":       "WEB-INF",
+		"/var/lib/tomcat10/webapps/shop":         "WEB-INF",
+		"/var/lib/tomcat10/webapps/blog.war":     "war",
+		"/opt/tomcat/webapps/api":                "WEB-INF",
+		"/opt/tomcat/webapps/legacy.war":         "war",
+		"/srv/portal":                            "WEB-INF/web.xml",
+		"/usr/share/geoserver/webapps/geoserver": "WEB-INF",
 	}
 	if !full || len(got) != len(want) {
 		t.Fatalf("found %v (full %v), want %v", got, full, want)
@@ -241,6 +244,83 @@ func TestRollerRelease(t *testing.T) {
 	// Another web application's properties file is not Roller's.
 	if a := s.ScanApp(context.Background(), "/var/lib/tomcat10/webapps/other"); len(a.Observations) != 0 || a.UnreadJavaLibraries() {
 		t.Errorf("other: %+v %+v", a.Observations, a.Coverage)
+	}
+}
+
+// geoserverJar is GeoServer's main module as a release ships it: the
+// Maven metadata in gs-main-<release>.jar.
+func geoserverJar(t *testing.T, g, v string) []byte {
+	return zipOf(t, map[string][]byte{"META-INF/maven/" + g + "/gs-main/pom.properties": pomProps(g, "gs-main", v),
+		"org/geoserver/GeoServer.class": []byte("cafe")})
+}
+
+// GeoServer is identified by the release in its gs-main JAR's Maven
+// metadata, deployed exploded (Tomcat, the binary distribution's Jetty) or
+// as a .war file. Another project's gs-main JAR, a gs-main JAR without the
+// metadata and a development version are not GeoServer releases.
+func TestGeoServerRelease(t *testing.T) {
+	tr := newTree(t)
+	tr.file("usr/local/tomcat/webapps/geoserver/WEB-INF/web.xml", "<web-app/>")
+	tr.file("usr/local/tomcat/webapps/geoserver/WEB-INF/lib/gs-main-2.28.5.jar", string(geoserverJar(t, "org.geoserver", "2.28.5")))
+	tr.file("usr/local/tomcat/webapps/geoserver/WEB-INF/lib/gs-wfs-core-2.28.5.jar", string(mavenJar(t, "org.geoserver", "gs-wfs-core", "2.28.5")))
+	tr.file("usr/share/geoserver/webapps/geoserver/WEB-INF/web.xml", "<web-app/>")
+	tr.file("usr/share/geoserver/webapps/geoserver/WEB-INF/lib/gs-main-2.27.6.jar", string(geoserverJar(t, "org.geoserver", "2.27.6")))
+	tr.file("var/lib/tomcat9/webapps/maps.war", string(zipOf(t, map[string][]byte{
+		"WEB-INF/web.xml":               nil,
+		"WEB-INF/lib/gs-main-3.0.1.jar": geoserverJar(t, "org.geoserver", "3.0.1"),
+		"WEB-INF/lib/gt-main-35.1.jar":  mavenJar(t, "org.geotools", "gt-main", "35.1"),
+	})))
+	tr.file("var/lib/tomcat9/webapps/other/WEB-INF/web.xml", "<web-app/>")
+	tr.file("var/lib/tomcat9/webapps/other/WEB-INF/lib/gs-main-1.0.jar", string(geoserverJar(t, "com.acme", "1.0")))
+	tr.file("var/lib/tomcat9/webapps/bare/WEB-INF/web.xml", "<web-app/>")
+	tr.file("var/lib/tomcat9/webapps/bare/WEB-INF/lib/gs-main-2.28.5.jar", string(zipOf(t, map[string][]byte{"org/geoserver/GeoServer.class": nil})))
+	tr.file("var/lib/tomcat9/webapps/dev/WEB-INF/web.xml", "<web-app/>")
+	tr.file("var/lib/tomcat9/webapps/dev/WEB-INF/lib/gs-main-3.1-SNAPSHOT.jar", string(zipOf(t, map[string][]byte{
+		"META-INF/maven/org.geoserver/gs-main/pom.properties": []byte("groupId=org.geoserver\nartifactId=gs-main\nversion=${project.version}\n")})))
+
+	s := &Scanner{Root: tr.root}
+	for dir, c := range map[string]struct{ version, loc, inner string }{
+		"/usr/local/tomcat/webapps/geoserver":    {"2.28.5", "/usr/local/tomcat/webapps/geoserver/WEB-INF/lib/gs-main-2.28.5.jar", geoserverPom},
+		"/usr/share/geoserver/webapps/geoserver": {"2.27.6", "/usr/share/geoserver/webapps/geoserver/WEB-INF/lib/gs-main-2.27.6.jar", geoserverPom},
+		"/var/lib/tomcat9/webapps/maps.war":      {"3.0.1", "/var/lib/tomcat9/webapps/maps.war", "WEB-INF/lib/gs-main-3.0.1.jar/" + geoserverPom},
+	} {
+		a := s.ScanApp(context.Background(), dir)
+		validate(t, a)
+		o := findPurl(a, "pkg:generic/geoserver@")
+		if o == nil {
+			t.Fatalf("%s: no GeoServer: %+v %+v", dir, a.Observations, a.Coverage)
+		}
+		if o.Purl != "pkg:generic/geoserver@"+c.version || o.Version != c.version || o.Location != c.loc || o.Confidence != model.ConfidenceConfirmed ||
+			o.Evidence["kind"] != KindJavaWebapp || o.Evidence["product"] != "GeoServer" || o.Evidence["archive_path"] != c.inner || o.Evidence["app_dir"] != dir {
+			t.Errorf("%s: %+v", dir, *o)
+		}
+		if findPurl(a, "pkg:generic/apache-roller") != nil || findPurl(a, "pkg:maven/") != nil || !a.UnreadJavaLibraries() {
+			t.Errorf("%s: %+v %+v", dir, a.Observations, a.Coverage)
+		}
+	}
+	for _, dir := range []string{"other", "bare", "dev"} {
+		a := s.ScanApp(context.Background(), "/var/lib/tomcat9/webapps/"+dir)
+		validate(t, a)
+		if o := findPurl(a, "pkg:generic/geoserver"); o != nil {
+			t.Errorf("%s: read GeoServer where it must not: %+v", dir, *o)
+		}
+	}
+}
+
+func TestParseGeoServerPom(t *testing.T) {
+	for in, want := range map[string]string{
+		string(pomProps("org.geoserver", "gs-main", "2.28.5")):              "2.28.5",
+		"artifactId=gs-main\ngroupId=org.geoserver\nversion=3.0.2\n":        "3.0.2",
+		"groupId=org.geoserver\nartifactId=gs-main\nversion=3.1-SNAPSHOT\n": "3.1-SNAPSHOT",
+		string(pomProps("org.geoserver", "gs-wfs-core", "2.28.5")):          "",
+		string(pomProps("org.geoserver.extension", "gs-main", "2.28.5")):    "",
+		"groupId=org.geoserver\nartifactId=gs-main\n":                       "",
+		"groupId=org.geoserver\nartifactId=gs-main\nversion=2.28.5<x>\n":    "",
+	} {
+		got, ok := parseGeoServerPom([]byte(in))
+		if got != want || ok != (want != "") {
+			t.Errorf("%q = %q %v, want %q", in, got, ok, want)
+		}
 	}
 }
 
