@@ -88,7 +88,7 @@ func EnsureFeeds(ctx context.Context, s *store.Store) error {
 				return err
 			}
 		}
-		// Java web applications of the curated catalogue (Apache Roller),
+		// Java web applications of the curated catalogue (Apache Roller, GeoServer),
 		// read from NVD only for those deployed somewhere.
 		if ja, err := installedJavaApps(ctx, s); err != nil {
 			return err

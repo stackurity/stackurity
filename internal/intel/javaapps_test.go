@@ -153,3 +153,61 @@ func TestJavaAppFeedNames(t *testing.T) {
 		t.Errorf("sources: %v", src)
 	}
 }
+
+// GeoServer rows are matched by their release against NVD's records for
+// geoserver:geoserver (three CVEs saved from the CVE API on 28 November
+// 2026, among them the exploited CVE-2024-36401 and CVE-2025-58360).
+func TestEvaluateGeoServer(t *testing.T) {
+	b, err := os.ReadFile(filepath.Join("testdata", "javaapps", "nvd-geoserver.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var page nvdResponse
+	if err := json.Unmarshal(b, &page); err != nil {
+		t.Fatal(err)
+	}
+	p := javaapps.Default().Product("geoserver")
+	if p == nil || p.Label != "GeoServer" || p.PurlKey() != "pkg:generic/geoserver" {
+		t.Fatalf("catalogue: %+v", p)
+	}
+	var advs []store.AdvisoryMatch
+	for _, w := range page.Vulnerabilities {
+		v := nvdRecord(p, w.CVE, nvdAnomalies{})
+		if v == nil {
+			t.Fatalf("%s not read", w.CVE.ID)
+		}
+		advs = append(advs, store.AdvisoryMatch{ID: v.ID, GroupKey: w.CVE.ID, Aliases: v.Aliases, Summary: v.Summary,
+			Feed: FeedJavaApps, Ecosystem: p.Ecosystem(), Affected: v.Affected[0]})
+	}
+	now := time.Now()
+	synced := map[string]store.Feed{FeedJavaApps: {Name: FeedJavaApps, Enabled: true, LastSuccess: &now, Ecosystems: []string{p.Ecosystem()}}}
+	e := &Evaluator{}
+	eval := func(v string) (map[string]store.FindingInput, store.RowCoverage) {
+		t.Helper()
+		r := store.EvalRow{InventoryID: 1, AssetID: 1, ComponentID: 1, Type: "generic", PurlKey: "pkg:generic/geoserver",
+			Purl: "pkg:generic/geoserver@" + v, Version: v, Confidence: "confirmed", Evidence: map[string]string{"kind": javaapps.Kind}}
+		rc := store.RowCoverage{InventoryID: 1, State: store.CoverageEvaluated}
+		found, err := e.evaluateJavaApp(context.Background(), r, synced, map[string][]store.AdvisoryMatch{p.ID: advs}, map[string]int{}, &rc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		byKey := map[string]store.FindingInput{}
+		for _, f := range found {
+			byKey[f.Key] = f
+		}
+		return byKey, rc
+	}
+	found, rc := eval("2.25.1")
+	if f, ok := found["CVE-2024-36401"]; !ok || f.FixedVersion != "2.25.2" || f.Evidence["java_app"] != "geoserver" {
+		t.Errorf("2.25.1: %v %+v", keysOf(found), found["CVE-2024-36401"])
+	}
+	if _, ok := found["CVE-2025-58360"]; !ok || rc.State != store.CoverageEvaluated || !strings.Contains(rc.Reason, "GeoServer 2.25.1") {
+		t.Errorf("2.25.1: %v %+v", keysOf(found), rc)
+	}
+	// 2.28.5 is past these ranges; its coverage says NVD does not yet
+	// record the November 2026 flaws.
+	found, rc = eval("2.28.5")
+	if len(found) != 0 || rc.State != store.CoverageEvaluated || !strings.Contains(rc.Reason, "CVE-2026-120705") {
+		t.Errorf("2.28.5: %v %+v", keysOf(found), rc)
+	}
+}

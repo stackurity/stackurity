@@ -34,7 +34,7 @@ Release binaries: linux/amd64, linux/arm64, windows/amd64, darwin/amd64 and darw
 | Runtimes outside a package manager | Detected | nginx Open Source (a source build, the nginx in a container image such as an ingress controller's, Homebrew's) and Node.js (the official `node` images, nvm, a tarball, Homebrew's): by the release it reports against NVD, see [nginx outside a package manager](#nginx-outside-a-package-manager) and [Node.js outside a package manager](#nodejs-outside-a-package-manager). Others: no, lifecycle only | NVD (nginx, Node.js); endoflife.date |
 | WordPress plugins and themes on a deployed site | `Version` header of the plugin's main `.php` file (also single-file and must-use plugins) or the theme's `style.css` | No: latest release only, from wordpress.org (`releases:wordpress.org`); vulnerabilities are not matched yet | wordpress.org plugin and theme info APIs |
 | WordPress core on a deployed site | `$wp_version` in `wp-includes/version.php` | No CVE matching: no vulnerability source Stackurity reads lists WordPress core with version ranges (OSV has no WordPress ecosystem; NVD is read only for the Windows program catalogue). Lifecycle, and a finding for a version behind its supported branch's latest release, since WordPress point releases are its security releases (WordPress only) | endoflife.date `wordpress` |
-| Java web applications deployed in Tomcat or Jetty (an unpacked directory with `WEB-INF`, or a `.war` file), see [Java web applications](#java-web-applications) | The JARs in `WEB-INF/lib` through the [Java stack pack](packs.md); Apache Roller's release from its `roller-version.properties` | Libraries: OSV (Maven), with the Java pack; without it the JARs are an `unsupported` coverage gap. Apache Roller: by release against NVD (`nvd:java-apps`). Other applications: their libraries only | OSV (Maven); NVD |
+| Java web applications deployed in Tomcat or Jetty (an unpacked directory with `WEB-INF`, or a `.war` file), see [Java web applications](#java-web-applications) | The JARs in `WEB-INF/lib` through the [Java stack pack](packs.md); Apache Roller's release from its `roller-version.properties`; GeoServer's from its `gs-main` JAR | Libraries: OSV (Maven), with the Java pack; without it the JARs are an `unsupported` coverage gap. Apache Roller and GeoServer: by release against NVD (`nvd:java-apps`). Other applications: their libraries only | OSV (Maven); NVD |
 | Packages from a vendor's own repository (MongoDB, Docker, Elastic, Grafana, PGDG, NodeSource, Redis, nginx.org, MariaDB, MySQL, HashiCorp, Kubernetes and others, see [below](#packages-from-vendor-repositories)) | dpkg, rpm | The curated [vendor builds](#vendor-builds) (nginx, Node.js, PostgreSQL, PHP, MongoDB, Redis, MariaDB, MySQL, Elasticsearch, Vault, Consul, Nomad, Terraform, Docker Engine, containerd): by upstream version against NVD. Others: evaluation gap. Lifecycle with upstream dates | NVD; endoflife.date |
 
 The same rules apply to container images scanned through the bundled Syft and to imported SBOMs: the purl's `distro` qualifier selects the source.
@@ -197,7 +197,7 @@ Products Stackurity's own collectors report outside a package manager are
 by name: runtimes (`pkg:generic/nodejs`, `php`, `python`), operating systems,
 managed services and WordPress core (`pkg:generic/wordpress@6.8.1`, read from
 a site's `wp-includes/version.php`). Apache Roller (`pkg:generic/apache-roller`)
-has no endoflife.date product and is matched against NVD instead (see
+and GeoServer (`pkg:generic/geoserver`) have no endoflife.date product and are matched against NVD instead (see
 [Java web applications](#java-web-applications)). WordPress's release lines are its
 major.minor branches: `6.9-RC1` and `6.8.1` are lines 6.9 and 6.8, and a
 development build of a line endoflife.date does not list yet
@@ -377,6 +377,7 @@ vulnerability source lists by name. The host agent finds them in the
 | Product | Read from | NVD products |
 |---|---|---|
 | Apache Roller | `ro.version` in `roller-version.properties`, which Roller loads from its classpath: `WEB-INF/classes` (5.2 and 6.1 releases), or the root of one of its own JARs in `WEB-INF/lib` (`roller-business.jar` in 4.0, `roller-weblogger-business-<version>.jar` in 5.0) | `apache:roller` |
+| GeoServer | `version` in `META-INF/maven/org.geoserver/gs-main/pom.properties` inside `WEB-INF/lib/gs-main-<version>.jar` (groupId `org.geoserver`, artifactId `gs-main`), which every GeoServer WAR and binary distribution ships | `geoserver:geoserver`, `osgeo:geoserver` |
 
 Roller is reported as `pkg:generic/apache-roller` (confirmed confidence, with
 the file it was read from), and its findings are grouped in the action plan
@@ -388,7 +389,18 @@ so 6.1.5 is not reported as affected by it, and NVD's fixed version for
 CVE-2026-129448 is 6.1.5: every Roller row says so, and the update advice
 names 6.1.6, the release that fixes both. A development build
 (`6.1.6-SNAPSHOT`) is `unsupported`. CVEs NVD has not analysed yet are not
-matched, as for vendor builds. Other Java web applications (Jenkins,
+matched, as for vendor builds.
+
+GeoServer is reported as `pkg:generic/geoserver` (confirmed confidence, with
+the `gs-main` JAR it was read from) and matched against both NVD products,
+which include the actively exploited CVE-2024-36401 and CVE-2025-58360. **NVD
+had no record yet for the flaws GeoServer published on 23 November 2026**
+(CVE-2026-120705 and CVE-2026-129243, both actively exploited, and
+CVE-2026-129242, -129244 and -129245, fixed in 2.27.7, 2.28.6 and 3.0.2): they
+are matched once NVD records their affected versions, and every GeoServer row
+says so until then. GeoServer's own modules and GeoTools in `WEB-INF/lib`
+(`org.geoserver:gs-wfs-core`, `org.geotools:gt-metadata`) are Maven packages,
+matched through the Java stack pack. Other Java web applications (Jenkins,
 Confluence, a company's own WAR) are reported by their libraries only.
 
 ### Coverage-gap report

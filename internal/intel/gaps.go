@@ -125,7 +125,7 @@ var vulnReasons = map[string]string{
 	"runtime":                   "runtime installed outside a package manager (lifecycle only)",
 	"cms":                       "content management system core, such as WordPress (lifecycle only)",
 	"wordpress_extension":       "WordPress plugins and themes: vulnerabilities are not matched yet",
-	"java_webapp":               "Java web applications (Apache Roller) at a release the curated catalogue does not read, such as a development build",
+	"java_webapp":               "Java web applications (Apache Roller, GeoServer) at a release the curated catalogue does not read, such as a development build",
 	"kubernetes":                "Kubernetes component version (lifecycle only)",
 	"managed_service":           "managed service version (lifecycle only)",
 	"distribution":              "distribution without a vulnerability source",

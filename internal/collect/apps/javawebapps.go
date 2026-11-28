@@ -23,6 +23,13 @@ package apps
 // pkg:generic/apache-roller, as WordPress core is, and matched against
 // NVD's records for apache:roller (internal/javaapps).
 //
+// GeoServer records its release in the Maven metadata of its main module,
+// META-INF/maven/org.geoserver/gs-main/pom.properties inside
+// WEB-INF/lib/gs-main-<release>.jar (checked in the 2.27.6 and 2.28.5
+// JARs). It is reported as pkg:generic/geoserver and matched against NVD's
+// records for geoserver:geoserver and osgeo:geoserver, with or without the
+// Java stack pack.
+//
 // Archives are read as data with archive/zip: nothing in them is run, only
 // regular files are opened (no link is followed), and every read is
 // bounded (entries per archive, bytes per entry and per nested JAR, JARs
@@ -63,6 +70,13 @@ const (
 
 	rollerProduct     = "apache-roller"
 	rollerVersionFile = "roller-version.properties"
+	// geoserverProduct is GeoServer's id in the catalogue; geoserverPom is
+	// the Maven metadata of its main module, inside gs-main-<release>.jar.
+	geoserverProduct = "geoserver"
+	geoserverPom     = "META-INF/maven/org.geoserver/gs-main/pom.properties"
+	// maxGeoServerJars bounds the gs-main JARs opened per application
+	// (a release has one).
+	maxGeoServerJars = 4
 	// maxPropertiesSize bounds a properties file read from an archive or
 	// from disk; Roller's is about 120 bytes.
 	maxPropertiesSize = 64 << 10
@@ -85,7 +99,10 @@ var maxArchiveEntries = 100_000
 // Tomcat image, tarball installs). A link is not followed: Red Hat's
 // /usr/share/tomcat/webapps links to /var/lib/tomcat/webapps, read as such.
 var ServletWebapps = []string{"/var/lib/tomcat*/webapps", "/usr/local/tomcat*/webapps", "/usr/local/apache-tomcat*/webapps",
-	"/opt/tomcat*/webapps", "/opt/apache-tomcat*/webapps", "/var/lib/jetty*/webapps", "/usr/local/jetty*/webapps", "/opt/jetty*/webapps"}
+	"/opt/tomcat*/webapps", "/opt/apache-tomcat*/webapps", "/var/lib/jetty*/webapps", "/usr/local/jetty*/webapps", "/opt/jetty*/webapps",
+	// GeoServer's platform-independent binary runs its own Jetty from
+	// webapps/geoserver, installed in /usr/share/geoserver by its guide.
+	"/usr/share/geoserver*/webapps", "/opt/geoserver*/webapps"}
 
 // webappsDir is the name of a servlet container's deployment directory.
 const webappsDir = "webapps"
@@ -182,12 +199,23 @@ func (s *Scanner) readsJars() bool {
 // rollerObservation reports Apache Roller at a release read from the file
 // at host path loc (inner: the path inside it, for an archive).
 func rollerObservation(v, loc, inner string) model.Observation {
-	ev := map[string]string{"kind": KindJavaWebapp, "product": "Apache Roller", "source": "version-file"}
+	return javaAppObservation(rollerProduct, "Apache Roller", v, loc, inner)
+}
+
+// geoserverObservation reports GeoServer at a release read from its
+// gs-main JAR at host path loc (inner: the path inside it).
+func geoserverObservation(v, loc, inner string) model.Observation {
+	return javaAppObservation(geoserverProduct, "GeoServer", v, loc, inner)
+}
+
+// javaAppObservation reports catalogue product id (label) at release v.
+func javaAppObservation(id, label, v, loc, inner string) model.Observation {
+	ev := map[string]string{"kind": KindJavaWebapp, "product": label, "source": "version-file"}
 	if inner != "" {
 		ev["archive_path"] = clip(inner)
 	}
 	return model.Observation{
-		Purl: packageurl.NewPackageURL("generic", "", rollerProduct, v, nil, "").ToString(), Version: v,
+		Purl: packageurl.NewPackageURL("generic", "", id, v, nil, "").ToString(), Version: v,
 		Location: clip(loc), Direct: boolp(true), Scope: "runtime", Confidence: model.ConfidenceConfirmed, Evidence: ev,
 	}
 }
@@ -200,7 +228,37 @@ var javaRelease = regexp.MustCompile(`^\d+(?:\.\d+){1,3}(?:-[0-9A-Za-z][0-9A-Za-
 // java.util.Properties does for this file: "key=value", "key: value" or
 // "key value" lines, # and ! comments, the last assignment winning.
 func parseRollerVersion(data []byte) (string, bool) {
-	v := ""
+	return parseProperty(data, "ro.version")
+}
+
+// parseGeoServerPom reads the release from gs-main's pom.properties, only
+// when it names GeoServer's main module (groupId org.geoserver, artifactId
+// gs-main).
+func parseGeoServerPom(data []byte) (string, bool) {
+	if g, _ := propertyValue(data, "groupId"); g != "org.geoserver" {
+		return "", false
+	}
+	if a, _ := propertyValue(data, "artifactId"); a != "gs-main" {
+		return "", false
+	}
+	return parseProperty(data, "version")
+}
+
+// parseProperty reads key's value from a properties file, only when it is a
+// release as a Java build records it.
+func parseProperty(data []byte, key string) (string, bool) {
+	v, _ := propertyValue(data, key)
+	if !javaRelease.MatchString(v) {
+		return "", false
+	}
+	return v, true
+}
+
+// propertyValue reads key's value as java.util.Properties does for these
+// files: "key=value", "key: value" or "key value" lines, # and ! comments,
+// the last assignment winning.
+func propertyValue(data []byte, key string) (string, bool) {
+	v, found := "", false
 	sc := bufio.NewScanner(bytes.NewReader(data))
 	sc.Buffer(make([]byte, 0, 4096), maxPropertiesSize)
 	for sc.Scan() {
@@ -209,16 +267,13 @@ func parseRollerVersion(data []byte) (string, bool) {
 			continue
 		}
 		i := strings.IndexAny(line, "=: \t")
-		if i < 0 || line[:i] != "ro.version" {
+		if i < 0 || line[:i] != key {
 			continue
 		}
 		v = strings.TrimLeft(strings.TrimSpace(line[i:]), "=:")
-		v = strings.TrimSpace(v)
+		v, found = strings.TrimSpace(v), true
 	}
-	if !javaRelease.MatchString(v) {
-		return "", false
-	}
-	return v, true
+	return v, found
 }
 
 // readZipEntry reads one entry of an archive, refusing one that
@@ -279,7 +334,7 @@ func isRollerJar(name string) bool {
 }
 
 // javaWebapp reads an exploded Java web application at host path dir: the
-// release of Apache Roller if it is Roller, and a coverage gap for the
+// release of Apache Roller or GeoServer if it is one of them, and a coverage gap for the
 // JARs in WEB-INF/lib when no stack pack reads them. Nothing when dir has
 // no WEB-INF directory.
 func (s *Scanner) javaWebapp(dir string, den *denied) ([]model.Observation, []model.CoverageItem) {
@@ -290,6 +345,8 @@ func (s *Scanner) javaWebapp(dir string, den *denied) ([]model.Observation, []mo
 	var obs []model.Observation
 	var cov []model.CoverageItem
 	if o, ok := s.rollerExploded(webInf, den); ok {
+		obs = append(obs, o)
+	} else if o, ok := s.geoserverExploded(webInf, den); ok {
 		obs = append(obs, o)
 	}
 	lib := path.Join(webInf, "lib")
@@ -371,6 +428,95 @@ func (s *Scanner) rollerExploded(webInf string, den *denied) (model.Observation,
 	return model.Observation{}, false
 }
 
+// isGeoServerJar reports whether a WEB-INF/lib entry name is GeoServer's
+// main module (gs-main-2.28.5.jar).
+func isGeoServerJar(name string) bool {
+	base := strings.ToLower(path.Base(name))
+	return strings.HasPrefix(base, "gs-main") && strings.HasSuffix(base, ".jar")
+}
+
+// geoserverInJar reads GeoServer's release from the Maven metadata of its
+// gs-main JAR.
+func geoserverInJar(zr *zip.Reader) (string, bool) {
+	for _, e := range zr.File {
+		if e.Name != geoserverPom || !e.Mode().IsRegular() {
+			continue
+		}
+		data, err := readZipEntry(e, maxPropertiesSize)
+		if err != nil {
+			return "", false
+		}
+		return parseGeoServerPom(data)
+	}
+	return "", false
+}
+
+// geoserverExploded reads GeoServer's release in an exploded application's
+// WEB-INF (host path), from WEB-INF/lib/gs-main-<release>.jar.
+func (s *Scanner) geoserverExploded(webInf string, den *denied) (model.Observation, bool) {
+	lib := path.Join(webInf, "lib")
+	if !s.realDir(lib) {
+		return model.Observation{}, false
+	}
+	entries, _ := os.ReadDir(s.path(lib)) // an unreadable lib is noted by javaWebapp
+	opened := 0
+	for _, e := range entries {
+		if !e.Type().IsRegular() || !isGeoServerJar(e.Name()) {
+			continue
+		}
+		if opened++; opened > maxGeoServerJars {
+			break
+		}
+		jar := path.Join(lib, e.Name())
+		if s.Owned != nil && s.Owned(jar) {
+			continue
+		}
+		f, err := openRegular(s.path(jar))
+		if err != nil {
+			den.note(jar, err)
+			continue
+		}
+		v, ok := "", false
+		if fi, err := f.Stat(); err == nil {
+			if zr, err := openZip(f, fi.Size()); err == nil {
+				v, ok = geoserverInJar(zr)
+			}
+		}
+		f.Close()
+		if ok {
+			return geoserverObservation(v, jar, geoserverPom), true
+		}
+	}
+	return model.Observation{}, false
+}
+
+// geoserverInWar reads GeoServer's release in a WAR from its
+// WEB-INF/lib/gs-main JAR, read into memory up to maxNestedJar. Nothing
+// deeper is opened.
+func geoserverInWar(zr *zip.Reader) (version, inner string, ok bool) {
+	n := 0
+	for _, e := range zr.File {
+		if !e.Mode().IsRegular() || path.Dir(e.Name) != "WEB-INF/lib" || !isGeoServerJar(e.Name) {
+			continue
+		}
+		if n++; n > maxGeoServerJars {
+			break
+		}
+		data, err := readZipEntry(e, maxNestedJar)
+		if err != nil {
+			continue
+		}
+		jr, err := openZip(bytes.NewReader(data), int64(len(data)))
+		if err != nil {
+			continue
+		}
+		if v, ok := geoserverInJar(jr); ok {
+			return v, e.Name + "/" + geoserverPom, true
+		}
+	}
+	return "", "", false
+}
+
 // rollerInWar reads Roller's release in a WAR: WEB-INF/classes/
 // roller-version.properties, else the file at the root of one of Roller's
 // JARs in WEB-INF/lib, read into memory up to maxNestedJar. Nothing deeper
@@ -407,7 +553,7 @@ func rollerInWar(zr *zip.Reader) (version, inner string, ok bool) {
 }
 
 // scanWar inventories a .war file a servlet container runs as it is (host
-// path file): Roller's release, and the libraries bundled in it through
+// path file): Roller's or GeoServer's release, and the libraries bundled in it through
 // the Java stack pack, or a coverage gap without it.
 func (s *Scanner) scanWar(ctx context.Context, file string) App {
 	app := App{Dir: file, Name: clip(strings.TrimSuffix(path.Base(file), path.Ext(file)))}
@@ -441,6 +587,8 @@ func (s *Scanner) scanWar(ctx context.Context, file string) App {
 	}
 	if v, inner, ok := rollerInWar(zr); ok {
 		app.Observations = append(app.Observations, rollerObservation(v, file, inner))
+	} else if v, inner, ok := geoserverInWar(zr); ok {
+		app.Observations = append(app.Observations, geoserverObservation(v, file, inner))
 	}
 	app.Coverage = append(app.Coverage, model.CoverageItem{Scope: scope, Status: "checked"})
 	jars := 0
